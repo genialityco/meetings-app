@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Container, Title, Paper, Text, Flex } from "@mantine/core";
+import { Container, Title, Paper, Text, Flex, Table, Card } from "@mantine/core";
 import { db } from "../firebase/firebaseConfig";
 import {
   collection,
@@ -69,13 +69,13 @@ const MatrixPage = () => {
 
     const q = query(
       collection(db, "meetings"),
-      where("status", "!=", "rejected")
+      where("status", "==", "accepted")
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const meetingsData = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
-        timeSlot: doc.data().timeSlot.match(/\d{2}:\d{2}/)[0], // Extraer solo la hora
+        timeSlot: doc.data().timeSlot.match(/\d{2}:\d{2}/)[0],
       }));
       setMeetings(meetingsData);
     });
@@ -114,12 +114,10 @@ const MatrixPage = () => {
 
     // Crear matriz vacía
     const newMatrix = Array.from({ length: numTables }, () =>
-      Array(timeSlots.length)
-        .fill()
-        .map(() => ({
-          status: "available",
-          participants: [],
-        }))
+      Array(timeSlots.length).fill({
+        status: "available",
+        participants: [],
+      })
     );
 
     // Mapear la agenda en la matriz
@@ -142,10 +140,11 @@ const MatrixPage = () => {
 
       if (tableIndex >= 0 && timeSlotIndex >= 0) {
         newMatrix[tableIndex][timeSlotIndex] = {
-          status: meeting.status,
-          participants: meeting.participants.map(
-            (id) =>
-              participantsInfo[id] || { nombre: "Cargando...", empresa: "..." }
+          status: "accepted",
+          participants: meeting.participants.map((id) =>
+            participantsInfo[id]
+              ? `${participantsInfo[id].nombre} (${participantsInfo[id].empresa})`
+              : "Cargando..."
           ),
         };
       }
@@ -176,44 +175,27 @@ const MatrixPage = () => {
   const getColor = (status) => {
     switch (status) {
       case "available":
-        return "gray";
+        return "#d3d3d3"; // Gris suave
       case "occupied":
-        return "blue";
-      case "pending":
-        return "orange";
+        return "#ffa500"; // Naranja
       case "accepted":
-        return "green";
+        return "#4caf50"; // Verde
       default:
-        return "gray";
+        return "#d3d3d3";
     }
   };
 
   return (
-    <Container>
-      <Title order={2} mt="md" mb="md">
-        Matriz rueda de negocios
+    <Container fluid>
+      <Title order={2} mt="md" mb="md" align="center">
+        Matriz Rueda de Negocios
       </Title>
-      <Paper shadow="sm" p="xl" style={{ margin: "0 auto" }}>
-        <Flex
-          mih={50}
-          bg="rgba(0, 0, 0, .3)"
-          gap="md"
-          justify="center"
-          align="center"
-          direction="row"
-          wrap="wrap"
-        >
+      <Paper shadow="md" radius="md" style={{ margin: "0 auto", maxWidth: "90%" }}>
+        <Flex gap="lg" justify="center" align="center" wrap="wrap">
           {matrix.map((table, tableIndex) => (
-            <div
-              key={`table-${tableIndex}`}
-              style={{
-                padding: "10px",
-                margin: "5px",
-                border: "1px solid black",
-              }}
-            >
-              <Text>{`Mesa ${tableIndex + 1}`}</Text>
-              <table>
+            <Card key={`table-${tableIndex}`} shadow="sm" radius="md" style={{ minWidth: "200px" }}>
+              <Title order={5} align="center">{`Mesa ${tableIndex + 1}`}</Title>
+              <Table striped highlightOnHover>
                 <tbody>
                   {table.map((slot, slotIndex) => (
                     <tr
@@ -223,28 +205,21 @@ const MatrixPage = () => {
                           tableIndex * matrix[0].length + slotIndex
                         ] = el)
                       }
+                      style={{
+                        backgroundColor: getColor(slot.status),
+                        borderRadius: "5px",
+                      }}
                     >
-                      <td>
-                        {
-                          generateTimeSlots(
-                            config.startTime,
-                            config.endTime,
-                            config.meetingDuration
-                          )[slotIndex]
-                        }
+                      <td style={{ padding: "8px", textAlign: "center", fontWeight: "bold" }}>
+                        {generateTimeSlots(config.startTime, config.endTime, config.meetingDuration)[slotIndex]}
                       </td>
-                      <td style={{ backgroundColor: getColor(slot.status) }}>
+                      <td style={{ padding: "8px", textAlign: "center" }}>
                         {slot.status === "available" ? (
                           "Disponible"
                         ) : (
                           <>
-                            <Text>
-                              <strong>Estado:</strong> {slot.status}
-                            </Text>
                             {slot.participants.map((p, index) => (
-                              <Text key={index}>
-                                <strong>{p.nombre}</strong> ({p.empresa})
-                              </Text>
+                              <Text size="xs" key={index}>{p}</Text>
                             ))}
                           </>
                         )}
@@ -252,8 +227,8 @@ const MatrixPage = () => {
                     </tr>
                   ))}
                 </tbody>
-              </table>
-            </div>
+              </Table>
+            </Card>
           ))}
         </Flex>
       </Paper>

@@ -1,22 +1,27 @@
-import { useState, useEffect, useContext, useCallback } from "react";
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable no-undef */
+import { useEffect, useState, useContext, useCallback } from "react";
 import {
   TextInput,
-  Textarea,
-  Select,
+  // Textarea,
+  // Select,
   Button,
   Paper,
   Title,
   Stack,
   Loader,
   Divider,
+  Image,
+  Text,
+  Textarea,
+  Select,
 } from "@mantine/core";
 import { useNavigate } from "react-router-dom";
 import { UserContext } from "../context/UserContext";
 
 const Landing = () => {
   const navigate = useNavigate();
-  const { currentUser, userLoading, updateUser, loginByCedula } =
-    useContext(UserContext);
+  const { userLoading, loginByCedula, currentUser, updateUser } = useContext(UserContext);
 
   const [formValues, setFormValues] = useState({
     nombre: "",
@@ -32,6 +37,7 @@ const Landing = () => {
   const [loading, setLoading] = useState(false);
   const [searchCedula, setSearchCedula] = useState("");
   const [searchError, setSearchError] = useState("");
+  const [showInfo, setShowInfo] = useState(false);
 
   // Cargar datos del usuario si existe en `currentUser`
   useEffect(() => {
@@ -66,11 +72,15 @@ const Landing = () => {
   const handleSearchByCedula = async () => {
     setLoading(true);
     setSearchError("");
+    setShowInfo(false);
 
     const result = await loginByCedula(searchCedula);
 
-    if (result.error) {
-      setSearchError(result.error);
+    if (result?.success) {
+      navigate("/dashboard");
+    } else {
+      setSearchError("No se encuentra registrada esta cédula");
+      setShowInfo(true);
     }
     setLoading(false);
   };
@@ -96,25 +106,45 @@ const Landing = () => {
 
   return (
     <Paper shadow="md" p="xl" style={{ maxWidth: 500, margin: "40px auto" }}>
+      <Image
+        src="/LOGOS_FENALCO_DIRECTORIO.jpg"
+        alt="Networking Event"
+        mb="md"
+        radius="md"
+      />
+
       <Title order={2} align="center" mb="md">
-        Registro de Asistencia
+        Acceso al Directorio de Networking
       </Title>
+
+      <Text ta="justify" mb="lg">
+        Solo los participantes que se registraron de manera presencial en la
+        actividad de networking pueden acceder al directorio.
+      </Text>
 
       {/* Buscar usuario por cédula */}
       <Stack>
         <TextInput
-          label="Buscar por cédula"
-          placeholder="Ingrese su número de cédula"
+          label="Ingrese su cédula"
+          placeholder="Número de cédula"
           value={searchCedula}
           onChange={(e) => setSearchCedula(e.target.value)}
         />
         {searchError && <p style={{ color: "red" }}>{searchError}</p>}
         <Button onClick={handleSearchByCedula} loading={loading}>
-          Buscar usuario
+          Ingresar
         </Button>
       </Stack>
 
-      <Divider my="md" />
+      {showInfo && (
+        <>
+          <Divider my="md" />
+          <p style={{ textAlign: "center", color: "gray" }}>
+            Si no se encuentra registrada su cédula, significa que no asistió
+            presencialmente al evento y no podrá acceder al directorio.
+          </p>
+        </>
+      )}
 
       {/* Formulario de registro o edición */}
       <Stack>

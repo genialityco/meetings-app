@@ -10,6 +10,7 @@ import {
   Group,
   Text,
   Select,
+  Switch,
 } from "@mantine/core";
 import {
   doc,
@@ -33,6 +34,9 @@ const AdminPanel = () => {
   const [endTime, setEndTime] = useState("18:00");
   const [tableNamesInput, setTableNamesInput] = useState("");
   const [message, setMessage] = useState("");
+
+  const [solicitarReunionHabilitado, setSolicitarReunionHabilitado] =
+    useState(true);
 
   // Estados para asignación manual
   const [selectedTable, setSelectedTable] = useState("");
@@ -62,6 +66,14 @@ const AdminPanel = () => {
             data.breakTime
           );
         }
+        const generalSettings = await getDoc(
+          doc(db, "config", "generalSettings")
+        );
+        if (generalSettings.exists()) {
+          setSolicitarReunionHabilitado(
+            generalSettings.data().solicitarReunionHabilitado
+          );
+        }
       } catch (error) {
         console.error("Error al cargar configuración:", error);
       }
@@ -70,6 +82,17 @@ const AdminPanel = () => {
     fetchConfig();
     fetchAssistants();
   }, []);
+
+  const toggleSolicitarReunion = async (value) => {
+    setSolicitarReunionHabilitado(value);
+    try {
+      await setDoc(doc(db, "config", "generalSettings"), {
+        solicitarReunionHabilitado: value,
+      });
+    } catch (error) {
+      console.error("Error al actualizar configuración global:", error);
+    }
+  };
 
   // Obtener asistentes desde Firestore
   const fetchAssistants = async () => {
@@ -260,6 +283,14 @@ const AdminPanel = () => {
       </Title>
       <Paper shadow="sm" p="xl" style={{ maxWidth: 600, margin: "0 auto" }}>
         <Stack spacing="md">
+          <Switch
+            label="Habilitar solicitudes de reunión"
+            checked={solicitarReunionHabilitado}
+            onChange={(event) =>
+              toggleSolicitarReunion(event.currentTarget.checked)
+            }
+            size="lg"
+          />
           <NumberInput
             label="Cantidad máxima de personas"
             value={maxPersons}

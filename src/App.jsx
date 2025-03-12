@@ -8,9 +8,7 @@ import { UserContext } from "./context/UserContext";
 import UserProfile from "./components/UserProfile";
 import PhonesAdminPage from "./pages/PhonesAdminPage.tsx";
 const App = () => {
-  const { userLoading, currentUser } = useContext(UserContext);
-  
-  if (userLoading) return <h1>Cargando Usuario...</h1>;
+  const {  currentUser } = useContext(UserContext);
 
   return (
     <div>
