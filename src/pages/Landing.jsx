@@ -147,7 +147,7 @@ const Landing = () => {
       )}
 
       {/* Formulario de registro o edición */}
-      <Stack>
+      {/* <Stack>
         <TextInput
           label="Nombre"
           placeholder="Tu nombre completo"
@@ -220,7 +220,7 @@ const Landing = () => {
         {currentUser?.data && (
           <Button onClick={handleGoToDashboard}>Ir a la dasboard</Button>
         )}
-      </Stack>
+      </Stack>*/}
     </Paper>
   );
 };
