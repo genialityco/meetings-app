@@ -21,7 +21,8 @@ import { UserContext } from "../context/UserContext";
 
 const Landing = () => {
   const navigate = useNavigate();
-  const { userLoading, loginByCedula, currentUser, updateUser } = useContext(UserContext);
+  const { userLoading, loginByCedula, currentUser, updateUser } =
+    useContext(UserContext);
 
   const [formValues, setFormValues] = useState({
     nombre: "",
@@ -106,12 +107,18 @@ const Landing = () => {
 
   return (
     <Paper shadow="md" p="xl" style={{ maxWidth: 500, margin: "40px auto" }}>
-      <Image
-        src="/LOGOS_FENALCO_DIRECTORIO.jpg"
-        alt="Networking Event"
-        mb="md"
-        radius="md"
-      />
+      <a
+        href="https://geniality.com.co/"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <Image
+          src="/LOGOS_FENALCO_DIRECTORIO.jpg"
+          alt="Networking Event"
+          mb="md"
+          radius="md"
+        />
+      </a>
 
       <Title order={2} align="center" mb="md">
         Acceso al Directorio de Networking
