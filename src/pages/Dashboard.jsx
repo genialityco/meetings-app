@@ -146,11 +146,19 @@ const Dashboard = () => {
 
   // Filtrar asistentes cuando cambia el searchTerm
   useEffect(() => {
-    const filtered = assistants.filter(
-      (assistant) =>
-        assistant.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        assistant.empresa.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const lowerTerm = searchTerm.toLowerCase();
+    const filtered = assistants.filter((assistant) => {
+      const { nombre, cargo, empresa, contacto } = assistant;
+      return (
+        (nombre && nombre.toLowerCase().includes(lowerTerm)) ||
+        (cargo && cargo.toLowerCase().includes(lowerTerm)) ||
+        (empresa && empresa.toLowerCase().includes(lowerTerm)) ||
+        (contacto?.correo &&
+          contacto.correo.toLowerCase().includes(lowerTerm)) ||
+        (contacto?.telefono &&
+          contacto.telefono.toLowerCase().includes(lowerTerm))
+      );
+    });
     setFilteredAssistants(filtered);
   }, [searchTerm, assistants]);
 
@@ -475,7 +483,7 @@ END:VCARD`;
         {/* TAB ASISTENTES */}
         <Tabs.Panel value="asistentes" pt="md">
           <TextInput
-            placeholder="Buscar por nombre o empresa..."
+            placeholder="Buscar por nombre, cargo, teléfono, correo o empresa..."
             mb="md"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
