@@ -515,16 +515,30 @@ END:VCARD`;
                         {assistant.necesidad || "No especificada"}
                       </Text>
 
-                      <Button
-                        mt="sm"
-                        fullWidth
-                        onClick={() => sendMeetingRequest(assistant.id)}
-                        disabled={!solicitarReunionHabilitado}
-                      >
-                        {solicitarReunionHabilitado
-                          ? "Solicitar reunión"
-                          : "Solicitudes deshabilitadas"}
-                      </Button>
+                      <Group mt="sm">
+                        <Button
+                          mt="sm"
+                          onClick={() => sendMeetingRequest(assistant.id)}
+                          disabled={!solicitarReunionHabilitado}
+                        >
+                          {solicitarReunionHabilitado
+                            ? "Solicitar reunión"
+                            : "Solicitudes deshabilitadas"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => downloadVCard(assistant)}
+                        >
+                          Agregar a Contactos
+                        </Button>
+                        <Button
+                          variant="outline"
+                          color="green"
+                          onClick={() => sendWhatsAppMessage(assistant)}
+                        >
+                          Enviar WhatsApp
+                        </Button>
+                      </Group>
                     </Card>
                   </Grid.Col>
                 </Grid.Col>
