@@ -29,7 +29,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
 import { UserContext } from "../context/UserContext";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { showNotification } from "@mantine/notifications";
 import { IoNotificationsOutline } from "react-icons/io5";
 
@@ -37,6 +37,7 @@ const Dashboard = () => {
   const { currentUser } = useContext(UserContext);
   const uid = currentUser?.uid;
   const navigate = useNavigate();
+  const { eventId } = useParams();
 
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -95,6 +96,7 @@ const Dashboard = () => {
 
     const q = query(
       collection(db, "meetings"),
+      where("eventId", "==", eventId),
       where("requesterId", "==", uid),
       where("status", "==", "pending")
     );
@@ -129,7 +131,7 @@ const Dashboard = () => {
 
   // Cargar asistentes excluyendo al usuario actual
   useEffect(() => {
-    const q = query(collection(db, "users"));
+    const q = query(collection(db, "users"), where("eventId", "==", eventId));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const assistantsData = snapshot.docs
         .filter((docItem) => docItem.id !== uid)
@@ -389,6 +391,39 @@ const Dashboard = () => {
     }
   };
 
+  // Función para descargar vCard
+  const downloadVCard = (participant) => {
+    // Suponiendo que participant.nombre es el nombre completo
+    // y participant.contacto.telefono y participant.contacto.correo están definidos
+    const vCard = `BEGIN:VCARD
+VERSION:3.0
+N:${participant.nombre};;;;
+FN:${participant.nombre}
+TEL;TYPE=CELL:${participant.contacto.telefono || ""}
+EMAIL:${participant.contacto.correo || ""}
+END:VCARD`;
+    const blob = new Blob([vCard], { type: "text/vcard" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${participant.nombre}.vcf`;
+    link.click();
+  };
+
+  // Función para enviar mensaje por WhatsApp
+  const sendWhatsAppMessage = (participant) => {
+    if (!participant.contacto.telefono) {
+      alert("No hay número de teléfono disponible para WhatsApp");
+      return;
+    }
+    // Se espera que el número esté en formato internacional sin espacios ni símbolos
+    const phone = participant.contacto.telefono.replace(/[^\d]/g, "");
+    const message = encodeURIComponent(
+      "Hola, me gustaría contactarte sobre la reunión."
+    );
+    window.open(`https://wa.me/${phone}?text=${message}`, "_blank");
+  };
+
   return (
     <Container>
       <Flex gap="md">
@@ -525,6 +560,24 @@ const Dashboard = () => {
                       <strong>Mesa:</strong>{" "}
                       {meeting.tableAssigned || "Por asignar"}
                     </Text>
+                    {/* Nuevas opciones para reuniones aceptadas */}
+                    {participant && (
+                      <Group mt="sm">
+                        <Button
+                          variant="outline"
+                          onClick={() => downloadVCard(participant)}
+                        >
+                          Agregar a Contactos
+                        </Button>
+                        <Button
+                          variant="outline"
+                          color="green"
+                          onClick={() => sendWhatsAppMessage(participant)}
+                        >
+                          Enviar WhatsApp
+                        </Button>
+                      </Group>
+                    )}
                   </Card>
                 );
               })

@@ -6,6 +6,7 @@ import "./index.css";
 import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
 import "@mantine/dates/styles.css";
+import '@mantine/tiptap/styles.css';
 import { Notifications } from "@mantine/notifications";
 import { ModalsProvider } from "@mantine/modals";
 import { BrowserRouter } from "react-router-dom";

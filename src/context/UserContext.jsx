@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import { createContext, useState, useEffect } from "react";
 import { onAuthStateChanged, signInAnonymously, signOut } from "firebase/auth";
 import {
@@ -13,6 +14,7 @@ import { auth, db, messaging } from "../firebase/firebaseConfig";
 import { onMessage } from "firebase/messaging";
 import { showNotification } from "@mantine/notifications";
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const UserContext = createContext();
 
 export const UserProvider = ({ children }) => {
