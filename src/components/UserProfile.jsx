@@ -15,34 +15,69 @@ import {
   Collapse,
   UnstyledButton,
   ActionIcon,
+  FileInput,
+  Avatar,
 } from "@mantine/core";
 import { FaChevronDown, FaChevronUp } from "react-icons/fa";
 import { UserContext } from "../context/UserContext";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { storage } from "../firebase/firebaseConfig"; // Asegúrate de que la ruta sea correcta
+
+// Función para subir la imagen a Firebase Storage
+const uploadProfilePicture = async (file, uid) => {
+  const storageRef = ref(storage, `profilePictures/${uid}/${file.name}`);
+  await uploadBytes(storageRef, file);
+  const photoURL = await getDownloadURL(storageRef);
+  return photoURL;
+};
 
 const UserProfile = () => {
-  const { currentUser, updateUser, logout, userLoading } =
-    useContext(UserContext);
+  const { currentUser, updateUser, logout, userLoading } = useContext(UserContext);
   const uid = currentUser?.uid;
 
   const [editModalOpened, setEditModalOpened] = useState(false);
   const [editProfileData, setEditProfileData] = useState({});
   const [openedCollapse, setOpenedCollapse] = useState(false);
+  const [profilePicPreview, setProfilePicPreview] = useState(null);
 
   useEffect(() => {
     if (currentUser?.data) {
       setEditProfileData(currentUser.data);
+      // Si ya existe una foto de perfil, se asigna a la previsualización
+      if (currentUser.data.photoURL) {
+        setProfilePicPreview(currentUser.data.photoURL);
+      }
     }
   }, [currentUser]);
 
+  // Maneja la selección o captura de la foto de perfil
+  const handleProfilePictureChange = (file) => {
+    if (file) {
+      setEditProfileData({ ...editProfileData, photo: file });
+      setProfilePicPreview(URL.createObjectURL(file));
+    }
+  };
+
+  // Guarda los cambios y, en caso de haber seleccionado una foto, la sube a Firebase Storage
   const saveProfileChanges = async () => {
     if (!uid) return;
     try {
-      await updateUser(uid, editProfileData);
+      // Crear una copia de los datos a actualizar
+      const dataToUpdate = { ...editProfileData };
+  
+      if (dataToUpdate.photo) {
+        const photoURL = await uploadProfilePicture(dataToUpdate.photo, uid);
+        dataToUpdate.photoURL = photoURL;
+        delete dataToUpdate.photo;
+      }
+  
+      await updateUser(uid, dataToUpdate);
       setEditModalOpened(false);
     } catch (error) {
       console.error("Error al actualizar el perfil:", error);
     }
   };
+  
 
   if (userLoading) return <Loader />;
 
@@ -52,11 +87,7 @@ const UserProfile = () => {
         <Group position="apart" noWrap style={{ width: "100%" }}>
           <Title order={3}>Ver mi Información</Title>
           <ActionIcon variant="transparent">
-            {openedCollapse ? (
-              <FaChevronUp size={16} />
-            ) : (
-              <FaChevronDown size={16} />
-            )}
+            {openedCollapse ? <FaChevronUp size={16} /> : <FaChevronDown size={16} />}
           </ActionIcon>
         </Group>
       </UnstyledButton>
@@ -64,6 +95,16 @@ const UserProfile = () => {
         <Divider my="md" />
         {currentUser?.data ? (
           <>
+            <Group justify="center" mb="md">
+              <Avatar
+                src={profilePicPreview}
+                alt="Foto de perfil"
+                size={150}
+                radius="50%"
+              >
+                {!profilePicPreview && currentUser.data.nombre ? currentUser.data.nombre[0] : "U"}
+              </Avatar>
+            </Group>
             <SimpleGrid
               cols={2}
               spacing="md"
@@ -118,6 +159,23 @@ const UserProfile = () => {
         centered
       >
         <Stack>
+          <Group position="center">
+            <Avatar
+              src={profilePicPreview}
+              alt="Vista previa"
+              size={150}
+              radius="50%"
+            >
+              {!profilePicPreview && currentUser?.data?.nombre ? currentUser.data.nombre[0] : "U"}
+            </Avatar>
+          </Group>
+          {/* Campo para seleccionar o tomar una foto de perfil */}
+          <FileInput
+            label="Cambiar foto de perfil"
+            accept="image/png,image/jpeg"
+            inputProps={{ capture: "user" }}
+            onChange={handleProfilePictureChange}
+          />
           <TextInput
             label="Cédula"
             value={editProfileData.cedula || ""}
@@ -136,10 +194,7 @@ const UserProfile = () => {
             label="Empresa"
             value={editProfileData.empresa || ""}
             onChange={(e) =>
-              setEditProfileData({
-                ...editProfileData,
-                empresa: e.target.value,
-              })
+              setEditProfileData({ ...editProfileData, empresa: e.target.value })
             }
           />
           <TextInput
@@ -153,10 +208,7 @@ const UserProfile = () => {
             label="Descripción"
             value={editProfileData.descripcion || ""}
             onChange={(e) =>
-              setEditProfileData({
-                ...editProfileData,
-                descripcion: e.target.value,
-              })
+              setEditProfileData({ ...editProfileData, descripcion: e.target.value })
             }
           />
           <TextInput
@@ -165,10 +217,7 @@ const UserProfile = () => {
             onChange={(e) =>
               setEditProfileData({
                 ...editProfileData,
-                contacto: {
-                  ...editProfileData.contacto,
-                  correo: e.target.value,
-                },
+                contacto: { ...editProfileData.contacto, correo: e.target.value },
               })
             }
           />
@@ -178,10 +227,7 @@ const UserProfile = () => {
             onChange={(e) =>
               setEditProfileData({
                 ...editProfileData,
-                contacto: {
-                  ...editProfileData.contacto,
-                  telefono: e.target.value,
-                },
+                contacto: { ...editProfileData.contacto, telefono: e.target.value },
               })
             }
           />

@@ -14,6 +14,8 @@ import {
   ActionIcon,
   Flex,
   TextInput,
+  Avatar,
+  Modal,
 } from "@mantine/core";
 import {
   collection,
@@ -53,6 +55,10 @@ const Dashboard = () => {
   const [notifications, setNotifications] = useState([]);
   const [solicitarReunionHabilitado, setSolicitarReunionHabilitado] =
     useState(true);
+
+  // Estados para el modal de imagen
+  const [avatarModalOpened, setAvatarModalOpened] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
 
   useEffect(() => {
     if (!uid) return;
@@ -142,7 +148,7 @@ const Dashboard = () => {
     });
 
     return () => unsubscribe();
-  }, [uid]);
+  }, [uid, eventId]);
 
   // Filtrar asistentes cuando cambia el searchTerm
   useEffect(() => {
@@ -273,10 +279,7 @@ const Dashboard = () => {
         // 1. Obtener todas las reuniones aceptadas de ambos participantes
         const acceptedMeetingsQuery = query(
           collection(db, "meetings"),
-          where("participants", "array-contains-any", [
-            requesterId,
-            receiverId,
-          ]),
+          where("participants", "array-contains-any", [requesterId, receiverId]),
           where("status", "==", "accepted")
         );
         const acceptedMeetingsSnapshot = await getDocs(acceptedMeetingsQuery);
@@ -401,8 +404,6 @@ const Dashboard = () => {
 
   // Función para descargar vCard
   const downloadVCard = (participant) => {
-    // Suponiendo que participant.nombre es el nombre completo
-    // y participant.contacto.telefono y participant.contacto.correo están definidos
     const vCard = `BEGIN:VCARD
 VERSION:3.0
 N:${participant.nombre};;;;
@@ -424,7 +425,6 @@ END:VCARD`;
       alert("No hay número de teléfono disponible para WhatsApp");
       return;
     }
-    // Se espera que el número esté en formato internacional sin espacios ni símbolos
     const phone = participant.contacto.telefono.replace(/[^\d]/g, "");
     const message = encodeURIComponent(
       "Hola, me gustaría contactarte sobre la reunión."
@@ -493,62 +493,76 @@ END:VCARD`;
             {filteredAssistants.length > 0 ? (
               filteredAssistants.map((assistant) => (
                 <Grid.Col xs={12} sm={6} md={4} key={assistant.id}>
-                  <Grid.Col xs={12} sm={6} md={4} key={assistant.id}>
-                    <Card shadow="sm" p="lg">
-                      <Title order={5}>📛 {assistant.nombre}</Title>
-                      <Text size="sm">
-                        🏢 <strong>Empresa:</strong> {assistant.empresa}
-                      </Text>
-                      <Text size="sm">
-                        🏷 <strong>Cargo:</strong> {assistant.cargo}
-                      </Text>
-                      <Text size="sm">
-                        📧 <strong>Correo:</strong>{" "}
-                        {assistant.contacto.correo || "No disponible"}
-                      </Text>
-                      <Text size="sm">
-                        📞 <strong>Teléfono:</strong>{" "}
-                        {assistant.contacto.telefono || "No disponible"}
-                      </Text>
-                      <Text size="sm">
-                        📝 <strong>Descripción:</strong>{" "}
-                        {assistant.descripcion || "No especificada"}
-                      </Text>
-                      <Text size="sm">
-                        🎯 <strong>Interés Principal:</strong>{" "}
-                        {assistant.interesPrincipal || "No especificado"}
-                      </Text>
-                      <Text size="sm">
-                        🔍 <strong>Necesidad:</strong>{" "}
-                        {assistant.necesidad || "No especificada"}
-                      </Text>
-
-                      <Group mt="sm">
-                        <Button
-                          mt="sm"
-                          onClick={() => sendMeetingRequest(assistant.id)}
-                          disabled={!solicitarReunionHabilitado}
-                        >
-                          {solicitarReunionHabilitado
-                            ? "Solicitar reunión"
-                            : "Solicitudes deshabilitadas"}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={() => downloadVCard(assistant)}
-                        >
-                          Agregar a Contactos
-                        </Button>
-                        <Button
-                          variant="outline"
-                          color="green"
-                          onClick={() => sendWhatsAppMessage(assistant)}
-                        >
-                          Enviar WhatsApp
-                        </Button>
-                      </Group>
-                    </Card>
-                  </Grid.Col>
+                  <Card shadow="sm" p="lg">
+                    <Group position="center" mb="md">
+                      <Avatar
+                        src={assistant.photoURL}
+                        alt={`Avatar de ${assistant.nombre}`}
+                        radius="50%"
+                        size="xl"
+                        style={{ cursor: "pointer" }}
+                        onClick={() => {
+                          setSelectedImage(assistant.photoURL);
+                          setAvatarModalOpened(true);
+                        }}
+                      >
+                        {!assistant.photoURL &&
+                          assistant.nombre &&
+                          assistant.nombre[0]}
+                      </Avatar>
+                    </Group>
+                    <Title order={5}>📛 {assistant.nombre}</Title>
+                    <Text size="sm">
+                      🏢 <strong>Empresa:</strong> {assistant.empresa}
+                    </Text>
+                    <Text size="sm">
+                      🏷 <strong>Cargo:</strong> {assistant.cargo}
+                    </Text>
+                    <Text size="sm">
+                      📧 <strong>Correo:</strong>{" "}
+                      {assistant.contacto?.correo || "No disponible"}
+                    </Text>
+                    <Text size="sm">
+                      📞 <strong>Teléfono:</strong>{" "}
+                      {assistant.contacto?.telefono || "No disponible"}
+                    </Text>
+                    <Text size="sm">
+                      📝 <strong>Descripción:</strong>{" "}
+                      {assistant.descripcion || "No especificada"}
+                    </Text>
+                    <Text size="sm">
+                      🎯 <strong>Interés Principal:</strong>{" "}
+                      {assistant.interesPrincipal || "No especificado"}
+                    </Text>
+                    <Text size="sm">
+                      🔍 <strong>Necesidad:</strong>{" "}
+                      {assistant.necesidad || "No especificada"}
+                    </Text>
+                    <Group mt="sm">
+                      <Button
+                        mt="sm"
+                        onClick={() => sendMeetingRequest(assistant.id)}
+                        disabled={!solicitarReunionHabilitado}
+                      >
+                        {solicitarReunionHabilitado
+                          ? "Solicitar reunión"
+                          : "Solicitudes deshabilitadas"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => downloadVCard(assistant)}
+                      >
+                        Agregar a Contactos
+                      </Button>
+                      <Button
+                        variant="outline"
+                        color="green"
+                        onClick={() => sendWhatsAppMessage(assistant)}
+                      >
+                        Enviar WhatsApp
+                      </Button>
+                    </Group>
+                  </Card>
                 </Grid.Col>
               ))
             ) : (
@@ -582,7 +596,6 @@ END:VCARD`;
                       <strong>Mesa:</strong>{" "}
                       {meeting.tableAssigned || "Por asignar"}
                     </Text>
-                    {/* Nuevas opciones para reuniones aceptadas */}
                     {participant && (
                       <Group mt="sm">
                         <Button
@@ -650,11 +663,11 @@ END:VCARD`;
                             </Text>
                             <Text size="sm">
                               📧 <strong>Correo:</strong>{" "}
-                              {requester.contacto.correo || "No disponible"}
+                              {requester.contacto?.correo || "No disponible"}
                             </Text>
                             <Text size="sm">
                               📞 <strong>Teléfono:</strong>{" "}
-                              {requester.contacto.telefono || "No disponible"}
+                              {requester.contacto?.telefono || "No disponible"}
                             </Text>
                             <Text size="sm">
                               🆔 <strong>Cédula:</strong>{" "}
@@ -726,11 +739,11 @@ END:VCARD`;
                             </Text>
                             <Text size="sm">
                               📧 <strong>Correo:</strong>{" "}
-                              {requester.contacto.correo || "No disponible"}
+                              {requester.contacto?.correo || "No disponible"}
                             </Text>
                             <Text size="sm">
                               📞 <strong>Teléfono:</strong>{" "}
-                              {requester.contacto.telefono || "No disponible"}
+                              {requester.contacto?.telefono || "No disponible"}
                             </Text>
                             <Text size="sm">
                               🆔 <strong>Cédula:</strong>{" "}
@@ -792,11 +805,11 @@ END:VCARD`;
                             </Text>
                             <Text size="sm">
                               📧 <strong>Correo:</strong>{" "}
-                              {requester.contacto.correo || "No disponible"}
+                              {requester.contacto?.correo || "No disponible"}
                             </Text>
                             <Text size="sm">
                               📞 <strong>Teléfono:</strong>{" "}
-                              {requester.contacto.telefono || "No disponible"}
+                              {requester.contacto?.telefono || "No disponible"}
                             </Text>
                             <Text size="sm">
                               🆔 <strong>Cédula:</strong>{" "}
@@ -835,7 +848,6 @@ END:VCARD`;
               <Stack>
                 {sentRequests.length > 0 ? (
                   sentRequests.map((request) => {
-                    // Aquí, el "otro usuario" es el receiverId
                     const receiver = assistants.find(
                       (user) => user.id === request.receiverId
                     );
@@ -861,8 +873,6 @@ END:VCARD`;
                               📞 <strong>Teléfono:</strong>{" "}
                               {receiver.contacto?.telefono || "No disponible"}
                             </Text>
-                            {/* ... cualquier otro dato que quieras mostrar ... */}
-
                             <Text size="sm" color="blue">
                               <strong>Estado:</strong> Pendiente
                             </Text>
@@ -881,6 +891,29 @@ END:VCARD`;
           </Tabs>
         </Tabs.Panel>
       </Tabs>
+
+      {/* Modal para ver la imagen de perfil ampliada */}
+      <Modal
+        opened={avatarModalOpened}
+        onClose={() => setAvatarModalOpened(false)}
+        centered
+        title="Foto de perfil"
+      >
+        {selectedImage ? (
+          <img
+            src={selectedImage}
+            alt="Foto de perfil ampliada"
+            style={{
+              width: "100%",
+              maxWidth: "500px",
+              display: "block",
+              margin: "0 auto",
+            }}
+          />
+        ) : (
+          <Text align="center">No hay imagen disponible</Text>
+        )}
+      </Modal>
     </Container>
   );
 };

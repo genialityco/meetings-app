@@ -22,7 +22,7 @@ const App = () => {
         {/* Ruta dashboard filtrada por evento */}
         <Route path="/dashboard/:eventId" element={<Dashboard />} />
         <Route path="/admin" element={<AdminPanel />} />
-        <Route path="/matrix" element={<MatrixPage />} />
+        <Route path="/matrix/:eventId" element={<MatrixPage />} />
         <Route path="/phonesadmin" element={<PhonesAdminPage />} />
       </Routes>
     </div>

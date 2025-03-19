@@ -1,5 +1,14 @@
 import { useState, useEffect, useRef } from "react";
-import { Container, Title, Paper, Text, Flex, Table, Card } from "@mantine/core";
+import {
+  Container,
+  Title,
+  Paper,
+  Text,
+  Flex,
+  Table,
+  Card,
+  Tabs,
+} from "@mantine/core";
 import { db } from "../firebase/firebaseConfig";
 import {
   collection,
@@ -9,8 +18,10 @@ import {
   query,
   where,
   orderBy,
+  getDocs,
 } from "firebase/firestore";
 import anime from "animejs";
+import { useParams } from "react-router-dom";
 
 // Función para generar los intervalos de horarios
 const generateTimeSlots = (start, end, duration) => {
@@ -27,17 +38,22 @@ const generateTimeSlots = (start, end, duration) => {
 };
 
 const MatrixPage = () => {
+  const { eventId } = useParams(); // Obtener el eventId de la URL
   const [config, setConfig] = useState(null);
   const [agenda, setAgenda] = useState([]);
   const [meetings, setMeetings] = useState([]);
   const [participantsInfo, setParticipantsInfo] = useState({});
   const [matrix, setMatrix] = useState([]);
+  const [matrixUsuarios, setMatrixUsuarios] = useState([]);
+  const [asistentes, setAsistentes] = useState([]);
   const tableRefs = useRef([]);
 
-  // Cargar Configuración desde Firestore
+  // 🔹 Cargar Configuración del Evento desde Firestore
   useEffect(() => {
+    if (!eventId) return;
+
     const fetchConfig = async () => {
-      const configRef = doc(db, "config", "meetingConfig");
+      const configRef = doc(db, "events", eventId);
       const configSnap = await getDoc(configRef);
       if (configSnap.exists()) {
         setConfig(configSnap.data());
@@ -45,13 +61,18 @@ const MatrixPage = () => {
     };
 
     fetchConfig();
-  }, []);
+  }, [eventId]);
 
-  // Cargar la Agenda en Tiempo Real
+  // 🔹 Cargar la Agenda en Tiempo Real Filtrada por Evento
   useEffect(() => {
-    if (!config) return;
+    if (!config || !eventId) return;
 
-    const q = query(collection(db, "agenda"), orderBy("startTime"));
+    const q = query(
+      collection(db, "agenda"),
+      where("eventId", "==", eventId),
+      orderBy("startTime")
+    );
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const agendaData = snapshot.docs.map((doc) => ({
         id: doc.id,
@@ -61,29 +82,48 @@ const MatrixPage = () => {
     });
 
     return () => unsubscribe();
-  }, [config]);
+  }, [config, eventId]);
 
-  // Cargar las Reuniones en Tiempo Real
+  // 🔹 Cargar las Reuniones en Tiempo Real desde "events/{eventId}/meetings"
   useEffect(() => {
-    if (!config) return;
+    if (!config || !eventId) return;
 
     const q = query(
-      collection(db, "meetings"),
+      collection(db, "events", eventId, "meetings"),
       where("status", "==", "accepted")
     );
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const meetingsData = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
-        timeSlot: doc.data().timeSlot.match(/\d{2}:\d{2}/)[0],
+        timeSlot: doc.data().timeSlot.match(/\d{2}:\d{2}/)[0], // Extraer HH:MM
       }));
       setMeetings(meetingsData);
     });
 
     return () => unsubscribe();
-  }, [config]);
+  }, [config, eventId]);
 
-  // Cargar Información de Participantes en Tiempo Real
+  // 🔹 Cargar la Lista de Asistentes al Evento
+  useEffect(() => {
+    if (!eventId) return;
+
+    const fetchAsistentes = async () => {
+      const usersSnapshot = await getDocs(
+        query(collection(db, "users"), where("eventId", "==", eventId))
+      );
+      const usersList = usersSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setAsistentes(usersList);
+    };
+
+    fetchAsistentes();
+  }, [eventId]);
+
+  // 🔹 Cargar Información de Participantes en Tiempo Real
   useEffect(() => {
     if (meetings.length === 0) return;
 
@@ -105,14 +145,14 @@ const MatrixPage = () => {
     fetchParticipants();
   }, [meetings]);
 
-  // Construcción de la Matriz con Datos Reales
+  // 🔹 Construcción de la Matriz Filtrada por Evento
   useEffect(() => {
     if (!config || agenda.length === 0) return;
 
-    const { numTables, meetingDuration, startTime, endTime } = config;
+    const { numTables, meetingDuration, startTime, endTime } = config.config;
     const timeSlots = generateTimeSlots(startTime, endTime, meetingDuration);
 
-    // Crear matriz vacía
+    // Crear matriz vacía (mesas × horarios)
     const newMatrix = Array.from({ length: numTables }, () =>
       Array(timeSlots.length).fill({
         status: "available",
@@ -120,7 +160,7 @@ const MatrixPage = () => {
       })
     );
 
-    // Mapear la agenda en la matriz
+    // 🔸 Mapear la agenda en la matriz
     agenda.forEach((slot) => {
       const tableIndex = slot.tableNumber - 1;
       const timeSlotIndex = timeSlots.indexOf(slot.startTime);
@@ -133,10 +173,14 @@ const MatrixPage = () => {
       }
     });
 
-    // Mapear las reuniones en la matriz
+    // 🔸 Mapear las reuniones en la matriz
     meetings.forEach((meeting) => {
       const tableIndex = Number(meeting.tableAssigned) - 1;
-      const timeSlotIndex = timeSlots.indexOf(meeting.timeSlot);
+      const normalizedTimeSlot = meeting.timeSlot.trim();
+
+      const timeSlotIndex = timeSlots.findIndex(
+        (slot) => slot === normalizedTimeSlot
+      );
 
       if (tableIndex >= 0 && timeSlotIndex >= 0) {
         newMatrix[tableIndex][timeSlotIndex] = {
@@ -147,13 +191,54 @@ const MatrixPage = () => {
               : "Cargando..."
           ),
         };
+      } else {
+        console.warn("Error asignando reunión:", meeting);
       }
     });
 
-    setMatrix(newMatrix);
+    // 🔹 Verificar la matriz final antes de actualizar el estado
+    console.log("Matriz generada:", newMatrix);
+    setMatrix([...newMatrix]); // Forzar actualización
   }, [config, agenda, meetings, participantsInfo]);
 
-  // Animación de colores con Anime.js
+  // 🔹 Construcción de la Matriz por Usuario
+  useEffect(() => {
+    if (
+      !config ||
+      meetings.length === 0 ||
+      asistentes.length === 0 ||
+      Object.keys(participantsInfo).length === 0
+    )
+      return;
+
+    const { meetingDuration, startTime, endTime } = config.config;
+    const timeSlots = generateTimeSlots(startTime, endTime, meetingDuration);
+
+    const newMatrixUsuarios = asistentes.map((asistente) => {
+      const row = timeSlots.map((slot) => {
+        const meetingForSlot = meetings.find(
+          (meeting) =>
+            meeting.timeSlot === slot &&
+            meeting.participants.includes(asistente.id)
+        );
+        return meetingForSlot
+          ? {
+              status: "accepted",
+              table: meetingForSlot.tableAssigned,
+              participants: meetingForSlot.participants.filter(
+                (pid) => pid !== asistente.id
+              ),
+            }
+          : { status: "available" };
+      });
+
+      return { asistente, row };
+    });
+
+    setMatrixUsuarios(newMatrixUsuarios);
+  }, [config, meetings, asistentes, participantsInfo]);
+
+  // 🔹 Animación de colores con Anime.js
   useEffect(() => {
     tableRefs.current.forEach((ref, index) => {
       if (ref) {
@@ -171,7 +256,7 @@ const MatrixPage = () => {
     });
   }, [matrix]);
 
-  // Función para asignar colores según el estado
+  // 🔹 Función para asignar colores según el estado
   const getColor = (status) => {
     switch (status) {
       case "available":
@@ -188,50 +273,148 @@ const MatrixPage = () => {
   return (
     <Container fluid>
       <Title order={2} mt="md" mb="md" align="center">
-        Matriz Rueda de Negocios
+        Matriz Rueda de Negocios - Evento {config?.eventName || "Desconocido"}
       </Title>
-      <Paper shadow="md" radius="md" style={{ margin: "0 auto", maxWidth: "90%" }}>
-        <Flex gap="lg" justify="center" align="center" wrap="wrap">
-          {matrix.map((table, tableIndex) => (
-            <Card key={`table-${tableIndex}`} shadow="sm" radius="md" style={{ minWidth: "200px" }}>
-              <Title order={5} align="center">{`Mesa ${tableIndex + 1}`}</Title>
-              <Table striped highlightOnHover>
-                <tbody>
-                  {table.map((slot, slotIndex) => (
-                    <tr
-                      key={`${tableIndex}-${slotIndex}`}
-                      ref={(el) =>
-                        (tableRefs.current[
-                          tableIndex * matrix[0].length + slotIndex
-                        ] = el)
-                      }
-                      style={{
-                        backgroundColor: getColor(slot.status),
-                        borderRadius: "5px",
-                      }}
-                    >
-                      <td style={{ padding: "8px", textAlign: "center", fontWeight: "bold" }}>
-                        {generateTimeSlots(config.startTime, config.endTime, config.meetingDuration)[slotIndex]}
-                      </td>
-                      <td style={{ padding: "8px", textAlign: "center" }}>
-                        {slot.status === "available" ? (
-                          "Disponible"
-                        ) : (
-                          <>
-                            {slot.participants.map((p, index) => (
-                              <Text size="xs" key={index}>{p}</Text>
-                            ))}
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Table>
-            </Card>
-          ))}
-        </Flex>
-      </Paper>
+      <Tabs defaultValue="mesas">
+        <Tabs.List>
+          <Tabs.Tab value="mesas">Por Mesas</Tabs.Tab>
+          <Tabs.Tab value="usuarios">Por Usuarios</Tabs.Tab>
+        </Tabs.List>
+
+        {/* Vista por mesas */}
+        <Tabs.Panel value="mesas" pt="md">
+          <Paper
+            shadow="md"
+            radius="md"
+            style={{ margin: "0 auto", maxWidth: "90%" }}
+          >
+            <Flex gap="lg" justify="center" align="center" wrap="wrap">
+              {matrix.map((table, tableIndex) => (
+                <Card
+                  key={`table-${tableIndex}`}
+                  shadow="sm"
+                  radius="md"
+                  style={{ minWidth: "200px" }}
+                >
+                  <Title order={5} align="center">{`Mesa ${
+                    tableIndex + 1
+                  }`}</Title>
+                  <Table striped highlightOnHover>
+                    <Table.Tbody>
+                      {table.map((slot, slotIndex) => (
+                        <Table.Tr
+                          key={`${tableIndex}-${slotIndex}`}
+                          ref={(el) =>
+                            (tableRefs.current[
+                              tableIndex * matrix[0].length + slotIndex
+                            ] = el)
+                          }
+                          style={{
+                            backgroundColor: getColor(slot.status),
+                            borderRadius: "5px",
+                          }}
+                        >
+                          <Table.Td
+                            style={{
+                              padding: "8px",
+                              textAlign: "center",
+                              fontWeight: "bold",
+                            }}
+                          >
+                            {
+                              generateTimeSlots(
+                                config.config.startTime,
+                                config.config.endTime,
+                                config.config.meetingDuration
+                              )[slotIndex]
+                            }
+                          </Table.Td>
+                          <Table.Td
+                            style={{ padding: "8px", textAlign: "center" }}
+                          >
+                            {slot.status === "available" ? (
+                              "Disponible"
+                            ) : (
+                              <>
+                                {slot.participants.map((p, index) => (
+                                  <Text size="xs" key={index}>
+                                    {p}
+                                  </Text>
+                                ))}
+                              </>
+                            )}
+                          </Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                </Card>
+              ))}
+            </Flex>
+          </Paper>
+        </Tabs.Panel>
+
+        {/* Vista por Usuarios */}
+        <Tabs.Panel value="usuarios" pt="md">
+          <Flex gap="lg" justify="center" align="center" wrap="wrap">
+            {matrixUsuarios.map(({ asistente, row }) => (
+              <Card
+                key={asistente.id}
+                shadow="sm"
+                radius="md"
+                style={{ minWidth: "300px", margin: "10px" }}
+              >
+                <Title order={5} align="center" mb="sm">
+                  {asistente.nombre}
+                </Title>
+                <Table striped highlightOnHover>
+                  <Table.Tbody
+                    style={{
+                      padding: "8px",
+                      textAlign: "center",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    {generateTimeSlots(
+                      config.config.startTime,
+                      config.config.endTime,
+                      config.config.meetingDuration
+                    ).map((slot, index) => {
+                      const cell = row[index];
+                      return (
+                        <Table.Tr
+                          key={index}
+                          style={{ backgroundColor: getColor(cell.status) }}
+                        >
+                          <Table.Td>{slot}</Table.Td>
+                          <Table.Td>
+                            {cell.status === "accepted" ? (
+                              <>
+                                <div>{`Mesa ${cell.table}`}</div>
+                                <div>
+                                  {cell.participants.map((pid, idx) => (
+                                    <Text key={idx} size="xs">
+                                      {participantsInfo[pid]
+                                        ? `${participantsInfo[pid].nombre} (${participantsInfo[pid].empresa})`
+                                        : "Cargando..."}
+                                    </Text>
+                                  ))}
+                                </div>
+                              </>
+                            ) : (
+                              "Disponible"
+                            )}
+                          </Table.Td>
+                        </Table.Tr>
+                      );
+                    })}
+                  </Table.Tbody>
+                </Table>
+              </Card>
+            ))}
+          </Flex>
+        </Tabs.Panel>
+      </Tabs>
     </Container>
   );
 };

@@ -10,6 +10,7 @@ import {
   Image,
   Text,
   Select,
+  FileInput,
 } from "@mantine/core";
 import { RichTextEditor, Link } from '@mantine/tiptap';
 import { useEditor } from '@tiptap/react';
@@ -22,6 +23,16 @@ import { useNavigate, useParams } from "react-router-dom";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
 import { UserContext } from "../context/UserContext";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { storage } from "../firebase/firebaseConfig";
+
+// Función para subir la imagen a Firebase Storage
+const uploadProfilePicture = async (file, uid) => {
+  const storageRef = ref(storage, `profilePictures/${uid}/${file.name}`);
+  await uploadBytes(storageRef, file);
+  const photoURL = await getDownloadURL(storageRef);
+  return photoURL;
+};
 
 const Landing = () => {
   const navigate = useNavigate();
@@ -35,12 +46,13 @@ const Landing = () => {
     cedula: "",
     empresa: "",
     cargo: "",
-    descripcion: "", // Aquí se almacenará el HTML resultante del editor
+    descripcion: "",
     interesPrincipal: "",
     necesidad: "",
     contacto: { correo: "", telefono: "" },
+    photo: null, // Campo para almacenar el archivo de foto
   });
-
+  const [profilePicPreview, setProfilePicPreview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [searchCedula, setSearchCedula] = useState("");
   const [searchError, setSearchError] = useState("");
@@ -58,17 +70,20 @@ const Landing = () => {
     content: formValues.descripcion || "<p>Escribe aquí la descripción...</p>",
   });
 
-  // Cargar datos del usuario si existe en currentUser
+  // Cargar datos del usuario (si ya existe)
   useEffect(() => {
     if (currentUser?.data) {
       setFormValues((prev) => ({
         ...prev,
         ...currentUser.data,
       }));
+      if (currentUser.data.photoURL) {
+        setProfilePicPreview(currentUser.data.photoURL);
+      }
     }
   }, [currentUser]);
 
-  // Cargar la configuración del evento para saber si los registros están habilitados
+  // Cargar la configuración del evento (registros habilitados)
   useEffect(() => {
     if (eventId) {
       const unsubscribe = onSnapshot(
@@ -89,7 +104,7 @@ const Landing = () => {
     }
   }, [eventId]);
 
-  // Manejar cambios en el formulario
+  // Manejar cambios en el formulario (incluyendo campos anidados)
   const handleChange = (field, value) => {
     if (field.startsWith("contacto.")) {
       const key = field.split(".")[1];
@@ -125,12 +140,21 @@ const Landing = () => {
     setLoading(false);
   };
 
-  // Enviar formulario (registrar o actualizar usuario)
+  // Enviar formulario (registro o actualización)
   const handleSubmit = useCallback(async () => {
     setLoading(true);
     try {
       const uid = currentUser.uid;
-      await updateUser(uid, { ...formValues, eventId });
+      let dataToUpdate = { ...formValues, eventId };
+
+      // Si hay un archivo de foto, se sube y se obtiene la URL
+      if (formValues.photo) {
+        const photoURL = await uploadProfilePicture(formValues.photo, uid);
+        dataToUpdate.photoURL = photoURL;
+        delete dataToUpdate.photo; // No enviar el objeto File a Firestore
+      }
+
+      await updateUser(uid, dataToUpdate);
       navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
     } catch (error) {
       console.error("Error en el registro:", error);
@@ -214,50 +238,45 @@ const Landing = () => {
             required
           />
           <Title order={6}>Descripción breve del negocio</Title>
-          {/* Integración del editor de Mantine Tiptap */}
+          {/* Editor Tiptap integrado */}
           <RichTextEditor editor={editor}>
             <RichTextEditor.Toolbar sticky stickyOffset={60}>
-            <RichTextEditor.ControlsGroup>
-          <RichTextEditor.Bold />
-          <RichTextEditor.Italic />
-          <RichTextEditor.Underline />
-          <RichTextEditor.Strikethrough />
-          <RichTextEditor.ClearFormatting />
-          <RichTextEditor.Highlight />
-          <RichTextEditor.Code />
-        </RichTextEditor.ControlsGroup>
-
-        <RichTextEditor.ControlsGroup>
-          <RichTextEditor.H1 />
-          <RichTextEditor.H2 />
-          <RichTextEditor.H3 />
-          <RichTextEditor.H4 />
-        </RichTextEditor.ControlsGroup>
-
-        <RichTextEditor.ControlsGroup>
-          <RichTextEditor.Blockquote />
-          <RichTextEditor.Hr />
-          <RichTextEditor.BulletList />
-          <RichTextEditor.OrderedList />
-        </RichTextEditor.ControlsGroup>
-
-        <RichTextEditor.ControlsGroup>
-          <RichTextEditor.Link />
-          <RichTextEditor.Unlink />
-        </RichTextEditor.ControlsGroup>
-
-        <RichTextEditor.ControlsGroup>
-          <RichTextEditor.AlignLeft />
-          <RichTextEditor.AlignCenter />
-          <RichTextEditor.AlignJustify />
-          <RichTextEditor.AlignRight />
-        </RichTextEditor.ControlsGroup>
-
-        <RichTextEditor.ControlsGroup>
-          <RichTextEditor.Undo />
-          <RichTextEditor.Redo />
-        </RichTextEditor.ControlsGroup>
-      </RichTextEditor.Toolbar>
+              <RichTextEditor.ControlsGroup>
+                <RichTextEditor.Bold />
+                <RichTextEditor.Italic />
+                <RichTextEditor.Underline />
+                <RichTextEditor.Strikethrough />
+                <RichTextEditor.ClearFormatting />
+                <RichTextEditor.Highlight />
+                <RichTextEditor.Code />
+              </RichTextEditor.ControlsGroup>
+              <RichTextEditor.ControlsGroup>
+                <RichTextEditor.H1 />
+                <RichTextEditor.H2 />
+                <RichTextEditor.H3 />
+                <RichTextEditor.H4 />
+              </RichTextEditor.ControlsGroup>
+              <RichTextEditor.ControlsGroup>
+                <RichTextEditor.Blockquote />
+                <RichTextEditor.Hr />
+                <RichTextEditor.BulletList />
+                <RichTextEditor.OrderedList />
+              </RichTextEditor.ControlsGroup>
+              <RichTextEditor.ControlsGroup>
+                <RichTextEditor.Link />
+                <RichTextEditor.Unlink />
+              </RichTextEditor.ControlsGroup>
+              <RichTextEditor.ControlsGroup>
+                <RichTextEditor.AlignLeft />
+                <RichTextEditor.AlignCenter />
+                <RichTextEditor.AlignJustify />
+                <RichTextEditor.AlignRight />
+              </RichTextEditor.ControlsGroup>
+              <RichTextEditor.ControlsGroup>
+                <RichTextEditor.Undo />
+                <RichTextEditor.Redo />
+              </RichTextEditor.ControlsGroup>
+            </RichTextEditor.Toolbar>
             <RichTextEditor.Content />
           </RichTextEditor>
           <Select
@@ -291,6 +310,33 @@ const Landing = () => {
             value={formValues.contacto.telefono}
             onChange={(e) => handleChange("contacto.telefono", e.target.value)}
           />
+          {/* Campo para cargar o tomar la foto de perfil */}
+          <FileInput
+            label="Foto de perfil"
+            placeholder="Selecciona o toma una foto"
+            accept="image/png,image/jpeg"
+            inputProps={{ capture: "user" }}
+            value={formValues.photo}
+            onChange={(file) => {
+              handleChange("photo", file);
+              if (file) {
+                setProfilePicPreview(URL.createObjectURL(file));
+              } else {
+                setProfilePicPreview(null);
+              }
+            }}
+          />
+          {/* Vista previa de la foto */}
+          {profilePicPreview && (
+            <Image
+              src={profilePicPreview}
+              alt="Vista previa de la foto de perfil"
+              height={150}
+              fit="cover"
+              radius="md"
+              mt="sm"
+            />
+          )}
           <Button onClick={handleSubmit} loading={loading}>
             {currentUser?.data ? "Actualizar" : "Registrarse"}
           </Button>
