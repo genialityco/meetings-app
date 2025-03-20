@@ -197,7 +197,6 @@ const MatrixPage = () => {
     });
 
     // 🔹 Verificar la matriz final antes de actualizar el estado
-    console.log("Matriz generada:", newMatrix);
     setMatrix([...newMatrix]); // Forzar actualización
   }, [config, agenda, meetings, participantsInfo]);
 

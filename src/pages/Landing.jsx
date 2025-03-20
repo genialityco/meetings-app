@@ -11,13 +11,14 @@ import {
   Text,
   Select,
   FileInput,
+  Flex,
 } from "@mantine/core";
-import { RichTextEditor, Link } from '@mantine/tiptap';
-import { useEditor } from '@tiptap/react';
-import Highlight from '@tiptap/extension-highlight';
-import StarterKit from '@tiptap/starter-kit';
-import Underline from '@tiptap/extension-underline';
-import TextAlign from '@tiptap/extension-text-align';
+import { RichTextEditor, Link } from "@mantine/tiptap";
+import { useEditor } from "@tiptap/react";
+import Highlight from "@tiptap/extension-highlight";
+import StarterKit from "@tiptap/starter-kit";
+import Underline from "@tiptap/extension-underline";
+import TextAlign from "@tiptap/extension-text-align";
 
 import { useNavigate, useParams } from "react-router-dom";
 import { doc, onSnapshot } from "firebase/firestore";
@@ -40,6 +41,7 @@ const Landing = () => {
   const { userLoading, loginByCedula, currentUser, updateUser } =
     useContext(UserContext);
 
+  const [event, setEvent] = useState({});
   const [registrationEnabled, setRegistrationEnabled] = useState(true);
   const [formValues, setFormValues] = useState({
     nombre: "",
@@ -65,7 +67,7 @@ const Landing = () => {
       Underline,
       Link,
       Highlight,
-      TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      TextAlign.configure({ types: ["heading", "paragraph"] }),
     ],
     content: formValues.descripcion || "<p>Escribe aquí la descripción...</p>",
   });
@@ -91,6 +93,7 @@ const Landing = () => {
         (eventDoc) => {
           if (eventDoc.exists()) {
             const eventData = eventDoc.data();
+            setEvent(eventData);
             setRegistrationEnabled(
               eventData.config?.registrationEnabled ?? true
             );
@@ -170,26 +173,21 @@ const Landing = () => {
 
   return (
     <Paper shadow="md" p="xl" style={{ maxWidth: 500, margin: "40px auto" }}>
-      <a
-        href="https://geniality.com.co/"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        <Image
-          src="/LOGOS_FENALCO_DIRECTORIO.jpg"
-          alt="Networking Event"
-          mb="md"
-          radius="md"
-        />
-      </a>
-
+      <Flex justify="center">
+        <a
+          href="https://geniality.com.co/"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <img src={event.eventImage} alt="Networking Event" />
+        </a>
+      </Flex>
       <Title order={2} align="center" mb="md">
-        Acceso al Directorio de Networking
+        {event.eventName}
       </Title>
 
       <Text ta="justify" mb="lg">
-        Solo los participantes que se registraron de manera presencial en la
-        actividad de networking pueden acceder al directorio.
+        Si ya se ha registrado, puede ingresar con su número de cédula.
       </Text>
 
       {/* Sección de búsqueda de usuario */}
