@@ -179,7 +179,7 @@ const Landing = () => {
           target="_blank"
           rel="noopener noreferrer"
         >
-          <img src={event.eventImage} alt="Networking Event" />
+          <img src={event.eventImage} width={150} alt="Networking Event" />
         </a>
       </Flex>
       <Title order={2} align="center" mb="md">
