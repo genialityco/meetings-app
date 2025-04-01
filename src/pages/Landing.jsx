@@ -12,6 +12,7 @@ import {
   Select,
   FileInput,
   Flex,
+  Container,
 } from "@mantine/core";
 import { RichTextEditor, Link } from "@mantine/tiptap";
 import { useEditor } from "@tiptap/react";
@@ -132,12 +133,14 @@ const Landing = () => {
     setSearchError("");
     setShowInfo(false);
 
-    const result = await loginByCedula(searchCedula);
+    // Pasa también el eventId
+    const result = await loginByCedula(searchCedula, eventId);
 
     if (result?.success) {
-      navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
+      // Navegar a /dashboard/eventId
+      navigate(`/dashboard/${eventId}`);
     } else {
-      setSearchError("No se encuentra registrada esta cédula");
+      setSearchError("No se encuentra registrada esta cédula para este evento");
       setShowInfo(true);
     }
     setLoading(false);
@@ -169,195 +172,227 @@ const Landing = () => {
     navigate("/dashboard");
   };
 
+  // Si el usuario aún está cargando, muestra un Loader
   if (userLoading) return <Loader />;
 
-  return (
-    <Paper shadow="md" p="xl" style={{ maxWidth: 500, margin: "40px auto" }}>
-      <Flex justify="center">
-        <a
-          href="https://geniality.com.co/"
-          target="_blank"
-          rel="noopener noreferrer"
+  // Si no existe eventId, mostramos mensaje
+  if (!eventId) {
+    return (
+      <Container>
+        <Paper
+          shadow="md"
+          p="xl"
+          style={{ maxWidth: 500, margin: "40px auto" }}
         >
-          <img src={event.eventImage} width={150} alt="Networking Event" />
-        </a>
-      </Flex>
-      <Title order={2} align="center" mb="md">
-        {event.eventName}
-      </Title>
+          <Text align="center">
+            Esta es una plataforma de networking desarrollada por Geniality SAS.
+            <br />
+            Visítanos:{" "}
+            <a
+              href="https://geniality.com.co/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              https://geniality.com.co
+            </a>
+          </Text>
+        </Paper>
+      </Container>
+    );
+  }
 
-      <Text ta="justify" mb="lg">
-        Si ya se ha registrado, puede ingresar con su número de cédula.
-      </Text>
+  // Si sí hay eventId, mostramos formulario y lógica normal
+  return (
+    <Container>
+      <Paper shadow="md" p="xl" style={{ maxWidth: 500, margin: "40px auto" }}>
+        <Flex justify="center">
+          <a
+            href="https://geniality.com.co/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <img src={event.eventImage} width={150} alt="Networking Event" />
+          </a>
+        </Flex>
+        <Title order={2} align="center" mb="md">
+          {event.eventName}
+        </Title>
 
-      {/* Sección de búsqueda de usuario */}
-      <Stack>
-        <TextInput
-          label="Ingrese su cédula"
-          placeholder="Número de cédula"
-          value={searchCedula}
-          onChange={(e) => setSearchCedula(e.target.value)}
-        />
-        {searchError && <Text color="red">{searchError}</Text>}
-        <Button onClick={handleSearchByCedula} loading={loading}>
-          Ingresar
-        </Button>
-      </Stack>
-      <Divider my="md" />
+        <Text ta="justify" mb="lg">
+          Si ya se ha registrado, puede ingresar con su número de cédula.
+        </Text>
 
-      {registrationEnabled ? (
+        {/* Sección de búsqueda de usuario */}
         <Stack>
           <TextInput
-            label="Nombre"
-            placeholder="Tu nombre completo"
-            value={formValues.nombre}
-            onChange={(e) => handleChange("nombre", e.target.value)}
-            required
+            label="Ingrese su cédula"
+            placeholder="Número de cédula"
+            value={searchCedula}
+            onChange={(e) => setSearchCedula(e.target.value)}
           />
-          <TextInput
-            label="Cédula"
-            placeholder="Tu número de identificación"
-            value={formValues.cedula}
-            onChange={(e) => handleChange("cedula", e.target.value)}
-            required
-          />
-          <TextInput
-            label="Empresa"
-            placeholder="Nombre de la empresa"
-            value={formValues.empresa}
-            onChange={(e) => handleChange("empresa", e.target.value)}
-            required
-          />
-          <TextInput
-            label="Cargo"
-            placeholder="Tu cargo"
-            value={formValues.cargo}
-            onChange={(e) => handleChange("cargo", e.target.value)}
-            required
-          />
-          <Title order={6}>Descripción breve del negocio</Title>
-          {/* Editor Tiptap integrado */}
-          <RichTextEditor editor={editor}>
-            <RichTextEditor.Toolbar sticky stickyOffset={60}>
-              <RichTextEditor.ControlsGroup>
-                <RichTextEditor.Bold />
-                <RichTextEditor.Italic />
-                <RichTextEditor.Underline />
-                <RichTextEditor.Strikethrough />
-                <RichTextEditor.ClearFormatting />
-                <RichTextEditor.Highlight />
-                <RichTextEditor.Code />
-              </RichTextEditor.ControlsGroup>
-              <RichTextEditor.ControlsGroup>
-                <RichTextEditor.H1 />
-                <RichTextEditor.H2 />
-                <RichTextEditor.H3 />
-                <RichTextEditor.H4 />
-              </RichTextEditor.ControlsGroup>
-              <RichTextEditor.ControlsGroup>
-                <RichTextEditor.Blockquote />
-                <RichTextEditor.Hr />
-                <RichTextEditor.BulletList />
-                <RichTextEditor.OrderedList />
-              </RichTextEditor.ControlsGroup>
-              <RichTextEditor.ControlsGroup>
-                <RichTextEditor.Link />
-                <RichTextEditor.Unlink />
-              </RichTextEditor.ControlsGroup>
-              <RichTextEditor.ControlsGroup>
-                <RichTextEditor.AlignLeft />
-                <RichTextEditor.AlignCenter />
-                <RichTextEditor.AlignJustify />
-                <RichTextEditor.AlignRight />
-              </RichTextEditor.ControlsGroup>
-              <RichTextEditor.ControlsGroup>
-                <RichTextEditor.Undo />
-                <RichTextEditor.Redo />
-              </RichTextEditor.ControlsGroup>
-            </RichTextEditor.Toolbar>
-            <RichTextEditor.Content />
-          </RichTextEditor>
-          <Select
-            label="Interés principal"
-            placeholder="Selecciona una opción"
-            data={[
-              { value: "proveedores", label: "Conocer proveedores" },
-              { value: "clientes", label: "Conocer clientes" },
-              { value: "abierto", label: "Abierto" },
-            ]}
-            value={formValues.interesPrincipal}
-            onChange={(value) => handleChange("interesPrincipal", value)}
-            required
-          />
-          <TextInput
-            label="Necesidad específica para la rueda de negocios"
-            placeholder="¿Qué necesitas?"
-            value={formValues.necesidad}
-            onChange={(e) => handleChange("necesidad", e.target.value)}
-            required
-          />
-          <TextInput
-            label="Correo (opcional)"
-            placeholder="Tu correo electrónico"
-            value={formValues.contacto.correo}
-            onChange={(e) => handleChange("contacto.correo", e.target.value)}
-          />
-          <TextInput
-            label="Teléfono (opcional)"
-            placeholder="Tu número de teléfono"
-            value={formValues.contacto.telefono}
-            onChange={(e) => handleChange("contacto.telefono", e.target.value)}
-          />
-          {/* Campo para cargar o tomar la foto de perfil */}
-          <FileInput
-            label="Foto de perfil"
-            placeholder="Selecciona o toma una foto"
-            accept="image/png,image/jpeg"
-            inputProps={{ capture: "user" }}
-            value={formValues.photo}
-            onChange={(file) => {
-              handleChange("photo", file);
-              if (file) {
-                setProfilePicPreview(URL.createObjectURL(file));
-              } else {
-                setProfilePicPreview(null);
-              }
-            }}
-          />
-          {/* Vista previa de la foto */}
-          {profilePicPreview && (
-            <Image
-              src={profilePicPreview}
-              alt="Vista previa de la foto de perfil"
-              height={150}
-              fit="cover"
-              radius="md"
-              mt="sm"
-            />
-          )}
-          <Button onClick={handleSubmit} loading={loading}>
-            {currentUser?.data ? "Actualizar" : "Registrarse"}
+          {searchError && <Text color="red">{searchError}</Text>}
+          <Button onClick={handleSearchByCedula} loading={loading}>
+            Ingresar
           </Button>
-          {currentUser?.data && (
-            <Button onClick={handleGoToDashboard}>Ir a la dashboard</Button>
-          )}
         </Stack>
-      ) : (
-        <Text align="center" color="gray" mt="md">
-          Los nuevos registros están inhabilitados para este evento.
-        </Text>
-      )}
+        <Divider my="md" />
 
-      {showInfo && (
-        <>
-          <Divider my="md" />
-          <Text align="center" color="gray">
-            Si no se encuentra registrada su cédula, significa que no asistió
-            presencialmente al evento y no podrá acceder al directorio.
+        {registrationEnabled ? (
+          <Stack>
+            <TextInput
+              label="Nombre"
+              placeholder="Tu nombre completo"
+              value={formValues.nombre}
+              onChange={(e) => handleChange("nombre", e.target.value)}
+              required
+            />
+            <TextInput
+              label="Cédula"
+              placeholder="Tu número de identificación"
+              value={formValues.cedula}
+              onChange={(e) => handleChange("cedula", e.target.value)}
+              required
+            />
+            <TextInput
+              label="Empresa"
+              placeholder="Nombre de la empresa"
+              value={formValues.empresa}
+              onChange={(e) => handleChange("empresa", e.target.value)}
+              required
+            />
+            <TextInput
+              label="Cargo"
+              placeholder="Tu cargo"
+              value={formValues.cargo}
+              onChange={(e) => handleChange("cargo", e.target.value)}
+              required
+            />
+            <Title order={6}>Descripción breve del negocio</Title>
+            {/* Editor Tiptap integrado */}
+            <RichTextEditor editor={editor}>
+              <RichTextEditor.Toolbar sticky stickyOffset={60}>
+                <RichTextEditor.ControlsGroup>
+                  <RichTextEditor.Bold />
+                  <RichTextEditor.Italic />
+                  <RichTextEditor.Underline />
+                  <RichTextEditor.Strikethrough />
+                  <RichTextEditor.ClearFormatting />
+                  <RichTextEditor.Highlight />
+                  <RichTextEditor.Code />
+                </RichTextEditor.ControlsGroup>
+                <RichTextEditor.ControlsGroup>
+                  <RichTextEditor.H1 />
+                  <RichTextEditor.H2 />
+                  <RichTextEditor.H3 />
+                  <RichTextEditor.H4 />
+                </RichTextEditor.ControlsGroup>
+                <RichTextEditor.ControlsGroup>
+                  <RichTextEditor.Blockquote />
+                  <RichTextEditor.Hr />
+                  <RichTextEditor.BulletList />
+                  <RichTextEditor.OrderedList />
+                </RichTextEditor.ControlsGroup>
+                <RichTextEditor.ControlsGroup>
+                  <RichTextEditor.Link />
+                  <RichTextEditor.Unlink />
+                </RichTextEditor.ControlsGroup>
+                <RichTextEditor.ControlsGroup>
+                  <RichTextEditor.AlignLeft />
+                  <RichTextEditor.AlignCenter />
+                  <RichTextEditor.AlignJustify />
+                  <RichTextEditor.AlignRight />
+                </RichTextEditor.ControlsGroup>
+                <RichTextEditor.ControlsGroup>
+                  <RichTextEditor.Undo />
+                  <RichTextEditor.Redo />
+                </RichTextEditor.ControlsGroup>
+              </RichTextEditor.Toolbar>
+              <RichTextEditor.Content />
+            </RichTextEditor>
+            <Select
+              label="Interés principal"
+              placeholder="Selecciona una opción"
+              data={[
+                { value: "proveedores", label: "Conocer proveedores" },
+                { value: "clientes", label: "Conocer clientes" },
+                { value: "abierto", label: "Abierto" },
+              ]}
+              value={formValues.interesPrincipal}
+              onChange={(value) => handleChange("interesPrincipal", value)}
+              required
+            />
+            <TextInput
+              label="Necesidad específica para la rueda de negocios"
+              placeholder="¿Qué necesitas?"
+              value={formValues.necesidad}
+              onChange={(e) => handleChange("necesidad", e.target.value)}
+              required
+            />
+            <TextInput
+              label="Correo (opcional)"
+              placeholder="Tu correo electrónico"
+              value={formValues.contacto.correo}
+              onChange={(e) => handleChange("contacto.correo", e.target.value)}
+            />
+            <TextInput
+              label="Teléfono (opcional)"
+              placeholder="Tu número de teléfono"
+              value={formValues.contacto.telefono}
+              onChange={(e) =>
+                handleChange("contacto.telefono", e.target.value)
+              }
+            />
+            {/* Campo para cargar o tomar la foto de perfil */}
+            <FileInput
+              label="Foto de perfil"
+              placeholder="Selecciona o toma una foto"
+              accept="image/png,image/jpeg"
+              inputProps={{ capture: "user" }}
+              value={formValues.photo}
+              onChange={(file) => {
+                handleChange("photo", file);
+                if (file) {
+                  setProfilePicPreview(URL.createObjectURL(file));
+                } else {
+                  setProfilePicPreview(null);
+                }
+              }}
+            />
+            {/* Vista previa de la foto */}
+            {profilePicPreview && (
+              <Image
+                src={profilePicPreview}
+                alt="Vista previa de la foto de perfil"
+                height={150}
+                fit="cover"
+                radius="md"
+                mt="sm"
+              />
+            )}
+            <Button onClick={handleSubmit} loading={loading}>
+              {currentUser?.data ? "Actualizar" : "Registrarse"}
+            </Button>
+            {currentUser?.data && (
+              <Button onClick={handleGoToDashboard}>Ir a la dashboard</Button>
+            )}
+          </Stack>
+        ) : (
+          <Text align="center" color="gray" mt="md">
+            Los nuevos registros están inhabilitados para este evento.
           </Text>
-        </>
-      )}
-    </Paper>
+        )}
+
+        {showInfo && (
+          <>
+            <Divider my="md" />
+            <Text align="center" color="gray">
+              Si no se encuentra registrada su cédula, significa que no asistió
+              presencialmente al evento y no podrá acceder al directorio.
+            </Text>
+          </>
+        )}
+      </Paper>
+    </Container>
   );
 };
 

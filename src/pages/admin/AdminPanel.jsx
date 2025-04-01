@@ -7,13 +7,16 @@ import {
   Text,
   Group,
   Stack,
+  Loader,
+  Center,
+  Image,
+  Alert,
 } from "@mantine/core";
 import {
   collection,
   getDocs,
   updateDoc,
   doc,
-  getDoc,
   addDoc,
   deleteDoc,
   query,
@@ -24,6 +27,8 @@ import CreateEventModal from "./CreateEventModal";
 import EditEventConfigModal from "./EditEventConfigModal";
 import ManualMeetingModal from "./ManualMeetingModal";
 import { Link } from "react-router-dom";
+import MeetingsListModal from "./MeetingsListModal";
+import AttendeesListModal from "./AttendeesListModal";
 
 const AdminPanel = () => {
   const [events, setEvents] = useState([]);
@@ -31,7 +36,14 @@ const AdminPanel = () => {
   const [createModalOpened, setCreateModalOpened] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [editConfigModalOpened, setEditConfigModalOpened] = useState(false);
-  const [manualMeetingModalOpened, setManualMeetingModalOpened] = useState(false);
+  const [manualMeetingModalOpened, setManualMeetingModalOpened] =
+    useState(false);
+  const [meetingsModalOpened, setMeetingsModalOpened] = useState(false);
+  const [attendeesModalOpened, setAttendeesModalOpened] = useState(false);
+
+  // Estados de loading
+  const [loadingEvents, setLoadingEvents] = useState(false); // Cargando eventos inicialmente
+  const [actionLoading, setActionLoading] = useState(false); // Cargando acciones (e.g. toggle, generar agenda, etc.)
 
   useEffect(() => {
     fetchEvents();
@@ -39,6 +51,7 @@ const AdminPanel = () => {
 
   const fetchEvents = async () => {
     try {
+      setLoadingEvents(true); // Mostrar loader mientras obtenemos datos
       const eventsSnapshot = await getDocs(collection(db, "events"));
       const eventsList = eventsSnapshot.docs.map((docItem) => ({
         id: docItem.id,
@@ -48,23 +61,30 @@ const AdminPanel = () => {
     } catch (error) {
       console.error("Error al obtener eventos:", error);
       setGlobalMessage("Error al obtener eventos.");
+    } finally {
+      setLoadingEvents(false); // Dejar de mostrar loader
     }
   };
 
   // Función para alternar la habilitación de registros para un evento
   const toggleRegistration = async (event) => {
     try {
+      setActionLoading(true);
       const currentStatus = event.config?.registrationEnabled ?? true;
       await updateDoc(doc(db, "events", event.id), {
         "config.registrationEnabled": !currentStatus,
       });
       setGlobalMessage(
-        `Registros ${!currentStatus ? "habilitados" : "inhabilitados"} correctamente.`
+        `Registros ${
+          !currentStatus ? "habilitados" : "inhabilitados"
+        } correctamente.`
       );
       fetchEvents();
     } catch (error) {
       console.error("Error toggling registration:", error);
       setGlobalMessage("Error al actualizar el estado de registros.");
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -82,43 +102,33 @@ const AdminPanel = () => {
       .padStart(2, "0")}`;
   };
 
-  // Función para obtener la configuración de reuniones desde Firestore
-  const fetchMeetingConfig = async () => {
-    try {
-      const configDoc = await getDoc(doc(db, "config", "meetingConfig"));
-      if (configDoc.exists()) {
-        return configDoc.data();
-      } else {
-        throw new Error("No existe la configuración de reuniones");
-      }
-    } catch (error) {
-      console.error("Error fetching meeting config:", error);
-      throw error;
-    }
-  };
-
   // Generar la agenda para un evento (se asigna eventId a cada slot)
   const generateAgendaForEvent = async (event) => {
     try {
-      // Obtener configuración de reuniones
-      const config = await fetchMeetingConfig();
-      const { meetingDuration, breakTime, startTime, endTime, numTables } = config;
+      setActionLoading(true);
+
+      // IMPORTANTE: Usar la config del propio evento
+      const { meetingDuration, breakTime, startTime, endTime, numTables } =
+        event.config;
+
       const startMinutes = timeToMinutes(startTime);
       const endMinutes = timeToMinutes(endTime);
-      const totalSlots = Math.floor(
-        (endMinutes - startMinutes) / (meetingDuration + breakTime)
-      );
+
+      // Cada bloque = meetingDuration + breakTime
+      const blockLength = meetingDuration + breakTime;
+      const totalSlots = Math.floor((endMinutes - startMinutes) / blockLength);
+
       let createdCount = 0;
 
       for (let slot = 0; slot < totalSlots; slot++) {
-        const slotStart = startMinutes + slot * (meetingDuration + breakTime);
+        const slotStart = startMinutes + slot * blockLength;
         const slotEnd = slotStart + meetingDuration;
         const slotStartTime = minutesToTime(slotStart);
         const slotEndTime = minutesToTime(slotEnd);
 
         for (let tableNumber = 1; tableNumber <= numTables; tableNumber++) {
           const slotData = {
-            eventId: event.id, // Se asocia el slot al evento actual
+            eventId: event.id,
             tableNumber,
             startTime: slotStartTime,
             endTime: slotEndTime,
@@ -134,12 +144,15 @@ const AdminPanel = () => {
     } catch (error) {
       console.error("Error al generar agenda:", error);
       setGlobalMessage("Error al generar la agenda.");
+    } finally {
+      setActionLoading(false);
     }
   };
 
-  // Restablecer la agenda para un evento: se actualizan los slots existentes para marcarlos disponibles
+  // Restablecer la agenda para un evento (marcar slots existentes como disponibles)
   const resetAgendaForEvent = async (event) => {
     try {
+      setActionLoading(true);
       const agendaQuery = query(
         collection(db, "agenda"),
         where("eventId", "==", event.id)
@@ -148,42 +161,61 @@ const AdminPanel = () => {
       agendaSnapshot.forEach(async (docItem) => {
         await updateDoc(doc(db, "agenda", docItem.id), {
           available: true,
-          meetingId: null, // Se elimina la asignación de reunión
+          meetingId: null, // Se quita la asignación a reunión
         });
       });
-      setGlobalMessage(`Agenda restablecida para el evento ${event.eventName}.`);
+      setGlobalMessage(
+        `Agenda restablecida para el evento ${event.eventName}.`
+      );
     } catch (error) {
       console.error("Error al restablecer agenda:", error);
       setGlobalMessage("Error al restablecer la agenda.");
+    } finally {
+      setActionLoading(false);
     }
   };
 
-  // Borrar completamente la agenda para un evento (eliminar documentos)
+  // Borrar completamente la agenda para un evento (eliminar documentos en "agenda" y en subcolección "meetings")
   const deleteAgendaForEvent = async (event) => {
     try {
+      setActionLoading(true);
+
+      // 1. Eliminar todos los documentos de "agenda" que pertenezcan a este evento
       const agendaQuery = query(
         collection(db, "agenda"),
         where("eventId", "==", event.id)
       );
       const agendaSnapshot = await getDocs(agendaQuery);
-      let deletedCount = 0;
-      agendaSnapshot.forEach(async (docItem) => {
+      let deletedCountAgenda = 0;
+      for (const docItem of agendaSnapshot.docs) {
         await deleteDoc(doc(db, "agenda", docItem.id));
-        deletedCount++;
-      });
+        deletedCountAgenda++;
+      }
+
+      // 2. Eliminar todos los documentos de la subcolección "meetings" del evento
+      const meetingsRef = collection(db, "events", event.id, "meetings");
+      const meetingsSnapshot = await getDocs(meetingsRef);
+      let deletedCountMeetings = 0;
+      for (const docItem of meetingsSnapshot.docs) {
+        await deleteDoc(doc(db, "events", event.id, "meetings", docItem.id));
+        deletedCountMeetings++;
+      }
+
       setGlobalMessage(
-        `Agenda borrada: ${deletedCount} slots eliminados para el evento ${event.eventName}.`
+        `Agenda borrada: ${deletedCountAgenda} slots y ${deletedCountMeetings} reuniones eliminados para el evento ${event.eventName}.`
       );
     } catch (error) {
       console.error("Error al borrar agenda:", error);
       setGlobalMessage("Error al borrar la agenda.");
+    } finally {
+      setActionLoading(false);
     }
   };
 
-  // Función que se llama al hacer clic en "Generar Agenda" dentro de la tarjeta de un evento
+  // Función para "Generar Agenda" dentro de la tarjeta de un evento
   const handleGenerateAgenda = async (event) => {
     await generateAgendaForEvent(event);
-    // Opcional: actualizar la configuración del evento indicando que la agenda fue generada
+    // Opcional: marcar en la config del evento que se ha generado la agenda
     await updateDoc(doc(db, "events", event.id), {
       "config.agendaGenerated": true,
     });
@@ -193,68 +225,162 @@ const AdminPanel = () => {
   return (
     <Container>
       <Title mt="md">Dashboard de Eventos</Title>
-      <Button mt="md" onClick={() => setCreateModalOpened(true)}>
-        Crear Evento
-      </Button>
 
-      <Stack mt="md">
-        {events.map((event) => (
-          <Card key={event.id} shadow="sm" p="lg">
-            <Group position="apart">
-              <div>
-                <Title order={4}>{event.eventName}</Title>
-                {event.eventImage && (
-                  <img
-                    src={event.eventImage}
-                    alt={event.eventName}
-                    style={{ maxWidth: 200, marginTop: 8 }}
-                  />
-                )}
-              </div>
-              <Group>
-                <Button
-                  onClick={() => {
-                    setSelectedEvent(event);
-                    setEditConfigModalOpened(true);
-                  }}
-                >
-                  Editar Configuración
-                </Button>
-                <Button
-                  onClick={() => {
-                    setSelectedEvent(event);
-                    setManualMeetingModalOpened(true);
-                  }}
-                >
-                  Agendar Reunión Manual
-                </Button>
-                <Button component={Link} to={`/event/${event.id}`}>
-                  Ir a la landing
-                </Button>
-                <Button component={Link} to={`/matrix/${event.id}`}>
-                  Ver Matriz
-                </Button>
-                <Button onClick={() => toggleRegistration(event)}>
-                  {event.config?.registrationEnabled
-                    ? "Inhabilitar Registros"
-                    : "Habilitar Registros"}
-                </Button>
-                {/* Botones para la agenda (por evento) */}
-                <Button onClick={() => handleGenerateAgenda(event)}>
-                  Generar Agenda
-                </Button>
-                <Button color="orange" onClick={() => resetAgendaForEvent(event)}>
-                  Restablecer Agenda
-                </Button>
-                <Button color="red" onClick={() => deleteAgendaForEvent(event)}>
-                  Borrar Agenda
-                </Button>
-              </Group>
-            </Group>
-          </Card>
-        ))}
-      </Stack>
+      {/* Loader global si aún se están cargando los eventos */}
+      {loadingEvents ? (
+        <Center mt="lg">
+          <Loader size="lg" />
+        </Center>
+      ) : (
+        <>
+          <Button mt="md" onClick={() => setCreateModalOpened(true)}>
+            Crear Evento
+          </Button>
 
+          {/* Si hay un mensaje global, lo mostramos en un Alert */}
+          {globalMessage && (
+            <Alert
+              mt="md"
+              title="Aviso"
+              color="green"
+              withCloseButton
+              onClose={() => setGlobalMessage("")}
+            >
+              {globalMessage}
+            </Alert>
+          )}
+
+          <Stack mt="md">
+            {events.map((event) => (
+              <Card key={event.id} shadow="sm" p="lg" withBorder>
+                <Card.Section>
+                  {/* Si el evento tiene imagen, la mostramos */}
+                  {event.eventImage && (
+                    <Image
+                      src={event.eventImage}
+                      alt={event.eventName}
+                      height={160}
+                      fit="cover"
+                    />
+                  )}
+                </Card.Section>
+
+                <Group position="apart" mt="md">
+                  <div>
+                    <Title order={4}>{event.eventName}</Title>
+                    <Text size="sm" color="dimmed">
+                      ID: {event.id}
+                    </Text>
+                  </div>
+
+                  <Group spacing="xs" align="flex-start">
+                    <Button
+                      onClick={() => {
+                        setSelectedEvent(event);
+                        setEditConfigModalOpened(true);
+                      }}
+                      loading={actionLoading}
+                      disabled={actionLoading}
+                    >
+                      Editar Configuración
+                    </Button>
+
+                    <Button
+                      onClick={() => {
+                        setSelectedEvent(event);
+                        setManualMeetingModalOpened(true);
+                      }}
+                      loading={actionLoading}
+                      disabled={actionLoading}
+                    >
+                      Agendar Reunión Manual
+                    </Button>
+
+                    <Button
+                      component={Link}
+                      to={`/event/${event.id}`}
+                      loading={actionLoading}
+                      disabled={actionLoading}
+                    >
+                      Ir a la landing
+                    </Button>
+
+                    <Button
+                      component={Link}
+                      to={`/matrix/${event.id}`}
+                      loading={actionLoading}
+                      disabled={actionLoading}
+                    >
+                      Ver Matriz
+                    </Button>
+
+                    <Button
+                      onClick={() => toggleRegistration(event)}
+                      loading={actionLoading}
+                      disabled={actionLoading}
+                    >
+                      {event.config?.registrationEnabled
+                        ? "Inhabilitar Registros"
+                        : "Habilitar Registros"}
+                    </Button>
+
+                    <Button
+                      onClick={() => handleGenerateAgenda(event)}
+                      loading={actionLoading}
+                      disabled={actionLoading}
+                    >
+                      Generar Agenda
+                    </Button>
+
+                    <Button
+                      color="orange"
+                      onClick={() => resetAgendaForEvent(event)}
+                      loading={actionLoading}
+                      disabled={actionLoading}
+                    >
+                      Restablecer Agenda
+                    </Button>
+
+                    <Button
+                      color="red"
+                      onClick={() => deleteAgendaForEvent(event)}
+                      loading={actionLoading}
+                      disabled={actionLoading}
+                    >
+                      Borrar Agenda
+                    </Button>
+
+                    <Button
+                      onClick={() => {
+                        setSelectedEvent(event);
+                        setMeetingsModalOpened(true);
+                      }}
+                      loading={actionLoading}
+                      disabled={actionLoading}
+                    >
+                      Ver Reuniones
+                    </Button>
+
+                    {/* Nuevo botón para ver asistentes */}
+                    <Button
+                      onClick={() => {
+                        setSelectedEvent(event);
+                        setAttendeesModalOpened(true);
+                      }}
+                      loading={actionLoading}
+                      disabled={actionLoading}
+                    >
+                      Ver Asistentes
+                    </Button>
+                  </Group>
+                </Group>
+              </Card>
+            ))}
+          </Stack>
+        </>
+      )}
+
+      {/* Modales */}
       <CreateEventModal
         opened={createModalOpened}
         onClose={() => setCreateModalOpened(false)}
@@ -281,11 +407,24 @@ const AdminPanel = () => {
         />
       )}
 
-      {globalMessage && (
-        <Text mt="md" c="green">
-          {globalMessage}
-        </Text>
-      )}
+{selectedEvent && (
+  <MeetingsListModal
+    opened={meetingsModalOpened}
+    onClose={() => setMeetingsModalOpened(false)}
+    event={selectedEvent}
+    setGlobalMessage={setGlobalMessage}
+  />
+)}
+
+{selectedEvent && (
+  <AttendeesListModal
+    opened={attendeesModalOpened}
+    onClose={() => setAttendeesModalOpened(false)}
+    event={selectedEvent}
+    setGlobalMessage={setGlobalMessage}
+  />
+)}
+
     </Container>
   );
 };

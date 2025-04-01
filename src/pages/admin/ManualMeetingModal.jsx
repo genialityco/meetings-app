@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable react/prop-types */
 import { Button, Modal, Select, Stack } from "@mantine/core";
-import { addDoc, collection, getDocs } from "firebase/firestore";
+import { addDoc, collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { useEffect, useState } from "react";
 
@@ -31,7 +31,13 @@ const ManualMeetingModal = ({ opened, onClose, event, setGlobalMessage }) => {
 
   const fetchAssistants = async () => {
     try {
-      const usersSnapshot = await getDocs(collection(db, "users"));
+      // Consulta a la colección "users" SOLO los que tengan eventId == event.id
+      const q = query(
+        collection(db, "users"),
+        where("eventId", "==", event.id)
+      );
+      const usersSnapshot = await getDocs(q);
+
       const usersList = usersSnapshot.docs.map((doc) => ({
         value: doc.id,
         label: `${doc.data().nombre} - ${doc.data().empresa}`,
@@ -50,7 +56,9 @@ const ManualMeetingModal = ({ opened, onClose, event, setGlobalMessage }) => {
     while (currentTime < endTimeObj) {
       const formattedTime = currentTime.toTimeString().substring(0, 5);
       slots.push({ value: formattedTime, label: formattedTime });
-      currentTime.setMinutes(currentTime.getMinutes() + meetingDuration + breakTime);
+      currentTime.setMinutes(
+        currentTime.getMinutes() + meetingDuration + breakTime
+      );
     }
     setTimeSlots(slots);
   };

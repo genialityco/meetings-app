@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import { useEffect, useState, useContext } from "react";
 import {
   Container,
@@ -39,7 +40,7 @@ const Dashboard = () => {
   const { currentUser } = useContext(UserContext);
   const uid = currentUser?.uid;
   const navigate = useNavigate();
-  const { eventId } = useParams();
+  const { eventId } = useParams(); // ID del evento actual
 
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -60,15 +61,21 @@ const Dashboard = () => {
   const [avatarModalOpened, setAvatarModalOpened] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
 
+  // ---------------------------------------------------------------------------
+  // 1. Verificar usuario logueado, sino -> '/' 
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!currentUser?.data) navigate("/");
+  }, [currentUser, navigate]);
+
+  // ---------------------------------------------------------------------------
+  // 2. Cargar notificaciones (globales o filtradas por eventId según necesidad)
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!uid) return;
 
-    // Escuchar notificaciones en tiempo real para este usuario
-    const q = query(
-      collection(db, "notifications"),
-      where("userId", "==", uid),
-      orderBy("timestamp", "desc")
-    );
+    const notifsRef = collection(db, "notifications");
+    const q = query(notifsRef, where("userId", "==", uid), orderBy("timestamp", "desc"));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const newNotifications = snapshot.docs.map((doc) => ({
@@ -76,7 +83,7 @@ const Dashboard = () => {
         ...doc.data(),
       }));
 
-      // Mostrar notificación en el frontend
+      // Mostrar en el frontend y marcarlas como leídas
       newNotifications.forEach((notif) => {
         if (!notif.read) {
           showNotification({
@@ -85,8 +92,6 @@ const Dashboard = () => {
             color: "teal",
             position: "top-right",
           });
-
-          // Marcar la notificación como leída en Firestore
           updateDoc(doc(db, "notifications", notif.id), { read: true });
         }
       });
@@ -97,48 +102,31 @@ const Dashboard = () => {
     return () => unsubscribe();
   }, [uid]);
 
-  useEffect(() => {
-    if (!uid) return;
-
-    const q = query(
-      collection(db, "meetings"),
-      where("eventId", "==", eventId),
-      where("requesterId", "==", uid),
-      where("status", "==", "pending")
-    );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const sent = [];
-      snapshot.forEach((docItem) => {
-        sent.push({ id: docItem.id, ...docItem.data() });
-      });
-      setSentRequests(sent);
-    });
-
-    return () => unsubscribe();
-  }, [uid]);
-
-  useEffect(() => {
-    if (!currentUser?.data) navigate("/");
-  }, [currentUser, navigate]);
-
+  // ---------------------------------------------------------------------------
+  // 3. Configuración global: ver si está habilitado "solicitarReunionHabilitado"
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     const fetchGlobalSettings = async () => {
       const configRef = doc(db, "config", "generalSettings");
       const configSnap = await getDoc(configRef);
       if (configSnap.exists()) {
-        setSolicitarReunionHabilitado(
-          configSnap.data().solicitarReunionHabilitado
-        );
+        setSolicitarReunionHabilitado(configSnap.data().solicitarReunionHabilitado);
       }
     };
-
     fetchGlobalSettings();
   }, []);
 
-  // Cargar asistentes excluyendo al usuario actual
+  // ---------------------------------------------------------------------------
+  // 4. Cargar lista de asistentes (colección "users") filtrando por eventId
+  //    Se excluye el usuario actual (uid).
+  // ---------------------------------------------------------------------------
   useEffect(() => {
-    const q = query(collection(db, "users"), where("eventId", "==", eventId));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    if (!eventId) return;
+
+    const usersRef = collection(db, "users");
+    const qUsers = query(usersRef, where("eventId", "==", eventId));
+
+    const unsubscribe = onSnapshot(qUsers, (snapshot) => {
       const assistantsData = snapshot.docs
         .filter((docItem) => docItem.id !== uid)
         .map((docItem) => ({ id: docItem.id, ...docItem.data() }));
@@ -150,7 +138,9 @@ const Dashboard = () => {
     return () => unsubscribe();
   }, [uid, eventId]);
 
-  // Filtrar asistentes cuando cambia el searchTerm
+  // ---------------------------------------------------------------------------
+  // 5. Filtrar asistentes cuando cambia el searchTerm
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     const lowerTerm = searchTerm.toLowerCase();
     const filtered = assistants.filter((assistant) => {
@@ -159,24 +149,53 @@ const Dashboard = () => {
         (nombre && nombre.toLowerCase().includes(lowerTerm)) ||
         (cargo && cargo.toLowerCase().includes(lowerTerm)) ||
         (empresa && empresa.toLowerCase().includes(lowerTerm)) ||
-        (contacto?.correo &&
-          contacto.correo.toLowerCase().includes(lowerTerm)) ||
-        (contacto?.telefono &&
-          contacto.telefono.toLowerCase().includes(lowerTerm))
+        (contacto?.correo && contacto.correo.toLowerCase().includes(lowerTerm)) ||
+        (contacto?.telefono && contacto.telefono.toLowerCase().includes(lowerTerm))
       );
     });
     setFilteredAssistants(filtered);
   }, [searchTerm, assistants]);
 
-  // Cargar reuniones aceptadas
+  // ---------------------------------------------------------------------------
+  // 6. Solicitudes ENVIADAS por el usuario actual (status=pending)
+  //    subcolección /events/{eventId}/meetings con field eventId
+  // ---------------------------------------------------------------------------
   useEffect(() => {
-    const q = query(
-      collection(db, "meetings"),
+    if (!uid || !eventId) return;
+
+    const meetingsRef = collection(db, "events", eventId, "meetings");
+    const qSent = query(
+      meetingsRef,
+      where("requesterId", "==", uid),
+      where("status", "==", "pending")
+    );
+
+    const unsubscribe = onSnapshot(qSent, (snapshot) => {
+      const sent = [];
+      snapshot.forEach((docItem) => {
+        sent.push({ id: docItem.id, ...docItem.data() });
+      });
+      setSentRequests(sent);
+    });
+
+    return () => unsubscribe();
+  }, [uid, eventId]);
+
+  // ---------------------------------------------------------------------------
+  // 7. Cargar reuniones ACEPTADAS (subcolección /events/{eventId}/meetings)
+  //    donde participants incluye uid
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!uid || !eventId) return;
+
+    const meetingsRef = collection(db, "events", eventId, "meetings");
+    const qAccepted = query(
+      meetingsRef,
       where("status", "==", "accepted"),
       where("participants", "array-contains", uid)
     );
 
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
+    const unsubscribe = onSnapshot(qAccepted, async (snapshot) => {
       const meetings = [];
       const participantsData = {};
 
@@ -186,9 +205,7 @@ const Dashboard = () => {
 
         // Obtener info del otro participante
         const otherUserId =
-          meeting.requesterId === uid
-            ? meeting.receiverId
-            : meeting.requesterId;
+          meeting.requesterId === uid ? meeting.receiverId : meeting.requesterId;
 
         if (!participantsData[otherUserId]) {
           const userDoc = await getDoc(doc(db, "users", otherUserId));
@@ -197,19 +214,24 @@ const Dashboard = () => {
           }
         }
       }
-
       setAcceptedMeetings(meetings);
       setParticipantsInfo(participantsData);
     });
 
     return () => unsubscribe();
-  }, [uid]);
+  }, [uid, eventId]);
 
-  // Cargar solicitudes
+  // ---------------------------------------------------------------------------
+  // 8. Cargar solicitudes donde el usuario ES receptor (receiverId=uid),
+  //    independiente de status -> filtra en subcolección /events/{eventId}/meetings
+  // ---------------------------------------------------------------------------
   useEffect(() => {
-    if (!uid) return;
-    const q = query(collection(db, "meetings"), where("receiverId", "==", uid));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    if (!uid || !eventId) return;
+
+    const meetingsRef = collection(db, "events", eventId, "meetings");
+    const qReceiver = query(meetingsRef, where("receiverId", "==", uid));
+
+    const unsubscribe = onSnapshot(qReceiver, (snapshot) => {
       const pending = [];
       const accepted = [];
       const rejected = [];
@@ -227,12 +249,18 @@ const Dashboard = () => {
     });
 
     return () => unsubscribe();
-  }, [uid]);
+  }, [uid, eventId]);
 
-  // Enviar solicitud de reunión
+  // ---------------------------------------------------------------------------
+  // 9. Enviar solicitud de reunión: crear doc en /events/{eventId}/meetings
+  // ---------------------------------------------------------------------------
   const sendMeetingRequest = async (assistantId) => {
+    if (!uid || !eventId) return;
+
     try {
-      await addDoc(collection(db, "meetings"), {
+      const meetingsRef = collection(db, "events", eventId, "meetings");
+      await addDoc(meetingsRef, {
+        eventId,             // campo eventId para mayor consistencia
         requesterId: uid,
         receiverId: assistantId,
         status: "pending",
@@ -240,6 +268,7 @@ const Dashboard = () => {
         participants: [uid, assistantId],
       });
 
+      // Notificación para el assistantId
       await addDoc(collection(db, "notifications"), {
         userId: assistantId,
         title: "Nueva solicitud de reunión",
@@ -259,73 +288,76 @@ const Dashboard = () => {
     }
   };
 
+  // ---------------------------------------------------------------------------
+  // 10. Aceptar/Rechazar solicitud de reunión
+  //     - Se asume la agenda en colección global "agenda" con un field eventId
+  //     - timeSlot = "09:00 - 09:10" (o lo que uses)
+  // ---------------------------------------------------------------------------
   const updateMeetingStatus = async (meetingId, newStatus) => {
+    if (!uid || !eventId) return;
+
     try {
-      const meetingDocRef = doc(db, "meetings", meetingId);
+      // Referencia a la subcolección /events/{eventId}/meetings/{meetingId}
+      const meetingDocRef = doc(db, "events", eventId, "meetings", meetingId);
       const meetingSnap = await getDoc(meetingDocRef);
       if (!meetingSnap.exists()) return;
 
       const meetingData = meetingSnap.data();
-      const requesterId = meetingData.requesterId;
-      const receiverId = meetingData.receiverId;
+      const { requesterId, receiverId, status } = meetingData;
 
-      // Si la reunión ya está aceptada, no volver a procesarla
-      if (meetingData.status === "accepted") {
+      if (status === "accepted") {
         alert("Esta reunión ya fue aceptada.");
         return;
       }
 
       if (newStatus === "accepted") {
-        // 1. Obtener todas las reuniones aceptadas de ambos participantes
-        const acceptedMeetingsQuery = query(
-          collection(db, "meetings"),
+        // 1. Buscar reuniones aceptadas de requesterId O receiverId
+        const acceptedQ = query(
+          collection(db, "events", eventId, "meetings"),
           where("participants", "array-contains-any", [requesterId, receiverId]),
           where("status", "==", "accepted")
         );
-        const acceptedMeetingsSnapshot = await getDocs(acceptedMeetingsQuery);
+        const acceptedSnapshot = await getDocs(acceptedQ);
 
-        // 2. Obtener los horarios ocupados por cualquiera de los dos participantes
+        // 2. Slots ya ocupados
         const occupiedTimeSlots = new Set();
-        acceptedMeetingsSnapshot.forEach((meeting) => {
-          occupiedTimeSlots.add(meeting.data().timeSlot);
+        acceptedSnapshot.forEach((docItem) => {
+          occupiedTimeSlots.add(docItem.data().timeSlot);
         });
 
-        // 3. Buscar un slot disponible en la agenda
-        const agendaQuery = query(
+        // 3. Buscar en agenda
+        const agendaQ = query(
           collection(db, "agenda"),
+          where("eventId", "==", eventId),
           where("available", "==", true),
           orderBy("startTime")
         );
-        const agendaSnapshot = await getDocs(agendaQuery);
+        const agendaSnapshot = await getDocs(agendaQ);
 
         let selectedSlot = null;
         let selectedSlotDoc = null;
 
-        for (const agendaDoc of agendaSnapshot.docs) {
-          const agendaData = agendaDoc.data();
-          const timeSlot = `${agendaData.startTime} - ${agendaData.endTime}`;
-
-          // 4. Verificar si el horario ya está ocupado por cualquiera de los dos participantes
-          if (!occupiedTimeSlots.has(timeSlot)) {
+        for (const docItem of agendaSnapshot.docs) {
+          const agendaData = docItem.data();
+          const slotString = `${agendaData.startTime} - ${agendaData.endTime}`;
+          if (!occupiedTimeSlots.has(slotString)) {
             selectedSlot = agendaData;
-            selectedSlotDoc = agendaDoc;
+            selectedSlotDoc = docItem;
             break;
           }
         }
 
-        // 5. Si no hay horarios disponibles, mostrar mensaje de error
         if (!selectedSlot) {
-          const requesterMeetings = acceptedMeetingsSnapshot.docs.filter(
-            (doc) => doc.data().participants.includes(requesterId)
+          // Ver si alguno ya llegó al límite (2, 4, etc.)
+          const requesterMeetings = acceptedSnapshot.docs.filter((d) =>
+            d.data().participants.includes(requesterId)
           ).length;
-          const receiverMeetings = acceptedMeetingsSnapshot.docs.filter((doc) =>
-            doc.data().participants.includes(receiverId)
+          const receiverMeetings = acceptedSnapshot.docs.filter((d) =>
+            d.data().participants.includes(receiverId)
           ).length;
 
           if (requesterMeetings >= 2) {
-            alert(
-              "La persona que solicitó la reunión ya tiene la agenda llena."
-            );
+            alert("La persona que solicitó la reunión ya tiene la agenda llena.");
           } else if (receiverMeetings >= 2) {
             alert("Ya tienes la agenda llena.");
           } else {
@@ -334,35 +366,29 @@ const Dashboard = () => {
           return;
         }
 
-        // 6. Validar si alguno de los dos ya tiene reunión en el horario seleccionado
-        const conflictingMeeting = acceptedMeetingsSnapshot.docs.find(
-          (doc) =>
-            doc.data().timeSlot ===
-            `${selectedSlot.startTime} - ${selectedSlot.endTime}`
+        // 4. Checar conflicto final
+        const conflictMeeting = acceptedSnapshot.docs.find(
+          (d) => d.data().timeSlot === `${selectedSlot.startTime} - ${selectedSlot.endTime}`
         );
-
-        if (conflictingMeeting) {
-          alert(
-            "No puedes aceptar esta reunión porque ya tienes una en el mismo horario."
-          );
+        if (conflictMeeting) {
+          alert("Ya existe reunión aceptada en ese horario.");
           return;
         }
 
-        // 7. Asignar el slot encontrado a la reunión
+        // 5. Aceptar: asignar slot
         await updateDoc(meetingDocRef, {
           status: "accepted",
           tableAssigned: selectedSlot.tableNumber.toString(),
           timeSlot: `${selectedSlot.startTime} - ${selectedSlot.endTime}`,
         });
 
-        // 8. Marcar el slot en la agenda como ocupado
-        const agendaDocRef = doc(db, "agenda", selectedSlotDoc.id);
-        await updateDoc(agendaDocRef, {
+        // 6. Marcar el slot en agenda
+        await updateDoc(doc(db, "agenda", selectedSlotDoc.id), {
           available: false,
           meetingId,
         });
 
-        // 9. Crear una notificación para el solicitante
+        // 7. Notificación al solicitante
         await addDoc(collection(db, "notifications"), {
           userId: requesterId,
           title: "Reunión aceptada",
@@ -378,10 +404,8 @@ const Dashboard = () => {
           position: "top-right",
         });
       } else {
-        // Si se rechaza, simplemente actualizar el estado
+        // Rechazar
         await updateDoc(meetingDocRef, { status: newStatus });
-
-        // Enviar notificación al usuario solicitante
         await addDoc(collection(db, "notifications"), {
           userId: requesterId,
           title: "Reunión rechazada",
@@ -402,7 +426,9 @@ const Dashboard = () => {
     }
   };
 
-  // Función para descargar vCard
+  // ---------------------------------------------------------------------------
+  // 11. Descargar vCard
+  // ---------------------------------------------------------------------------
   const downloadVCard = (participant) => {
     const vCard = `BEGIN:VCARD
 VERSION:3.0
@@ -419,25 +445,30 @@ END:VCARD`;
     link.click();
   };
 
-  // Función para enviar mensaje por WhatsApp
+  // ---------------------------------------------------------------------------
+  // 12. Enviar WhatsApp
+  // ---------------------------------------------------------------------------
   const sendWhatsAppMessage = (participant) => {
-    if (!participant.contacto.telefono) {
-      alert("No hay número de teléfono disponible para WhatsApp");
+    if (!participant.contacto?.telefono) {
+      alert("No hay número de teléfono para WhatsApp");
       return;
     }
     const phone = participant.contacto.telefono.replace(/[^\d]/g, "");
-    const message = encodeURIComponent(
-      "Hola, me gustaría contactarte sobre la reunión."
-    );
+    const message = encodeURIComponent("Hola, me gustaría contactarte sobre la reunión.");
     window.open(`https://wa.me/57${phone}?text=${message}`, "_blank");
   };
 
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
   return (
     <Container>
       <Flex gap="md">
         <Title order={2} mb="md">
           Dashboard
         </Title>
+
+        {/* Menú de notificaciones */}
         <Menu position="bottom-start" width={300}>
           <Menu.Target>
             <Indicator label={notifications.length} size={18} color="red">
@@ -463,6 +494,7 @@ END:VCARD`;
           </Menu.Dropdown>
         </Menu>
       </Flex>
+
       <Tabs defaultValue="asistentes">
         <Tabs.List>
           <Tabs.Tab value="asistentes">
@@ -473,14 +505,12 @@ END:VCARD`;
           </Tabs.Tab>
           <Tabs.Tab value="solicitudes">
             Solicitudes (
-            {pendingRequests.length +
-              acceptedRequests.length +
-              rejectedRequests.length}
+            {pendingRequests.length + acceptedRequests.length + rejectedRequests.length}
             )
           </Tabs.Tab>
         </Tabs.List>
 
-        {/* TAB ASISTENTES */}
+        {/* TAB: ASISTENTES */}
         <Tabs.Panel value="asistentes" pt="md">
           <TextInput
             placeholder="Buscar por nombre, cargo, teléfono, correo o empresa..."
@@ -511,6 +541,7 @@ END:VCARD`;
                           assistant.nombre[0]}
                       </Avatar>
                     </Group>
+
                     <Title order={5}>📛 {assistant.nombre}</Title>
                     <Text size="sm">
                       🏢 <strong>Empresa:</strong> {assistant.empresa}
@@ -548,10 +579,7 @@ END:VCARD`;
                           ? "Solicitar reunión"
                           : "Solicitudes deshabilitadas"}
                       </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => downloadVCard(assistant)}
-                      >
+                      <Button variant="outline" onClick={() => downloadVCard(assistant)}>
                         Agregar a Contactos
                       </Button>
                       <Button
@@ -571,7 +599,7 @@ END:VCARD`;
           </Grid>
         </Tabs.Panel>
 
-        {/* TAB REUNIONES */}
+        {/* TAB: REUNIONES ACEPTADAS */}
         <Tabs.Panel value="reuniones" pt="md">
           <Stack>
             {acceptedMeetings.length > 0 ? (
@@ -598,10 +626,7 @@ END:VCARD`;
                     </Text>
                     {participant && (
                       <Group mt="sm">
-                        <Button
-                          variant="outline"
-                          onClick={() => downloadVCard(participant)}
-                        >
+                        <Button variant="outline" onClick={() => downloadVCard(participant)}>
                           Agregar a Contactos
                         </Button>
                         <Button
@@ -622,7 +647,7 @@ END:VCARD`;
           </Stack>
         </Tabs.Panel>
 
-        {/* TAB SOLICITUDES */}
+        {/* TAB: SOLICITUDES */}
         <Tabs.Panel value="solicitudes" pt="md">
           <Tabs defaultValue="pendientes">
             <Tabs.List>
@@ -640,7 +665,7 @@ END:VCARD`;
               </Tabs.Tab>
             </Tabs.List>
 
-            {/* TAB DE SOLICITUDES PENDIENTES */}
+            {/* Pendientes */}
             <Tabs.Panel value="pendientes" pt="md">
               <Stack>
                 {pendingRequests.length > 0 ? (
@@ -692,17 +717,13 @@ END:VCARD`;
                         <Group mt="sm">
                           <Button
                             color="green"
-                            onClick={() =>
-                              updateMeetingStatus(request.id, "accepted")
-                            }
+                            onClick={() => updateMeetingStatus(request.id, "accepted")}
                           >
                             Aceptar
                           </Button>
                           <Button
                             color="red"
-                            onClick={() =>
-                              updateMeetingStatus(request.id, "rejected")
-                            }
+                            onClick={() => updateMeetingStatus(request.id, "rejected")}
                           >
                             Rechazar
                           </Button>
@@ -716,7 +737,7 @@ END:VCARD`;
               </Stack>
             </Tabs.Panel>
 
-            {/* TAB DE SOLICITUDES ACEPTADAS */}
+            {/* Aceptadas */}
             <Tabs.Panel value="aceptadas" pt="md">
               <Stack>
                 {acceptedRequests.length > 0 ? (
@@ -782,7 +803,7 @@ END:VCARD`;
               </Stack>
             </Tabs.Panel>
 
-            {/* TAB DE SOLICITUDES RECHAZADAS */}
+            {/* Rechazadas */}
             <Tabs.Panel value="rechazadas" pt="md">
               <Stack>
                 {rejectedRequests.length > 0 ? (
@@ -843,7 +864,7 @@ END:VCARD`;
               </Stack>
             </Tabs.Panel>
 
-            {/* TAB DE SOLICITUDES ENVIADAS */}
+            {/* Enviadas */}
             <Tabs.Panel value="enviadas" pt="md">
               <Stack>
                 {sentRequests.length > 0 ? (
@@ -851,7 +872,6 @@ END:VCARD`;
                     const receiver = assistants.find(
                       (user) => user.id === request.receiverId
                     );
-
                     return (
                       <Card key={request.id} shadow="sm" p="lg">
                         {receiver ? (

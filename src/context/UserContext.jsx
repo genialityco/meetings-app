@@ -115,26 +115,36 @@ export const UserProvider = ({ children }) => {
     }
   };
 
-  const loginByCedula = async (cedula) => {
+  // En tu UserContext.jsx
+  const loginByCedula = async (cedula, eventId) => {
     try {
       setUserLoading(true);
-      const q = query(collection(db, "users"), where("cedula", "==", cedula));
+
+      // Consulta: filtra cédula y eventId
+      const q = query(
+        collection(db, "users"),
+        where("cedula", "==", cedula),
+        where("eventId", "==", eventId)
+      );
       const querySnapshot = await getDocs(q);
 
       if (querySnapshot.empty) {
         setUserLoading(false);
-        return { error: "No se encontró ningún usuario con esa cédula." };
+        return {
+          error: "No se encontró ningún usuario con esa cédula en este evento.",
+        };
       }
 
       const userDoc = querySnapshot.docs[0];
       const userData = userDoc.data();
 
-      // ✅ Establecer usuario en el contexto y evitar que Firebase lo sobrescriba
+      // Establecer usuario en el contexto
       const newUser = { uid: userDoc.id, data: userData };
       setCurrentUser(newUser);
       sessionStorage.setItem("currentUser", JSON.stringify(newUser));
-      sessionStorage.setItem("manualLogin", "true"); // 🔥 Evita sobrescribir con sesión anónima
 
+      // Evita sobrescribir con sesión anónima
+      sessionStorage.setItem("manualLogin", "true");
       setManualLogin(true);
       setUserLoading(false);
 

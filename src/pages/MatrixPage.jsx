@@ -24,14 +24,20 @@ import anime from "animejs";
 import { useParams } from "react-router-dom";
 
 // Función para generar los intervalos de horarios
-const generateTimeSlots = (start, end, duration) => {
+// Genera slots (HH:MM) desde start hasta end,
+// incrementando en (meetingDuration + breakTime) minutos.
+const generateTimeSlots = (start, end, meetingDuration, breakTime) => {
   const slots = [];
   let currentTime = new Date(`1970-01-01T${start}:00`);
-  const endTime = new Date(`1970-01-01T${end}:00`);
+  const endTimeObj = new Date(`1970-01-01T${end}:00`);
 
-  while (currentTime < endTime) {
-    slots.push(currentTime.toTimeString().substring(0, 5));
-    currentTime.setMinutes(currentTime.getMinutes() + duration);
+  while (currentTime < endTimeObj) {
+    const hhmm = currentTime.toTimeString().substring(0, 5);
+    slots.push(hhmm);
+    // Avanza meetingDuration + breakTime minutos
+    currentTime.setMinutes(
+      currentTime.getMinutes() + meetingDuration + breakTime
+    );
   }
 
   return slots;
@@ -149,8 +155,14 @@ const MatrixPage = () => {
   useEffect(() => {
     if (!config || agenda.length === 0) return;
 
-    const { numTables, meetingDuration, startTime, endTime } = config.config;
-    const timeSlots = generateTimeSlots(startTime, endTime, meetingDuration);
+    const { numTables, meetingDuration, breakTime, startTime, endTime } =
+      config.config;
+    const timeSlots = generateTimeSlots(
+      startTime,
+      endTime,
+      meetingDuration,
+      breakTime
+    );
 
     // Crear matriz vacía (mesas × horarios)
     const newMatrix = Array.from({ length: numTables }, () =>
@@ -210,8 +222,13 @@ const MatrixPage = () => {
     )
       return;
 
-    const { meetingDuration, startTime, endTime } = config.config;
-    const timeSlots = generateTimeSlots(startTime, endTime, meetingDuration);
+    const { meetingDuration, breakTime, startTime, endTime } = config.config;
+    const timeSlots = generateTimeSlots(
+      startTime,
+      endTime,
+      meetingDuration,
+      breakTime
+    );
 
     const newMatrixUsuarios = asistentes.map((asistente) => {
       const row = timeSlots.map((slot) => {
@@ -324,7 +341,8 @@ const MatrixPage = () => {
                               generateTimeSlots(
                                 config.config.startTime,
                                 config.config.endTime,
-                                config.config.meetingDuration
+                                config.config.meetingDuration,
+                                config.config.breakTime
                               )[slotIndex]
                             }
                           </Table.Td>
@@ -377,7 +395,8 @@ const MatrixPage = () => {
                     {generateTimeSlots(
                       config.config.startTime,
                       config.config.endTime,
-                      config.config.meetingDuration
+                      config.config.meetingDuration,
+                      config.config.breakTime
                     ).map((slot, index) => {
                       const cell = row[index];
                       return (
