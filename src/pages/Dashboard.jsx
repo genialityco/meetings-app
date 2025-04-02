@@ -553,10 +553,10 @@ END:VCARD`;
                       📧 <strong>Correo:</strong>{" "}
                       {assistant.contacto?.correo || "No disponible"}
                     </Text>
-                    <Text size="sm">
+                    {/* <Text size="sm">
                       📞 <strong>Teléfono:</strong>{" "}
                       {assistant.contacto?.telefono || "No disponible"}
-                    </Text>
+                    </Text> */}
                     <Text size="sm">
                       📝 <strong>Descripción:</strong>{" "}
                       {assistant.descripcion || "No especificada"}
@@ -579,7 +579,7 @@ END:VCARD`;
                           ? "Solicitar reunión"
                           : "Solicitudes deshabilitadas"}
                       </Button>
-                      <Button variant="outline" onClick={() => downloadVCard(assistant)}>
+                      {/* <Button variant="outline" onClick={() => downloadVCard(assistant)}>
                         Agregar a Contactos
                       </Button>
                       <Button
@@ -588,7 +588,7 @@ END:VCARD`;
                         onClick={() => sendWhatsAppMessage(assistant)}
                       >
                         Enviar WhatsApp
-                      </Button>
+                      </Button> */}
                     </Group>
                   </Card>
                 </Grid.Col>

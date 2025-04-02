@@ -71,6 +71,13 @@ const Landing = () => {
       TextAlign.configure({ types: ["heading", "paragraph"] }),
     ],
     content: formValues.descripcion || "<p>Escribe aquí la descripción...</p>",
+    onUpdate: ({ editor }) => {
+      setFormValues((prev) => ({
+        ...prev,
+        // OBTENEMOS SÓLO EL TEXTO, SIN ETIQUETAS
+        descripcion: editor.getText(),
+      }));
+    },
   });
 
   // Cargar datos del usuario (si ya existe)
@@ -239,6 +246,10 @@ const Landing = () => {
 
         {registrationEnabled ? (
           <Stack>
+            <Text ta="justify" my="lg" size="lg">
+              Para un registro nuevo diligencia el formulario.
+            </Text>
+
             <TextInput
               label="Nombre"
               placeholder="Tu nombre completo"
@@ -270,7 +281,7 @@ const Landing = () => {
             <Title order={6}>Descripción breve del negocio</Title>
             {/* Editor Tiptap integrado */}
             <RichTextEditor editor={editor}>
-              <RichTextEditor.Toolbar sticky stickyOffset={60}>
+              {/* <RichTextEditor.Toolbar sticky stickyOffset={60}>
                 <RichTextEditor.ControlsGroup>
                   <RichTextEditor.Bold />
                   <RichTextEditor.Italic />
@@ -306,7 +317,7 @@ const Landing = () => {
                   <RichTextEditor.Undo />
                   <RichTextEditor.Redo />
                 </RichTextEditor.ControlsGroup>
-              </RichTextEditor.Toolbar>
+              </RichTextEditor.Toolbar> */}
               <RichTextEditor.Content />
             </RichTextEditor>
             <Select
@@ -322,17 +333,18 @@ const Landing = () => {
               required
             />
             <TextInput
-              label="Necesidad específica para la rueda de negocios"
+              label="Necesidad específica para el networking"
               placeholder="¿Qué necesitas?"
               value={formValues.necesidad}
               onChange={(e) => handleChange("necesidad", e.target.value)}
               required
             />
             <TextInput
-              label="Correo (opcional)"
+              label="Correo"
               placeholder="Tu correo electrónico"
               value={formValues.contacto.correo}
               onChange={(e) => handleChange("contacto.correo", e.target.value)}
+              required
             />
             <TextInput
               label="Teléfono (opcional)"
