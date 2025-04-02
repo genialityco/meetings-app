@@ -690,14 +690,14 @@ END:VCARD`;
                               📧 <strong>Correo:</strong>{" "}
                               {requester.contacto?.correo || "No disponible"}
                             </Text>
-                            <Text size="sm">
+                            {/* <Text size="sm">
                               📞 <strong>Teléfono:</strong>{" "}
                               {requester.contacto?.telefono || "No disponible"}
-                            </Text>
-                            <Text size="sm">
+                            </Text> */}
+                            {/* <Text size="sm">
                               🆔 <strong>Cédula:</strong>{" "}
                               {requester.cedula || "No disponible"}
-                            </Text>
+                            </Text> */}
                             <Text size="sm">
                               📝 <strong>Descripción:</strong>{" "}
                               {requester.descripcion || "No especificada"}
@@ -766,10 +766,10 @@ END:VCARD`;
                               📞 <strong>Teléfono:</strong>{" "}
                               {requester.contacto?.telefono || "No disponible"}
                             </Text>
-                            <Text size="sm">
+                            {/* <Text size="sm">
                               🆔 <strong>Cédula:</strong>{" "}
                               {requester.cedula || "No disponible"}
-                            </Text>
+                            </Text> */}
                             <Text size="sm">
                               📝 <strong>Descripción:</strong>{" "}
                               {requester.descripcion || "No especificada"}
@@ -828,14 +828,14 @@ END:VCARD`;
                               📧 <strong>Correo:</strong>{" "}
                               {requester.contacto?.correo || "No disponible"}
                             </Text>
-                            <Text size="sm">
+                            {/* <Text size="sm">
                               📞 <strong>Teléfono:</strong>{" "}
                               {requester.contacto?.telefono || "No disponible"}
-                            </Text>
-                            <Text size="sm">
+                            </Text> */}
+                            {/* <Text size="sm">
                               🆔 <strong>Cédula:</strong>{" "}
                               {requester.cedula || "No disponible"}
-                            </Text>
+                            </Text> */}
                             <Text size="sm">
                               📝 <strong>Descripción:</strong>{" "}
                               {requester.descripcion || "No especificada"}
