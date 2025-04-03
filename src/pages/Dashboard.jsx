@@ -62,7 +62,7 @@ const Dashboard = () => {
   const [selectedImage, setSelectedImage] = useState(null);
 
   // ---------------------------------------------------------------------------
-  // 1. Verificar usuario logueado, sino -> '/' 
+  // 1. Verificar usuario logueado, sino -> '/'
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!currentUser?.data) navigate("/");
@@ -75,7 +75,11 @@ const Dashboard = () => {
     if (!uid) return;
 
     const notifsRef = collection(db, "notifications");
-    const q = query(notifsRef, where("userId", "==", uid), orderBy("timestamp", "desc"));
+    const q = query(
+      notifsRef,
+      where("userId", "==", uid),
+      orderBy("timestamp", "desc")
+    );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const newNotifications = snapshot.docs.map((doc) => ({
@@ -110,7 +114,9 @@ const Dashboard = () => {
       const configRef = doc(db, "config", "generalSettings");
       const configSnap = await getDoc(configRef);
       if (configSnap.exists()) {
-        setSolicitarReunionHabilitado(configSnap.data().solicitarReunionHabilitado);
+        setSolicitarReunionHabilitado(
+          configSnap.data().solicitarReunionHabilitado
+        );
       }
     };
     fetchGlobalSettings();
@@ -149,8 +155,10 @@ const Dashboard = () => {
         (nombre && nombre.toLowerCase().includes(lowerTerm)) ||
         (cargo && cargo.toLowerCase().includes(lowerTerm)) ||
         (empresa && empresa.toLowerCase().includes(lowerTerm)) ||
-        (contacto?.correo && contacto.correo.toLowerCase().includes(lowerTerm)) ||
-        (contacto?.telefono && contacto.telefono.toLowerCase().includes(lowerTerm))
+        (contacto?.correo &&
+          contacto.correo.toLowerCase().includes(lowerTerm)) ||
+        (contacto?.telefono &&
+          contacto.telefono.toLowerCase().includes(lowerTerm))
       );
     });
     setFilteredAssistants(filtered);
@@ -205,7 +213,9 @@ const Dashboard = () => {
 
         // Obtener info del otro participante
         const otherUserId =
-          meeting.requesterId === uid ? meeting.receiverId : meeting.requesterId;
+          meeting.requesterId === uid
+            ? meeting.receiverId
+            : meeting.requesterId;
 
         if (!participantsData[otherUserId]) {
           const userDoc = await getDoc(doc(db, "users", otherUserId));
@@ -260,7 +270,7 @@ const Dashboard = () => {
     try {
       const meetingsRef = collection(db, "events", eventId, "meetings");
       await addDoc(meetingsRef, {
-        eventId,             // campo eventId para mayor consistencia
+        eventId, // campo eventId para mayor consistencia
         requesterId: uid,
         receiverId: assistantId,
         status: "pending",
@@ -314,7 +324,10 @@ const Dashboard = () => {
         // 1. Buscar reuniones aceptadas de requesterId O receiverId
         const acceptedQ = query(
           collection(db, "events", eventId, "meetings"),
-          where("participants", "array-contains-any", [requesterId, receiverId]),
+          where("participants", "array-contains-any", [
+            requesterId,
+            receiverId,
+          ]),
           where("status", "==", "accepted")
         );
         const acceptedSnapshot = await getDocs(acceptedQ);
@@ -357,7 +370,9 @@ const Dashboard = () => {
           ).length;
 
           if (requesterMeetings >= 2) {
-            alert("La persona que solicitó la reunión ya tiene la agenda llena.");
+            alert(
+              "La persona que solicitó la reunión ya tiene la agenda llena."
+            );
           } else if (receiverMeetings >= 2) {
             alert("Ya tienes la agenda llena.");
           } else {
@@ -368,7 +383,9 @@ const Dashboard = () => {
 
         // 4. Checar conflicto final
         const conflictMeeting = acceptedSnapshot.docs.find(
-          (d) => d.data().timeSlot === `${selectedSlot.startTime} - ${selectedSlot.endTime}`
+          (d) =>
+            d.data().timeSlot ===
+            `${selectedSlot.startTime} - ${selectedSlot.endTime}`
         );
         if (conflictMeeting) {
           alert("Ya existe reunión aceptada en ese horario.");
@@ -387,6 +404,31 @@ const Dashboard = () => {
           available: false,
           meetingId,
         });
+
+        try {
+          console.log("Aumentando contador")
+          const response = await fetch(
+            "https://incrementtreecounter-y72vyrlzva-uc.a.run.app",
+            {
+              method: "POST", // o "GET" según tu implementación, preferible POST
+              headers: {
+                "Content-Type": "application/json",
+                "x-api-key": "CLAVE_SEGURA_GENFORES", // la que pusiste en la función
+              },
+            }
+          );
+
+          const result = await response.json();
+          if (result.success) {
+            console.log(
+              `🌳 Contador incrementado exitosamente: ${result.currentCount}`
+            );
+          } else {
+            console.error("❌ Error desde Cloud Function:", result.error);
+          }
+        } catch (error) {
+          console.error("❌ Error al hacer la solicitud HTTP:", error);
+        }
 
         // 7. Notificación al solicitante
         await addDoc(collection(db, "notifications"), {
@@ -454,7 +496,9 @@ END:VCARD`;
       return;
     }
     const phone = participant.contacto.telefono.replace(/[^\d]/g, "");
-    const message = encodeURIComponent("Hola, me gustaría contactarte sobre la reunión.");
+    const message = encodeURIComponent(
+      "Hola, me gustaría contactarte sobre la reunión."
+    );
     window.open(`https://wa.me/57${phone}?text=${message}`, "_blank");
   };
 
@@ -505,7 +549,9 @@ END:VCARD`;
           </Tabs.Tab>
           <Tabs.Tab value="solicitudes">
             Solicitudes (
-            {pendingRequests.length + acceptedRequests.length + rejectedRequests.length}
+            {pendingRequests.length +
+              acceptedRequests.length +
+              rejectedRequests.length}
             )
           </Tabs.Tab>
         </Tabs.List>
@@ -626,7 +672,10 @@ END:VCARD`;
                     </Text>
                     {participant && (
                       <Group mt="sm">
-                        <Button variant="outline" onClick={() => downloadVCard(participant)}>
+                        <Button
+                          variant="outline"
+                          onClick={() => downloadVCard(participant)}
+                        >
                           Agregar a Contactos
                         </Button>
                         <Button
@@ -717,13 +766,17 @@ END:VCARD`;
                         <Group mt="sm">
                           <Button
                             color="green"
-                            onClick={() => updateMeetingStatus(request.id, "accepted")}
+                            onClick={() =>
+                              updateMeetingStatus(request.id, "accepted")
+                            }
                           >
                             Aceptar
                           </Button>
                           <Button
                             color="red"
-                            onClick={() => updateMeetingStatus(request.id, "rejected")}
+                            onClick={() =>
+                              updateMeetingStatus(request.id, "rejected")
+                            }
                           >
                             Rechazar
                           </Button>
