@@ -518,7 +518,7 @@ END:VCARD`;
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
-          <Text>Máximo, puedes agendar 4 reuniones</Text>
+          <Text>Máximo, puedes agendar 3 reuniones</Text>
           <Grid>
             {filteredAssistants.length > 0 ? (
               filteredAssistants.map((assistant) => (
