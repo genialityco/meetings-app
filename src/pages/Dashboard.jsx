@@ -406,15 +406,34 @@ const Dashboard = () => {
         });
 
         try {
-          console.log("Aumentando contador")
+          console.log("Aumentando contador");
+
+          // Obtener detalles completos de los participantes
+          const requesterDoc = await getDoc(doc(db, "users", requesterId));
+          const receiverDoc = await getDoc(doc(db, "users", receiverId));
+          const requesterData = requesterDoc.exists()
+            ? requesterDoc.data()
+            : null;
+          const receiverData = receiverDoc.exists() ? receiverDoc.data() : null;
+
+          // Construir el objeto meeting con la info extendida de participantes
+          const meetingInfo = {
+            ...meetingData,
+            requester: requesterData, // Información completa del solicitante
+            receiver: receiverData, // Información completa del receptor
+          };
+
           const response = await fetch(
             "https://incrementtreecounter-y72vyrlzva-uc.a.run.app",
             {
-              method: "POST", // o "GET" según tu implementación, preferible POST
+              method: "POST", // Usamos POST para enviar datos
               headers: {
                 "Content-Type": "application/json",
-                "x-api-key": "CLAVE_SEGURA_GENFORES", // la que pusiste en la función
+                "x-api-key": "CLAVE_SEGURA_GENFORES", // La clave que configuraste en la Cloud Function
               },
+              body: JSON.stringify({
+                meeting: meetingInfo, // Se envía la información extendida de la reunión
+              }),
             }
           );
 
