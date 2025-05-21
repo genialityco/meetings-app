@@ -33,7 +33,7 @@ const EditEventConfigModal = ({
 }) => {
   // Campos generales del evento
   const [eventName, setEventName] = useState(event.eventName || "");
-  const [eventImageUrl, setEventImageUrl] = useState(event.eventImage || "");  
+  const [eventImageUrl, setEventImageUrl] = useState(event.eventImage || "");
   const [eventImageFile, setEventImageFile] = useState(null);
 
   // Campos de configuración del evento
@@ -43,10 +43,15 @@ const EditEventConfigModal = ({
     event.config?.meetingDuration || 10
   );
   const [breakTime, setBreakTime] = useState(event.config?.breakTime || 5);
-  const [startTime, setStartTime] = useState(event.config?.startTime || "09:00");
+  const [startTime, setStartTime] = useState(
+    event.config?.startTime || "09:00"
+  );
   const [endTime, setEndTime] = useState(event.config?.endTime || "18:00");
   const [tableNamesInput, setTableNamesInput] = useState(
     event.config?.tableNames?.join(", ") || ""
+  );
+  const [breakBlocks, setBreakBlocks] = useState(
+    event.config?.breakBlocks || [{ start: "", end: "" }]
   );
 
   // Maneja el cambio en el input de tipo "file"
@@ -70,21 +75,39 @@ const EditEventConfigModal = ({
       const blockLength = meetingDuration + breakTime;
       const totalBlocks = Math.floor(totalMinutes / blockLength);
       const totalSlots = totalBlocks * numTables;
-      const maxMeetingsPerUser = totalBlocks;  // Asumiendo 1 reunión por bloque
+      const maxMeetingsPerUser = totalBlocks;
+
+      // Calcular bloques de descanso válidos
+      const validBreakBlocks = breakBlocks.filter(
+        (b) => b.start && b.end && b.start < b.end
+      );
+
+      const totalBreakMinutes = validBreakBlocks.reduce((acc, block) => {
+        const minutes = timeToMinutes(block.end) - timeToMinutes(block.start);
+        return acc + minutes;
+      }, 0);
 
       return {
         totalBlocks,
         totalSlots,
         maxMeetingsPerUser,
+        breakBlocksCount: validBreakBlocks.length,
+        totalBreakMinutes,
       };
     } catch {
       return {
         totalBlocks: 0,
         totalSlots: 0,
         maxMeetingsPerUser: 0,
+        breakBlocksCount: 0,
+        totalBreakMinutes: 0,
       };
     }
-  }, [startTime, endTime, meetingDuration, breakTime, numTables]);
+  }, [startTime, endTime, meetingDuration, breakTime, numTables, breakBlocks]);
+
+  const [maxMeetingsPerUser, setMaxMeetingsPerUser] = useState(
+    event.config?.maxMeetingsPerUser ?? configSummary.maxMeetingsPerUser
+  );
 
   // Guardar los cambios en Firestore
   const saveConfig = async () => {
@@ -110,7 +133,9 @@ const EditEventConfigModal = ({
         setNumTables(tableNames.length);
       }
     } else {
-      tableNames = Array.from({ length: numTables }, (_, i) => (i + 1).toString());
+      tableNames = Array.from({ length: numTables }, (_, i) =>
+        (i + 1).toString()
+      );
     }
 
     const newConfig = {
@@ -121,6 +146,8 @@ const EditEventConfigModal = ({
       startTime,
       endTime,
       tableNames,
+      maxMeetingsPerUser,
+      breakBlocks,
     };
 
     try {
@@ -140,7 +167,11 @@ const EditEventConfigModal = ({
   };
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Editar Configuración del Evento">
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      title="Editar Configuración del Evento"
+    >
       <Stack spacing="xs">
         {/* Campos para nombre e imagen del evento */}
         <TextInput
@@ -157,11 +188,7 @@ const EditEventConfigModal = ({
         />
 
         {/* File input para subir la imagen al Storage */}
-        <input
-          type="file"
-          accept="image/*"
-          onChange={handleFileChange}
-        />
+        <input type="file" accept="image/*" onChange={handleFileChange} />
 
         {/* Campos de configuración */}
         <NumberInput
@@ -207,16 +234,85 @@ const EditEventConfigModal = ({
           onChange={(e) => setEndTime(e.target.value)}
         />
 
+        <NumberInput
+          label="Límite máximo de citas por usuario"
+          value={maxMeetingsPerUser}
+          onChange={setMaxMeetingsPerUser}
+          min={1}
+          description="Cuántas citas como máximo puede aceptar cada usuario"
+        />
+
+        <Text weight={500}>Bloques de descanso</Text>
+        {breakBlocks.map((block, idx) => (
+          <Stack key={idx} spacing={4}>
+            <Text size="sm">Bloque #{idx + 1}</Text>
+            <TextInput
+              label="Inicio"
+              type="time"
+              value={block.start}
+              onChange={(e) => {
+                const updated = [...breakBlocks];
+                updated[idx].start = e.target.value;
+                setBreakBlocks(updated);
+              }}
+            />
+            <TextInput
+              label="Fin"
+              type="time"
+              value={block.end}
+              onChange={(e) => {
+                const updated = [...breakBlocks];
+                updated[idx].end = e.target.value;
+                setBreakBlocks(updated);
+              }}
+            />
+            <Button
+              variant="subtle"
+              color="red"
+              size="xs"
+              onClick={() =>
+                setBreakBlocks(breakBlocks.filter((_, i) => i !== idx))
+              }
+            >
+              Eliminar bloque
+            </Button>
+          </Stack>
+        ))}
+
+        <Button
+          variant="outline"
+          size="xs"
+          onClick={() =>
+            setBreakBlocks([...breakBlocks, { start: "", end: "" }])
+          }
+        >
+          Añadir otro bloque
+        </Button>
+
         {/* Resumen de la configuración */}
         <Alert color="blue" variant="light">
           <Text>
             <strong>Resumen de la configuración:</strong>
           </Text>
-          <Text size="sm">• Bloques de reunión: {configSummary.totalBlocks}</Text>
-          <Text size="sm">• Slots totales (bloques × mesas): {configSummary.totalSlots}</Text>
+          <Text size="sm">
+            • Bloques de reunión: {configSummary.totalBlocks}
+          </Text>
+          <Text size="sm">
+            • Slots totales (bloques × mesas): {configSummary.totalSlots}
+          </Text>
           <Text size="sm">
             • Citas máximas por usuario (1 cita por bloque):{" "}
             {configSummary.maxMeetingsPerUser}
+          </Text>
+          <Text size="sm">
+            • Citas máximas por usuario (configurable): {maxMeetingsPerUser}
+          </Text>
+          <Text size="sm">
+            • Bloques de descanso definidos: {configSummary.breakBlocksCount}
+          </Text>
+          <Text size="sm">
+            • Tiempo total de descansos: {configSummary.totalBreakMinutes}{" "}
+            minutos
           </Text>
         </Alert>
 

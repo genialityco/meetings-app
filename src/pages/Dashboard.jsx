@@ -36,6 +36,28 @@ import { useNavigate, useParams } from "react-router-dom";
 import { showNotification } from "@mantine/notifications";
 import { IoNotificationsOutline } from "react-icons/io5";
 
+const slotOverlapsBreakBlock = (
+  slotStart,
+  meetingDuration,
+  breakBlocks = []
+) => {
+  const [h, m] = slotStart.split(":").map(Number);
+  const slotStartMin = h * 60 + m;
+  const slotEndMin = slotStartMin + meetingDuration;
+
+  return breakBlocks.some((block) => {
+    const [sh, sm] = block.start.split(":").map(Number);
+    const [eh, em] = block.end.split(":").map(Number);
+    const blockStartMin = sh * 60 + sm;
+    const blockEndMin = eh * 60 + em;
+    return (
+      (slotStartMin >= blockStartMin && slotStartMin < blockEndMin) ||
+      (slotEndMin > blockStartMin && slotEndMin <= blockEndMin) ||
+      (slotStartMin <= blockStartMin && slotEndMin >= blockEndMin)
+    );
+  });
+};
+
 const Dashboard = () => {
   const { currentUser } = useContext(UserContext);
   const uid = currentUser?.uid;
@@ -57,6 +79,8 @@ const Dashboard = () => {
   const [solicitarReunionHabilitado, setSolicitarReunionHabilitado] =
     useState(true);
 
+  const [eventConfig, setEventConfig] = useState(null);
+
   // Estados para el modal de imagen
   const [avatarModalOpened, setAvatarModalOpened] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
@@ -68,58 +92,58 @@ const Dashboard = () => {
     if (!currentUser?.data) navigate("/");
   }, [currentUser, navigate]);
 
+  // 2. Carga eventConfig (incluye breakBlocks)
+  useEffect(() => {
+    if (!eventId) return;
+    (async () => {
+      const ref = doc(db, "events", eventId);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        setEventConfig(snap.data().config || {});
+      }
+    })();
+  }, [eventId]);
+
   // ---------------------------------------------------------------------------
   // 2. Cargar notificaciones (globales o filtradas por eventId según necesidad)
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!uid) return;
-
-    const notifsRef = collection(db, "notifications");
     const q = query(
-      notifsRef,
+      collection(db, "notifications"),
       where("userId", "==", uid),
       orderBy("timestamp", "desc")
     );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const newNotifications = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-
-      // Mostrar en el frontend y marcarlas como leídas
-      newNotifications.forEach((notif) => {
-        if (!notif.read) {
+    return onSnapshot(q, (snap) => {
+      const nots = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      nots.forEach((n) => {
+        if (!n.read) {
           showNotification({
-            title: notif.title,
-            message: notif.message,
+            title: n.title,
+            message: n.message,
             color: "teal",
             position: "top-right",
           });
-          updateDoc(doc(db, "notifications", notif.id), { read: true });
+          updateDoc(doc(db, "notifications", n.id), { read: true });
         }
       });
-
-      setNotifications(newNotifications);
+      setNotifications(nots);
     });
-
-    return () => unsubscribe();
   }, [uid]);
 
   // ---------------------------------------------------------------------------
   // 3. Configuración global: ver si está habilitado "solicitarReunionHabilitado"
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    const fetchGlobalSettings = async () => {
-      const configRef = doc(db, "config", "generalSettings");
-      const configSnap = await getDoc(configRef);
-      if (configSnap.exists()) {
+    (async () => {
+      const cfgRef = doc(db, "config", "generalSettings");
+      const cfgSnap = await getDoc(cfgRef);
+      if (cfgSnap.exists()) {
         setSolicitarReunionHabilitado(
-          configSnap.data().solicitarReunionHabilitado
+          cfgSnap.data().solicitarReunionHabilitado
         );
       }
-    };
-    fetchGlobalSettings();
+    })();
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -128,40 +152,31 @@ const Dashboard = () => {
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!eventId) return;
-
-    const usersRef = collection(db, "users");
-    const qUsers = query(usersRef, where("eventId", "==", eventId));
-
-    const unsubscribe = onSnapshot(qUsers, (snapshot) => {
-      const assistantsData = snapshot.docs
-        .filter((docItem) => docItem.id !== uid)
-        .map((docItem) => ({ id: docItem.id, ...docItem.data() }));
-
-      setAssistants(assistantsData);
-      setFilteredAssistants(assistantsData);
+    const q = query(collection(db, "users"), where("eventId", "==", eventId));
+    return onSnapshot(q, (snap) => {
+      const list = snap.docs
+        .filter((d) => d.id !== uid)
+        .map((d) => ({ id: d.id, ...d.data() }));
+      setAssistants(list);
+      setFilteredAssistants(list);
     });
-
-    return () => unsubscribe();
   }, [uid, eventId]);
 
   // ---------------------------------------------------------------------------
   // 5. Filtrar asistentes cuando cambia el searchTerm
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    const lowerTerm = searchTerm.toLowerCase();
-    const filtered = assistants.filter((assistant) => {
-      const { nombre, cargo, empresa, contacto } = assistant;
-      return (
-        (nombre && nombre.toLowerCase().includes(lowerTerm)) ||
-        (cargo && cargo.toLowerCase().includes(lowerTerm)) ||
-        (empresa && empresa.toLowerCase().includes(lowerTerm)) ||
-        (contacto?.correo &&
-          contacto.correo.toLowerCase().includes(lowerTerm)) ||
-        (contacto?.telefono &&
-          contacto.telefono.toLowerCase().includes(lowerTerm))
-      );
-    });
-    setFilteredAssistants(filtered);
+    const term = searchTerm.toLowerCase();
+    setFilteredAssistants(
+      assistants.filter(
+        (a) =>
+          a.nombre?.toLowerCase().includes(term) ||
+          a.cargo?.toLowerCase().includes(term) ||
+          a.empresa?.toLowerCase().includes(term) ||
+          a.contacto?.correo?.toLowerCase().includes(term) ||
+          a.contacto?.telefono?.toLowerCase().includes(term)
+      )
+    );
   }, [searchTerm, assistants]);
 
   // ---------------------------------------------------------------------------
@@ -170,23 +185,14 @@ const Dashboard = () => {
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!uid || !eventId) return;
-
-    const meetingsRef = collection(db, "events", eventId, "meetings");
-    const qSent = query(
-      meetingsRef,
+    const q = query(
+      collection(db, "events", eventId, "meetings"),
       where("requesterId", "==", uid),
       where("status", "==", "pending")
     );
-
-    const unsubscribe = onSnapshot(qSent, (snapshot) => {
-      const sent = [];
-      snapshot.forEach((docItem) => {
-        sent.push({ id: docItem.id, ...docItem.data() });
-      });
-      setSentRequests(sent);
+    return onSnapshot(q, (snap) => {
+      setSentRequests(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
-
-    return () => unsubscribe();
   }, [uid, eventId]);
 
   // ---------------------------------------------------------------------------
@@ -195,40 +201,30 @@ const Dashboard = () => {
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!uid || !eventId) return;
-
-    const meetingsRef = collection(db, "events", eventId, "meetings");
-    const qAccepted = query(
-      meetingsRef,
+    const q = query(
+      collection(db, "events", eventId, "meetings"),
       where("status", "==", "accepted"),
       where("participants", "array-contains", uid)
     );
-
-    const unsubscribe = onSnapshot(qAccepted, async (snapshot) => {
-      const meetings = [];
-      const participantsData = {};
-
-      for (const docItem of snapshot.docs) {
-        const meeting = { id: docItem.id, ...docItem.data() };
-        meetings.push(meeting);
-
-        // Obtener info del otro participante
-        const otherUserId =
-          meeting.requesterId === uid
-            ? meeting.receiverId
-            : meeting.requesterId;
-
-        if (!participantsData[otherUserId]) {
-          const userDoc = await getDoc(doc(db, "users", otherUserId));
-          if (userDoc.exists()) {
-            participantsData[otherUserId] = userDoc.data();
-          }
+    return onSnapshot(q, async (snap) => {
+      const mts = [],
+        info = {};
+      for (const d of snap.docs) {
+        const m = {
+          id: d.id,
+          ...d.data(),
+          timeSlot: d.data().timeSlot.match(/\d{2}:\d{2}/)[0],
+        };
+        mts.push(m);
+        const other = m.requesterId === uid ? m.receiverId : m.requesterId;
+        if (!info[other]) {
+          const uSnap = await getDoc(doc(db, "users", other));
+          if (uSnap.exists()) info[other] = uSnap.data();
         }
       }
-      setAcceptedMeetings(meetings);
-      setParticipantsInfo(participantsData);
+      setAcceptedMeetings(mts);
+      setParticipantsInfo(info);
     });
-
-    return () => unsubscribe();
   }, [uid, eventId]);
 
   // ---------------------------------------------------------------------------
@@ -237,28 +233,24 @@ const Dashboard = () => {
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!uid || !eventId) return;
-
-    const meetingsRef = collection(db, "events", eventId, "meetings");
-    const qReceiver = query(meetingsRef, where("receiverId", "==", uid));
-
-    const unsubscribe = onSnapshot(qReceiver, (snapshot) => {
-      const pending = [];
-      const accepted = [];
-      const rejected = [];
-
-      snapshot.forEach((docItem) => {
-        const data = { id: docItem.id, ...docItem.data() };
-        if (data.status === "pending") pending.push(data);
-        else if (data.status === "accepted") accepted.push(data);
-        else if (data.status === "rejected") rejected.push(data);
+    const q = query(
+      collection(db, "events", eventId, "meetings"),
+      where("receiverId", "==", uid)
+    );
+    return onSnapshot(q, (snap) => {
+      const pend = [],
+        acc = [],
+        rej = [];
+      snap.docs.forEach((d) => {
+        const r = { id: d.id, ...d.data() };
+        if (r.status === "pending") pend.push(r);
+        if (r.status === "accepted") acc.push(r);
+        if (r.status === "rejected") rej.push(r);
       });
-
-      setPendingRequests(pending);
-      setAcceptedRequests(accepted);
-      setRejectedRequests(rejected);
+      setPendingRequests(pend);
+      setAcceptedRequests(acc);
+      setRejectedRequests(rej);
     });
-
-    return () => unsubscribe();
   }, [uid, eventId]);
 
   // ---------------------------------------------------------------------------
@@ -266,19 +258,15 @@ const Dashboard = () => {
   // ---------------------------------------------------------------------------
   const sendMeetingRequest = async (assistantId) => {
     if (!uid || !eventId) return;
-
     try {
-      const meetingsRef = collection(db, "events", eventId, "meetings");
-      await addDoc(meetingsRef, {
-        eventId, // campo eventId para mayor consistencia
+      await addDoc(collection(db, "events", eventId, "meetings"), {
+        eventId,
         requesterId: uid,
         receiverId: assistantId,
         status: "pending",
         createdAt: new Date(),
         participants: [uid, assistantId],
       });
-
-      // Notificación para el assistantId
       await addDoc(collection(db, "notifications"), {
         userId: assistantId,
         title: "Nueva solicitud de reunión",
@@ -286,204 +274,138 @@ const Dashboard = () => {
         timestamp: new Date(),
         read: false,
       });
-
       showNotification({
         title: "Solicitud enviada",
-        message: "Tu solicitud de reunión ha sido enviada correctamente.",
+        message: "Tu solicitud ha sido enviada.",
         color: "blue",
-        position: "top-right",
       });
-    } catch (error) {
-      console.error("Error al enviar la solicitud de reunión:", error);
+    } catch (e) {
+      console.error(e);
     }
   };
 
   // ---------------------------------------------------------------------------
-  // 10. Aceptar/Rechazar solicitud de reunión
-  //     - Se asume la agenda en colección global "agenda" con un field eventId
-  //     - timeSlot = "09:00 - 09:10" (o lo que uses)
+  // 10. Aceptar/Rechazar solicitud de reunión (evitando descansos
+  //     y respetando límite máximo de citas por usuario)
   // ---------------------------------------------------------------------------
   const updateMeetingStatus = async (meetingId, newStatus) => {
-    if (!uid || !eventId) return;
-
+    if (!uid || !eventId || !eventConfig) return;
     try {
-      // Referencia a la subcolección /events/{eventId}/meetings/{meetingId}
-      const meetingDocRef = doc(db, "events", eventId, "meetings", meetingId);
-      const meetingSnap = await getDoc(meetingDocRef);
-      if (!meetingSnap.exists()) return;
-
-      const meetingData = meetingSnap.data();
-      const { requesterId, receiverId, status } = meetingData;
-
-      if (status === "accepted") {
-        alert("Esta reunión ya fue aceptada.");
-        return;
-      }
+      const mtgRef = doc(db, "events", eventId, "meetings", meetingId);
+      const mtgSnap = await getDoc(mtgRef);
+      if (!mtgSnap.exists()) return;
+      const data = mtgSnap.data();
+      if (data.status === "accepted") return alert("Ya está aceptada.");
 
       if (newStatus === "accepted") {
-        // 1. Buscar reuniones aceptadas de requesterId O receiverId
-        const acceptedQ = query(
+        // 1. Obtener reuniones ya aceptadas de estos participantes
+        const accQ = query(
           collection(db, "events", eventId, "meetings"),
           where("participants", "array-contains-any", [
-            requesterId,
-            receiverId,
+            data.requesterId,
+            data.receiverId,
           ]),
           where("status", "==", "accepted")
         );
-        const acceptedSnapshot = await getDocs(acceptedQ);
+        const accSn = await getDocs(accQ);
+        const occupied = new Set(accSn.docs.map((d) => d.data().timeSlot));
 
-        // 2. Slots ya ocupados
-        const occupiedTimeSlots = new Set();
-        acceptedSnapshot.forEach((docItem) => {
-          occupiedTimeSlots.add(docItem.data().timeSlot);
-        });
+        // 1.1. Validar límite máximo de citas por usuario
+        const limit = eventConfig.maxMeetingsPerUser ?? Infinity;
+        const requesterCount = accSn.docs.filter((d) =>
+          d.data().participants.includes(data.requesterId)
+        ).length;
+        const receiverCount = accSn.docs.filter((d) =>
+          d.data().participants.includes(data.receiverId)
+        ).length;
 
-        // 3. Buscar en agenda
-        const agendaQ = query(
+        if (requesterCount >= limit) {
+          return alert(
+            `El solicitante ya alcanzó el límite de ${limit} citas.`
+          );
+        }
+        if (receiverCount >= limit) {
+          return alert(`El receptor ya alcanzó el límite de ${limit} citas.`);
+        }
+
+        // 2. Buscar slot disponible en agenda, ordenado
+        const agQ = query(
           collection(db, "agenda"),
           where("eventId", "==", eventId),
           where("available", "==", true),
           orderBy("startTime")
         );
-        const agendaSnapshot = await getDocs(agendaQ);
+        const agSn = await getDocs(agQ);
 
-        let selectedSlot = null;
-        let selectedSlotDoc = null;
+        let chosen = null,
+          chosenDoc = null;
+        for (const d of agSn.docs) {
+          const slot = d.data();
+          const slotStr = `${slot.startTime} - ${slot.endTime}`;
+          if (occupied.has(slotStr)) continue;
 
-        for (const docItem of agendaSnapshot.docs) {
-          const agendaData = docItem.data();
-          const slotString = `${agendaData.startTime} - ${agendaData.endTime}`;
-          if (!occupiedTimeSlots.has(slotString)) {
-            selectedSlot = agendaData;
-            selectedSlotDoc = docItem;
-            break;
+          // 2.1 Excluir slots que caen en descanso
+          if (
+            slotOverlapsBreakBlock(
+              slot.startTime,
+              eventConfig.meetingDuration,
+              eventConfig.breakBlocks
+            )
+          ) {
+            continue;
           }
+
+          chosen = slot;
+          chosenDoc = d;
+          break;
         }
 
-        if (!selectedSlot) {
-          // Ver si alguno ya llegó al límite (2, 4, etc.)
-          const requesterMeetings = acceptedSnapshot.docs.filter((d) =>
-            d.data().participants.includes(requesterId)
-          ).length;
-          const receiverMeetings = acceptedSnapshot.docs.filter((d) =>
-            d.data().participants.includes(receiverId)
-          ).length;
-
-          if (requesterMeetings >= 2) {
-            alert(
-              "La persona que solicitó la reunión ya tiene la agenda llena."
-            );
-          } else if (receiverMeetings >= 2) {
-            alert("Ya tienes la agenda llena.");
-          } else {
-            alert("No hay horarios disponibles para agendar esta reunión.");
-          }
-          return;
+        if (!chosen) {
+          return alert("No hay slots libres fuera de descansos.");
         }
 
-        // 4. Checar conflicto final
-        const conflictMeeting = acceptedSnapshot.docs.find(
-          (d) =>
-            d.data().timeSlot ===
-            `${selectedSlot.startTime} - ${selectedSlot.endTime}`
-        );
-        if (conflictMeeting) {
-          alert("Ya existe reunión aceptada en ese horario.");
-          return;
-        }
-
-        // 5. Aceptar: asignar slot
-        await updateDoc(meetingDocRef, {
+        // 3. Actualizar reunión y agenda
+        await updateDoc(mtgRef, {
           status: "accepted",
-          tableAssigned: selectedSlot.tableNumber.toString(),
-          timeSlot: `${selectedSlot.startTime} - ${selectedSlot.endTime}`,
+          tableAssigned: chosen.tableNumber.toString(),
+          timeSlot: `${chosen.startTime} - ${chosen.endTime}`,
         });
-
-        // 6. Marcar el slot en agenda
-        await updateDoc(doc(db, "agenda", selectedSlotDoc.id), {
+        await updateDoc(doc(db, "agenda", chosenDoc.id), {
           available: false,
           meetingId,
         });
 
-        try {
-          console.log("Aumentando contador");
-
-          // Obtener detalles completos de los participantes
-          const requesterDoc = await getDoc(doc(db, "users", requesterId));
-          const receiverDoc = await getDoc(doc(db, "users", receiverId));
-          const requesterData = requesterDoc.exists()
-            ? requesterDoc.data()
-            : null;
-          const receiverData = receiverDoc.exists() ? receiverDoc.data() : null;
-
-          // Construir el objeto meeting con la info extendida de participantes
-          const meetingInfo = {
-            ...meetingData,
-            requester: requesterData, // Información completa del solicitante
-            receiver: receiverData, // Información completa del receptor
-          };
-
-          const response = await fetch(
-            "https://incrementtreecounter-y72vyrlzva-uc.a.run.app",
-            {
-              method: "POST", // Usamos POST para enviar datos
-              headers: {
-                "Content-Type": "application/json",
-                "x-api-key": "CLAVE_SEGURA_GENFORES", // La clave que configuraste en la Cloud Function
-              },
-              body: JSON.stringify({
-                meeting: meetingInfo, // Se envía la información extendida de la reunión
-              }),
-            }
-          );
-
-          const result = await response.json();
-          if (result.success) {
-            console.log(
-              `🌳 Contador incrementado exitosamente: ${result.currentCount}`
-            );
-          } else {
-            console.error("❌ Error desde Cloud Function:", result.error);
-          }
-        } catch (error) {
-          console.error("❌ Error al hacer la solicitud HTTP:", error);
-        }
-
-        // 7. Notificación al solicitante
+        // 4. Notificar al solicitante
         await addDoc(collection(db, "notifications"), {
-          userId: requesterId,
+          userId: data.requesterId,
           title: "Reunión aceptada",
-          message: `Tu solicitud de reunión fue aceptada.`,
+          message: "Tu reunión fue aceptada.",
           timestamp: new Date(),
           read: false,
         });
-
         showNotification({
           title: "Reunión aceptada",
-          message: "Has aceptado la reunión exitosamente.",
+          message: "Asignada correctamente.",
           color: "green",
-          position: "top-right",
         });
       } else {
         // Rechazar
-        await updateDoc(meetingDocRef, { status: newStatus });
+        await updateDoc(mtgRef, { status: newStatus });
         await addDoc(collection(db, "notifications"), {
-          userId: requesterId,
+          userId: data.requesterId,
           title: "Reunión rechazada",
-          message: `Tu solicitud de reunión fue rechazada.`,
+          message: "Tu reunión fue rechazada.",
           timestamp: new Date(),
           read: false,
         });
-
         showNotification({
           title: "Reunión rechazada",
-          message: "Has rechazado la reunión.",
+          message: "Operación completada.",
           color: "red",
-          position: "top-right",
         });
       }
-    } catch (error) {
-      console.error("Error al actualizar la reunión:", error);
+    } catch (e) {
+      console.error(e);
     }
   };
 

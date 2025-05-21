@@ -23,18 +23,14 @@ import {
 import anime from "animejs";
 import { useParams } from "react-router-dom";
 
-// Función para generar los intervalos de horarios
-// Genera slots (HH:MM) desde start hasta end,
-// incrementando en (meetingDuration + breakTime) minutos.
+// Genera los slots de tiempo según configuración
 const generateTimeSlots = (start, end, meetingDuration, breakTime) => {
   const slots = [];
   let currentTime = new Date(`1970-01-01T${start}:00`);
   const endTimeObj = new Date(`1970-01-01T${end}:00`);
 
   while (currentTime < endTimeObj) {
-    const hhmm = currentTime.toTimeString().substring(0, 5);
-    slots.push(hhmm);
-    // Avanza meetingDuration + breakTime minutos
+    slots.push(currentTime.toTimeString().substring(0, 5));
     currentTime.setMinutes(
       currentTime.getMinutes() + meetingDuration + breakTime
     );
@@ -43,8 +39,31 @@ const generateTimeSlots = (start, end, meetingDuration, breakTime) => {
   return slots;
 };
 
+// Verifica si un slot (por su hora de inicio y duración) se solapa con algún bloque de descanso
+const slotOverlapsBreakBlock = (slotStart, meetingDuration, breakBlocks = []) => {
+  const [h, m] = slotStart.split(":").map(Number);
+  const slotStartMin = h * 60 + m;
+  const slotEndMin = slotStartMin + meetingDuration;
+
+  return breakBlocks.some((block) => {
+    const [sh, sm] = block.start.split(":").map(Number);
+    const [eh, em] = block.end.split(":").map(Number);
+    const blockStartMin = sh * 60 + sm;
+    const blockEndMin = eh * 60 + em;
+
+    return (
+      // Empieza dentro del bloque
+      (slotStartMin >= blockStartMin && slotStartMin < blockEndMin) ||
+      // Termina dentro del bloque
+      (slotEndMin > blockStartMin && slotEndMin <= blockEndMin) ||
+      // Abarca completamente el bloque
+      (slotStartMin <= blockStartMin && slotEndMin >= blockEndMin)
+    );
+  });
+};
+
 const MatrixPage = () => {
-  const { eventId } = useParams(); // Obtener el eventId de la URL
+  const { eventId } = useParams();
   const [config, setConfig] = useState(null);
   const [agenda, setAgenda] = useState([]);
   const [meetings, setMeetings] = useState([]);
@@ -54,242 +73,194 @@ const MatrixPage = () => {
   const [asistentes, setAsistentes] = useState([]);
   const tableRefs = useRef([]);
 
-  // 🔹 Cargar Configuración del Evento desde Firestore
+  // Carga configuración del evento
   useEffect(() => {
     if (!eventId) return;
-
-    const fetchConfig = async () => {
-      const configRef = doc(db, "events", eventId);
-      const configSnap = await getDoc(configRef);
-      if (configSnap.exists()) {
-        setConfig(configSnap.data());
-      }
-    };
-
-    fetchConfig();
+    (async () => {
+      const ref = doc(db, "events", eventId);
+      const snap = await getDoc(ref);
+      if (snap.exists()) setConfig(snap.data());
+    })();
   }, [eventId]);
 
-  // 🔹 Cargar la Agenda en Tiempo Real Filtrada por Evento
+  // Suscripción a agenda
   useEffect(() => {
-    if (!config || !eventId) return;
-
+    if (!config) return;
     const q = query(
       collection(db, "agenda"),
       where("eventId", "==", eventId),
       orderBy("startTime")
     );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const agendaData = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setAgenda(agendaData);
+    return onSnapshot(q, (snap) => {
+      setAgenda(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
-
-    return () => unsubscribe();
   }, [config, eventId]);
 
-  // 🔹 Cargar las Reuniones en Tiempo Real desde "events/{eventId}/meetings"
+  // Suscripción a reuniones aceptadas
   useEffect(() => {
-    if (!config || !eventId) return;
-
+    if (!config) return;
     const q = query(
       collection(db, "events", eventId, "meetings"),
       where("status", "==", "accepted")
     );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const meetingsData = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        timeSlot: doc.data().timeSlot.match(/\d{2}:\d{2}/)[0], // Extraer HH:MM
-      }));
-      setMeetings(meetingsData);
+    return onSnapshot(q, (snap) => {
+      setMeetings(snap.docs.map(d => ({
+        id: d.id,
+        ...d.data(),
+        timeSlot: d.data().timeSlot.match(/\d{2}:\d{2}/)[0],
+      })));
     });
-
-    return () => unsubscribe();
   }, [config, eventId]);
 
-  // 🔹 Cargar la Lista de Asistentes al Evento
+  // Carga asistentes registrados al evento
   useEffect(() => {
     if (!eventId) return;
-
-    const fetchAsistentes = async () => {
-      const usersSnapshot = await getDocs(
+    (async () => {
+      const snap = await getDocs(
         query(collection(db, "users"), where("eventId", "==", eventId))
       );
-      const usersList = usersSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setAsistentes(usersList);
-    };
-
-    fetchAsistentes();
+      setAsistentes(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    })();
   }, [eventId]);
 
-  // 🔹 Cargar Información de Participantes en Tiempo Real
+  // Carga info de participantes de cada reunión
   useEffect(() => {
     if (meetings.length === 0) return;
-
-    const fetchParticipants = async () => {
-      const usersData = {};
-      for (const meeting of meetings) {
-        for (const participantId of meeting.participants) {
-          if (!usersData[participantId]) {
-            const userDoc = await getDoc(doc(db, "users", participantId));
-            if (userDoc.exists()) {
-              usersData[participantId] = userDoc.data();
-            }
+    (async () => {
+      const users = {};
+      for (const mtg of meetings) {
+        for (const pid of mtg.participants) {
+          if (!users[pid]) {
+            const snap = await getDoc(doc(db, "users", pid));
+            if (snap.exists()) users[pid] = snap.data();
           }
         }
       }
-      setParticipantsInfo(usersData);
-    };
-
-    fetchParticipants();
+      setParticipantsInfo(users);
+    })();
   }, [meetings]);
 
-  // 🔹 Construcción de la Matriz Filtrada por Evento
+  // Construye matriz por mesas, incluyendo bloques de descanso
   useEffect(() => {
-    if (!config || agenda.length === 0) return;
-
-    const { numTables, meetingDuration, breakTime, startTime, endTime } =
-      config.config;
-    const timeSlots = generateTimeSlots(
+    if (!config) return;
+    const {
+      numTables,
+      meetingDuration,
+      breakTime,
       startTime,
       endTime,
-      meetingDuration,
-      breakTime
+      breakBlocks = []
+    } = config.config;
+
+    const timeSlots = generateTimeSlots(startTime, endTime, meetingDuration, breakTime);
+
+    // Inicializa matriz con estados 'available' o 'break'
+    const baseMatrix = Array.from({ length: numTables }, () =>
+      timeSlots.map(slot => ({
+        status: slotOverlapsBreakBlock(slot, meetingDuration, breakBlocks)
+          ? "break"
+          : "available",
+        participants: []
+      }))
     );
 
-    // Crear matriz vacía (mesas × horarios)
-    const newMatrix = Array.from({ length: numTables }, () =>
-      Array(timeSlots.length).fill({
-        status: "available",
-        participants: [],
-      })
-    );
-
-    // 🔸 Mapear la agenda en la matriz
-    agenda.forEach((slot) => {
-      const tableIndex = slot.tableNumber - 1;
-      const timeSlotIndex = timeSlots.indexOf(slot.startTime);
-
-      if (tableIndex >= 0 && timeSlotIndex >= 0) {
-        newMatrix[tableIndex][timeSlotIndex] = {
+    // Marca slots según datos de agenda
+    agenda.forEach(slot => {
+      const tIdx = slot.tableNumber - 1;
+      const sIdx = timeSlots.indexOf(slot.startTime);
+      if (tIdx >= 0 && sIdx >= 0) {
+        baseMatrix[tIdx][sIdx] = {
           status: slot.available ? "available" : "occupied",
-          participants: [],
+          participants: []
         };
       }
     });
 
-    // 🔸 Mapear las reuniones en la matriz
-    meetings.forEach((meeting) => {
-      const tableIndex = Number(meeting.tableAssigned) - 1;
-      const normalizedTimeSlot = meeting.timeSlot.trim();
-
-      const timeSlotIndex = timeSlots.findIndex(
-        (slot) => slot === normalizedTimeSlot
-      );
-
-      if (tableIndex >= 0 && timeSlotIndex >= 0) {
-        newMatrix[tableIndex][timeSlotIndex] = {
+    // Marca reuniones aceptadas
+    meetings.forEach(mtg => {
+      const tIdx = Number(mtg.tableAssigned) - 1;
+      const sIdx = timeSlots.indexOf(mtg.timeSlot.trim());
+      if (tIdx >= 0 && sIdx >= 0) {
+        baseMatrix[tIdx][sIdx] = {
           status: "accepted",
-          participants: meeting.participants.map((id) =>
+          participants: mtg.participants.map(id =>
             participantsInfo[id]
               ? `${participantsInfo[id].nombre} (${participantsInfo[id].empresa})`
               : "Cargando..."
-          ),
+          )
         };
-      } else {
-        console.warn("Error asignando reunión:", meeting);
       }
     });
 
-    // 🔹 Verificar la matriz final antes de actualizar el estado
-    setMatrix([...newMatrix]); // Forzar actualización
+    setMatrix(baseMatrix);
   }, [config, agenda, meetings, participantsInfo]);
 
-  // 🔹 Construcción de la Matriz por Usuario
+  // Construye matriz por usuarios, también considerando descansos
   useEffect(() => {
-    if (
-      !config ||
-      meetings.length === 0 ||
-      asistentes.length === 0 ||
-      Object.keys(participantsInfo).length === 0
-    )
-      return;
-
-    const { meetingDuration, breakTime, startTime, endTime } = config.config;
-    const timeSlots = generateTimeSlots(
+    if (!config) return;
+    const {
+      meetingDuration,
+      breakTime,
       startTime,
       endTime,
-      meetingDuration,
-      breakTime
-    );
+      breakBlocks = []
+    } = config.config;
+    const timeSlots = generateTimeSlots(startTime, endTime, meetingDuration, breakTime);
 
-    const newMatrixUsuarios = asistentes.map((asistente) => {
-      const row = timeSlots.map((slot) => {
-        const meetingForSlot = meetings.find(
-          (meeting) =>
-            meeting.timeSlot === slot &&
-            meeting.participants.includes(asistente.id)
+    const usersMatrix = asistentes.map(user => {
+      const row = timeSlots.map(slot => {
+        if (slotOverlapsBreakBlock(slot, meetingDuration, breakBlocks)) {
+          return { status: "break" };
+        }
+        const mtg = meetings.find(m =>
+          m.timeSlot === slot &&
+          m.participants.includes(user.id)
         );
-        return meetingForSlot
-          ? {
-              status: "accepted",
-              table: meetingForSlot.tableAssigned,
-              participants: meetingForSlot.participants.filter(
-                (pid) => pid !== asistente.id
-              ),
-            }
-          : { status: "available" };
+        if (mtg) {
+          return {
+            status: "accepted",
+            table: mtg.tableAssigned,
+            participants: mtg.participants.filter(pid => pid !== user.id)
+          };
+        }
+        return { status: "available" };
       });
-
-      return { asistente, row };
+      return { asistente: user, row };
     });
 
-    setMatrixUsuarios(newMatrixUsuarios);
-  }, [config, meetings, asistentes, participantsInfo]);
+    setMatrixUsuarios(usersMatrix);
+  }, [config, asistentes, meetings, participantsInfo]);
 
-  // 🔹 Animación de colores con Anime.js
+  // Animación de fondo de celdas
   useEffect(() => {
-    tableRefs.current.forEach((ref, index) => {
+    matrix.flat().forEach((_, idx) => {
+      const ref = tableRefs.current[idx];
       if (ref) {
         anime({
           targets: ref,
-          backgroundColor: getColor(
-            matrix[Math.floor(index / matrix[0].length)][
-              index % matrix[0].length
-            ].status
-          ),
+          backgroundColor: getColor(matrix[Math.floor(idx / matrix[0].length)][idx % matrix[0].length].status),
           duration: 500,
-          easing: "easeInOutQuad",
+          easing: "easeInOutQuad"
         });
       }
     });
   }, [matrix]);
 
-  // 🔹 Función para asignar colores según el estado
-  const getColor = (status) => {
+  // Colores según estado
+  const getColor = status => {
     switch (status) {
-      case "available":
-        return "#d3d3d3"; // Gris suave
-      case "occupied":
-        return "#ffa500"; // Naranja
-      case "accepted":
-        return "#4caf50"; // Verde
-      default:
-        return "#d3d3d3";
+      case "available": return "#d3d3d3";
+      case "occupied":  return "#ffa500";
+      case "accepted":  return "#4caf50";
+      case "break":     return "#90caf9";
+      default:          return "#d3d3d3";
     }
   };
 
   return (
     <Container fluid>
       <Title order={2} mt="md" mb="md" align="center">
-        Matriz Rueda de Negocios - Evento {config?.eventName || "Desconocido"}
+        Matriz Rueda de Negocios — Evento {config?.eventName || "Desconocido"}
       </Title>
       <Tabs defaultValue="mesas">
         <Tabs.List>
@@ -297,69 +268,36 @@ const MatrixPage = () => {
           <Tabs.Tab value="usuarios">Por Usuarios</Tabs.Tab>
         </Tabs.List>
 
-        {/* Vista por mesas */}
+        {/* Vista por Mesas */}
         <Tabs.Panel value="mesas" pt="md">
-          <Paper
-            shadow="md"
-            radius="md"
-            style={{ margin: "0 auto", maxWidth: "90%" }}
-          >
+          <Paper shadow="md" radius="md" style={{ margin: "0 auto", maxWidth: "90%" }}>
             <Flex gap="lg" justify="center" align="center" wrap="wrap">
-              {matrix.map((table, tableIndex) => (
-                <Card
-                  key={`table-${tableIndex}`}
-                  shadow="sm"
-                  radius="md"
-                  style={{ minWidth: "200px" }}
-                >
-                  <Title order={5} align="center">{`Mesa ${
-                    tableIndex + 1
-                  }`}</Title>
+              {matrix.map((table, ti) => (
+                <Card key={ti} shadow="sm" radius="md" style={{ minWidth: 200 }}>
+                  <Title order={5} align="center">Mesa {ti + 1}</Title>
                   <Table striped highlightOnHover>
                     <Table.Tbody>
-                      {table.map((slot, slotIndex) => (
+                      {table.map((cell, si) => (
                         <Table.Tr
-                          key={`${tableIndex}-${slotIndex}`}
-                          ref={(el) =>
-                            (tableRefs.current[
-                              tableIndex * matrix[0].length + slotIndex
-                            ] = el)
-                          }
-                          style={{
-                            backgroundColor: getColor(slot.status),
-                            borderRadius: "5px",
-                          }}
+                          key={`${ti}-${si}`}
+                          ref={el => tableRefs.current[ti * matrix[0].length + si] = el}
+                          style={{ backgroundColor: getColor(cell.status), borderRadius: 5 }}
                         >
-                          <Table.Td
-                            style={{
-                              padding: "8px",
-                              textAlign: "center",
-                              fontWeight: "bold",
-                            }}
-                          >
-                            {
-                              generateTimeSlots(
-                                config.config.startTime,
-                                config.config.endTime,
-                                config.config.meetingDuration,
-                                config.config.breakTime
-                              )[slotIndex]
-                            }
+                          <Table.Td style={{ padding: 8, textAlign: "center", fontWeight: "bold" }}>
+                            {generateTimeSlots(
+                              config.config.startTime,
+                              config.config.endTime,
+                              config.config.meetingDuration,
+                              config.config.breakTime
+                            )[si]}
                           </Table.Td>
-                          <Table.Td
-                            style={{ padding: "8px", textAlign: "center" }}
-                          >
-                            {slot.status === "available" ? (
-                              "Disponible"
-                            ) : (
-                              <>
-                                {slot.participants.map((p, index) => (
-                                  <Text size="xs" key={index}>
-                                    {p}
-                                  </Text>
-                                ))}
-                              </>
-                            )}
+                          <Table.Td style={{ padding: 8, textAlign: "center" }}>
+                            {cell.status === "available" && "Disponible"}
+                            {cell.status === "occupied"  && "Ocupado"}
+                            {cell.status === "break"     && "Descanso"}
+                            {cell.status === "accepted"   && cell.participants.map((p, i) => (
+                              <Text size="xs" key={i}>{p}</Text>
+                            ))}
                           </Table.Td>
                         </Table.Tr>
                       ))}
@@ -375,50 +313,34 @@ const MatrixPage = () => {
         <Tabs.Panel value="usuarios" pt="md">
           <Flex gap="lg" justify="center" align="center" wrap="wrap">
             {matrixUsuarios.map(({ asistente, row }) => (
-              <Card
-                key={asistente.id}
-                shadow="sm"
-                radius="md"
-                style={{ minWidth: "300px", margin: "10px" }}
-              >
-                <Title order={5} align="center" mb="sm">
-                  {asistente.nombre}
-                </Title>
+              <Card key={asistente.id} shadow="sm" radius="md" style={{ minWidth: 300, margin: 10 }}>
+                <Title order={5} align="center" mb="sm">{asistente.nombre}</Title>
                 <Table striped highlightOnHover>
-                  <Table.Tbody
-                    style={{
-                      padding: "8px",
-                      textAlign: "center",
-                      fontWeight: "bold",
-                    }}
-                  >
+                  <Table.Tbody>
                     {generateTimeSlots(
                       config.config.startTime,
                       config.config.endTime,
                       config.config.meetingDuration,
                       config.config.breakTime
-                    ).map((slot, index) => {
-                      const cell = row[index];
+                    ).map((slot, i) => {
+                      const cell = row[i];
                       return (
-                        <Table.Tr
-                          key={index}
-                          style={{ backgroundColor: getColor(cell.status) }}
-                        >
+                        <Table.Tr key={i} style={{ backgroundColor: getColor(cell.status) }}>
                           <Table.Td>{slot}</Table.Td>
                           <Table.Td>
                             {cell.status === "accepted" ? (
                               <>
-                                <div>{`Mesa ${cell.table}`}</div>
-                                <div>
-                                  {cell.participants.map((pid, idx) => (
-                                    <Text key={idx} size="xs">
-                                      {participantsInfo[pid]
-                                        ? `${participantsInfo[pid].nombre} (${participantsInfo[pid].empresa})`
-                                        : "Cargando..."}
-                                    </Text>
-                                  ))}
-                                </div>
+                                <div>Mesa {cell.table}</div>
+                                {cell.participants.map((pid, idx) => (
+                                  <Text key={idx} size="xs">
+                                    {participantsInfo[pid]
+                                      ? `${participantsInfo[pid].nombre} (${participantsInfo[pid].empresa})`
+                                      : "Cargando..."}
+                                  </Text>
+                                ))}
                               </>
+                            ) : cell.status === "break" ? (
+                              "Descanso"
                             ) : (
                               "Disponible"
                             )}

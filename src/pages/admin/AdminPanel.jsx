@@ -102,19 +102,39 @@ const AdminPanel = () => {
       .padStart(2, "0")}`;
   };
 
+  const isWithinBreakBlock = (slotStart, slotEnd, breakBlocks) => {
+    if (!Array.isArray(breakBlocks)) return false;
+
+    return breakBlocks.some((block) => {
+      if (!block.start || !block.end) return false;
+
+      const blockStart = timeToMinutes(block.start);
+      const blockEnd = timeToMinutes(block.end);
+
+      return (
+        (slotStart >= blockStart && slotStart < blockEnd) || // Empieza dentro del descanso
+        (slotEnd > blockStart && slotEnd <= blockEnd) || // Termina dentro del descanso
+        (slotStart <= blockStart && slotEnd >= blockEnd) // Abarca completamente el bloque
+      );
+    });
+  };
+
   // Generar la agenda para un evento (se asigna eventId a cada slot)
   const generateAgendaForEvent = async (event) => {
     try {
       setActionLoading(true);
 
-      // IMPORTANTE: Usar la config del propio evento
-      const { meetingDuration, breakTime, startTime, endTime, numTables } =
-        event.config;
+      const {
+        meetingDuration,
+        breakTime,
+        startTime,
+        endTime,
+        numTables,
+        breakBlocks = [],
+      } = event.config;
 
       const startMinutes = timeToMinutes(startTime);
       const endMinutes = timeToMinutes(endTime);
-
-      // Cada bloque = meetingDuration + breakTime
       const blockLength = meetingDuration + breakTime;
       const totalSlots = Math.floor((endMinutes - startMinutes) / blockLength);
 
@@ -123,6 +143,12 @@ const AdminPanel = () => {
       for (let slot = 0; slot < totalSlots; slot++) {
         const slotStart = startMinutes + slot * blockLength;
         const slotEnd = slotStart + meetingDuration;
+
+        // ❌ Omitir si está en bloque de descanso
+        if (isWithinBreakBlock(slotStart, slotEnd, breakBlocks)) {
+          continue;
+        }
+
         const slotStartTime = minutesToTime(slotStart);
         const slotEndTime = minutesToTime(slotEnd);
 
@@ -138,6 +164,7 @@ const AdminPanel = () => {
           createdCount++;
         }
       }
+
       setGlobalMessage(
         `Agenda generada: ${createdCount} slots creados para el evento ${event.eventName}.`
       );
@@ -407,24 +434,23 @@ const AdminPanel = () => {
         />
       )}
 
-{selectedEvent && (
-  <MeetingsListModal
-    opened={meetingsModalOpened}
-    onClose={() => setMeetingsModalOpened(false)}
-    event={selectedEvent}
-    setGlobalMessage={setGlobalMessage}
-  />
-)}
+      {selectedEvent && (
+        <MeetingsListModal
+          opened={meetingsModalOpened}
+          onClose={() => setMeetingsModalOpened(false)}
+          event={selectedEvent}
+          setGlobalMessage={setGlobalMessage}
+        />
+      )}
 
-{selectedEvent && (
-  <AttendeesListModal
-    opened={attendeesModalOpened}
-    onClose={() => setAttendeesModalOpened(false)}
-    event={selectedEvent}
-    setGlobalMessage={setGlobalMessage}
-  />
-)}
-
+      {selectedEvent && (
+        <AttendeesListModal
+          opened={attendeesModalOpened}
+          onClose={() => setAttendeesModalOpened(false)}
+          event={selectedEvent}
+          setGlobalMessage={setGlobalMessage}
+        />
+      )}
     </Container>
   );
 };
