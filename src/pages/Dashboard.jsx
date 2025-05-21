@@ -480,6 +480,12 @@ END:VCARD`;
         </Menu>
       </Flex>
 
+      <Text>
+        Cuando solicites una reunión, el sistema buscará automáticamente el
+        horario disponible más rápido en la agenda. y te asignara un espacio de
+        reunión de manera automática cuando te acepten la reunión.
+      </Text>
+
       <Tabs defaultValue="asistentes">
         <Tabs.List>
           <Tabs.Tab value="asistentes">
@@ -590,47 +596,56 @@ END:VCARD`;
         <Tabs.Panel value="reuniones" pt="md">
           <Stack>
             {acceptedMeetings.length > 0 ? (
-              acceptedMeetings.map((meeting) => {
-                const otherUserId =
-                  meeting.requesterId === uid
-                    ? meeting.receiverId
-                    : meeting.requesterId;
-                const participant = participantsInfo[otherUserId];
-
-                return (
-                  <Card key={meeting.id} shadow="sm" p="lg">
-                    <Text>
-                      <strong>Reunión con:</strong>{" "}
-                      {participant ? participant.nombre : "Cargando..."}
-                    </Text>
-                    <Text>
-                      <strong>Horario:</strong>{" "}
-                      {meeting.timeSlot || "Por asignar"}
-                    </Text>
-                    <Text>
-                      <strong>Mesa:</strong>{" "}
-                      {meeting.tableAssigned || "Por asignar"}
-                    </Text>
-                    {participant && (
-                      <Group mt="sm">
-                        <Button
-                          variant="outline"
-                          onClick={() => downloadVCard(participant)}
-                        >
-                          Agregar a Contactos
-                        </Button>
-                        <Button
-                          variant="outline"
-                          color="green"
-                          onClick={() => sendWhatsAppMessage(participant)}
-                        >
-                          Enviar WhatsApp
-                        </Button>
-                      </Group>
-                    )}
-                  </Card>
-                );
-              })
+              acceptedMeetings
+                .slice() // clonamos para no mutar el original
+                .sort((a, b) => {
+                  // extraemos la hora de inicio ("HH:MM") de cada timeSlot
+                  const [aStart] = a.timeSlot.split(" - ");
+                  const [bStart] = b.timeSlot.split(" - ");
+                  const [aH, aM] = aStart.split(":").map(Number);
+                  const [bH, bM] = bStart.split(":").map(Number);
+                  return aH * 60 + aM - (bH * 60 + bM);
+                })
+                .map((meeting) => {
+                  const otherUserId =
+                    meeting.requesterId === uid
+                      ? meeting.receiverId
+                      : meeting.requesterId;
+                  const participant = participantsInfo[otherUserId];
+                  return (
+                    <Card key={meeting.id} shadow="sm" p="lg">
+                      <Text>
+                        <strong>Reunión con:</strong>{" "}
+                        {participant ? participant.nombre : "Cargando..."}
+                      </Text>
+                      <Text>
+                        <strong>Horario:</strong>{" "}
+                        {meeting.timeSlot || "Por asignar"}
+                      </Text>
+                      <Text>
+                        <strong>Mesa:</strong>{" "}
+                        {meeting.tableAssigned || "Por asignar"}
+                      </Text>
+                      {participant && (
+                        <Group mt="sm">
+                          <Button
+                            variant="outline"
+                            onClick={() => downloadVCard(participant)}
+                          >
+                            Agregar a Contactos
+                          </Button>
+                          <Button
+                            variant="outline"
+                            color="green"
+                            onClick={() => sendWhatsAppMessage(participant)}
+                          >
+                            Enviar WhatsApp
+                          </Button>
+                        </Group>
+                      )}
+                    </Card>
+                  );
+                })
             ) : (
               <Text>No tienes reuniones aceptadas.</Text>
             )}
