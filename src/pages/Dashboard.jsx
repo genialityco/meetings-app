@@ -39,6 +39,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { showNotification } from "@mantine/notifications";
 import { IoNotificationsOutline } from "react-icons/io5";
 import { BiX } from "react-icons/bi";
+import { FaWhatsapp } from "react-icons/fa";
 
 const slotOverlapsBreakBlock = (
   slotStart,
@@ -90,6 +91,8 @@ const Dashboard = () => {
   const [selectedImage, setSelectedImage] = useState(null);
 
   const [pendingVisible, setPendingVisible] = useState(true);
+
+  const [expandedMeetingId, setExpandedMeetingId] = useState(null);
 
   // ---------------------------------------------------------------------------
   // 1. Verificar usuario logueado, sino -> '/'
@@ -259,6 +262,32 @@ const Dashboard = () => {
     });
   }, [uid, eventId]);
 
+  // const url = "https://www.onurix.com/api/v1/sms/send";
+
+  // async function sendSms(text, phone) {
+  //   const data = new URLSearchParams();
+  //   data.append("client", "7122");
+  //   data.append("key", "770675cf3d2ed5cedcd469f170d0a0b9b8752d37682f81c328874");
+  //   data.append("phone", phone);
+  //   data.append("sms", text);
+
+  //   try {
+  //     const response = await fetch(url, {
+  //       method: "POST",
+  //       headers: {
+  //         "Content-Type": "application/x-www-form-urlencoded",
+  //         Accept: "application/json",
+  //       },
+  //       body: data,
+  //     });
+
+  //     const json = await response.json();
+  //     console.log("✅ SMS enviado:", json);
+  //   } catch (err) {
+  //     console.error("❌ Error al enviar SMS:", err.message);
+  //   }
+  // }
+
   // ---------------------------------------------------------------------------
   // 9. Enviar solicitud de reunión: crear doc en /events/{eventId}/meetings
   // ---------------------------------------------------------------------------
@@ -273,6 +302,12 @@ const Dashboard = () => {
         createdAt: new Date(),
         participants: [uid, assistantId],
       });
+
+      // sendSms(
+      //   `${currentUser.data.nombre} te ha enviado una solicitud de reunión.`,
+      //   assistantPhone
+      // );
+
       await addDoc(collection(db, "notifications"), {
         userId: assistantId,
         title: "Nueva solicitud de reunión",
@@ -280,6 +315,7 @@ const Dashboard = () => {
         timestamp: new Date(),
         read: false,
       });
+
       showNotification({
         title: "Solicitud enviada",
         message: "Tu solicitud ha sido enviada.",
@@ -529,6 +565,10 @@ END:VCARD`;
                               {requester?.contacto?.correo || "No disponible"}
                             </Text>
                             <Text size="xs">
+                              📞{" "}
+                              {requester.contacto?.telefono || "No disponible"}
+                            </Text>
+                            <Text size="xs">
                               📝 {requester?.descripcion || "No especificada"}
                             </Text>
                             <Text size="xs">
@@ -560,6 +600,14 @@ END:VCARD`;
                                 }
                               >
                                 <BiX size={18} />
+                              </ActionIcon>
+                              <ActionIcon
+                                size="sm"
+                                variant="light"
+                                color="teal"
+                                onClick={() => sendWhatsAppMessage(requester)}
+                              >
+                                <FaWhatsapp size={18} />
                               </ActionIcon>
                             </Group>
                           </Grid.Col>
@@ -663,7 +711,12 @@ END:VCARD`;
                     <Group mt="sm">
                       <Button
                         mt="sm"
-                        onClick={() => sendMeetingRequest(assistant.id)}
+                        onClick={() =>
+                          sendMeetingRequest(
+                            assistant.id,
+                            assistant.contacto.telefono
+                          )
+                        }
                         disabled={!solicitarReunionHabilitado}
                       >
                         {solicitarReunionHabilitado
@@ -724,6 +777,34 @@ END:VCARD`;
                         <strong>Mesa:</strong>{" "}
                         {meeting.tableAssigned || "Por asignar"}
                       </Text>
+                      <Collapse in={expandedMeetingId === meeting.id} mt="sm">
+                        <Text size="sm">
+                          🏢 <strong>Empresa:</strong> {participant.empresa}
+                        </Text>
+                        <Text size="sm">
+                          🏷 <strong>Cargo:</strong> {participant.cargo}
+                        </Text>
+                        <Text size="sm">
+                          📧 <strong>Correo:</strong>{" "}
+                          {participant.contacto?.correo || "No disponible"}
+                        </Text>
+                        <Text size="sm">
+                          📞 <strong>Teléfono:</strong>{" "}
+                          {participant.contacto?.telefono || "No disponible"}
+                        </Text>
+                        <Text size="sm">
+                          📝 <strong>Descripción:</strong>{" "}
+                          {participant.descripcion || "No especificada"}
+                        </Text>
+                        <Text size="sm">
+                          🎯 <strong>Interés Principal:</strong>{" "}
+                          {participant.interesPrincipal || "No especificado"}
+                        </Text>
+                        <Text size="sm">
+                          🔍 <strong>Necesidad:</strong>{" "}
+                          {participant.necesidad || "No especificada"}
+                        </Text>
+                      </Collapse>
                       {participant && (
                         <Group mt="sm">
                           <Button
@@ -738,6 +819,20 @@ END:VCARD`;
                             onClick={() => sendWhatsAppMessage(participant)}
                           >
                             Enviar WhatsApp
+                          </Button>
+                          <Button
+                            variant="subtle"
+                            onClick={() =>
+                              setExpandedMeetingId(
+                                expandedMeetingId === meeting.id
+                                  ? null
+                                  : meeting.id
+                              )
+                            }
+                          >
+                            {expandedMeetingId === meeting.id
+                              ? "Ocultar info"
+                              : "Ver más info"}
                           </Button>
                         </Group>
                       )}
@@ -793,10 +888,10 @@ END:VCARD`;
                               📧 <strong>Correo:</strong>{" "}
                               {requester.contacto?.correo || "No disponible"}
                             </Text>
-                            {/* <Text size="sm">
+                            <Text size="sm">
                               📞 <strong>Teléfono:</strong>{" "}
                               {requester.contacto?.telefono || "No disponible"}
-                            </Text> */}
+                            </Text>
                             {/* <Text size="sm">
                               🆔 <strong>Cédula:</strong>{" "}
                               {requester.cedula || "No disponible"}
@@ -833,6 +928,13 @@ END:VCARD`;
                             }
                           >
                             Rechazar
+                          </Button>
+                          <Button
+                            variant="outline"
+                            color="green"
+                            onClick={() => sendWhatsAppMessage(requester)}
+                          >
+                            Enviar WhatsApp
                           </Button>
                         </Group>
                       </Card>
@@ -935,10 +1037,10 @@ END:VCARD`;
                               📧 <strong>Correo:</strong>{" "}
                               {requester.contacto?.correo || "No disponible"}
                             </Text>
-                            {/* <Text size="sm">
+                            <Text size="sm">
                               📞 <strong>Teléfono:</strong>{" "}
                               {requester.contacto?.telefono || "No disponible"}
-                            </Text> */}
+                            </Text>
                             {/* <Text size="sm">
                               🆔 <strong>Cédula:</strong>{" "}
                               {requester.cedula || "No disponible"}
