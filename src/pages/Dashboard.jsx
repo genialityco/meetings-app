@@ -17,6 +17,9 @@ import {
   TextInput,
   Avatar,
   Modal,
+  Collapse,
+  Box,
+  CheckIcon,
 } from "@mantine/core";
 import {
   collection,
@@ -35,6 +38,7 @@ import { UserContext } from "../context/UserContext";
 import { useNavigate, useParams } from "react-router-dom";
 import { showNotification } from "@mantine/notifications";
 import { IoNotificationsOutline } from "react-icons/io5";
+import { BiX } from "react-icons/bi";
 
 const slotOverlapsBreakBlock = (
   slotStart,
@@ -84,6 +88,8 @@ const Dashboard = () => {
   // Estados para el modal de imagen
   const [avatarModalOpened, setAvatarModalOpened] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
+
+  const [pendingVisible, setPendingVisible] = useState(true);
 
   // ---------------------------------------------------------------------------
   // 1. Verificar usuario logueado, sino -> '/'
@@ -479,6 +485,98 @@ END:VCARD`;
           </Menu.Dropdown>
         </Menu>
       </Flex>
+
+      {/* Sección siempre visible de Solicitudes Pendientes */}
+      <Card shadow="sm" mb="md">
+        <Group position="apart">
+          <Text weight={500}>
+            Solicitudes Reuniones Pendientes ({pendingRequests.length})
+          </Text>
+          <Button
+            variant="subtle"
+            size="xs"
+            onClick={() => setPendingVisible((v) => !v)}
+          >
+            {pendingVisible ? "Ocultar" : "Mostrar"}
+          </Button>
+        </Group>
+        <Collapse in={pendingVisible} mt="sm">
+          <Box sx={{ overflowX: "auto" }}>
+            <Grid gutter="md">
+              {pendingRequests.length > 0 ? (
+                pendingRequests.map((req) => {
+                  const requester = assistants.find(
+                    (a) => a.id === req.requesterId
+                  );
+                  return (
+                    <Grid.Col span={{ base: 12, md: 6, lg: 3 }} key={req.id}>
+                      <Card
+                        key={req.id}
+                        shadow="xs"
+                        p="sm"
+                        style={{ minWidth: 260, flex: "0 0 auto" }}
+                      >
+                        <Grid>
+                          <Grid.Col span={6}>
+                            <Group align="center" spacing="sm" mb="xs">
+                              <Avatar src={requester?.photoURL} radius="xl" />
+                              <Text weight={500}>{requester?.nombre}</Text>
+                            </Group>
+                            <Text size="xs">🏢 {requester?.empresa}</Text>
+                            <Text size="xs">🏷 {requester?.cargo}</Text>
+                            <Text size="xs">
+                              ✉️{" "}
+                              {requester?.contacto?.correo || "No disponible"}
+                            </Text>
+                            <Text size="xs">
+                              📝 {requester?.descripcion || "No especificada"}
+                            </Text>
+                            <Text size="xs">
+                              🎯{" "}
+                              {requester?.interesPrincipal || "No especificado"}
+                            </Text>
+                            <Text size="xs">
+                              🔍 {requester?.necesidad || "No especificada"}
+                            </Text>
+                          </Grid.Col>
+                          <Grid.Col span={6}>
+                            <Group justify="center" mt="sm">
+                              <ActionIcon
+                                size="sm"
+                                variant="light"
+                                color="green"
+                                onClick={() =>
+                                  updateMeetingStatus(req.id, "accepted")
+                                }
+                              >
+                                <CheckIcon size={18} />
+                              </ActionIcon>
+                              <ActionIcon
+                                size="sm"
+                                variant="light"
+                                color="red"
+                                onClick={() =>
+                                  updateMeetingStatus(req.id, "rejected")
+                                }
+                              >
+                                <BiX size={18} />
+                              </ActionIcon>
+                            </Group>
+                          </Grid.Col>
+                        </Grid>
+                      </Card>
+                    </Grid.Col>
+                  );
+                })
+              ) : (
+                <Text c="dimmed" align="center" mt="md">
+                  No hay solicitudes pendientes
+                </Text>
+              )}
+            </Grid>
+          </Box>
+        </Collapse>
+      </Card>
 
       <Text>
         Cuando solicites una reunión, el sistema buscará automáticamente el
