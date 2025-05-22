@@ -73,6 +73,7 @@ const AttendeesListModal = ({ opened, onClose, event, setGlobalMessage }) => {
               <Table.Th>Nombre</Table.Th>
               <Table.Th>Empresa</Table.Th>
               <Table.Th>Cédula</Table.Th>
+              <Table.Th>Teléfono</Table.Th>
               <Table.Th>Acciones</Table.Th>
             </Table.Tr>
           </Table.Thead>
@@ -82,6 +83,7 @@ const AttendeesListModal = ({ opened, onClose, event, setGlobalMessage }) => {
                 <Table.Td>{a.nombre}</Table.Td>
                 <Table.Td>{a.empresa}</Table.Td>
                 <Table.Td>{a.cedula}</Table.Td>
+                <Table.Td>{a.contacto.telefono}</Table.Td>
                 <Table.Td>
                   <Button color="red" onClick={() => removeAttendee(a.id)}>
                     Eliminar

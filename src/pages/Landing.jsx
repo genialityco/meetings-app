@@ -347,12 +347,14 @@ const Landing = () => {
               required
             />
             <TextInput
-              label="Teléfono (opcional)"
+              label="Teléfono"
+              description="El teléfono NO será visible a todos, solamente a las personas con quienes agendaste reunión, también te enviaremos notificaciones cuando tengas solicitud de reunión."
               placeholder="Tu número de teléfono"
               value={formValues.contacto.telefono}
               onChange={(e) =>
                 handleChange("contacto.telefono", e.target.value)
               }
+              required
             />
             {/* Campo para cargar o tomar la foto de perfil */}
             <FileInput
