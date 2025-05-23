@@ -94,7 +94,7 @@ const Dashboard = () => {
 
   const [expandedMeetingId, setExpandedMeetingId] = useState(null);
 
-  const [showOnlyToday, setShowOnlyToday] = useState(false);
+  const [showOnlyToday, setShowOnlyToday] = useState(true);
 
   // ---------------------------------------------------------------------------
   // 1. Verificar usuario logueado, sino -> '/'
