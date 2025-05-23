@@ -357,10 +357,10 @@ const Dashboard = () => {
         participants: [uid, assistantId],
       });
 
-      // sendSms(
-      //   `${currentUser.data.nombre} te ha enviado una solicitud de reunión.`,
-      //   assistantPhone
-      // );
+      sendSms(
+        `${currentUser.data.nombre} te ha enviado una solicitud de reunión.`,
+        assistantPhone
+      );
 
       await addDoc(collection(db, "notifications"), {
         userId: assistantId,
@@ -390,11 +390,12 @@ const Dashboard = () => {
       const mtgRef = doc(db, "events", eventId, "meetings", meetingId);
       const mtgSnap = await getDoc(mtgRef);
       if (!mtgSnap.exists()) return;
+
       const data = mtgSnap.data();
       if (data.status === "accepted") return alert("Ya está aceptada.");
 
       if (newStatus === "accepted") {
-        // 1. Obtener reuniones ya aceptadas de estos participantes
+        // 1. Obtener reuniones aceptadas de estos participantes
         const accQ = query(
           collection(db, "events", eventId, "meetings"),
           where("participants", "array-contains-any", [
@@ -406,7 +407,7 @@ const Dashboard = () => {
         const accSn = await getDocs(accQ);
         const occupied = new Set(accSn.docs.map((d) => d.data().timeSlot));
 
-        // 1.1. Validar límite máximo de citas por usuario
+        // 1.1 Validar límite máximo de citas por usuario
         const limit = eventConfig.maxMeetingsPerUser ?? Infinity;
         const requesterCount = accSn.docs.filter((d) =>
           d.data().participants.includes(data.requesterId)
@@ -424,7 +425,7 @@ const Dashboard = () => {
           return alert(`El receptor ya alcanzó el límite de ${limit} citas.`);
         }
 
-        // 2. Buscar slot disponible en agenda, ordenado
+        // 2. Buscar slot disponible en agenda
         const agQ = query(
           collection(db, "agenda"),
           where("eventId", "==", eventId),
@@ -433,14 +434,22 @@ const Dashboard = () => {
         );
         const agSn = await getDocs(agQ);
 
+        const now = new Date();
         let chosen = null,
           chosenDoc = null;
+
         for (const d of agSn.docs) {
           const slot = d.data();
           const slotStr = `${slot.startTime} - ${slot.endTime}`;
           if (occupied.has(slotStr)) continue;
 
-          // 2.1 Excluir slots que caen en descanso
+          // Validar que no esté en el pasado
+          const [slotHour, slotMin] = slot.startTime.split(":").map(Number);
+          const slotStartDate = new Date(now);
+          slotStartDate.setHours(slotHour, slotMin, 0, 0);
+          if (slotStartDate <= now) continue;
+
+          // Validar que no esté en descanso
           if (
             slotOverlapsBreakBlock(
               slot.startTime,
@@ -457,7 +466,9 @@ const Dashboard = () => {
         }
 
         if (!chosen) {
-          return alert("No hay slots libres fuera de descansos.");
+          return alert(
+            "No hay slots libres fuera de descansos y horarios pasados."
+          );
         }
 
         // 3. Actualizar reunión y agenda
@@ -466,6 +477,7 @@ const Dashboard = () => {
           tableAssigned: chosen.tableNumber.toString(),
           timeSlot: `${chosen.startTime} - ${chosen.endTime}`,
         });
+
         await updateDoc(doc(db, "agenda", chosenDoc.id), {
           available: false,
           meetingId,
@@ -479,6 +491,7 @@ const Dashboard = () => {
           timestamp: new Date(),
           read: false,
         });
+
         showNotification({
           title: "Reunión aceptada",
           message: "Asignada correctamente.",
@@ -494,6 +507,7 @@ const Dashboard = () => {
           timestamp: new Date(),
           read: false,
         });
+
         showNotification({
           title: "Reunión rechazada",
           message: "Operación completada.",
