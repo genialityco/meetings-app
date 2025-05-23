@@ -497,6 +497,33 @@ const Dashboard = () => {
           message: "Asignada correctamente.",
           color: "green",
         });
+
+        // 5. Enviar SMS a ambos participantes
+        const requesterSnap = await getDoc(doc(db, "users", data.requesterId));
+        const receiverSnap = await getDoc(doc(db, "users", data.receiverId));
+        const requester = requesterSnap.exists() ? requesterSnap.data() : null;
+        const receiver = receiverSnap.exists() ? receiverSnap.data() : null;
+
+        if (requester?.contacto?.telefono) {
+          await sendSms(
+            `Tu reunión con ${
+              receiver?.nombre || "otro participante"
+            } ha sido aceptada para ${chosen.startTime} en la mesa ${
+              chosen.tableNumber
+            }.`,
+            requester.contacto.telefono
+          );
+        }
+        if (receiver?.contacto?.telefono) {
+          await sendSms(
+            `Tu reunión con ${
+              requester?.nombre || "otro participante"
+            } ha sido aceptada para ${chosen.startTime} en la mesa ${
+              chosen.tableNumber
+            }.`,
+            receiver.contacto.telefono
+          );
+        }
       } else {
         // Rechazar
         await updateDoc(mtgRef, { status: newStatus });
