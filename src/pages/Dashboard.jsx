@@ -294,36 +294,58 @@ const Dashboard = () => {
     });
   }, [uid, eventId]);
 
-  // const url = "https://www.onurix.com/api/v1/sms/send";
+  function formatPhoneNumber(phone) {
+    const digits = phone.replace(/\D/g, ""); // Elimina todo excepto dígitos
 
-  // async function sendSms(text, phone) {
-  //   const data = new URLSearchParams();
-  //   data.append("client", "7122");
-  //   data.append("key", "770675cf3d2ed5cedcd469f170d0a0b9b8752d37682f81c328874");
-  //   data.append("phone", phone);
-  //   data.append("sms", text);
+    // Si empieza por 3 y tiene 10 dígitos, es colombiano
+    if (digits.length === 10 && digits.startsWith("3")) {
+      return "57" + digits;
+    }
 
-  //   try {
-  //     const response = await fetch(url, {
-  //       method: "POST",
-  //       headers: {
-  //         "Content-Type": "application/x-www-form-urlencoded",
-  //         Accept: "application/json",
-  //       },
-  //       body: data,
-  //     });
+    // Si ya viene con 57 al inicio y tiene 12 dígitos
+    if (digits.length === 12 && digits.startsWith("57")) {
+      return digits;
+    }
 
-  //     const json = await response.json();
-  //     console.log("✅ SMS enviado:", json);
-  //   } catch (err) {
-  //     console.error("❌ Error al enviar SMS:", err.message);
-  //   }
-  // }
+    // Si tiene 11 y empieza con 0, se elimina y se agrega 57
+    if (digits.length === 11 && digits.startsWith("03")) {
+      return "57" + digits.slice(1);
+    }
+
+    // Otro caso: asumir que ya viene bien o retornarlo tal cual
+    return digits;
+  }
+
+  const url = "https://www.onurix.com/api/v1/sms/send";
+
+  async function sendSms(text, phone) {
+    const data = new URLSearchParams();
+    data.append("client", "7121");
+    data.append("key", "145d2b857deea633450f5af2b42350c52288e309682f7a1904272");
+    data.append("phone", formatPhoneNumber(phone));
+    data.append("sms", text);
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: data,
+      });
+
+      const json = await response.json();
+      console.log("✅ SMS enviado:", json);
+    } catch (err) {
+      console.error("❌ Error al enviar SMS:", err.message);
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // 9. Enviar solicitud de reunión: crear doc en /events/{eventId}/meetings
   // ---------------------------------------------------------------------------
-  const sendMeetingRequest = async (assistantId) => {
+  const sendMeetingRequest = async (assistantId, assistantPhone) => {
     if (!uid || !eventId) return;
     try {
       await addDoc(collection(db, "events", eventId, "meetings"), {
@@ -702,7 +724,10 @@ END:VCARD`;
             </Button>
           </Group>
 
-          <Text>Máximo, puedes agendar 3 reuniones</Text>
+          <Text>
+            Máximo, puedes agendar{" "}
+            <strong>{eventConfig?.maxMeetingsPerUser ?? "∞"}</strong> reuniones
+          </Text>
           <Grid>
             {filteredAssistants.length > 0 ? (
               filteredAssistants.map((assistant) => (
