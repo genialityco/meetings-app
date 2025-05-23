@@ -2,6 +2,7 @@
 import { createContext, useState, useEffect } from "react";
 import { onAuthStateChanged, signInAnonymously, signOut } from "firebase/auth";
 import {
+  updateDoc,
   getDoc,
   doc,
   setDoc,
@@ -137,6 +138,13 @@ export const UserProvider = ({ children }) => {
 
       const userDoc = querySnapshot.docs[0];
       const userData = userDoc.data();
+      const uid = userDoc.id;
+
+      // Guardar nueva fecha de conexión
+      const now = new Date();
+      await updateDoc(doc(db, "users", uid), {
+        lastConnection: now,
+      });
 
       // Establecer usuario en el contexto
       const newUser = { uid: userDoc.id, data: userData };

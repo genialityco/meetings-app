@@ -94,6 +94,8 @@ const Dashboard = () => {
 
   const [expandedMeetingId, setExpandedMeetingId] = useState(null);
 
+  const [showOnlyToday, setShowOnlyToday] = useState(false);
+
   // ---------------------------------------------------------------------------
   // 1. Verificar usuario logueado, sino -> '/'
   // ---------------------------------------------------------------------------
@@ -163,9 +165,35 @@ const Dashboard = () => {
     if (!eventId) return;
     const q = query(collection(db, "users"), where("eventId", "==", eventId));
     return onSnapshot(q, (snap) => {
+      const today = new Date().toISOString().split("T")[0];
       const list = snap.docs
         .filter((d) => d.id !== uid)
-        .map((d) => ({ id: d.id, ...d.data() }));
+        .map((d) => {
+          const data = d.data();
+
+          let last;
+          if (data.lastConnection?.toDate) {
+            last = data.lastConnection.toDate();
+          } else if (typeof data.lastConnection === "string") {
+            last = new Date(data.lastConnection);
+          } else if (data.lastConnection instanceof Date) {
+            last = data.lastConnection;
+          }
+
+          const lastDateTimeStr = last
+            ? last.toLocaleString("es-CO", {
+                dateStyle: "short",
+                timeStyle: "short",
+              })
+            : null;
+
+          return {
+            id: d.id,
+            ...data,
+            lastConnectionDateTime: lastDateTimeStr,
+            connectedToday: last?.toISOString().split("T")[0] === today,
+          };
+        });
       setAssistants(list);
       setFilteredAssistants(list);
     });
@@ -176,17 +204,21 @@ const Dashboard = () => {
   // ---------------------------------------------------------------------------
   useEffect(() => {
     const term = searchTerm.toLowerCase();
-    setFilteredAssistants(
-      assistants.filter(
-        (a) =>
-          a.nombre?.toLowerCase().includes(term) ||
-          a.cargo?.toLowerCase().includes(term) ||
-          a.empresa?.toLowerCase().includes(term) ||
-          a.contacto?.correo?.toLowerCase().includes(term) ||
-          a.contacto?.telefono?.toLowerCase().includes(term)
-      )
+    const filtered = assistants.filter(
+      (a) =>
+        a.nombre?.toLowerCase().includes(term) ||
+        a.cargo?.toLowerCase().includes(term) ||
+        a.empresa?.toLowerCase().includes(term) ||
+        a.contacto?.correo?.toLowerCase().includes(term) ||
+        a.contacto?.telefono?.toLowerCase().includes(term)
     );
-  }, [searchTerm, assistants]);
+
+    const filteredFinal = showOnlyToday
+      ? filtered.filter((a) => a.connectedToday)
+      : filtered;
+
+    setFilteredAssistants(filteredFinal);
+  }, [searchTerm, assistants, showOnlyToday]);
 
   // ---------------------------------------------------------------------------
   // 6. Solicitudes ENVIADAS por el usuario actual (status=pending)
@@ -657,6 +689,19 @@ END:VCARD`;
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
+          <Group mb="md">
+            <Button
+              variant={showOnlyToday ? "filled" : "outline"}
+              color="blue"
+              size="xs"
+              onClick={() => setShowOnlyToday((v) => !v)}
+            >
+              {showOnlyToday
+                ? "Mostrar todos los asistentes"
+                : "Mostrar solo conectados hoy"}
+            </Button>
+          </Group>
+
           <Text>Máximo, puedes agendar 3 reuniones</Text>
           <Grid>
             {filteredAssistants.length > 0 ? (
@@ -708,6 +753,11 @@ END:VCARD`;
                       🔍 <strong>Necesidad:</strong>{" "}
                       {assistant.necesidad || "No especificada"}
                     </Text>
+                    <Text size="sm">
+                      🕓 <strong>Última conexión:</strong>{" "}
+                      {assistant.lastConnectionDateTime || "No registrada"}
+                    </Text>
+
                     <Group mt="sm">
                       <Button
                         mt="sm"
