@@ -248,19 +248,21 @@ const Dashboard = () => {
       where("participants", "array-contains", uid)
     );
     return onSnapshot(q, async (snap) => {
-      const mts = [],
-        info = {};
+      const mts = [];
+      const info = {};
       for (const d of snap.docs) {
-        const m = {
-          id: d.id,
-          ...d.data(),
-          timeSlot: d.data().timeSlot.match(/\d{2}:\d{2}/)[0],
-        };
+        const m = { id: d.id, ...d.data() };
+        // Si no hay timeSlot, dejarlo como string vacío para evitar errores
+        m.timeSlot = typeof m.timeSlot === "string" ? m.timeSlot : "";
         mts.push(m);
         const other = m.requesterId === uid ? m.receiverId : m.requesterId;
-        if (!info[other]) {
-          const uSnap = await getDoc(doc(db, "users", other));
-          if (uSnap.exists()) info[other] = uSnap.data();
+        if (other && !info[other]) {
+          try {
+            const uSnap = await getDoc(doc(db, "users", other));
+            if (uSnap.exists()) info[other] = uSnap.data();
+          } catch (e) {
+            console.log(e);
+          }
         }
       }
       setAcceptedMeetings(mts);
@@ -348,24 +350,61 @@ const Dashboard = () => {
   const sendMeetingRequest = async (assistantId, assistantPhone) => {
     if (!uid || !eventId) return;
     try {
-      await addDoc(collection(db, "events", eventId, "meetings"), {
-        eventId,
-        requesterId: uid,
-        receiverId: assistantId,
-        status: "pending",
-        createdAt: new Date(),
-        participants: [uid, assistantId],
-      });
-
-      sendSms(
-        `${currentUser.data.nombre} te ha enviado una solicitud de reunión.`,
-        assistantPhone
+      // 1. Crear la solicitud en Firestore
+      const meetingDoc = await addDoc(
+        collection(db, "events", eventId, "meetings"),
+        {
+          eventId,
+          requesterId: uid,
+          receiverId: assistantId,
+          status: "pending",
+          createdAt: new Date(),
+          participants: [uid, assistantId],
+        }
       );
 
+      // 2. Obtener info del solicitante
+      const requester = currentUser?.data;
+      const meetingId = meetingDoc.id;
+      const baseUrl = window.location.origin;
+
+      // 3. Construir mensaje con info y enlaces
+      const acceptUrl = `${baseUrl}/meeting-response/${eventId}/${meetingId}/accept`;
+      const rejectUrl = `${baseUrl}/meeting-response/${eventId}/${meetingId}/reject`;
+      const landingUrl = `${baseUrl}/event/${eventId}`;
+
+      const message =
+        `Has recibido una solicitud de reunión de:\n` +
+        `Nombre: ${requester?.nombre || ""}\n` +
+        `Empresa: ${requester?.empresa || ""}\n` +
+        `Cargo: ${requester?.cargo || ""}\n` +
+        `Correo: ${requester?.contacto?.correo || ""}\n` +
+        `Teléfono: ${requester?.contacto?.telefono || ""}\n\n` +
+        `Opciones:\n` +
+        `*1. Aceptar:* ${acceptUrl}\n` +
+        `*2. Rechazar:* ${rejectUrl}\n` +
+        `3. Ir a la landing: ${landingUrl}`;
+
+      // 4. Enviar mensaje a WhatsApp usando el backend local
+      fetch("https://api-whatsapp-ncj5.onrender.com/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone: `57${assistantPhone.replace(/[^\d]/g, "")}`,
+          message,
+        }),
+      }).catch((err) => {
+        // No bloquear el flujo si falla el backend local
+        console.error("Error enviando WhatsApp:", err);
+      });
+
+      // 5. Notificación en la app
       await addDoc(collection(db, "notifications"), {
         userId: assistantId,
         title: "Nueva solicitud de reunión",
-        message: `${currentUser.data.nombre} te ha enviado una solicitud de reunión.`,
+        message: `${
+          requester?.nombre || "Alguien"
+        } te ha enviado una solicitud de reunión.`,
         timestamp: new Date(),
         read: false,
       });
@@ -723,8 +762,9 @@ END:VCARD`;
 
       <Text>
         Cuando solicites una reunión, el sistema buscará automáticamente el
-        horario disponible más rápido en la agenda. y te asignara un espacio de
-        reunión de manera automática cuando te acepten la reunión.
+        horario disponible más cercano en tu agenda disponible durante el
+        networking. El espacio de reunión se asignará de manera automática
+        cuando te acepte la otra persona o empresa.
       </Text>
 
       <Tabs defaultValue="asistentes">
@@ -864,13 +904,17 @@ END:VCARD`;
           <Stack>
             {acceptedMeetings.length > 0 ? (
               acceptedMeetings
-                .slice() // clonamos para no mutar el original
+                .slice()
                 .sort((a, b) => {
                   // extraemos la hora de inicio ("HH:MM") de cada timeSlot
-                  const [aStart] = a.timeSlot.split(" - ");
-                  const [bStart] = b.timeSlot.split(" - ");
-                  const [aH, aM] = aStart.split(":").map(Number);
-                  const [bH, bM] = bStart.split(":").map(Number);
+                  const [aStart] = (a.timeSlot || "").split(" - ");
+                  const [bStart] = (b.timeSlot || "").split(" - ");
+                  const [aH, aM] = aStart
+                    ? aStart.split(":").map(Number)
+                    : [0, 0];
+                  const [bH, bM] = bStart
+                    ? bStart.split(":").map(Number)
+                    : [0, 0];
                   return aH * 60 + aM - (bH * 60 + bM);
                 })
                 .map((meeting) => {
@@ -894,32 +938,38 @@ END:VCARD`;
                         {meeting.tableAssigned || "Por asignar"}
                       </Text>
                       <Collapse in={expandedMeetingId === meeting.id} mt="sm">
-                        <Text size="sm">
-                          🏢 <strong>Empresa:</strong> {participant.empresa}
-                        </Text>
-                        <Text size="sm">
-                          🏷 <strong>Cargo:</strong> {participant.cargo}
-                        </Text>
-                        <Text size="sm">
-                          📧 <strong>Correo:</strong>{" "}
-                          {participant.contacto?.correo || "No disponible"}
-                        </Text>
-                        <Text size="sm">
-                          📞 <strong>Teléfono:</strong>{" "}
-                          {participant.contacto?.telefono || "No disponible"}
-                        </Text>
-                        <Text size="sm">
-                          📝 <strong>Descripción:</strong>{" "}
-                          {participant.descripcion || "No especificada"}
-                        </Text>
-                        <Text size="sm">
-                          🎯 <strong>Interés Principal:</strong>{" "}
-                          {participant.interesPrincipal || "No especificado"}
-                        </Text>
-                        <Text size="sm">
-                          🔍 <strong>Necesidad:</strong>{" "}
-                          {participant.necesidad || "No especificada"}
-                        </Text>
+                        {participant && (
+                          <>
+                            <Text size="sm">
+                              🏢 <strong>Empresa:</strong> {participant.empresa}
+                            </Text>
+                            <Text size="sm">
+                              🏷 <strong>Cargo:</strong> {participant.cargo}
+                            </Text>
+                            <Text size="sm">
+                              📧 <strong>Correo:</strong>{" "}
+                              {participant.contacto?.correo || "No disponible"}
+                            </Text>
+                            <Text size="sm">
+                              📞 <strong>Teléfono:</strong>{" "}
+                              {participant.contacto?.telefono ||
+                                "No disponible"}
+                            </Text>
+                            <Text size="sm">
+                              📝 <strong>Descripción:</strong>{" "}
+                              {participant.descripcion || "No especificada"}
+                            </Text>
+                            <Text size="sm">
+                              🎯 <strong>Interés Principal:</strong>{" "}
+                              {participant.interesPrincipal ||
+                                "No especificado"}
+                            </Text>
+                            <Text size="sm">
+                              🔍 <strong>Necesidad:</strong>{" "}
+                              {participant.necesidad || "No especificada"}
+                            </Text>
+                          </>
+                        )}
                       </Collapse>
                       {participant && (
                         <Group mt="sm">

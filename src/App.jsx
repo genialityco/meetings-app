@@ -7,6 +7,8 @@ import MatrixPage from "./pages/MatrixPage";
 import { UserContext } from "./context/UserContext";
 import UserProfile from "./components/UserProfile";
 import PhonesAdminPage from "./pages/PhonesAdminPage.tsx";
+import MeetingAutoResponse from "./pages/MeetingAutoResponse";
+import EventAdmin from "./pages/admin/EventAdmin";
 
 const App = () => {
   const { currentUser } = useContext(UserContext);
@@ -24,6 +26,11 @@ const App = () => {
         <Route path="/admin" element={<AdminPanel />} />
         <Route path="/matrix/:eventId" element={<MatrixPage />} />
         <Route path="/phonesadmin" element={<PhonesAdminPage />} />
+        <Route
+          path="/meeting-response/:eventId/:meetingId/:action"
+          element={<MeetingAutoResponse />}
+        />
+        <Route path="/admin/event/:eventId" element={<EventAdmin />} />
       </Routes>
     </div>
   );

@@ -13,6 +13,7 @@ import {
   FileInput,
   Flex,
   Container,
+  Checkbox, // <-- Agregar Checkbox de Mantine
 } from "@mantine/core";
 import { RichTextEditor, Link } from "@mantine/tiptap";
 import { useEditor } from "@tiptap/react";
@@ -53,13 +54,15 @@ const Landing = () => {
     interesPrincipal: "",
     necesidad: "",
     contacto: { correo: "", telefono: "" },
-    photo: null, // Campo para almacenar el archivo de foto
+    photo: null,
+    aceptaTratamiento: false, // <-- Nuevo campo para el checkbox
   });
   const [profilePicPreview, setProfilePicPreview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [searchCedula, setSearchCedula] = useState("");
   const [searchError, setSearchError] = useState("");
   const [showInfo, setShowInfo] = useState(false);
+  const [tratamientoError, setTratamientoError] = useState(""); // <-- Nuevo estado para error
 
   // Configuración del editor Tiptap con Mantine
   const editor = useEditor({
@@ -155,6 +158,11 @@ const Landing = () => {
 
   // Enviar formulario (registro o actualización)
   const handleSubmit = useCallback(async () => {
+    setTratamientoError(""); // Limpiar error antes de validar
+    if (!formValues.aceptaTratamiento) {
+      setTratamientoError("Debes aceptar el tratamiento de datos para continuar.");
+      return;
+    }
     setLoading(true);
     try {
       const uid = currentUser.uid;
@@ -383,6 +391,15 @@ const Landing = () => {
                 mt="sm"
               />
             )}
+            {/* Checkbox para tratamiento de datos */}
+            <Checkbox
+              label="Al utilizar este aplicativo, autorizas el tratamiento de tus datos personales conforme a la Ley 1581 de 2012 y nuestra política de privacidad. Tus datos serán utilizados exclusivamente para gestionar tu experiencia en la plataforma y facilitar las acciones de relacionamiento comercial. Puedes ejercer tus derechos de acceso, corrección o supresión en cualquier momento."
+              checked={formValues.aceptaTratamiento}
+              onChange={(e) => handleChange("aceptaTratamiento", e.currentTarget.checked)}
+              required
+              mt="md"
+            />
+            {tratamientoError && <Text color="red">{tratamientoError}</Text>}
             <Button onClick={handleSubmit} loading={loading}>
               {currentUser?.data ? "Actualizar" : "Registrarse"}
             </Button>
