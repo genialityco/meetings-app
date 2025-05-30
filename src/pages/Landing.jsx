@@ -29,6 +29,7 @@ import { db } from "../firebase/firebaseConfig";
 import { UserContext } from "../context/UserContext";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../firebase/firebaseConfig";
+import { useMediaQuery } from "@mantine/hooks";
 
 // Función para subir la imagen a Firebase Storage
 const uploadProfilePicture = async (file, uid) => {
@@ -64,6 +65,8 @@ const Landing = () => {
   const [searchError, setSearchError] = useState("");
   const [showInfo, setShowInfo] = useState(false);
   const [tratamientoError, setTratamientoError] = useState(""); // <-- Nuevo estado para error
+
+  const isMobile = useMediaQuery("(max-width: 600px)");
 
   // Configuración del editor Tiptap con Mantine
   const editor = useEditor({
@@ -245,30 +248,22 @@ const Landing = () => {
           radius="lg"
           p="xl"
           style={{
-            maxWidth: 500,
+            maxWidth: isMobile ? 300 : 500,
             margin: "40px auto",
-            background: "rgba(255,255,255,0.95)",
           }}
         >
-          <Paper
-            shadow="xl"
-            withBorder
-            radius="lg"
-          >
+          <Paper shadow="xl" withBorder radius="lg">
             <Flex justify="center">
               <a
                 href="https://geniality.com.co/"
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <Image
-                  src={event.eventImage}
-                  alt="Networking Event"
-                />
+                <Image src={event.eventImage} alt="Networking Event" />
               </a>
             </Flex>
           </Paper>
-          <Title order={1}  fz="40px" align="center" my="md">
+          <Title order={1} fz="40px" align="center" my="md">
             {event.eventName}
           </Title>
 
