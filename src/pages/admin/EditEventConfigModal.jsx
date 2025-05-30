@@ -35,6 +35,8 @@ const EditEventConfigModal = ({
   const [eventName, setEventName] = useState(event.eventName || "");
   const [eventImageUrl, setEventImageUrl] = useState(event.eventImage || "");
   const [eventImageFile, setEventImageFile] = useState(null);
+  const [backgroundImageUrl, setBackgroundImageUrl] = useState(event.backgroundImage || "");
+  const [backgroundImageFile, setBackgroundImageFile] = useState(null);
 
   // Campos de configuración del evento
   const [maxPersons, setMaxPersons] = useState(event.config?.maxPersons || 100);
@@ -58,6 +60,11 @@ const EditEventConfigModal = ({
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
       setEventImageFile(e.target.files[0]);
+    }
+  };
+  const handleBackgroundFileChange = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      setBackgroundImageFile(e.target.files[0]);
     }
   };
 
@@ -112,12 +119,22 @@ const EditEventConfigModal = ({
   // Guardar los cambios en Firestore
   const saveConfig = async () => {
     let finalEventImage = eventImageUrl;
+    let finalBackgroundImage = backgroundImageUrl;
     if (eventImageFile) {
       try {
         finalEventImage = await uploadImage(eventImageFile);
       } catch (error) {
         console.error("Error subiendo la imagen:", error);
         setGlobalMessage?.("Error al subir la imagen.");
+        return;
+      }
+    }
+    if (backgroundImageFile) {
+      try {
+        finalBackgroundImage = await uploadImage(backgroundImageFile);
+      } catch (error) {
+        console.error("Error subiendo la imagen de fondo:", error);
+        setGlobalMessage?.("Error al subir la imagen de fondo.");
         return;
       }
     }
@@ -154,6 +171,7 @@ const EditEventConfigModal = ({
       await updateDoc(doc(db, "events", event.id), {
         eventName,
         eventImage: finalEventImage,
+        backgroundImage: finalBackgroundImage,
         config: newConfig,
       });
 
@@ -189,6 +207,15 @@ const EditEventConfigModal = ({
 
         {/* File input para subir la imagen al Storage */}
         <input type="file" accept="image/*" onChange={handleFileChange} />
+
+        {/* Imagen de fondo */}
+        <TextInput
+          label="URL de la imagen de fondo (opcional)"
+          placeholder="https://..."
+          value={backgroundImageUrl}
+          onChange={(e) => setBackgroundImageUrl(e.target.value)}
+        />
+        <input type="file" accept="image/*" onChange={handleBackgroundFileChange} />
 
         {/* Campos de configuración */}
         <NumberInput
