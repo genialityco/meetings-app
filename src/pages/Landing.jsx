@@ -228,9 +228,10 @@ const Landing = () => {
       style={{
         minHeight: "100vh",
         width: "100vw",
-        backgroundImage: event.backgroundImage
-          ? `url(${event.backgroundImage})`
-          : `url('/FONDO-DESKTOP.png')`,
+        backgroundImage:
+          event.backgroundImage && event.backgroundImage.startsWith("http")
+            ? `url('${event.backgroundImage}')`
+            : `url('/FONDO-DESKTOP.png')`,
         backgroundPosition: "center center",
         backgroundSize: "cover",
         backgroundRepeat: "no-repeat",
@@ -279,9 +280,20 @@ const Landing = () => {
               value={searchCedula}
               onChange={(e) => setSearchCedula(e.target.value)}
             />
-            {searchError && <Text color="red">{searchError}</Text>}
-            <Button onClick={handleSearchByCedula} loading={loading}>
-              Ingresar
+            {searchError && <Text c="red">{searchError}</Text>}
+            <Button
+              onClick={handleSearchByCedula}
+              loading={loading}
+              color="#00b481"
+            >
+              <Text
+                c="black"
+                fw={700}
+                fz={isMobile ? "md" : "lg"}
+                tt="uppercase"
+              >
+                Ingresar
+              </Text>
             </Button>
           </Stack>
           <Divider my="md" />
@@ -429,7 +441,7 @@ const Landing = () => {
               )}
               {/* Checkbox para tratamiento de datos */}
               <Checkbox
-                label="Al utilizar este aplicativo, autorizas el tratamiento de tus datos personales conforme a la Ley 1581 de 2012 y nuestra política de privacidad. Tus datos serán utilizados exclusivamente para gestionar tu experiencia en la plataforma y facilitar las acciones de relacionamiento comercial. Puedes ejercer tus derechos de acceso, corrección o supresión en cualquier momento."
+                label="Al utilizar este aplicativo, autorizo a GEN.IALITY SAS identificada con NIT 901555490, para el tratamiento de mis datos personales conforme a la Ley 1581 de 2012 y su política de privacidad. Autorizo que mis datos aquí suministrados sean utilizados para gestionar mi experiencia en la plataforma y facilitar las acciones de relacionamiento comercial entendiendo que mis datos serán visibles ante los demás usuarios de la plataforma; de igual manera autorizo la transmisión o transferencia de mis datos a Fenalco Bogotá como organizador del evento. Manifiesto que conozco mis derechos de acceso, corrección o supresión."
                 checked={formValues.aceptaTratamiento}
                 onChange={(e) =>
                   handleChange("aceptaTratamiento", e.currentTarget.checked)
