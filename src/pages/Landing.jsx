@@ -269,6 +269,12 @@ const Landing = () => {
           </Title>
 
           <Text ta="justify" mb="lg">
+            <strong>Plataforma de Networking y Reuniones de Negocio</strong> Conecta con otras
+            empresas y permite que te encuentren para agendar reuniones durante
+            el evento
+          </Text>
+
+          <Text ta="justify" mb="lg">
             Si ya se ha registrado, puede ingresar con su número de cédula.
           </Text>
 
