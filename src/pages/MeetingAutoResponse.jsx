@@ -149,7 +149,7 @@ const MeetingAutoResponse = () => {
           if (currentUser?.data) {
             navigate(`/dashboard/${eventId}`);
           } else {
-            navigate(`/landing/${eventId}`);
+            navigate(`/event/${eventId}`);
           }
         }, 2000);
       } catch (e) {
