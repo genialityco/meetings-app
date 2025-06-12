@@ -22,7 +22,6 @@ import { FaChevronDown, FaChevronUp } from "react-icons/fa";
 import { UserContext } from "../context/UserContext";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../firebase/firebaseConfig"; // Asegúrate de que la ruta sea correcta
-import { useNavigate } from "react-router-dom";
 
 // Función para subir la imagen a Firebase Storage
 const uploadProfilePicture = async (file, uid) => {
@@ -35,7 +34,6 @@ const uploadProfilePicture = async (file, uid) => {
 const UserProfile = () => {
   const { currentUser, updateUser, logout, userLoading } = useContext(UserContext);
   const uid = currentUser?.uid;
-  const navigate = useNavigate();
 
   const [editModalOpened, setEditModalOpened] = useState(false);
   const [editProfileData, setEditProfileData] = useState({});
@@ -147,9 +145,7 @@ const UserProfile = () => {
                 onClick={() => {
                   logout();
                   if (currentUser?.data?.eventId) {
-                    navigate(`/event/${currentUser.data.eventId}`);
-                  } else {
-                    navigate("/event");
+                    window.location.assign(`/event/${currentUser.data.eventId}`);
                   }
                 }}
                 color="red"

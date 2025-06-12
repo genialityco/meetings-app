@@ -386,7 +386,7 @@ const Dashboard = () => {
         `3. Ir a la landing: ${landingUrl}`;
 
       // 4. Enviar mensaje a WhatsApp usando el backend local
-      fetch("https://api-whatsapp-ncj5.onrender.com/send", {
+      fetch("https://apiwhatsapp.geniality.com.co/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -563,6 +563,26 @@ const Dashboard = () => {
             receiver.contacto.telefono
           );
         }
+
+        // Enviar WhatsApp a ambos participantes
+        if (requester && receiver) {
+          await sendMeetingAcceptedWhatsapp(
+            requester.contacto?.telefono,
+            receiver,
+            {
+              timeSlot: `${chosen.startTime} - ${chosen.endTime}`,
+              tableAssigned: chosen.tableNumber,
+            }
+          );
+          await sendMeetingAcceptedWhatsapp(
+            receiver.contacto?.telefono,
+            requester,
+            {
+              timeSlot: `${chosen.startTime} - ${chosen.endTime}`,
+              tableAssigned: chosen.tableNumber,
+            }
+          );
+        }
       } else {
         // Rechazar
         await updateDoc(mtgRef, { status: newStatus });
@@ -618,6 +638,28 @@ END:VCARD`;
     );
     window.open(`https://wa.me/57${phone}?text=${message}`, "_blank");
   };
+
+  // Función para enviar WhatsApp de aceptación de reunión a un participante
+  async function sendMeetingAcceptedWhatsapp(toPhone, otherParticipant, meetingInfo) {
+    if (!toPhone) return;
+    const phone = toPhone.replace(/[^\d]/g, "");
+    const message =
+      `¡Tu reunión ha sido aceptada!\n\n` +
+      `Con: ${otherParticipant?.nombre || ""}\n` +
+      `Empresa: ${otherParticipant?.empresa || ""}\n` +
+      `Horario: ${meetingInfo.timeSlot || ""}\n` +
+      `Mesa: ${meetingInfo.tableAssigned || ""}\n` +
+      `¡Te esperamos!`;
+
+    await fetch("https://apiwhatsapp.geniality.com.co/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phone: `57${phone}`,
+        message,
+      }),
+    }).catch(() => {});
+  }
 
   // ---------------------------------------------------------------------------
   // Render
