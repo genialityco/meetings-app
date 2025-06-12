@@ -386,7 +386,7 @@ const Dashboard = () => {
         `3. Ir a la landing: ${landingUrl}`;
 
       // 4. Enviar mensaje a WhatsApp usando el backend local
-      fetch("https://apiwhatsapp.geniality.com.co/send", {
+      fetch("https://api-whatsapp-ncj5.onrender.com/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -686,59 +686,66 @@ END:VCARD`;
                         p="sm"
                         style={{ minWidth: 260, flex: "0 0 auto" }}
                       >
-                        <Group position="apart" align="flex-start" mb="xs">
-                          <Group align="center" spacing="sm">
-                            <Avatar src={requester?.photoURL} radius="xl" />
-                            <Text weight={500}>{requester?.nombre}</Text>
-                          </Group>
-                          <Group spacing={4}>
-                            <ActionIcon
-                              size="sm"
-                              variant="light"
-                              color="green"
-                              onClick={() =>
-                                updateMeetingStatus(req.id, "accepted")
-                              }
-                            >
-                              <CheckIcon size={18} />
-                            </ActionIcon>
-                            <ActionIcon
-                              size="sm"
-                              variant="light"
-                              color="red"
-                              onClick={() =>
-                                updateMeetingStatus(req.id, "rejected")
-                              }
-                            >
-                              <BiX size={18} />
-                            </ActionIcon>
-                            <ActionIcon
-                              size="sm"
-                              variant="light"
-                              color="teal"
-                              onClick={() => sendWhatsAppMessage(requester)}
-                            >
-                              <FaWhatsapp size={18} />
-                            </ActionIcon>
-                          </Group>
-                        </Group>
-                        <Text size="xs">🏢 {requester?.empresa}</Text>
-                        <Text size="xs">🏷 {requester?.cargo}</Text>
-                        <Text size="xs">
-                          ✉️ {requester?.contacto?.correo || "No disponible"}
-                        </Text>
-                        <Text size="xs">
-                          📞 {requester?.contacto?.telefono || "No disponible"}
-                        </Text>
-                        <Text size="xs">
-                          📝 {requester?.descripcion || "No especificada"}
-                        </Text>
-                        <Text size="xs">
-                          🎯 {requester?.interesPrincipal || "No especificado"}
-                        </Text>
-                        <Text size="xs">
-                          🔍 {requester?.necesidad || "No especificada"}
-                        </Text>
+                        <Grid>
+                          <Grid.Col span={6}>
+                            <Group align="center" spacing="sm" mb="xs">
+                              <Avatar src={requester?.photoURL} radius="xl" />
+                              <Text weight={500}>{requester?.nombre}</Text>
+                            </Group>
+                            <Text size="xs">🏢 {requester?.empresa}</Text>
+                            <Text size="xs">🏷 {requester?.cargo}</Text>
+                            <Text size="xs">
+                              ✉️{" "}
+                              {requester?.contacto?.correo || "No disponible"}
+                            </Text>
+                            <Text size="xs">
+                              📞{" "}
+                              {requester.contacto?.telefono || "No disponible"}
+                            </Text>
+                            <Text size="xs">
+                              📝 {requester?.descripcion || "No especificada"}
+                            </Text>
+                            <Text size="xs">
+                              🎯{" "}
+                              {requester?.interesPrincipal || "No especificado"}
+                            </Text>
+                            <Text size="xs">
+                              🔍 {requester?.necesidad || "No especificada"}
+                            </Text>
+                          </Grid.Col>
+                          <Grid.Col span={6}>
+                            <Group justify="center" mt="sm">
+                              <ActionIcon
+                                size="sm"
+                                variant="light"
+                                color="green"
+                                onClick={() =>
+                                  updateMeetingStatus(req.id, "accepted")
+                                }
+                              >
+                                <CheckIcon size={18} />
+                              </ActionIcon>
+                              <ActionIcon
+                                size="sm"
+                                variant="light"
+                                color="red"
+                                onClick={() =>
+                                  updateMeetingStatus(req.id, "rejected")
+                                }
+                              >
+                                <BiX size={18} />
+                              </ActionIcon>
+                              <ActionIcon
+                                size="sm"
+                                variant="light"
+                                color="teal"
+                                onClick={() => sendWhatsAppMessage(requester)}
+                              >
+                                <FaWhatsapp size={18} />
+                              </ActionIcon>
+                            </Group>
+                          </Grid.Col>
+                        </Grid>
                       </Card>
                     </Grid.Col>
                   );

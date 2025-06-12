@@ -12,7 +12,7 @@ import {
   orderBy,
   getDocs,
 } from "firebase/firestore";
-import { db } from "../firebase/firebaseConfig";
+import { auth, db } from "../firebase/firebaseConfig";
 import { UserContext } from "../context/UserContext";
 import { Loader, Container, Paper, Text } from "@mantine/core";
 
@@ -44,7 +44,9 @@ const MeetingAutoResponse = () => {
           // Obtener configuración del evento
           const eventRef = doc(db, "events", eventId);
           const eventSnap = await getDoc(eventRef);
-          const eventConfig = eventSnap.exists() ? eventSnap.data().config || {} : {};
+          const eventConfig = eventSnap.exists()
+            ? eventSnap.data().config || {}
+            : {};
 
           // Buscar reuniones aceptadas para estos participantes
           const meetingsQuery = query(
@@ -56,7 +58,9 @@ const MeetingAutoResponse = () => {
             where("status", "==", "accepted")
           );
           const meetingsSnap = await getDocs(meetingsQuery);
-          const occupied = new Set(meetingsSnap.docs.map((d) => d.data().timeSlot));
+          const occupied = new Set(
+            meetingsSnap.docs.map((d) => d.data().timeSlot)
+          );
 
           // Buscar slot disponible en agenda
           const agendaQuery = query(
@@ -105,7 +109,9 @@ const MeetingAutoResponse = () => {
           }
 
           if (!chosen) {
-            setStatus("No hay slots libres fuera de descansos y horarios pasados.");
+            setStatus(
+              "No hay slots libres fuera de descansos y horarios pasados."
+            );
             setTimeout(() => navigate("/"), 2500);
             return;
           }
@@ -146,7 +152,9 @@ const MeetingAutoResponse = () => {
         }
 
         setTimeout(() => {
-          if (currentUser?.data) {
+          const isLoggedIn = currentUser?.data || auth.currentUser;
+
+          if (isLoggedIn) {
             navigate(`/dashboard/${eventId}`);
           } else {
             navigate(`/event/${eventId}`);

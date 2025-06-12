@@ -20,11 +20,12 @@ export const UserContext = createContext();
 
 export const UserProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(
-    JSON.parse(sessionStorage.getItem("currentUser")) || null
+    JSON.parse(localStorage.getItem("currentUser")) || null
   );
+
   const [userLoading, setUserLoading] = useState(true);
   const [manualLogin, setManualLogin] = useState(
-    sessionStorage.getItem("manualLogin") === "true"
+    localStorage.getItem("manualLogin") === "true"
   );
 
   useEffect(() => {
@@ -41,7 +42,7 @@ export const UserProvider = ({ children }) => {
 
         const newUser = { uid, data: userData };
         setCurrentUser(newUser);
-        sessionStorage.setItem("currentUser", JSON.stringify(newUser));
+        localStorage.setItem("currentUser", JSON.stringify(newUser));
 
         // Solicitar permiso de notificaciones
         // try {
@@ -67,7 +68,7 @@ export const UserProvider = ({ children }) => {
           const userCredential = await signInAnonymously(auth);
           const newUser = { uid: userCredential.user.uid, data: null };
           setCurrentUser(newUser);
-          sessionStorage.setItem("currentUser", JSON.stringify(newUser));
+          localStorage.setItem("currentUser", JSON.stringify(newUser));
         } catch (error) {
           console.error("Error initializing user:", error);
         }
@@ -98,7 +99,7 @@ export const UserProvider = ({ children }) => {
         data: { ...currentUser.data, ...data },
       };
       setCurrentUser(updatedUser);
-      sessionStorage.setItem("currentUser", JSON.stringify(updatedUser));
+      localStorage.setItem("currentUser", JSON.stringify(updatedUser));
     } catch (error) {
       console.error("Error updating user:", error);
     }
@@ -108,8 +109,8 @@ export const UserProvider = ({ children }) => {
     try {
       await signOut(auth);
       setCurrentUser(null);
-      sessionStorage.removeItem("currentUser");
-      sessionStorage.removeItem("manualLogin");
+      localStorage.removeItem("currentUser");
+      localStorage.removeItem("manualLogin");
       setManualLogin(false);
     } catch (error) {
       console.error("Error signing out:", error);
@@ -149,10 +150,10 @@ export const UserProvider = ({ children }) => {
       // Establecer usuario en el contexto
       const newUser = { uid: userDoc.id, data: userData };
       setCurrentUser(newUser);
-      sessionStorage.setItem("currentUser", JSON.stringify(newUser));
+      localStorage.setItem("currentUser", JSON.stringify(newUser));
 
       // Evita sobrescribir con sesión anónima
-      sessionStorage.setItem("manualLogin", "true");
+      localStorage.setItem("manualLogin", "true");
       setManualLogin(true);
       setUserLoading(false);
 
