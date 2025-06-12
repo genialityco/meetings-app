@@ -386,7 +386,7 @@ const Dashboard = () => {
         `3. Ir a la landing: ${landingUrl}`;
 
       // 4. Enviar mensaje a WhatsApp usando el backend local
-      fetch("https://api-whatsapp-ncj5.onrender.com/send", {
+      fetch("http://64.23.199.147:3000/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
