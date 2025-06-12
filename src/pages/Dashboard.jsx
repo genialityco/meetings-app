@@ -386,7 +386,7 @@ const Dashboard = () => {
         `3. Ir a la landing: ${landingUrl}`;
 
       // 4. Enviar mensaje a WhatsApp usando el backend local
-      fetch("http://64.23.199.147:3000/send", {
+      fetch("https://apiwhatsapp.geniality.com.co/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
