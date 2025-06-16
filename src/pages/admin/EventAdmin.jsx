@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import { useState, useEffect } from "react";
 import {
   Container,
@@ -43,6 +44,13 @@ const EventAdmin = () => {
   const [attendees, setAttendees] = useState([]);
   const [attendeesLoading, setAttendeesLoading] = useState(false);
 
+  const [meetingsCounts, setMeetingsCounts] = useState({
+    aceptadas: 0,
+    pendientes: 0,
+    rechazadas: 0,
+  });
+  const [meetingsCountLoading, setMeetingsCountLoading] = useState(false);
+
   useEffect(() => {
     fetchEvent();
   }, [eventId]);
@@ -62,6 +70,8 @@ const EventAdmin = () => {
   // Cargar asistentes del evento
   useEffect(() => {
     if (!eventId) return;
+    fetchMeetingsCounts();
+
     const fetchAttendees = async () => {
       setAttendeesLoading(true);
       try {
@@ -77,7 +87,7 @@ const EventAdmin = () => {
           }))
         );
       } catch (e) {
-        console.log(e)
+        console.log(e);
         setGlobalMessage("Error al obtener asistentes.");
       }
       setAttendeesLoading(false);
@@ -262,7 +272,7 @@ const EventAdmin = () => {
         "Cargo",
         "Correo",
         "Teléfono",
-        ""
+        "interesPrincipal",
       ],
       ...attendees.map((a) => [
         a.nombre || "",
@@ -271,16 +281,14 @@ const EventAdmin = () => {
         a.descripcion || "",
         a.cargo || "",
         a.contacto?.correo || "",
-        a.contacto?.telefono || ""
+        a.contacto?.telefono || "",
+        a.interesPrincipal || "",
       ]),
     ];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Asistentes");
-    XLSX.writeFile(
-      wb,
-      `asistentes_${event?.eventName || eventId}.xlsx`
-    );
+    XLSX.writeFile(wb, `asistentes_${event?.eventName || eventId}.xlsx`);
   };
 
   // Eliminar asistente por id
@@ -291,9 +299,35 @@ const EventAdmin = () => {
       setAttendees((prev) => prev.filter((a) => a.id !== attendeeId));
       setGlobalMessage("Asistente eliminado correctamente.");
     } catch (e) {
-        console.log(e);
+      console.log(e);
       setGlobalMessage("Error al eliminar el asistente.");
     }
+  };
+
+  const fetchMeetingsCounts = async () => {
+    if (!eventId) return;
+    setMeetingsCountLoading(true);
+    try {
+      // meetings están como subcolección de events: /events/{eventId}/meetings
+      const meetingsRef = collection(db, "events", eventId, "meetings");
+      const meetingsSnap = await getDocs(meetingsRef);
+      let aceptadas = 0,
+        pendientes = 0,
+        rechazadas = 0;
+
+      meetingsSnap.forEach((doc) => {
+        const status = (doc.data().status || "").toLowerCase();
+        if (status === "accepted") aceptadas++;
+        else if (status === "rejected") rechazadas++;
+        else pendientes++;
+      });
+
+      setMeetingsCounts({ aceptadas, pendientes, rechazadas });
+    } catch (e) {
+      console.log(e);
+      setMeetingsCounts({ aceptadas: 0, pendientes: 0, rechazadas: 0 });
+    }
+    setMeetingsCountLoading(false);
   };
 
   if (!event) {
@@ -411,6 +445,27 @@ const EventAdmin = () => {
             </Button>
           </Group>
         </Group>
+      </Card>
+
+      <Card shadow="sm" p="lg" withBorder mt="md">
+        <Title order={5} mb="xs">
+          Resumen de Reuniones
+        </Title>
+        {meetingsCountLoading ? (
+          <Loader size="sm" />
+        ) : (
+          <Group spacing="md">
+            <Text>
+              <b>Aceptadas:</b> {meetingsCounts.aceptadas}
+            </Text>
+            <Text>
+              <b>Pendientes:</b> {meetingsCounts.pendientes}
+            </Text>
+            <Text>
+              <b>Rechazadas:</b> {meetingsCounts.rechazadas}
+            </Text>
+          </Group>
+        )}
       </Card>
 
       {/* Tabla de asistentes */}

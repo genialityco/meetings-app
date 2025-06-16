@@ -254,24 +254,24 @@ const Landing = () => {
           }}
         >
           <Paper shadow="xl" withBorder radius="lg">
-            {/* <Flex justify="center">
+            <Flex justify="center">
               <a
                 href="https://geniality.com.co/"
                 target="_blank"
                 rel="noopener noreferrer"
-              > */}
-            <Image src={event.eventImage} alt="Networking Event" />
-            {/* </a>
-            </Flex> */}
+              >
+                <Image src={event.eventImage} alt="Networking Event" />
+              </a>
+            </Flex>
           </Paper>
           <Title order={1} fz="40px" align="center" my="md">
             {event.eventName}
           </Title>
 
           <Text ta="justify" mb="lg">
-            <strong>Plataforma de Networking y Reuniones de Negocio</strong>{" "}
-            Conecta con otras empresas y permite que te encuentren para agendar
-            reuniones durante el evento
+            <strong>Plataforma de Networking y Reuniones de Negocio</strong> Conecta con otras
+            empresas y permite que te encuentren para agendar reuniones durante
+            el evento
           </Text>
 
           <Text ta="justify" mb="lg">
@@ -479,17 +479,6 @@ const Landing = () => {
               </Text>
             </>
           )}
-        </Paper>
-        <Paper shadow="xl" withBorder radius="lg" mt="lg">
-          <Flex justify="center">
-            <a
-              href="https://geniality.com.co/"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <Image src={event.eventImage} alt="Networking Event" />
-            </a>
-          </Flex>
         </Paper>
       </Container>
     </Box>
