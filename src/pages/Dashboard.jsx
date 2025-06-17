@@ -1,5 +1,4 @@
-/* eslint-disable react/prop-types */
-import { useEffect, useState, useContext } from "react";
+import { useEffect, useState, useContext, useMemo } from "react";
 import {
   Container,
   Title,
@@ -20,6 +19,8 @@ import {
   Collapse,
   Box,
   CheckIcon,
+  LoadingOverlay,
+  Select,
 } from "@mantine/core";
 import {
   collection,
@@ -95,6 +96,13 @@ const Dashboard = () => {
   const [expandedMeetingId, setExpandedMeetingId] = useState(null);
 
   const [showOnlyToday, setShowOnlyToday] = useState(true);
+
+  const [slotModalOpened, setSlotModalOpened] = useState(false);
+  const [meetingToAccept, setMeetingToAccept] = useState(null);
+  const [availableSlots, setAvailableSlots] = useState([]);
+  const [prepareSlotSelectionLoading, setPrepareSlotSelectionLoading] =
+    useState(false);
+  const [confirmLoading, setConfirmLoading] = useState(false);
 
   // ---------------------------------------------------------------------------
   // 1. Verificar usuario logueado, sino -> '/'
@@ -640,7 +648,11 @@ END:VCARD`;
   };
 
   // Función para enviar WhatsApp de aceptación de reunión a un participante
-  async function sendMeetingAcceptedWhatsapp(toPhone, otherParticipant, meetingInfo) {
+  async function sendMeetingAcceptedWhatsapp(
+    toPhone,
+    otherParticipant,
+    meetingInfo
+  ) {
     if (!toPhone) return;
     const phone = toPhone.replace(/[^\d]/g, "");
     const message =
@@ -660,6 +672,262 @@ END:VCARD`;
       }),
     }).catch(() => {});
   }
+
+  /**
+   *
+   * @param {*} meetingId
+   * @returns {Promise<void>}
+   * Preparar la selección de slots para una reunión pendiente.
+   */
+
+  const prepareSlotSelection = async (meetingId) => {
+    setPrepareSlotSelectionLoading(true);
+    // 1. Datos de la reunión y usuarios
+    const mtgSnap = await getDoc(
+      doc(db, "events", eventId, "meetings", meetingId)
+    );
+    const { requesterId, receiverId } = mtgSnap.data();
+
+    // 2. Obtener todas las reuniones aceptadas de ambos
+    const accQ = query(
+      collection(db, "events", eventId, "meetings"),
+      where("status", "==", "accepted"),
+      where("participants", "array-contains-any", [requesterId, receiverId])
+    );
+    const accSn = await getDocs(accQ);
+
+    // 3. Construir array de rangos ocupados en minutos
+    const occupiedRanges = accSn.docs
+      .map((d) => d.data().timeSlot) // ej "16:45 - 16:55"
+      .filter(Boolean)
+      .map((ts) => {
+        const [start, end] = ts.split(" - ");
+        const [sh, sm] = start.split(":").map(Number);
+        const [eh, em] = end.split(":").map(Number);
+        return { start: sh * 60 + sm, end: eh * 60 + em };
+      });
+
+    // 4. Cargar agenda general disponible
+    const agQ = query(
+      collection(db, "agenda"),
+      where("eventId", "==", eventId),
+      where("available", "==", true),
+      orderBy("startTime")
+    );
+    const agSn = await getDocs(agQ);
+
+    // 5. Filtrar slots libres:
+    const now = new Date();
+    const filtered = agSn.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((slot) => {
+        // a) No en el pasado
+        const [h, m] = slot.startTime.split(":").map(Number);
+        const slotDate = new Date(now);
+        slotDate.setHours(h, m, 0, 0);
+        if (slotDate <= now) return false;
+
+        // b) No choque con bloques de descanso
+        if (
+          slotOverlapsBreakBlock(
+            slot.startTime,
+            eventConfig.meetingDuration,
+            eventConfig.breakBlocks
+          )
+        )
+          return false;
+
+        // c) No choque con reuniones propias de requester o receiver
+        const [slotStart, slotEnd] = [slot.startTime, slot.endTime];
+        if (slotOverlapsRanges(slotStart, slotEnd, occupiedRanges))
+          return false;
+
+        return true;
+      });
+
+    setAvailableSlots(filtered);
+    setMeetingToAccept({ id: meetingId, requesterId, receiverId });
+    setPrepareSlotSelectionLoading(false);
+    setSlotModalOpened(true);
+  };
+
+  const groupedSlots = useMemo(() => {
+    const map = {};
+    for (const slot of availableSlots) {
+      const range = `${slot.startTime}–${slot.endTime}`;
+      if (!map[range]) {
+        map[range] = {
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          slots: [],
+        };
+      }
+      map[range].slots.push(slot);
+    }
+    // Convierto a array, y genero un 'id' único por rango
+    return Object.entries(map).map(([range, grp]) => ({
+      id: range,
+      range, 
+      ...grp,
+    }));
+  }, [availableSlots]);
+
+  const [selectedRange, setSelectedRange] = useState(null);
+  const [selectedSlotId, setSelectedSlotId] = useState(null);
+  const [confirmModalOpened, setConfirmModalOpened] = useState(false);
+
+    useEffect(() => {
+    if (groupedSlots.length > 0) {
+      const firstRange = groupedSlots[0].id;
+      setSelectedRange(firstRange);
+      setSelectedSlotId(groupedSlots[0].slots[0].id);
+    }
+  }, [groupedSlots]);
+
+  const rangeOptions = groupedSlots.map((g) => ({
+    value: g.id,
+    label: `${g.startTime} – ${g.endTime}`,
+  }));
+
+  // Opciones para el select de mesas, basado en el rango elegido
+  const tableOptions = selectedRange
+    ? (groupedSlots.find((g) => g.id === selectedRange)?.slots || []).map(
+        (s) => ({
+          value: s.id,
+          label: `Mesa ${s.tableNumber}`,
+        })
+      )
+    : [];
+
+  // Encontrar el slot final antes de confirmar
+  const chosenSlot =
+    selectedRange && selectedSlotId
+      ? groupedSlots
+          .find((g) => g.id === selectedRange)
+          ?.slots.find((s) => s.id === selectedSlotId) || null
+      : null;
+
+  function slotOverlapsRanges(slotStart, slotEnd, ranges) {
+    const [h1, m1] = slotStart.split(":").map(Number);
+    const [h2, m2] = slotEnd.split(":").map(Number);
+    const sStart = h1 * 60 + m1;
+    const sEnd = h2 * 60 + m2;
+
+    return ranges.some(({ start, end }) => sStart < end && sEnd > start);
+  }
+
+  const confirmAcceptWithSlot = async (meetingId, slot) => {
+    setConfirmLoading(true);
+    try {
+      // 1. Actualiza la reunión
+      const mtgRef = doc(db, "events", eventId, "meetings", meetingId);
+      await updateDoc(mtgRef, {
+        status: "accepted",
+        timeSlot: `${slot.startTime} - ${slot.endTime}`,
+        tableAssigned: slot.tableNumber.toString(),
+      });
+
+      // 2. Marca el slot de agenda como no disponible
+      await updateDoc(doc(db, "agenda", slot.id), {
+        available: false,
+        meetingId,
+      });
+
+      // 3. Obtén datos de los dos usuarios
+      const mtgSnap = await getDoc(mtgRef);
+      const { requesterId, receiverId } = mtgSnap.data();
+      const [reqSnap, recvSnap] = await Promise.all([
+        getDoc(doc(db, "users", requesterId)),
+        getDoc(doc(db, "users", receiverId)),
+      ]);
+      const requester = reqSnap.exists() ? reqSnap.data() : null;
+      const receiver = recvSnap.exists() ? recvSnap.data() : null;
+
+      // 4. Notificaciones en Firestore
+      const notificationsBatch = [
+        {
+          userId: requesterId,
+          title: "Reunión aceptada",
+          message: `Tu reunión con ${
+            receiver?.nombre || ""
+          } fue aceptada para ${slot.startTime} en la mesa ${
+            slot.tableNumber
+          }.`,
+        },
+        {
+          userId: receiverId,
+          title: "Reunión confirmada",
+          message: `Has aceptado la reunión con ${
+            requester?.nombre || ""
+          } para ${slot.startTime} en la mesa ${slot.tableNumber}.`,
+        },
+      ];
+      for (const notif of notificationsBatch) {
+        await addDoc(collection(db, "notifications"), {
+          ...notif,
+          timestamp: new Date(),
+          read: false,
+        });
+      }
+
+      // 5. Enviar SMS a ambos (si tienen teléfono)
+      if (requester?.contacto?.telefono) {
+        await sendSms(
+          `Tu reunión con ${receiver?.nombre} ha sido aceptada para ${slot.startTime} en la mesa ${slot.tableNumber}.`,
+          requester.contacto.telefono
+        );
+      }
+      if (receiver?.contacto?.telefono) {
+        await sendSms(
+          `Has confirmado reunión con ${requester?.nombre} para ${slot.startTime} en la mesa ${slot.tableNumber}.`,
+          receiver.contacto.telefono
+        );
+      }
+
+      // 6. Enviar WhatsApp a ambos
+      if (requester?.contacto?.telefono) {
+        await sendMeetingAcceptedWhatsapp(
+          requester.contacto.telefono,
+          receiver,
+          {
+            timeSlot: `${slot.startTime} - ${slot.endTime}`,
+            tableAssigned: slot.tableNumber,
+          }
+        );
+      }
+      if (receiver?.contacto?.telefono) {
+        await sendMeetingAcceptedWhatsapp(
+          receiver.contacto.telefono,
+          requester,
+          {
+            timeSlot: `${slot.startTime} - ${slot.endTime}`,
+            tableAssigned: slot.tableNumber,
+          }
+        );
+      }
+
+      // 7. Feedback en UI
+      showNotification({
+        title: "Reunión aceptada",
+        message: `Asignada para las ${slot.startTime}.`,
+        color: "green",
+      });
+      setSlotModalOpened(false);
+    } catch (e) {
+      console.error(e);
+      showNotification({
+        title: "Error",
+        message: "No se pudo aceptar la reunión. Intenta de nuevo.",
+        color: "red",
+      });
+    } finally {
+      setConfirmLoading(false);
+    }
+  };
+
+  const currentRequesterName = meetingToAccept
+  ? assistants.find((a) => a.id === meetingToAccept.requesterId)?.nombre
+  : "";
 
   // ---------------------------------------------------------------------------
   // Render
@@ -690,7 +958,7 @@ END:VCARD`;
                 </Menu.Item>
               ))
             ) : (
-              <Text align="center" size="sm" color="dimmed">
+              <Text align="center" size="sm" c="dimmed">
                 No tienes notificaciones
               </Text>
             )}
@@ -761,11 +1029,11 @@ END:VCARD`;
                                 size="sm"
                                 variant="light"
                                 color="green"
-                                onClick={() =>
-                                  updateMeetingStatus(req.id, "accepted")
-                                }
+                                loading={prepareSlotSelectionLoading}
+                                onClick={() => prepareSlotSelection(req.id)}
                               >
-                                <CheckIcon size={18} />
+                                {" "}
+                                <CheckIcon size={18} />{" "}
                               </ActionIcon>
                               <ActionIcon
                                 size="sm"
@@ -1350,6 +1618,91 @@ END:VCARD`;
         ) : (
           <Text align="center">No hay imagen disponible</Text>
         )}
+      </Modal>
+    <Modal
+        opened={slotModalOpened}
+        onClose={() => setSlotModalOpened(false)}
+        title="Selecciona un horario de reunión"
+        size="lg"
+        overlayProps={{ opacity: 0.3 }}
+      >
+        <LoadingOverlay visible={confirmLoading} />
+
+        {availableSlots.length === 0 ? (
+          <Text align="center">No hay horarios disponibles.</Text>
+        ) : (
+          <Stack spacing="md">
+            <Select
+              label="Hora"
+              data={rangeOptions}
+              value={selectedRange}
+              onChange={(v) => {
+                setSelectedRange(v);
+                // al cambiar rango, pre-selecciona la primera mesa de ese rango
+                const group = groupedSlots.find((g) => g.id === v);
+                const firstSlot = group && group.slots.length > 0 ? group.slots[0] : null;
+                setSelectedSlotId(firstSlot ? firstSlot.id : null);
+              }}
+              disabled={confirmLoading}
+              required
+            />
+
+            <Select
+              label="Mesa"
+              data={tableOptions}
+              value={selectedSlotId}
+              onChange={setSelectedSlotId}
+              disabled={!selectedRange || confirmLoading}
+              required
+            />
+
+            <Button
+              fullWidth
+              mt="md"
+              disabled={!chosenSlot}
+              loading={confirmLoading}
+              onClick={() => setConfirmModalOpened(true)}
+            >
+              Confirmar datos
+            </Button>
+          </Stack>
+        )}
+      </Modal>
+
+      {/* Modal de confirmación */}
+      <Modal
+        opened={confirmModalOpened}
+        onClose={() => setConfirmModalOpened(false)}
+        title="Confirmar reunión"
+        centered
+      >
+        <Stack spacing="lg">
+          <Text>
+            Vas a agendar una reunión con <b>{currentRequesterName}</b> a las{" "}
+            <b>
+              {chosenSlot?.startTime} – {chosenSlot?.endTime} (Mesa{" "}
+              {chosenSlot?.tableNumber})
+            </b>
+            .
+          </Text>
+          <Group position="right" spacing="sm">
+            <Button
+              variant="default"
+              onClick={() => setConfirmModalOpened(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                setConfirmModalOpened(false);
+                setSlotModalOpened(false);
+                confirmAcceptWithSlot(meetingToAccept.id, chosenSlot);
+              }}
+            >
+              Aceptar
+            </Button>
+          </Group>
+        </Stack>
       </Modal>
     </Container>
   );
