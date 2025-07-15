@@ -82,7 +82,7 @@ const UserProfile = () => {
   if (userLoading) return <Loader />;
 
   return (
-    <Card shadow="md" style={{ maxWidth: 800, margin: "20px auto" }}>
+    <Card shadow="md" style={{margin: "20px auto" }}>
       <UnstyledButton onClick={() => setOpenedCollapse((o) => !o)}>
         <Group position="apart" noWrap style={{ width: "100%" }}>
           <Title order={3}>Ver mi Información</Title>

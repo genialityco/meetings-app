@@ -64,7 +64,7 @@ const slotOverlapsBreakBlock = (
   });
 };
 
-const Dashboard = () => {
+const DashboardOld = () => {
   const { currentUser } = useContext(UserContext);
   const uid = currentUser?.uid;
   const navigate = useNavigate();
@@ -99,6 +99,7 @@ const Dashboard = () => {
 
   const [slotModalOpened, setSlotModalOpened] = useState(false);
   const [meetingToAccept, setMeetingToAccept] = useState(null);
+  const [meetingToEdit, setMeetingToEdit] = useState(null);
   const [availableSlots, setAvailableSlots] = useState([]);
   const [prepareSlotSelectionLoading, setPrepareSlotSelectionLoading] =
     useState(false);
@@ -214,11 +215,14 @@ const Dashboard = () => {
     const term = searchTerm.toLowerCase();
     const filtered = assistants.filter(
       (a) =>
-        a.nombre?.toLowerCase().includes(term) ||
-        a.cargo?.toLowerCase().includes(term) ||
-        a.empresa?.toLowerCase().includes(term) ||
-        a.contacto?.correo?.toLowerCase().includes(term) ||
-        a.contacto?.telefono?.toLowerCase().includes(term)
+        (a.nombre ?? "").toLowerCase().includes(term) ||
+        (a.cargo ?? "").toLowerCase().includes(term) ||
+        (a.empresa ?? "").toLowerCase().includes(term) ||
+        (a.contacto?.correo ?? "").toLowerCase().includes(term) ||
+        (a.contacto?.telefono ?? "").toLowerCase().includes(term) ||
+        (a.descripcion ?? "").toLowerCase().includes(term) ||
+        (a.necesidad ?? "").toLowerCase().includes(term) ||
+        (a.interesPrincipal ?? "").toLowerCase().includes(term)
     );
 
     const filteredFinal = showOnlyToday
@@ -679,55 +683,63 @@ END:VCARD`;
    * @returns {Promise<void>}
    * Preparar la selección de slots para una reunión pendiente.
    */
-
-  const prepareSlotSelection = async (meetingId) => {
+  const prepareSlotSelection = async (meetingId, isEdit = false) => {
     setPrepareSlotSelectionLoading(true);
-    // 1. Datos de la reunión y usuarios
-    const mtgSnap = await getDoc(
-      doc(db, "events", eventId, "meetings", meetingId)
-    );
+
+    // 1. Si es edición, marco meetingToEdit; si no, preparo meetingToAccept
+    if (isEdit) {
+      setMeetingToEdit(meetingId);
+      setMeetingToAccept(null);
+    } else {
+      setMeetingToEdit(null);
+    }
+
+    // 2. Cargo datos de la reunión
+    const mtgRef = doc(db, "events", eventId, "meetings", meetingId);
+    const mtgSnap = await getDoc(mtgRef);
+    if (!mtgSnap.exists()) throw new Error("Reunión no existe");
     const { requesterId, receiverId } = mtgSnap.data();
 
-    // 2. Obtener todas las reuniones aceptadas de ambos
-    const accQ = query(
-      collection(db, "events", eventId, "meetings"),
-      where("status", "==", "accepted"),
-      where("participants", "array-contains-any", [requesterId, receiverId])
-    );
-    const accSn = await getDocs(accQ);
+    // 3. Si no es edición, guardo requesterId/receiverId
+    if (!isEdit) {
+      setMeetingToAccept({ id: meetingId, requesterId, receiverId });
+    }
 
-    // 3. Construir array de rangos ocupados en minutos
+    // 4. Obtengo rangos ocupados
+    const accSn = await getDocs(
+      query(
+        collection(db, "events", eventId, "meetings"),
+        where("status", "==", "accepted"),
+        where("participants", "array-contains-any", [requesterId, receiverId])
+      )
+    );
     const occupiedRanges = accSn.docs
-      .map((d) => d.data().timeSlot) // ej "16:45 - 16:55"
+      .map((d) => d.data().timeSlot)
       .filter(Boolean)
       .map((ts) => {
-        const [start, end] = ts.split(" - ");
-        const [sh, sm] = start.split(":").map(Number);
-        const [eh, em] = end.split(":").map(Number);
+        const [s, e] = ts.split(" - ");
+        const [sh, sm] = s.split(":").map(Number);
+        const [eh, em] = e.split(":").map(Number);
         return { start: sh * 60 + sm, end: eh * 60 + em };
       });
 
-    // 4. Cargar agenda general disponible
-    const agQ = query(
-      collection(db, "agenda"),
-      where("eventId", "==", eventId),
-      where("available", "==", true),
-      orderBy("startTime")
+    // 5. Cargo agenda y filtro slots libres
+    const agSn = await getDocs(
+      query(
+        collection(db, "agenda"),
+        where("eventId", "==", eventId),
+        where("available", "==", true),
+        orderBy("startTime")
+      )
     );
-    const agSn = await getDocs(agQ);
-
-    // 5. Filtrar slots libres:
     const now = new Date();
     const filtered = agSn.docs
       .map((d) => ({ id: d.id, ...d.data() }))
       .filter((slot) => {
-        // a) No en el pasado
         const [h, m] = slot.startTime.split(":").map(Number);
         const slotDate = new Date(now);
         slotDate.setHours(h, m, 0, 0);
         if (slotDate <= now) return false;
-
-        // b) No choque con bloques de descanso
         if (
           slotOverlapsBreakBlock(
             slot.startTime,
@@ -736,17 +748,15 @@ END:VCARD`;
           )
         )
           return false;
-
-        // c) No choque con reuniones propias de requester o receiver
-        const [slotStart, slotEnd] = [slot.startTime, slot.endTime];
-        if (slotOverlapsRanges(slotStart, slotEnd, occupiedRanges))
+        const slotStart = h * 60 + m;
+        const slotEnd = slotStart + eventConfig.meetingDuration;
+        if (occupiedRanges.some((r) => slotStart < r.end && slotEnd > r.start))
           return false;
-
         return true;
       });
 
+    // 6. Abro modal con los slots filtrados
     setAvailableSlots(filtered);
-    setMeetingToAccept({ id: meetingId, requesterId, receiverId });
     setPrepareSlotSelectionLoading(false);
     setSlotModalOpened(true);
   };
@@ -767,7 +777,7 @@ END:VCARD`;
     // Convierto a array, y genero un 'id' único por rango
     return Object.entries(map).map(([range, grp]) => ({
       id: range,
-      range, 
+      range,
       ...grp,
     }));
   }, [availableSlots]);
@@ -776,7 +786,7 @@ END:VCARD`;
   const [selectedSlotId, setSelectedSlotId] = useState(null);
   const [confirmModalOpened, setConfirmModalOpened] = useState(false);
 
-    useEffect(() => {
+  useEffect(() => {
     if (groupedSlots.length > 0) {
       const firstRange = groupedSlots[0].id;
       setSelectedRange(firstRange);
@@ -807,33 +817,42 @@ END:VCARD`;
           ?.slots.find((s) => s.id === selectedSlotId) || null
       : null;
 
-  function slotOverlapsRanges(slotStart, slotEnd, ranges) {
-    const [h1, m1] = slotStart.split(":").map(Number);
-    const [h2, m2] = slotEnd.split(":").map(Number);
-    const sStart = h1 * 60 + m1;
-    const sEnd = h2 * 60 + m2;
+  // function slotOverlapsRanges(slotStart, slotEnd, ranges) {
+  //   const [h1, m1] = slotStart.split(":").map(Number);
+  //   const [h2, m2] = slotEnd.split(":").map(Number);
+  //   const sStart = h1 * 60 + m1;
+  //   const sEnd = h2 * 60 + m2;
 
-    return ranges.some(({ start, end }) => sStart < end && sEnd > start);
-  }
+  //   return ranges.some(({ start, end }) => sStart < end && sEnd > start);
+  // }
 
   const confirmAcceptWithSlot = async (meetingId, slot) => {
     setConfirmLoading(true);
+    // Detecto si es una edición
+    const isEdit = meetingToEdit === meetingId;
+
     try {
-      // 1. Actualiza la reunión
+      // 1. Preparo payload de actualización
       const mtgRef = doc(db, "events", eventId, "meetings", meetingId);
-      await updateDoc(mtgRef, {
-        status: "accepted",
+      const updatePayload = {
         timeSlot: `${slot.startTime} - ${slot.endTime}`,
         tableAssigned: slot.tableNumber.toString(),
-      });
+      };
+      // Solo ponemos status cuando es una aceptación nueva
+      if (!isEdit) {
+        updatePayload.status = "accepted";
+      }
 
-      // 2. Marca el slot de agenda como no disponible
+      // 2. Actualizo reunión
+      await updateDoc(mtgRef, updatePayload);
+
+      // 3. Bloqueo el slot en la agenda
       await updateDoc(doc(db, "agenda", slot.id), {
         available: false,
         meetingId,
       });
 
-      // 3. Obtén datos de los dos usuarios
+      // 4. Recupero datos para notificaciones
       const mtgSnap = await getDoc(mtgRef);
       const { requesterId, receiverId } = mtgSnap.data();
       const [reqSnap, recvSnap] = await Promise.all([
@@ -843,25 +862,43 @@ END:VCARD`;
       const requester = reqSnap.exists() ? reqSnap.data() : null;
       const receiver = recvSnap.exists() ? recvSnap.data() : null;
 
-      // 4. Notificaciones en Firestore
-      const notificationsBatch = [
-        {
-          userId: requesterId,
-          title: "Reunión aceptada",
-          message: `Tu reunión con ${
-            receiver?.nombre || ""
-          } fue aceptada para ${slot.startTime} en la mesa ${
-            slot.tableNumber
-          }.`,
-        },
-        {
-          userId: receiverId,
-          title: "Reunión confirmada",
-          message: `Has aceptado la reunión con ${
-            requester?.nombre || ""
-          } para ${slot.startTime} en la mesa ${slot.tableNumber}.`,
-        },
-      ];
+      // 5. Preparo batch de notificaciones en Firestore
+      const notificationsBatch = isEdit
+        ? [
+            {
+              userId: requesterId,
+              title: "Reunión modificada",
+              message: `Tu reunión con ${receiver?.nombre || ""} fue movida a ${
+                slot.startTime
+              } (Mesa ${slot.tableNumber}).`,
+            },
+            {
+              userId: receiverId,
+              title: "Reunión modificada",
+              message: `Has cambiado la reunión con ${
+                requester?.nombre || ""
+              } a ${slot.startTime} (Mesa ${slot.tableNumber}).`,
+            },
+          ]
+        : [
+            {
+              userId: requesterId,
+              title: "Reunión aceptada",
+              message: `Tu reunión con ${
+                receiver?.nombre || ""
+              } fue aceptada para ${slot.startTime} en Mesa ${
+                slot.tableNumber
+              }.`,
+            },
+            {
+              userId: receiverId,
+              title: "Reunión confirmada",
+              message: `Has aceptado la reunión con ${
+                requester?.nombre || ""
+              } para ${slot.startTime} en Mesa ${slot.tableNumber}.`,
+            },
+          ];
+
       for (const notif of notificationsBatch) {
         await addDoc(collection(db, "notifications"), {
           ...notif,
@@ -870,54 +907,59 @@ END:VCARD`;
         });
       }
 
-      // 5. Enviar SMS a ambos (si tienen teléfono)
+      // 6. Envío SMS si corresponde
+      const smsMsg = isEdit
+        ? `Tu reunión fue movida a ${slot.startTime} en Mesa ${slot.tableNumber}.`
+        : `Tu reunión fue aceptada para ${slot.startTime} en Mesa ${slot.tableNumber}.`;
+
       if (requester?.contacto?.telefono) {
-        await sendSms(
-          `Tu reunión con ${receiver?.nombre} ha sido aceptada para ${slot.startTime} en la mesa ${slot.tableNumber}.`,
-          requester.contacto.telefono
-        );
+        await sendSms(smsMsg, requester.contacto.telefono);
       }
       if (receiver?.contacto?.telefono) {
-        await sendSms(
-          `Has confirmado reunión con ${requester?.nombre} para ${slot.startTime} en la mesa ${slot.tableNumber}.`,
-          receiver.contacto.telefono
-        );
+        await sendSms(smsMsg, receiver.contacto.telefono);
       }
 
-      // 6. Enviar WhatsApp a ambos
+      // 7. Envío WhatsApp si corresponde
+      // const waMsg = isEdit
+      //   ? `¡Tu reunión ha sido reprogramada a ${slot.startTime} en Mesa ${slot.tableNumber}!`
+      //   : `¡Tu reunión ha sido confirmada para ${slot.startTime} en Mesa ${slot.tableNumber}!`;
+
       if (requester?.contacto?.telefono) {
         await sendMeetingAcceptedWhatsapp(
           requester.contacto.telefono,
           receiver,
-          {
-            timeSlot: `${slot.startTime} - ${slot.endTime}`,
-            tableAssigned: slot.tableNumber,
-          }
+          { timeSlot: slot.startTime, tableAssigned: slot.tableNumber }
         );
       }
       if (receiver?.contacto?.telefono) {
         await sendMeetingAcceptedWhatsapp(
           receiver.contacto.telefono,
           requester,
-          {
-            timeSlot: `${slot.startTime} - ${slot.endTime}`,
-            tableAssigned: slot.tableNumber,
-          }
+          { timeSlot: slot.startTime, tableAssigned: slot.tableNumber }
         );
       }
 
-      // 7. Feedback en UI
+      // 8. Feedback en UI
       showNotification({
-        title: "Reunión aceptada",
-        message: `Asignada para las ${slot.startTime}.`,
-        color: "green",
+        title: isEdit ? "Reunión modificada" : "Reunión aceptada",
+        message: isEdit
+          ? `Movida a ${slot.startTime} (Mesa ${slot.tableNumber}).`
+          : `Asignada para ${slot.startTime}.`,
+        color: isEdit ? "blue" : "green",
       });
+
+      // 9. Cierro modales y limpio estado de edición/aceptación
       setSlotModalOpened(false);
+      setConfirmModalOpened(false);
+      setMeetingToEdit(null);
+      setMeetingToAccept(null);
     } catch (e) {
       console.error(e);
       showNotification({
         title: "Error",
-        message: "No se pudo aceptar la reunión. Intenta de nuevo.",
+        message: isEdit
+          ? "No se pudo modificar la reunión."
+          : "No se pudo aceptar la reunión.",
         color: "red",
       });
     } finally {
@@ -926,8 +968,8 @@ END:VCARD`;
   };
 
   const currentRequesterName = meetingToAccept
-  ? assistants.find((a) => a.id === meetingToAccept.requesterId)?.nombre
-  : "";
+    ? assistants.find((a) => a.id === meetingToAccept.requesterId)?.nombre
+    : "";
 
   // ---------------------------------------------------------------------------
   // Render
@@ -1030,7 +1072,9 @@ END:VCARD`;
                                 variant="light"
                                 color="green"
                                 loading={prepareSlotSelectionLoading}
-                                onClick={() => prepareSlotSelection(req.id)}
+                                onClick={() =>
+                                  prepareSlotSelection(req.id, false)
+                                }
                               >
                                 {" "}
                                 <CheckIcon size={18} />{" "}
@@ -1309,6 +1353,15 @@ END:VCARD`;
                             {expandedMeetingId === meeting.id
                               ? "Ocultar info"
                               : "Ver más info"}
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            onClick={() =>
+                              prepareSlotSelection(meeting.id, true)
+                            }
+                          >
+                            Editar hora
                           </Button>
                         </Group>
                       )}
@@ -1619,7 +1672,8 @@ END:VCARD`;
           <Text align="center">No hay imagen disponible</Text>
         )}
       </Modal>
-    <Modal
+
+      <Modal
         opened={slotModalOpened}
         onClose={() => setSlotModalOpened(false)}
         title="Selecciona un horario de reunión"
@@ -1640,7 +1694,8 @@ END:VCARD`;
                 setSelectedRange(v);
                 // al cambiar rango, pre-selecciona la primera mesa de ese rango
                 const group = groupedSlots.find((g) => g.id === v);
-                const firstSlot = group && group.slots.length > 0 ? group.slots[0] : null;
+                const firstSlot =
+                  group && group.slots.length > 0 ? group.slots[0] : null;
                 setSelectedSlotId(firstSlot ? firstSlot.id : null);
               }}
               disabled={confirmLoading}
@@ -1708,4 +1763,4 @@ END:VCARD`;
   );
 };
 
-export default Dashboard;
+export default DashboardOld;
