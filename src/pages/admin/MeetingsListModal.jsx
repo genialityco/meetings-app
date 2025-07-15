@@ -1,7 +1,16 @@
-/* eslint-disable react/prop-types */
-// MeetingsListModal.jsx
 import { useEffect, useState } from "react";
-import { Modal, Table, Button, Loader, Text } from "@mantine/core";
+import {
+  Modal,
+  Table,
+  Button,
+  Loader,
+  Text,
+  Badge,
+  Group,
+  Avatar,
+  Center,
+  Stack,
+} from "@mantine/core";
 import {
   collection,
   query,
@@ -12,14 +21,23 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 
+const statusColors = {
+  accepted: "green",
+  pending: "yellow",
+  rejected: "red",
+  canceled: "gray",
+};
+
 const MeetingsListModal = ({ opened, onClose, event, setGlobalMessage }) => {
   const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [canceling, setCanceling] = useState(null);
 
   useEffect(() => {
     if (opened && event) {
       fetchMeetings();
     }
+    // eslint-disable-next-line
   }, [opened, event]);
 
   const fetchMeetings = async () => {
@@ -32,7 +50,7 @@ const MeetingsListModal = ({ opened, onClose, event, setGlobalMessage }) => {
         ...docItem.data(),
       }));
 
-      // 🔸 Vamos a "enriquecer" la info de participantes
+      // Enriquecer info de participantes
       const enrichedList = [];
       for (const meeting of list) {
         const participantsData = [];
@@ -44,14 +62,16 @@ const MeetingsListModal = ({ opened, onClose, event, setGlobalMessage }) => {
               id: participantId,
               nombre: pData.nombre,
               empresa: pData.empresa,
-              // cualquier otro campo que quieras mostrar
+              avatar: pData.photoURL,
             });
           } else {
-            // El documento del usuario no existe
-            participantsData.push({ id: participantId, nombre: "Desconocido" });
+            participantsData.push({
+              id: participantId,
+              nombre: "Desconocido",
+              empresa: "",
+            });
           }
         }
-        // Creamos un nuevo objeto con la info enriquecida
         enrichedList.push({
           ...meeting,
           participantsData,
@@ -67,31 +87,43 @@ const MeetingsListModal = ({ opened, onClose, event, setGlobalMessage }) => {
     }
   };
 
-  // Ejemplo de "cancelar" eliminando el documento
-  // Si prefieres marcar un campo "status: canceled", cambia la lógica
+  // Eliminar (con confirmación)
   const cancelMeeting = async (meetingId) => {
+    if (!window.confirm("¿Seguro que deseas cancelar esta reunión?")) return;
+    setCanceling(meetingId);
     try {
       await deleteDoc(doc(db, "events", event.id, "meetings", meetingId));
       setGlobalMessage("Reunión cancelada (eliminada).");
-      fetchMeetings(); // Actualizar la lista
+      fetchMeetings();
     } catch (error) {
       console.error("Error canceling meeting:", error);
       setGlobalMessage("Error al cancelar la reunión.");
     }
+    setCanceling(null);
   };
 
   return (
     <Modal
       opened={opened}
       onClose={onClose}
-      title={`Reuniones - ${event?.eventName}`}
+      title={<Text fw={700}>Reuniones - {event?.eventName}</Text>}
+      size="xl"
+      centered
+      radius="md"
+      overlayProps={{ blur: 2 }}
     >
       {loading ? (
-        <Loader />
+        <Center style={{ minHeight: 200 }}>
+          <Loader size="lg" />
+        </Center>
       ) : meetings.length === 0 ? (
-        <Text>No hay reuniones asignadas para este evento.</Text>
+        <Center style={{ minHeight: 120 }}>
+          <Text color="dimmed">
+            No hay reuniones asignadas para este evento.
+          </Text>
+        </Center>
       ) : (
-        <Table>
+        <Table highlightOnHover withBorder>
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Hora</Table.Th>
@@ -104,20 +136,58 @@ const MeetingsListModal = ({ opened, onClose, event, setGlobalMessage }) => {
           <Table.Tbody>
             {meetings.map((m) => (
               <Table.Tr key={m.id}>
-                <Table.Td>{m.timeSlot}</Table.Td>
-                <Table.Td>{m.tableAssigned}</Table.Td>
                 <Table.Td>
-                  {m.participantsData?.map((p) => (
-                    <div key={p.id}>
-                      <strong>{p.nombre}</strong> - {p.empresa}
-                    </div>
-                  ))}
+                  <Text fw={600}>{m.timeSlot || "--"}</Text>
                 </Table.Td>
-                <Table.Td>{m.status || "N/A"}</Table.Td>
                 <Table.Td>
-                  <Button color="red" onClick={() => cancelMeeting(m.id)}>
-                    Cancelar
-                  </Button>
+                  <Badge color="blue" variant="light">
+                    Mesa {m.tableAssigned || "-"}
+                  </Badge>
+                </Table.Td>
+                <Table.Td>
+                  <Stack gap={4}>
+                    {m.participantsData?.map((p) => (
+                      <Group key={p.id} gap={8}>
+                        <Avatar
+                          size={26}
+                          radius="xl"
+                          src={p.avatar}
+                          alt={p.nombre}
+                        >
+                          {p.nombre?.[0] || "?"}
+                        </Avatar>
+                        <div>
+                          <Text size="sm" fw={500}>
+                            {p.nombre}
+                          </Text>
+                          <Text size="xs" c="dimmed">
+                            {p.empresa}
+                          </Text>
+                        </div>
+                      </Group>
+                    ))}
+                  </Stack>
+                </Table.Td>
+                <Table.Td>
+                  <Badge
+                    color={statusColors[m.status?.toLowerCase()] || "gray"}
+                    variant={m.status === "accepted" ? "filled" : "light"}
+                  >
+                    {m.status || "N/A"}
+                  </Badge>
+                </Table.Td>
+                <Table.Td>
+                  {m.status !== "canceled" && (
+                    <Button
+                      color="red"
+                      size="xs"
+                      loading={canceling === m.id}
+                      onClick={() => cancelMeeting(m.id)}
+                      variant="outline"
+                    >
+                      Cancelar
+                    </Button>
+                  )}
                 </Table.Td>
               </Table.Tr>
             ))}

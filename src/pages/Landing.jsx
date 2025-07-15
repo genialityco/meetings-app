@@ -53,6 +53,7 @@ const Landing = () => {
     empresa: "",
     cargo: "",
     descripcion: "",
+    tipoAsistente: "",
     interesPrincipal: "",
     necesidad: "",
     contacto: { correo: "", telefono: "" },
@@ -269,9 +270,9 @@ const Landing = () => {
           </Title>
 
           <Text ta="justify" mb="lg">
-            <strong>Plataforma de Networking y Reuniones de Negocio</strong> Conecta con otras
-            empresas y permite que te encuentren para agendar reuniones durante
-            el evento
+            <strong>Plataforma de Networking y Reuniones de Negocio</strong>{" "}
+            Conecta con otras empresas y permite que te encuentren para agendar
+            reuniones durante el evento
           </Text>
 
           <Text ta="justify" mb="lg">
@@ -380,6 +381,20 @@ const Landing = () => {
                 </RichTextEditor.Toolbar> */}
                 <RichTextEditor.Content />
               </RichTextEditor>
+              
+              <Select
+                label="Tipo de asistente"
+                placeholder="Selecciona el tipo"
+                data={[
+                  { value: "comprador", label: "Comprador" },
+                  { value: "vendedor", label: "Vendedor" },
+                ]}
+                value={formValues.tipoAsistente}
+                onChange={(value) => handleChange("tipoAsistente", value)}
+                required
+                mb="sm"
+              />
+
               <Select
                 label="Interés principal"
                 placeholder="Selecciona una opción"

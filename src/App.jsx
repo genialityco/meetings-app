@@ -2,7 +2,6 @@ import { useContext } from "react";
 import { Routes, Route } from "react-router-dom";
 import Landing from "./pages/Landing";
 import AdminPanel from "./pages/admin/AdminPanel";
-import MatrixPage from "./pages/MatrixPage";
 import { UserContext } from "./context/UserContext";
 import UserProfile from "./components/UserProfile";
 import PhonesAdminPage from "./pages/PhonesAdminPage.tsx";
@@ -10,6 +9,7 @@ import MeetingAutoResponse from "./pages/MeetingAutoResponse";
 import EventAdmin from "./pages/admin/EventAdmin";
 import Dashboard from "./pages/dashboard/Dashboard.tsx";
 import { Container } from "@mantine/core";
+import MatrixPage from "./pages/admin/MatrixPage.jsx";
 
 const App = () => {
   const { currentUser } = useContext(UserContext);

@@ -1,7 +1,4 @@
-/* eslint-disable react/prop-types */
-// AttendeesListModal.jsx
-import { useEffect, useState } from "react";
-import { Modal, Table, Button, Loader, Text } from "@mantine/core";
+import { Card, Table, Button, Loader, Text, Group, Title } from "@mantine/core";
 import {
   collection,
   query,
@@ -11,21 +8,21 @@ import {
   doc,
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
+import { useEffect, useState } from "react";
+import PropTypes from "prop-types";
 
-const AttendeesListModal = ({ opened, onClose, event, setGlobalMessage }) => {
+const AttendeesList = ({ event, setGlobalMessage, exportToExcel }) => {
   const [attendees, setAttendees] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (opened && event) {
-      fetchAttendees();
-    }
-  }, [opened, event]);
+    if (event) fetchAttendees();
+    // eslint-disable-next-line
+  }, [event]);
 
   const fetchAttendees = async () => {
     try {
       setLoading(true);
-      // Busca en "users" los que tengan "eventId" = event.id
       const q = query(
         collection(db, "users"),
         where("eventId", "==", event.id)
@@ -37,31 +34,33 @@ const AttendeesListModal = ({ opened, onClose, event, setGlobalMessage }) => {
       }));
       setAttendees(list);
     } catch (error) {
-      console.error("Error fetching attendees:", error);
+      console.log(error);
       setGlobalMessage("Error al obtener asistentes.");
     } finally {
       setLoading(false);
     }
   };
 
-  // Eliminar completamente al usuario de la colección
   const removeAttendee = async (attendeeId) => {
     try {
       await deleteDoc(doc(db, "users", attendeeId));
       setGlobalMessage("Asistente eliminado correctamente.");
-      fetchAttendees();
+      setAttendees((prev) => prev.filter((a) => a.id !== attendeeId));
     } catch (error) {
-      console.error("Error removing attendee:", error);
+      console.log(error);
+
       setGlobalMessage("Error al eliminar el asistente.");
     }
   };
 
   return (
-    <Modal
-      opened={opened}
-      onClose={onClose}
-      title={`Asistentes - ${event?.eventName}`}
-    >
+    <Card shadow="sm" p="lg" withBorder mt="md">
+      <Group position="apart" mb="md">
+        <Title order={5}>Asistentes del evento</Title>
+        <Button onClick={() => exportToExcel(attendees)}>
+          Exportar a Excel (XLSX)
+        </Button>
+      </Group>
       {loading ? (
         <Loader />
       ) : attendees.length === 0 ? (
@@ -73,6 +72,9 @@ const AttendeesListModal = ({ opened, onClose, event, setGlobalMessage }) => {
               <Table.Th>Nombre</Table.Th>
               <Table.Th>Empresa</Table.Th>
               <Table.Th>Cédula</Table.Th>
+              <Table.Th>Cargo</Table.Th>
+              <Table.Th>Tipo asistente</Table.Th>
+              <Table.Th>Correo</Table.Th>
               <Table.Th>Teléfono</Table.Th>
               <Table.Th>Acciones</Table.Th>
             </Table.Tr>
@@ -83,9 +85,24 @@ const AttendeesListModal = ({ opened, onClose, event, setGlobalMessage }) => {
                 <Table.Td>{a.nombre}</Table.Td>
                 <Table.Td>{a.empresa}</Table.Td>
                 <Table.Td>{a.cedula}</Table.Td>
-                <Table.Td>{a.contacto.telefono}</Table.Td>
+                <Table.Td>{a.cargo}</Table.Td>
+                <Table.Td>{a.tipoAsistente}</Table.Td>
+                <Table.Td>{a.contacto?.correo}</Table.Td>
+                <Table.Td>{a.contacto?.telefono}</Table.Td>
                 <Table.Td>
-                  <Button color="red" onClick={() => removeAttendee(a.id)}>
+                  <Button
+                    color="red"
+                    size="xs"
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          "¿Estás seguro que deseas eliminar este asistente?"
+                        )
+                      ) {
+                        removeAttendee(a.id);
+                      }
+                    }}
+                  >
                     Eliminar
                   </Button>
                 </Table.Td>
@@ -94,8 +111,14 @@ const AttendeesListModal = ({ opened, onClose, event, setGlobalMessage }) => {
           </Table.Tbody>
         </Table>
       )}
-    </Modal>
+    </Card>
   );
 };
 
-export default AttendeesListModal;
+AttendeesList.propTypes = {
+  event: PropTypes.object.isRequired,
+  setGlobalMessage: PropTypes.func.isRequired,
+  exportToExcel: PropTypes.func.isRequired,
+};
+
+export default AttendeesList;

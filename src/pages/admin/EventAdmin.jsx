@@ -27,7 +27,7 @@ import { db } from "../../firebase/firebaseConfig";
 import EditEventConfigModal from "./EditEventConfigModal";
 import ManualMeetingModal from "./ManualMeetingModal";
 import MeetingsListModal from "./MeetingsListModal";
-import AttendeesListModal from "./AttendeesListModal";
+import AttendeesList from "./AttendeesList";
 import { useParams, Link } from "react-router-dom";
 import * as XLSX from "xlsx";
 
@@ -39,7 +39,6 @@ const EventAdmin = () => {
   const [manualMeetingModalOpened, setManualMeetingModalOpened] =
     useState(false);
   const [meetingsModalOpened, setMeetingsModalOpened] = useState(false);
-  const [attendeesModalOpened, setAttendeesModalOpened] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [attendees, setAttendees] = useState([]);
   const [attendeesLoading, setAttendeesLoading] = useState(false);
@@ -468,57 +467,6 @@ const EventAdmin = () => {
         )}
       </Card>
 
-      {/* Tabla de asistentes */}
-      <Card shadow="sm" p="lg" withBorder mt="md">
-        <Group position="apart" mb="md">
-          <Title order={5}>Asistentes del evento</Title>
-          <Button onClick={exportToExcel}>Exportar a Excel (XLSX)</Button>
-        </Group>
-        {attendeesLoading ? (
-          <Center>
-            <Loader />
-          </Center>
-        ) : attendees.length === 0 ? (
-          <Text color="dimmed">No hay asistentes registrados.</Text>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr>
-                  <th>Nombre</th>
-                  <th>Cédula</th>
-                  <th>Empresa</th>
-                  <th>Cargo</th>
-                  <th>Correo</th>
-                  <th>Teléfono</th>
-                  <th>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {attendees.map((a) => (
-                  <tr key={a.id}>
-                    <td>{a.nombre}</td>
-                    <td>{a.cedula}</td>
-                    <td>{a.empresa}</td>
-                    <td>{a.cargo}</td>
-                    <td>{a.contacto?.correo}</td>
-                    <td>{a.contacto?.telefono}</td>
-                    <td>
-                      <Button
-                        color="red"
-                        size="xs"
-                        onClick={() => handleDeleteAttendee(a.id)}
-                      >
-                        Eliminar
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
       {/* Modales */}
       <EditEventConfigModal
         opened={editConfigModalOpened}
@@ -539,11 +487,10 @@ const EventAdmin = () => {
         event={event}
         setGlobalMessage={setGlobalMessage}
       />
-      <AttendeesListModal
-        opened={attendeesModalOpened}
-        onClose={() => setAttendeesModalOpened(false)}
+      <AttendeesList
         event={event}
         setGlobalMessage={setGlobalMessage}
+        exportToExcel={exportToExcel}
       />
     </Container>
   );
