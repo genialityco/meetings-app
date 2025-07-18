@@ -43,8 +43,8 @@ export default function PendingRequestsSection({
                           </Group>
                           <Text size="xs">🏢 {requester?.empresa}</Text>
                           <Text size="xs">🏷 {requester?.cargo}</Text>
-                          <Text size="xs">✉️ {requester?.contacto?.correo || "No disponible"}</Text>
-                          <Text size="xs">📞 {requester?.contacto?.telefono || "No disponible"}</Text>
+                          <Text size="xs">✉️ {requester?.correo || "No disponible"}</Text>
+                          <Text size="xs">📞 {requester?.telefono || "No disponible"}</Text>
                           <Text size="xs">📝 {requester?.descripcion || "No especificada"}</Text>
                           <Text size="xs">🎯 {requester?.interesPrincipal || "No especificado"}</Text>
                           <Text size="xs">🔍 {requester?.necesidad || "No especificada"}</Text>

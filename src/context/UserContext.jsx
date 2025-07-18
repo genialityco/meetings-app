@@ -125,7 +125,7 @@ export const UserProvider = ({ children }) => {
       // Consulta: filtra cédula y eventId
       const q = query(
         collection(db, "users"),
-        where("cedula", "==", cedula),
+        where("cedula", "==", cedula.trim()),
         where("eventId", "==", eventId)
       );
       const querySnapshot = await getDocs(q);

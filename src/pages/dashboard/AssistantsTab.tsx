@@ -115,7 +115,7 @@ export default function AssistantsTab({
                   </Text>
                   <Text size="sm">
                     📧 <strong>Correo:</strong>{" "}
-                    {assistant.contacto?.correo || "No disponible"}
+                    {assistant.correo || "No disponible"}
                   </Text>
                   <Text size="sm">
                     📝 <strong>Descripción:</strong>{" "}
@@ -140,7 +140,7 @@ export default function AssistantsTab({
                     onClick={() =>
                       sendMeetingRequest(
                         assistant.id,
-                        assistant.contacto?.telefono
+                        assistant.telefono
                       )
                     }
                     disabled={!solicitarReunionHabilitado}

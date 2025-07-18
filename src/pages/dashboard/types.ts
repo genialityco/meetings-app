@@ -15,6 +15,8 @@ export interface Assistant {
     correo?: string;
     telefono?: string;
   };
+  correo?: string;
+  telefono?: string;
   descripcion?: string;
   interesPrincipal?: string;
   necesidad?: string;

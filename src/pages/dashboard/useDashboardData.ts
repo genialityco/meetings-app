@@ -83,8 +83,8 @@ function downloadVCard(participant: Assistant) {
 VERSION:3.0
 N:${participant.nombre};;;;
 FN:${participant.nombre}
-TEL;TYPE=CELL:${participant.contacto?.telefono || ""}
-EMAIL:${participant.contacto?.correo || ""}
+TEL;TYPE=CELL:${participant.telefono || ""}
+EMAIL:${participant.correo || ""}
 END:VCARD`;
   const blob = new Blob([vCard], { type: "text/vcard" });
   const url = URL.createObjectURL(blob);
@@ -95,11 +95,11 @@ END:VCARD`;
 }
 
 function sendWhatsAppMessage(participant: Assistant) {
-  if (!participant.contacto?.telefono) {
+  if (!participant.telefono) {
     alert("No hay número de teléfono para WhatsApp");
     return;
   }
-  const phone = participant.contacto.telefono.replace(/[^\d]/g, "");
+  const phone = participant.telefono.replace(/[^\d]/g, "");
   const message = encodeURIComponent(
     "Hola, me gustaría contactarte sobre la reunión."
   );
@@ -150,6 +150,7 @@ export function useDashboardData(eventId?: string) {
   const [solicitarReunionHabilitado, setSolicitarReunionHabilitado] =
     useState<boolean>(true);
   const [eventConfig, setEventConfig] = useState<any>(null);
+  const [formFields, setFormFields] = useState([]);
 
   // Modales y acciones de UI
   const [avatarModalOpened, setAvatarModalOpened] = useState(false);
@@ -175,16 +176,18 @@ export function useDashboardData(eventId?: string) {
   // ---------------------- EFECTOS PRINCIPALES ----------------------
 
   // 1. Configuración del evento (eventConfig)
-  useEffect(() => {
-    if (!eventId) return;
-    (async () => {
-      const ref = doc(db, "events", eventId);
-      const snap = await getDoc(ref);
-      if (snap.exists()) {
-        setEventConfig(snap.data().config || {});
-      }
-    })();
-  }, [eventId]);
+useEffect(() => {
+  if (!eventId) return;
+  (async () => {
+    const ref = doc(db, "events", eventId);
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      const config = snap.data().config || {};
+      setEventConfig(config);
+      setFormFields(config.formFields || []);
+    }
+  })();
+}, [eventId]);
 
   // 2. Notificaciones del usuario
   useEffect(() => {
@@ -270,32 +273,24 @@ export function useDashboardData(eventId?: string) {
   }, [uid, eventId]);
 
   // 5. Filtro de asistentes por searchTerm y showOnlyToday
-  useEffect(() => {
-    const term = searchTerm.toLowerCase();
-
-    let filtered = assistants.filter(
-      (a) =>
-        (a.nombre ?? "").toLowerCase().includes(term) ||
-        (a.cargo ?? "").toLowerCase().includes(term) ||
-        (a.empresa ?? "").toLowerCase().includes(term) ||
-        (a.contacto?.correo ?? "").toLowerCase().includes(term) ||
-        (a.contacto?.telefono ?? "").toLowerCase().includes(term) ||
-        (a.descripcion ?? "").toLowerCase().includes(term) ||
-        (a.necesidad ?? "").toLowerCase().includes(term) ||
-        (a.interesPrincipal ?? "").toLowerCase().includes(term)
+// Filtrar asistentes usando todos los campos visibles en formFields
+useEffect(() => {
+  const term = searchTerm.toLowerCase();
+  let filtered = assistants.filter((a) =>
+    formFields.some((f) => {
+      const value = (a[f.name] ?? "").toString().toLowerCase();
+      return value.includes(term);
+    })
+  );
+  // (puedes mantener el filtro por interés si quieres)
+  if (interestFilter) {
+    filtered = filtered.filter(
+      (a) => a[formFields.find(f => f.name === "interesPrincipal")?.name] === interestFilter
     );
+  }
+  setFilteredAssistants(filtered);
+}, [assistants, searchTerm, interestFilter, formFields]);
 
-    // 👉 Filtro adicional por interés principal (si está seleccionado)
-    if (interestFilter) {
-      filtered = filtered.filter((a) => a.interesPrincipal === interestFilter);
-    }
-
-    const filteredFinal = showOnlyToday
-      ? filtered.filter((a) => (a as any).connectedToday)
-      : filtered;
-
-    setFilteredAssistants(filteredFinal);
-  }, [assistants, searchTerm, interestFilter, showOnlyToday]);
 
   // 6. Solicitudes enviadas por usuario actual (pendientes)
   useEffect(() => {
@@ -398,8 +393,8 @@ export function useDashboardData(eventId?: string) {
         `Nombre: ${requester?.nombre || ""}\n` +
         `Empresa: ${requester?.empresa || ""}\n` +
         `Cargo: ${requester?.cargo || ""}\n` +
-        `Correo: ${requester?.contacto?.correo || ""}\n` +
-        `Teléfono: ${requester?.contacto?.telefono || ""}\n\n` +
+        `Correo: ${requester?.correo || ""}\n` +
+        `Teléfono: ${requester?.telefono || ""}\n\n` +
         `Opciones:\n` +
         `*1. Aceptar:* ${acceptUrl}\n` +
         `*2. Rechazar:* ${rejectUrl}\n` +
@@ -545,31 +540,31 @@ export function useDashboardData(eventId?: string) {
           ? (receiverSnap.data() as Assistant)
           : null;
 
-        if (requester?.contacto?.telefono) {
+        if (requester?.telefono) {
           await sendSms(
             `Tu reunión con ${
               receiver?.nombre || "otro participante"
             } ha sido aceptada para ${chosen.startTime} en la mesa ${
               chosen.tableNumber
             }.`,
-            requester.contacto.telefono
+            requester.telefono
           );
         }
-        if (receiver?.contacto?.telefono) {
+        if (receiver?.telefono) {
           await sendSms(
             `Tu reunión con ${
               requester?.nombre || "otro participante"
             } ha sido aceptada para ${chosen.startTime} en la mesa ${
               chosen.tableNumber
             }.`,
-            receiver.contacto.telefono
+            receiver.telefono
           );
         }
 
         // Enviar WhatsApp a ambos participantes
         if (requester && receiver) {
           await sendMeetingAcceptedWhatsapp(
-            requester.contacto?.telefono || "",
+            requester.telefono || "",
             receiver,
             {
               timeSlot: `${chosen.startTime} - ${chosen.endTime}`,
@@ -577,7 +572,7 @@ export function useDashboardData(eventId?: string) {
             }
           );
           await sendMeetingAcceptedWhatsapp(
-            receiver.contacto?.telefono || "",
+            receiver.telefono || "",
             requester,
             {
               timeSlot: `${chosen.startTime} - ${chosen.endTime}`,
@@ -787,24 +782,24 @@ export function useDashboardData(eventId?: string) {
         ? `Tu reunión fue movida a ${slot.startTime} en Mesa ${slot.tableNumber}.`
         : `Tu reunión fue aceptada para ${slot.startTime} en Mesa ${slot.tableNumber}.`;
 
-      if (requester?.contacto?.telefono) {
-        await sendSms(smsMsg, requester.contacto.telefono);
+      if (requester?.telefono) {
+        await sendSms(smsMsg, requester.telefono);
       }
-      if (receiver?.contacto?.telefono) {
-        await sendSms(smsMsg, receiver.contacto.telefono);
+      if (receiver?.telefono) {
+        await sendSms(smsMsg, receiver.telefono);
       }
 
       // 7. WhatsApp
-      if (requester?.contacto?.telefono) {
+      if (requester?.telefono) {
         await sendMeetingAcceptedWhatsapp(
-          requester.contacto.telefono,
+          requester.telefono,
           receiver!,
           { timeSlot: slot.startTime, tableAssigned: slot.tableNumber }
         );
       }
-      if (receiver?.contacto?.telefono) {
+      if (receiver?.telefono) {
         await sendMeetingAcceptedWhatsapp(
-          receiver.contacto.telefono,
+          receiver.telefono,
           requester!,
           { timeSlot: slot.startTime, tableAssigned: slot.tableNumber }
         );
@@ -941,5 +936,6 @@ export function useDashboardData(eventId?: string) {
     confirmModalOpened,
     setConfirmModalOpened,
     currentRequesterName,
+    formFields
   };
 }

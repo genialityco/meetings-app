@@ -66,11 +66,11 @@ export default function MeetingsTab({
                       </Text>
                       <Text size="sm">
                         📧 <strong>Correo:</strong>{" "}
-                        {participant.contacto?.correo || "No disponible"}
+                        {participant.correo || "No disponible"}
                       </Text>
                       <Text size="sm">
                         📞 <strong>Teléfono:</strong>{" "}
-                        {participant.contacto?.telefono || "No disponible"}
+                        {participant.telefono || "No disponible"}
                       </Text>
                       <Text size="sm">
                         📝 <strong>Descripción:</strong>{" "}

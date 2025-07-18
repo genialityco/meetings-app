@@ -30,6 +30,7 @@ import MeetingsListModal from "./MeetingsListModal";
 import AttendeesList from "./AttendeesList";
 import { useParams, Link } from "react-router-dom";
 import * as XLSX from "xlsx";
+import ConfigureFieldsModal from "./ConfigureFieldsModal";
 
 const EventAdmin = () => {
   const { eventId } = useParams();
@@ -42,6 +43,8 @@ const EventAdmin = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [attendees, setAttendees] = useState([]);
   const [attendeesLoading, setAttendeesLoading] = useState(false);
+  const [configureFieldsModalOpened, setConfigureFieldsModalOpened] =
+    useState(false);
 
   const [meetingsCounts, setMeetingsCounts] = useState({
     aceptadas: 0,
@@ -442,6 +445,21 @@ const EventAdmin = () => {
             >
               Ver Reuniones
             </Button>
+            <Button
+              component={Link}
+              to={`/admin/event/${event.id}/match`}
+              loading={actionLoading}
+              disabled={actionLoading}
+            >
+              Generar Matches IA
+            </Button>
+            <Button
+              onClick={() => setConfigureFieldsModalOpened(true)}
+              loading={actionLoading}
+              disabled={actionLoading}
+            >
+              Configurar campos
+            </Button>
           </Group>
         </Group>
       </Card>
@@ -491,6 +509,13 @@ const EventAdmin = () => {
         event={event}
         setGlobalMessage={setGlobalMessage}
         exportToExcel={exportToExcel}
+      />
+      <ConfigureFieldsModal
+        opened={configureFieldsModalOpened}
+        onClose={() => setConfigureFieldsModalOpened(false)}
+        event={event}
+        refreshEvents={fetchEvent}
+        setGlobalMessage={setGlobalMessage}
       />
     </Container>
   );

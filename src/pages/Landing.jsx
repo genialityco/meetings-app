@@ -22,7 +22,6 @@ import Highlight from "@tiptap/extension-highlight";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
-
 import { useNavigate, useParams } from "react-router-dom";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
@@ -31,13 +30,15 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../firebase/firebaseConfig";
 import { useMediaQuery } from "@mantine/hooks";
 
-// Función para subir la imagen a Firebase Storage
+// Subir imagen a Firebase Storage
 const uploadProfilePicture = async (file, uid) => {
   const storageRef = ref(storage, `profilePictures/${uid}/${file.name}`);
   await uploadBytes(storageRef, file);
   const photoURL = await getDownloadURL(storageRef);
   return photoURL;
 };
+
+const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
 
 const Landing = () => {
   const navigate = useNavigate();
@@ -47,29 +48,17 @@ const Landing = () => {
 
   const [event, setEvent] = useState({});
   const [registrationEnabled, setRegistrationEnabled] = useState(true);
-  const [formValues, setFormValues] = useState({
-    nombre: "",
-    cedula: "",
-    empresa: "",
-    cargo: "",
-    descripcion: "",
-    tipoAsistente: "",
-    interesPrincipal: "",
-    necesidad: "",
-    contacto: { correo: "", telefono: "" },
-    photo: null,
-    aceptaTratamiento: false, // <-- Nuevo campo para el checkbox
-  });
+  const [formValues, setFormValues] = useState({});
   const [profilePicPreview, setProfilePicPreview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [searchCedula, setSearchCedula] = useState("");
   const [searchError, setSearchError] = useState("");
   const [showInfo, setShowInfo] = useState(false);
-  const [tratamientoError, setTratamientoError] = useState(""); // <-- Nuevo estado para error
+  const [tratamientoError, setTratamientoError] = useState("");
 
   const isMobile = useMediaQuery("(max-width: 600px)");
 
-  // Configuración del editor Tiptap con Mantine
+  // Editor solo para descripcion/richtext
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -82,13 +71,12 @@ const Landing = () => {
     onUpdate: ({ editor }) => {
       setFormValues((prev) => ({
         ...prev,
-        // OBTENEMOS SÓLO EL TEXTO, SIN ETIQUETAS
         descripcion: editor.getText(),
       }));
     },
   });
 
-  // Cargar datos del usuario (si ya existe)
+  // Cargar datos del usuario si ya existe
   useEffect(() => {
     if (currentUser?.data) {
       setFormValues((prev) => ({
@@ -101,7 +89,7 @@ const Landing = () => {
     }
   }, [currentUser]);
 
-  // Cargar la configuración del evento (registros habilitados)
+  // Cargar configuración del evento
   useEffect(() => {
     if (eventId) {
       const unsubscribe = onSnapshot(
@@ -123,24 +111,26 @@ const Landing = () => {
     }
   }, [eventId]);
 
-  // Manejar cambios en el formulario (incluyendo campos anidados)
-  const handleChange = (field, value) => {
+  // Obtener valor de cualquier campo, soportando contacto.*
+  function getValueForField(fieldName) {
+    if (fieldName.startsWith("contacto.")) {
+      return formValues.contacto?.[fieldName.split(".")[1]] || "";
+    }
+    return formValues[fieldName] ?? "";
+  }
+
+  // Actualizar formValues de cualquier campo (soporta contacto.*, file y checkboxes)
+  function handleDynamicChange(field, value) {
     if (field.startsWith("contacto.")) {
       const key = field.split(".")[1];
       setFormValues((prev) => ({
         ...prev,
-        contacto: {
-          ...prev.contacto,
-          [key]: value,
-        },
+        contacto: { ...prev.contacto, [key]: value },
       }));
     } else {
-      setFormValues((prev) => ({
-        ...prev,
-        [field]: value,
-      }));
+      setFormValues((prev) => ({ ...prev, [field]: value }));
     }
-  };
+  }
 
   // Buscar usuario por cédula
   const handleSearchByCedula = async () => {
@@ -148,11 +138,9 @@ const Landing = () => {
     setSearchError("");
     setShowInfo(false);
 
-    // Pasa también el eventId
     const result = await loginByCedula(searchCedula, eventId);
 
     if (result?.success) {
-      // Navegar a /dashboard/eventId
       navigate(`/dashboard/${eventId}`);
     } else {
       setSearchError("No se encuentra registrada esta cédula para este evento");
@@ -161,10 +149,10 @@ const Landing = () => {
     setLoading(false);
   };
 
-  // Enviar formulario (registro o actualización)
+  // Submit registro/actualización
   const handleSubmit = useCallback(async () => {
-    setTratamientoError(""); // Limpiar error antes de validar
-    if (!formValues.aceptaTratamiento) {
+    setTratamientoError("");
+    if (!formValues[CONSENTIMIENTO_FIELD_NAME]) {
       setTratamientoError(
         "Debes aceptar el tratamiento de datos para continuar."
       );
@@ -175,13 +163,12 @@ const Landing = () => {
       const uid = currentUser.uid;
       let dataToUpdate = { ...formValues, eventId };
 
-      // Si hay un archivo de foto, se sube y se obtiene la URL
+      // Manejar upload foto (si el campo existe)
       if (formValues.photo) {
         const photoURL = await uploadProfilePicture(formValues.photo, uid);
         dataToUpdate.photoURL = photoURL;
-        delete dataToUpdate.photo; // No enviar el objeto File a Firestore
+        delete dataToUpdate.photo; // No enviar objeto File a Firestore
       }
-
       await updateUser(uid, dataToUpdate);
       navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
     } catch (error) {
@@ -223,7 +210,111 @@ const Landing = () => {
     );
   }
 
-  // Si sí hay eventId, mostramos formulario y lógica normal
+  // Render dinámico de los campos configurados en Firestore
+  function renderDynamicFormFields() {
+    if (!Array.isArray(event?.config?.formFields)) return null;
+
+    return event.config.formFields.map((field) => {
+      // Foto de perfil (file input)
+      if (field.name === "photo") {
+        return (
+          <FileInput
+            key={field.name}
+            label={field.label || "Foto de perfil"}
+            placeholder="Selecciona o toma una foto"
+            accept="image/png,image/jpeg"
+            inputProps={{ capture: "user" }}
+            value={formValues.photo}
+            onChange={(file) => {
+              handleDynamicChange("photo", file);
+              if (file) {
+                setProfilePicPreview(URL.createObjectURL(file));
+              } else {
+                setProfilePicPreview(null);
+              }
+            }}
+          />
+        );
+      }
+
+      // RichText (solo descripcion, adaptarlo para más si usas otros richtext)
+      if (field.type === "richtext") {
+        return (
+          <div key={field.name}>
+            <Title order={6}>{field.label}</Title>
+            <RichTextEditor editor={editor}>
+              <RichTextEditor.Content />
+            </RichTextEditor>
+          </div>
+        );
+      }
+
+      // Select (incluye soporte para options dinámicas)
+      if (field.type === "select") {
+        return (
+          <Select
+            key={field.name}
+            label={field.label}
+            placeholder="Selecciona una opción"
+            data={field.options || []}
+            value={getValueForField(field.name)}
+            onChange={(value) => handleDynamicChange(field.name, value)}
+            required={field.required}
+            mb="sm"
+          />
+        );
+      }
+
+      // Checkbox personalizado (no consentimiento)
+      if (
+        field.type === "checkbox" &&
+        field.name !== CONSENTIMIENTO_FIELD_NAME
+      ) {
+        return (
+          <Checkbox
+            key={field.name}
+            label={field.label}
+            checked={!!getValueForField(field.name)}
+            onChange={(e) =>
+              handleDynamicChange(field.name, e.currentTarget.checked)
+            }
+            required={field.required}
+            mb="sm"
+          />
+        );
+      }
+
+      // Campos de contacto anidados (correo/teléfono)
+      if (
+        field.name === "contacto.correo" ||
+        field.name === "contacto.telefono"
+      ) {
+        return (
+          <TextInput
+            key={field.name}
+            label={field.label}
+            placeholder={field.label}
+            value={getValueForField(field.name)}
+            onChange={(e) => handleDynamicChange(field.name, e.target.value)}
+            required={field.required}
+          />
+        );
+      }
+
+      // TextInput por defecto para otros campos
+      return (
+        <TextInput
+          key={field.name}
+          label={field.label}
+          placeholder={field.label}
+          value={getValueForField(field.name)}
+          onChange={(e) => handleDynamicChange(field.name, e.target.value)}
+          required={field.required}
+        />
+      );
+    });
+  }
+
   return (
     <Box
       style={{
@@ -311,144 +402,9 @@ const Landing = () => {
                 Para un registro nuevo diligencia el formulario.
               </Text>
 
-              <TextInput
-                label="Nombre"
-                placeholder="Tu nombre completo"
-                value={formValues.nombre}
-                onChange={(e) => handleChange("nombre", e.target.value)}
-                required
-              />
-              <TextInput
-                label="Cédula"
-                placeholder="Tu número de identificación"
-                value={formValues.cedula}
-                onChange={(e) => handleChange("cedula", e.target.value)}
-                required
-              />
-              <TextInput
-                label="Empresa"
-                placeholder="Nombre de la empresa"
-                value={formValues.empresa}
-                onChange={(e) => handleChange("empresa", e.target.value)}
-                required
-              />
-              <TextInput
-                label="Cargo"
-                placeholder="Tu cargo"
-                value={formValues.cargo}
-                onChange={(e) => handleChange("cargo", e.target.value)}
-                required
-              />
-              <Title order={6}>Descripción breve del negocio</Title>
-              {/* Editor Tiptap integrado */}
-              <RichTextEditor editor={editor}>
-                {/* <RichTextEditor.Toolbar sticky stickyOffset={60}>
-                  <RichTextEditor.ControlsGroup>
-                    <RichTextEditor.Bold />
-                    <RichTextEditor.Italic />
-                    <RichTextEditor.Underline />
-                    <RichTextEditor.Strikethrough />
-                    <RichTextEditor.ClearFormatting />
-                    <RichTextEditor.Highlight />
-                    <RichTextEditor.Code />
-                  </RichTextEditor.ControlsGroup>
-                  <RichTextEditor.ControlsGroup>
-                    <RichTextEditor.H1 />
-                    <RichTextEditor.H2 />
-                    <RichTextEditor.H3 />
-                    <RichTextEditor.H4 />
-                  </RichTextEditor.ControlsGroup>
-                  <RichTextEditor.ControlsGroup>
-                    <RichTextEditor.Blockquote />
-                    <RichTextEditor.Hr />
-                    <RichTextEditor.BulletList />
-                    <RichTextEditor.OrderedList />
-                  </RichTextEditor.ControlsGroup>
-                  <RichTextEditor.ControlsGroup>
-                    <RichTextEditor.Link />
-                    <RichTextEditor.Unlink />
-                  </RichTextEditor.ControlsGroup>
-                  <RichTextEditor.ControlsGroup>
-                    <RichTextEditor.AlignLeft />
-                    <RichTextEditor.AlignCenter />
-                    <RichTextEditor.AlignJustify />
-                    <RichTextEditor.AlignRight />
-                  </RichTextEditor.ControlsGroup>
-                  <RichTextEditor.ControlsGroup>
-                    <RichTextEditor.Undo />
-                    <RichTextEditor.Redo />
-                  </RichTextEditor.ControlsGroup>
-                </RichTextEditor.Toolbar> */}
-                <RichTextEditor.Content />
-              </RichTextEditor>
-              
-              <Select
-                label="Tipo de asistente"
-                placeholder="Selecciona el tipo"
-                data={[
-                  { value: "comprador", label: "Comprador" },
-                  { value: "vendedor", label: "Vendedor" },
-                ]}
-                value={formValues.tipoAsistente}
-                onChange={(value) => handleChange("tipoAsistente", value)}
-                required
-                mb="sm"
-              />
+              {/* --- FORMULARIO DINÁMICO --- */}
+              {renderDynamicFormFields()}
 
-              <Select
-                label="Interés principal"
-                placeholder="Selecciona una opción"
-                data={[
-                  { value: "proveedores", label: "Conocer proveedores" },
-                  { value: "clientes", label: "Conocer clientes" },
-                  { value: "abierto", label: "Abierto" },
-                ]}
-                value={formValues.interesPrincipal}
-                onChange={(value) => handleChange("interesPrincipal", value)}
-                required
-              />
-              <TextInput
-                label="Necesidad específica para el networking"
-                placeholder="¿Qué necesitas?"
-                value={formValues.necesidad}
-                onChange={(e) => handleChange("necesidad", e.target.value)}
-                required
-              />
-              <TextInput
-                label="Correo"
-                placeholder="Tu correo electrónico"
-                value={formValues.contacto.correo}
-                onChange={(e) =>
-                  handleChange("contacto.correo", e.target.value)
-                }
-                required
-              />
-              <TextInput
-                label="Teléfono"
-                description="El teléfono NO será visible a todos, solamente a las personas con quienes agendaste reunión, también te enviaremos notificaciones cuando tengas solicitud de reunión."
-                placeholder="Tu número de teléfono"
-                value={formValues.contacto.telefono}
-                onChange={(e) =>
-                  handleChange("contacto.telefono", e.target.value)
-                }
-                required
-              />
-              {/* Campo para cargar o tomar la foto de perfil */}
-              <FileInput
-                label="Foto de perfil"
-                placeholder="Selecciona o toma una foto"
-                accept="image/png,image/jpeg"
-                inputProps={{ capture: "user" }}
-                value={formValues.photo}
-                onChange={(file) => {
-                  handleChange("photo", file);
-                  if (file) {
-                    setProfilePicPreview(URL.createObjectURL(file));
-                  } else {
-                    setProfilePicPreview(null);
-                  }
-                }}
-              />
               {/* Vista previa de la foto */}
               {profilePicPreview && (
                 <Image
@@ -460,22 +416,32 @@ const Landing = () => {
                   mt="sm"
                 />
               )}
-              {/* Checkbox para tratamiento de datos */}
+
+              {/* Consentimiento al final */}
               <Checkbox
-                label="Al utilizar este aplicativo, autorizo a GEN.IALITY SAS identificada con NIT 901555490, para el tratamiento de mis datos personales conforme a la Ley 1581 de 2012 y su política de privacidad. Autorizo que mis datos aquí suministrados sean utilizados para gestionar mi experiencia en la plataforma y facilitar las acciones de relacionamiento comercial entendiendo que mis datos serán visibles ante los demás usuarios de la plataforma; de igual manera autorizo la transmisión o transferencia de mis datos a Fenalco Bogotá como organizador del evento. Manifiesto que conozco mis derechos de acceso, corrección o supresión."
-                checked={formValues.aceptaTratamiento}
+                label={
+                  event.config?.tratamientoDatosText ||
+                  "Al utilizar este aplicativo, autorizo a GEN.IALITY SAS identificada con NIT 901555490, ..."
+                }
+                checked={!!formValues[CONSENTIMIENTO_FIELD_NAME]}
                 onChange={(e) =>
-                  handleChange("aceptaTratamiento", e.currentTarget.checked)
+                  handleDynamicChange(
+                    CONSENTIMIENTO_FIELD_NAME,
+                    e.currentTarget.checked
+                  )
                 }
                 required
                 mt="md"
               />
               {tratamientoError && <Text color="red">{tratamientoError}</Text>}
+
               <Button onClick={handleSubmit} loading={loading}>
                 {currentUser?.data ? "Actualizar" : "Registrarse"}
               </Button>
               {currentUser?.data && (
-                <Button onClick={handleGoToDashboard}>Ir a la dashboard</Button>
+                <Button onClick={handleGoToDashboard}>
+                  Ir a la dashboard
+                </Button>
               )}
             </Stack>
           ) : (

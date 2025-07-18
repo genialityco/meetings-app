@@ -31,24 +31,23 @@ import {
 import anime from "animejs";
 import { useParams } from "react-router-dom";
 import QuickMeetingModal from "./QuickMeetingModal";
+import EditMeetingModal from "./EditMeetingModal";
 
 // Genera los slots de tiempo según configuración
 const generateTimeSlots = (start, end, meetingDuration, breakTime) => {
   const slots = [];
   let currentTime = new Date(`1970-01-01T${start}:00`);
   const endTimeObj = new Date(`1970-01-01T${end}:00`);
-
   while (currentTime < endTimeObj) {
     slots.push(currentTime.toTimeString().substring(0, 5));
     currentTime.setMinutes(
       currentTime.getMinutes() + meetingDuration + breakTime
     );
   }
-
   return slots;
 };
 
-// Verifica si un slot (por su hora de inicio y duración) se solapa con algún bloque de descanso
+// Verifica si un slot se solapa con algún bloque de descanso
 const slotOverlapsBreakBlock = (
   slotStart,
   meetingDuration,
@@ -57,19 +56,14 @@ const slotOverlapsBreakBlock = (
   const [h, m] = slotStart.split(":").map(Number);
   const slotStartMin = h * 60 + m;
   const slotEndMin = slotStartMin + meetingDuration;
-
   return breakBlocks.some((block) => {
     const [sh, sm] = block.start.split(":").map(Number);
     const [eh, em] = block.end.split(":").map(Number);
     const blockStartMin = sh * 60 + sm;
     const blockEndMin = eh * 60 + em;
-
     return (
-      // Empieza dentro del bloque
       (slotStartMin >= blockStartMin && slotStartMin < blockEndMin) ||
-      // Termina dentro del bloque
       (slotEndMin > blockStartMin && slotEndMin <= blockEndMin) ||
-      // Abarca completamente el bloque
       (slotStartMin <= blockStartMin && slotEndMin >= blockEndMin)
     );
   });
@@ -121,11 +115,16 @@ const MatrixPage = () => {
   const [asistentes, setAsistentes] = useState([]);
   const tableRefs = useRef([]);
   const [typeFilter, setTypeFilter] = useState("");
-
   const [quickModal, setQuickModal] = useState({
     opened: false,
     slot: null,
     defaultUser: null,
+  });
+  const [editModal, setEditModal] = useState({
+    opened: false,
+    meeting: null,
+    slot: null,
+    lockedUserId: null,
   });
   const [creatingMeeting, setCreatingMeeting] = useState(false);
   const [globalMessage, setGlobalMessage] = useState("");
@@ -166,7 +165,6 @@ const MatrixPage = () => {
         snap.docs.map((d) => ({
           id: d.id,
           ...d.data(),
-          timeSlot: d.data().timeSlot.match(/\d{2}:\d{2}/)[0],
         }))
       );
     });
@@ -243,8 +241,10 @@ const MatrixPage = () => {
 
     // Marca reuniones aceptadas
     meetings.forEach((mtg) => {
+      // El timeSlot de la reunión es string tipo "13:00 - 13:30"
+      const [startTime] = mtg.timeSlot.split(" - ");
       const tIdx = Number(mtg.tableAssigned) - 1;
-      const sIdx = timeSlots.indexOf(mtg.timeSlot.trim());
+      const sIdx = timeSlots.indexOf(startTime);
       if (tIdx >= 0 && sIdx >= 0) {
         baseMatrix[tIdx][sIdx] = {
           status: "accepted",
@@ -253,6 +253,8 @@ const MatrixPage = () => {
               ? `${participantsInfo[id].nombre} (${participantsInfo[id].empresa})`
               : "Cargando..."
           ),
+          meetingId: mtg.id,
+          meetingData: mtg,
         };
       }
     });
@@ -282,9 +284,13 @@ const MatrixPage = () => {
         if (slotOverlapsBreakBlock(slot, meetingDuration, breakBlocks)) {
           return { status: "break" };
         }
-        const mtg = meetings.find(
-          (m) => m.timeSlot === slot && m.participants.includes(user.id)
-        );
+        // Ahora compara solo el startTime contra el inicio del timeSlot
+        const mtg = meetings.find((m) => {
+          if (!m.timeSlot) return false;
+          const [start] = m.timeSlot.split(" - ");
+          return start === slot && m.participants.includes(user.id);
+        });
+
         if (mtg) {
           return {
             status: "accepted",
@@ -367,14 +373,61 @@ const MatrixPage = () => {
     setCreatingMeeting(false);
   };
 
+  const handleEditMeeting = async ({ meetingId, user1, user2 }) => {
+    setCreatingMeeting(true);
+    try {
+      // 1. Actualiza la reunión
+      await updateDoc(doc(db, "events", eventId, "meetings", meetingId), {
+        participants: [user1, user2],
+        requesterId: user1,
+        receiverId: user2,
+        // Puedes actualizar más campos si deseas
+      });
+
+      setGlobalMessage("¡Reunión actualizada!");
+      setEditModal({ opened: false, meeting: null, slot: null });
+    } catch (e) {
+      setGlobalMessage("Error actualizando la reunión.");
+      console.error(e);
+    }
+    setCreatingMeeting(false);
+  };
+
+  const handleCancelMeeting = async (meetingId, slotId) => {
+    if (!window.confirm("¿Seguro que quieres cancelar esta reunión?")) return;
+    setCreatingMeeting(true);
+    try {
+      // Cancela la reunión
+      await updateDoc(doc(db, "events", eventId, "meetings", meetingId), {
+        status: "cancelled",
+      });
+      // Libera el slot en agenda
+      if (slotId) {
+        await updateDoc(doc(db, "agenda", slotId), {
+          available: true,
+          meetingId: null,
+        });
+      }
+      setGlobalMessage("¡Reunión cancelada!");
+      setEditModal({ opened: false, meeting: null, slot: null });
+    } catch (e) {
+      setGlobalMessage("Error cancelando la reunión.");
+      console.error(e);
+    }
+    setCreatingMeeting(false);
+  };
+
   const filteredMatrixUsuarios = matrixUsuarios.filter(({ asistente }) => {
-    const matchesName = (asistente.nombre || "")
-      .toLowerCase()
-      .includes(userSearch.toLowerCase());
+    const searchTerm = userSearch.toLowerCase();
+    const matchesSearch =
+      (asistente.nombre || "").toLowerCase().includes(searchTerm) ||
+      (asistente.empresa || "").toLowerCase().includes(searchTerm);
     const matchesType =
       !typeFilter ||
-      (asistente.tipoAsistente || "").toLowerCase() === typeFilter;
-    return matchesName && matchesType;
+      (asistente.tipoAsistente || "").toLowerCase() ===
+        typeFilter.toLowerCase();
+
+    return matchesSearch && matchesType;
   });
 
   return (
@@ -437,26 +490,47 @@ const MatrixPage = () => {
                                 ? "pointer"
                                 : "default",
                           }}
-                          onClick={() =>
-                            cell.status === "available" &&
-                            setQuickModal({
-                              opened: true,
-                              slot: {
-                                ...agenda.find(
-                                  (s) =>
-                                    s.tableNumber === ti + 1 &&
-                                    s.startTime ===
-                                      generateTimeSlots(
-                                        config.config.startTime,
-                                        config.config.endTime,
-                                        config.config.meetingDuration,
-                                        config.config.breakTime
-                                      )[si]
-                                ),
-                              },
-                              defaultUser: null,
-                            })
-                          }
+                          onClick={() => {
+                            if (cell.status === "available") {
+                              setQuickModal({
+                                opened: true,
+                                slot: {
+                                  ...agenda.find(
+                                    (s) =>
+                                      s.tableNumber === ti + 1 &&
+                                      s.startTime ===
+                                        generateTimeSlots(
+                                          config.config.startTime,
+                                          config.config.endTime,
+                                          config.config.meetingDuration,
+                                          config.config.breakTime
+                                        )[si]
+                                  ),
+                                },
+                                defaultUser: null,
+                              });
+                            } else if (cell.status === "accepted") {
+                              const [startTime, endTime] =
+                                cell.meetingData.timeSlot.split(" - ");
+                              setEditModal({
+                                opened: true,
+                                meeting: cell.meetingData,
+                                slot: {
+                                  tableNumber: cell.meetingData.tableAssigned,
+                                  startTime,
+                                  endTime,
+                                  id: agenda.find(
+                                    (s) =>
+                                      s.tableNumber ===
+                                        Number(
+                                          cell.meetingData.tableAssigned
+                                        ) && s.startTime === startTime
+                                  )?.id,
+                                },
+                                lockedUserId: null,
+                              });
+                            }
+                          }}
                         >
                           <Table.Td style={{ fontWeight: 500 }}>
                             {
@@ -525,7 +599,7 @@ const MatrixPage = () => {
                   }}
                 >
                   <Title order={5} align="center" mb="xs">
-                    {asistente.nombre}
+                    {asistente.nombre} ({asistente.empresa})
                   </Title>
                   <Divider mb="sm" />
                   <Table striped highlightOnHover>
@@ -551,23 +625,60 @@ const MatrixPage = () => {
                               cursor:
                                 cell.status === "available"
                                   ? "pointer"
+                                  : cell.status === "accepted"
+                                  ? "pointer" // <-- habilita cursor para aceptadas también
                                   : "default",
                             }}
-                            onClick={() =>
-                              cell.status === "available" &&
-                              setQuickModal({
-                                opened: true,
-                                slot: {
-                                  ...agenda.find(
-                                    (s) =>
-                                      s.tableNumber === cell.table ||
-                                      s.startTime === slot
-                                  ),
-                                  startTime: slot,
-                                },
-                                defaultUser: asistente,
-                              })
-                            }
+                            onClick={() => {
+                              // Si está disponible: abrir creación rápida
+                              if (cell.status === "available") {
+                                setQuickModal({
+                                  opened: true,
+                                  slot: {
+                                    ...agenda.find(
+                                      (s) =>
+                                        s.tableNumber === cell.table ||
+                                        s.startTime === slot
+                                    ),
+                                    startTime: slot,
+                                  },
+                                  defaultUser: asistente,
+                                });
+                              }
+                              // Si es aceptada: abrir modal de edición
+                              else if (cell.status === "accepted") {
+                                // Encuentra el meeting para este usuario y slot
+                                const meeting = meetings.find((m) => {
+                                  if (!m.timeSlot) return false;
+                                  const [start] = m.timeSlot.split(" - ");
+                                  return (
+                                    start === slot &&
+                                    m.participants.includes(asistente.id)
+                                  );
+                                });
+
+                                if (meeting) {
+                                  const [startTime, endTime] =
+                                    meeting.timeSlot.split(" - ");
+                                  setEditModal({
+                                    opened: true,
+                                    meeting: meeting,
+                                    slot: {
+                                      tableNumber: meeting.tableAssigned,
+                                      startTime,
+                                      endTime,
+                                      id: agenda.find(
+                                        (s) =>
+                                          s.tableNumber ===
+                                            Number(meeting.tableAssigned) &&
+                                          s.startTime === startTime
+                                      )?.id,
+                                    },
+                                    lockedUserId: asistente.id,
+                                  });
+                                }
+                              }
+                            }}
                           >
                             <Table.Td>{slot}</Table.Td>
                             <Table.Td>
@@ -598,6 +709,7 @@ const MatrixPage = () => {
           </ScrollArea>
         </Tabs.Panel>
       </Tabs>
+      {/* Modal para crear reunión rápida */}
       <QuickMeetingModal
         opened={quickModal.opened}
         onClose={() =>
@@ -609,6 +721,21 @@ const MatrixPage = () => {
         onCreate={handleQuickCreateMeeting}
         loading={creatingMeeting}
       />
+      {/* Modal para editar reunión */}
+      <EditMeetingModal
+        opened={editModal.opened}
+        onClose={() =>
+          setEditModal({ opened: false, meeting: null, slot: null })
+        }
+        slot={editModal.slot}
+        meeting={editModal.meeting}
+        assistants={asistentes}
+        onUpdate={handleEditMeeting}
+        onCancel={handleCancelMeeting}
+        loading={creatingMeeting}
+        lockedUserId={editModal.lockedUserId}
+      />
+
       {globalMessage && (
         <Alert
           mt="md"

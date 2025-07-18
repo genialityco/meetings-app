@@ -60,11 +60,11 @@ export default function RequestsTab({
                       </Text>
                       <Text size="sm">
                         📧 <strong>Correo:</strong>{" "}
-                        {requester.contacto?.correo || "No disponible"}
+                        {requester.correo || "No disponible"}
                       </Text>
                       <Text size="sm">
                         📞 <strong>Teléfono:</strong>{" "}
-                        {requester.contacto?.telefono || "No disponible"}
+                        {requester.telefono || "No disponible"}
                       </Text>
                       <Text size="sm">
                         📝 <strong>Descripción:</strong>{" "}
@@ -137,11 +137,11 @@ export default function RequestsTab({
                       </Text>
                       <Text size="sm">
                         📧 <strong>Correo:</strong>{" "}
-                        {requester.contacto?.correo || "No disponible"}
+                        {requester.correo || "No disponible"}
                       </Text>
                       <Text size="sm">
                         📞 <strong>Teléfono:</strong>{" "}
-                        {requester.contacto?.telefono || "No disponible"}
+                        {requester.telefono || "No disponible"}
                       </Text>
                       <Text size="sm">
                         📝 <strong>Descripción:</strong>{" "}
@@ -197,11 +197,11 @@ export default function RequestsTab({
                       </Text>
                       <Text size="sm">
                         📧 <strong>Correo:</strong>{" "}
-                        {requester.contacto?.correo || "No disponible"}
+                        {requester.correo || "No disponible"}
                       </Text>
                       <Text size="sm">
                         📞 <strong>Teléfono:</strong>{" "}
-                        {requester.contacto?.telefono || "No disponible"}
+                        {requester.telefono || "No disponible"}
                       </Text>
                       <Text size="sm">
                         📝 <strong>Descripción:</strong>{" "}
@@ -252,11 +252,11 @@ export default function RequestsTab({
                       </Text>
                       <Text size="sm">
                         📧 <strong>Correo:</strong>{" "}
-                        {receiver.contacto?.correo || "No disponible"}
+                        {receiver.correo || "No disponible"}
                       </Text>
                       <Text size="sm">
                         📞 <strong>Teléfono:</strong>{" "}
-                        {receiver.contacto?.telefono || "No disponible"}
+                        {receiver.telefono || "No disponible"}
                       </Text>
                       <Text size="sm" color="blue">
                         <strong>Estado:</strong> Pendiente
