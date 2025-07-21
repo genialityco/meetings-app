@@ -165,6 +165,54 @@ export const UserProvider = ({ children }) => {
     }
   };
 
+  const loginByEmail = async (correo, eventId) => {
+  try {
+    setUserLoading(true);
+
+    // Busca el usuario por correo y evento
+    const q = query(
+      collection(db, "users"),
+      where("contacto.correo", "==", correo.trim().toLowerCase()),
+      where("eventId", "==", eventId)
+    );
+    const querySnapshot = await getDocs(q);
+
+    if (querySnapshot.empty) {
+      setUserLoading(false);
+      return {
+        error: "No se encontró ningún usuario con ese correo en este evento.",
+      };
+    }
+
+    const userDoc = querySnapshot.docs[0];
+    const userData = userDoc.data();
+    const uid = userDoc.id;
+
+    // Guardar nueva fecha de conexión
+    const now = new Date();
+    await updateDoc(doc(db, "users", uid), {
+      lastConnection: now,
+    });
+
+    // Establecer usuario en el contexto
+    const newUser = { uid: userDoc.id, data: userData };
+    setCurrentUser(newUser);
+    localStorage.setItem("currentUser", JSON.stringify(newUser));
+
+    // Evita sobrescribir con sesión anónima
+    localStorage.setItem("manualLogin", "true");
+    setManualLogin(true);
+    setUserLoading(false);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error al buscar usuario:", error);
+    setUserLoading(false);
+    return { error: "Error al buscar usuario. Intente nuevamente." };
+  }
+};
+
+
   return (
     <UserContext.Provider
       value={{
@@ -173,6 +221,7 @@ export const UserProvider = ({ children }) => {
         updateUser,
         logout,
         loginByCedula,
+        loginByEmail
       }}
     >
       {children}

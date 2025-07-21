@@ -43,7 +43,7 @@ const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
 const Landing = () => {
   const navigate = useNavigate();
   const { eventId } = useParams();
-  const { userLoading, loginByCedula, currentUser, updateUser } =
+  const { userLoading, loginByEmail, currentUser, updateUser } =
     useContext(UserContext);
 
   const [event, setEvent] = useState({});
@@ -138,7 +138,7 @@ const Landing = () => {
     setSearchError("");
     setShowInfo(false);
 
-    const result = await loginByCedula(searchCedula, eventId);
+    const result = await loginByEmail(searchCedula, eventId);
 
     if (result?.success) {
       navigate(`/dashboard/${eventId}`);
@@ -373,8 +373,8 @@ const Landing = () => {
           {/* Sección de búsqueda de usuario */}
           <Stack>
             <TextInput
-              label="Ingrese su cédula"
-              placeholder="Número de cédula"
+              label="Ingrese con su correo"
+              placeholder="Correo electronico"
               value={searchCedula}
               onChange={(e) => setSearchCedula(e.target.value)}
             />

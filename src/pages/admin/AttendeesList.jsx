@@ -246,6 +246,52 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
     XLSX.writeFile(wb, `asistentes_${event?.eventName || event.id}.xlsx`);
   };
 
+  const exportCompradoresToExcel = () => {
+    // Puedes ajustar estos campos según tu modelo
+    const compradores = attendees.filter(
+      (a) => a.tipoAsistente === "comprador"
+    );
+    if (compradores.length === 0)
+      return setGlobalMessage("No hay compradores.");
+    const fieldsComprador = [
+      "id",
+      "nombre",
+      "empresa",
+      "necesidad",
+      // agrega aquí más campos si los tienes configurados
+    ];
+    const wsData = [
+      fieldsComprador, // header
+      ...compradores.map((c) => fieldsComprador.map((f) => c[f] || "")),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Compradores");
+    XLSX.writeFile(wb, "compradores_evento_matchs.xlsx");
+  };
+
+  // 2. Función para exportar vendedores
+  const exportVendedoresToExcel = () => {
+    const vendedores = attendees.filter((a) => a.tipoAsistente === "vendedor");
+    if (vendedores.length === 0) return setGlobalMessage("No hay vendedores.");
+    const fieldsVendedor = [
+      "id",
+      "nombre",
+      "empresa",
+      "descripcion",
+      "necesidad"
+      // agrega aquí más campos si los tienes configurados
+    ];
+    const wsData = [
+      fieldsVendedor, // header
+      ...vendedores.map((v) => fieldsVendedor.map((f) => v[f] || "")),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Vendedores");
+    XLSX.writeFile(wb, "vendedores_evento_matchs.xlsx");
+  };
+
   return (
     <Card shadow="sm" p="lg" withBorder mt="md">
       <Group position="apart" mb="md">
@@ -270,6 +316,20 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
           </Button>
           <Button onClick={handleExportCurrentToExcel}>
             Exportar a Excel (solo columnas visibles)
+          </Button>
+          <Button
+            variant="outline"
+            color="indigo"
+            onClick={exportCompradoresToExcel}
+          >
+            Exportar compradores (Excel)
+          </Button>
+          <Button
+            variant="outline"
+            color="orange"
+            onClick={exportVendedoresToExcel}
+          >
+            Exportar vendedores (Excel)
           </Button>
           {attendees.length > 0 && (
             <Button

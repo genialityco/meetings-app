@@ -183,15 +183,15 @@ export default function ConfigureFieldsModal({
   const [newFieldType, setNewFieldType] = useState("text");
   const [newSelectOptions, setNewSelectOptions] = useState("Opción 1, Opción 2");
 
-  useEffect(() => {
+useEffect(() => {
+  if (opened) {
     setFields(event?.config?.formFields || getDefaultFields([]));
-    setTratamientoText(
-      event?.config?.tratamientoDatosText || CONSENTIMIENTO_FIELD.legalText
-    );
-    setConsentimientoLabel(
-      event?.config?.tratamientoDatosLabel || CONSENTIMIENTO_FIELD.label
-    );
-  }, [event]);
+    setTratamientoText(event?.config?.tratamientoDatosText || CONSENTIMIENTO_FIELD.legalText);
+    setConsentimientoLabel(event?.config?.tratamientoDatosLabel || CONSENTIMIENTO_FIELD.label);
+  }
+  // eslint-disable-next-line
+}, [opened]);
+
 
   const handleToggleField = (fieldName, checked) => {
     if (checked) {

@@ -11,6 +11,7 @@ import Dashboard from "./pages/dashboard/Dashboard.tsx";
 import { Container } from "@mantine/core";
 import MatrixPage from "./pages/admin/MatrixPage.jsx";
 import EventMatchPage from "./pages/admin/EventMatchPage.jsx";
+import ImportMeetingsFromExcelPage from "./pages/admin/ImportMeetingsFromExcelPage.jsx";
 
 const App = () => {
   const { currentUser } = useContext(UserContext);
@@ -27,7 +28,15 @@ const App = () => {
         <Route path="/dashboard/:eventId" element={<Dashboard />} />
         <Route path="/admin" element={<AdminPanel />} />
         <Route path="/matrix/:eventId" element={<MatrixPage />} />
-        <Route path="/admin/event/:eventId/match" element={<EventMatchPage />} />
+        <Route
+          path="/admin/event/:eventId/match"
+          element={<EventMatchPage />}
+        />
+
+        <Route
+          path="/admin/event/:eventId/import-meetings"
+          element={<ImportMeetingsFromExcelPage />}
+        />
 
         <Route path="/phonesadmin" element={<PhonesAdminPage />} />
         <Route

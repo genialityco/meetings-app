@@ -460,6 +460,15 @@ const EventAdmin = () => {
             >
               Configurar campos
             </Button>
+            <Button
+              component={Link}
+              to={`/admin/event/${event.id}/import-meetings`}
+              loading={actionLoading}
+              disabled={actionLoading}
+              color="violet"
+            >
+              Importar reuniones desde Excel
+            </Button>
           </Group>
         </Group>
       </Card>
