@@ -356,7 +356,7 @@ const Landing = () => {
               </a>
             </Flex>
           </Paper>
-          <Title order={1} fz="40px" align="center" my="md">
+          <Title order={2} align="center" my="md">
             {event.eventName}
           </Title>
 
@@ -367,7 +367,7 @@ const Landing = () => {
           </Text>
 
           <Text ta="justify" mb="lg">
-            Si ya se ha registrado, puede ingresar con su número de cédula.
+            Si ya se ha registrado, puede ingresar con su correo.
           </Text>
 
           {/* Sección de búsqueda de usuario */}

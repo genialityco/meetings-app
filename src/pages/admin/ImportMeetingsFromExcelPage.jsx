@@ -24,6 +24,118 @@ import {
   Select,
 } from "@mantine/core";
 
+// Simula y agenda con swaps entre vendedores
+function simulateScheduleWithSwaps(matches, slotsByMesa, compradorMesa) {
+  // Agrupa matches por comprador
+  const matchesPorComprador = {};
+  matches.forEach((row) => {
+    if (!matchesPorComprador[row.compradorId])
+      matchesPorComprador[row.compradorId] = [];
+    matchesPorComprador[row.compradorId].push(row);
+  });
+
+  let resultado = []; // { match, slot }
+  let pendientes = [];
+  let vendedorSlotMap = new Map();
+  let compradorSlotMap = new Map();
+
+  for (const compradorId in matchesPorComprador) {
+    const mesa = compradorMesa[compradorId];
+    if (!mesa || !slotsByMesa[mesa]) {
+      pendientes.push(
+        ...matchesPorComprador[compradorId].map((match) => ({
+          ...match,
+          motivo: "No tiene mesa o no hay slots en mesa",
+        }))
+      );
+      continue;
+    }
+    const misSlots = slotsByMesa[mesa];
+    const matchesOrdenados = matchesPorComprador[compradorId].sort(
+      (a, b) => Number(b.matchScore) - Number(a.matchScore)
+    );
+
+    for (let i = 0; i < matchesOrdenados.length; i++) {
+      let asignado = false;
+
+      // 1. Intentar slot directo
+      for (let slotIdx = 0; slotIdx < misSlots.length; slotIdx++) {
+        const slot = misSlots[slotIdx];
+        const slotKey = slot.startTime;
+        if (
+          !compradorSlotMap.has(`${compradorId}_${slotKey}`) &&
+          !vendedorSlotMap.has(`${matchesOrdenados[i].vendedorId}_${slotKey}`)
+        ) {
+          resultado.push({ match: matchesOrdenados[i], slot });
+          compradorSlotMap.set(`${compradorId}_${slotKey}`, true);
+          vendedorSlotMap.set(
+            `${matchesOrdenados[i].vendedorId}_${slotKey}`,
+            true
+          );
+          asignado = true;
+          break;
+        }
+      }
+
+      // 2. Intentar swap solo si no fue posible directo
+      if (!asignado) {
+        for (let swapIdx = 0; swapIdx < resultado.length; swapIdx++) {
+          const agendada = resultado[swapIdx];
+          // SWAP entre slots de este comprador (vendedores distintos)
+          if (
+            agendada.match.compradorId === compradorId &&
+            agendada.slot !== undefined &&
+            misSlots[i] !== undefined &&
+            !vendedorSlotMap.has(
+              `${matchesOrdenados[i].vendedorId}_${agendada.slot.startTime}`
+            ) && // nuevo vendedor libre en ese slot
+            !vendedorSlotMap.has(
+              `${agendada.match.vendedorId}_${misSlots[i].startTime}`
+            ) // viejo vendedor libre en slot futuro
+          ) {
+            // Swap!
+            resultado[swapIdx] = {
+              match: agendada.match,
+              slot: misSlots[i],
+            };
+            resultado.push({
+              match: matchesOrdenados[i],
+              slot: agendada.slot,
+            });
+            vendedorSlotMap.set(
+              `${matchesOrdenados[i].vendedorId}_${agendada.slot.startTime}`,
+              true
+            );
+            vendedorSlotMap.set(
+              `${agendada.match.vendedorId}_${misSlots[i].startTime}`,
+              true
+            );
+            compradorSlotMap.set(
+              `${compradorId}_${agendada.slot.startTime}`,
+              true
+            );
+            compradorSlotMap.set(
+              `${compradorId}_${misSlots[i].startTime}`,
+              true
+            );
+            asignado = true;
+            break;
+          }
+        }
+      }
+
+      // 3. Si ni así, a pendientes
+      if (!asignado) {
+        pendientes.push({
+          ...matchesOrdenados[i],
+          motivo: "No se pudo asignar, ni con swap",
+        });
+      }
+    }
+  }
+  return { resultado, pendientes };
+}
+
 const ImportMeetingsFromExcelPage = () => {
   const { eventId } = useParams();
   const [file, setFile] = useState(null);
@@ -34,6 +146,7 @@ const ImportMeetingsFromExcelPage = () => {
   const [globalMessage, setGlobalMessage] = useState("");
   const [createdMeetings, setCreatedMeetings] = useState(0);
   const [compradorMesa, setCompradorMesa] = useState({}); // { compradorId: mesa }
+  const [simResults, setSimResults] = useState(null); // { resultado, pendientes }
 
   // 1. Cargar asistentes y slots de agenda
   useEffect(() => {
@@ -54,54 +167,69 @@ const ImportMeetingsFromExcelPage = () => {
   }, [eventId]);
 
   // 2. Procesar Excel cargado
-  const handleFile = (e) => {
-    const file = e.target.files[0];
-    setFile(file);
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const data = new Uint8Array(evt.target.result);
-      const wb = XLSX.read(data, { type: "array" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
-      // Incluye la columna "mesa"
-      const normalized = rows.map((row) => ({
-        compradorId: row.compradorId,
-        compradorNombre: row.comprador_nombre,
-        compradorEmpresa: row.comprador_empresa,
-        compradorNecesidad: row.comprador_necesidad,
-        vendedorId: row.vendedorId,
-        vendedorNombre: row.vendedor_nombre,
-        vendedorEmpresa: row.vendedor_empresa,
-        vendedorDescripcion: row.vendedor_descripcion,
-        vendedorNecesidad: row.vendedor_necesidad,
-        matchScore: Number(row.match_score ?? 0),
-        ordenMatchComprador: row.orden_match_comprador,
-        ordenMatchVendedor: row.orden_match_vendedor,
-        mesa: row.mesa ? String(row.mesa) : undefined,
-      }));
-      setMatches(normalized);
+const handleFile = (e) => {
+  const file = e.target.files[0];
+  setFile(file);
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    const data = new Uint8Array(evt.target.result);
+    const wb = XLSX.read(data, { type: "array" });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
 
-      const compradoresUnicos = Array.from(
-        new Set(normalized.map((m) => m.compradorId))
+    // Incluye la columna "mesa" y normaliza todos los datos relevantes
+    const normalized = rows.map((row) => ({
+      compradorId: row.compradorId,
+      compradorNombre: row.comprador_nombre,
+      compradorEmpresa: row.comprador_empresa,
+      compradorNecesidad: row.comprador_necesidad,
+      vendedorId: row.vendedorId,
+      vendedorNombre: row.vendedor_nombre,
+      vendedorEmpresa: row.vendedor_empresa,
+      vendedorDescripcion: row.vendedor_descripcion,
+      vendedorNecesidad: row.vendedor_necesidad,
+      matchScore: Number(row.match_score ?? 0),
+      ordenMatchComprador: row.orden_match_comprador,
+      ordenMatchVendedor: row.orden_match_vendedor,
+      mesa: row.mesa !== undefined && row.mesa !== null && String(row.mesa).trim() !== "" ? String(row.mesa) : "",
+    }));
+    setMatches(normalized);
+
+    const compradoresUnicos = Array.from(
+      new Set(normalized.map((m) => m.compradorId))
+    );
+
+    // Asignación robusta de mesa: busca la PRIMERA mesa no vacía para cada comprador
+    const asignacionPorDefecto = {};
+    compradoresUnicos.forEach((c) => {
+      const matchWithMesa = normalized.find(
+        (m) =>
+          m.compradorId === c &&
+          m.mesa !== undefined &&
+          m.mesa !== null &&
+          String(m.mesa).trim() !== ""
       );
-      // Si el Excel trajo la mesa, úsala como valor inicial por comprador
-      const asignacionPorDefecto = {};
-      compradoresUnicos.forEach((c) => {
-        const matchWithMesa = normalized.find(
-          (m) => m.compradorId === c && m.mesa
-        );
-        asignacionPorDefecto[c] = matchWithMesa?.mesa || "";
-      });
-      setCompradorMesa(asignacionPorDefecto);
-    };
-    reader.readAsArrayBuffer(file);
-  };
+      asignacionPorDefecto[c] = matchWithMesa ? String(matchWithMesa.mesa) : "";
+    });
 
-  // 3. Crear reuniones agrupando matches por comprador y usando la mesa asignada en compradorMesa
-  const handleCreateMeetings = async () => {
+    // Debug opcional: compradores sin mesa detectada
+    Object.entries(asignacionPorDefecto).forEach(([cid, mesa]) => {
+      if (!mesa) {
+        const info = normalized.find(m => m.compradorId === cid);
+        console.log(`(Debug) Comprador sin mesa: ID=${cid} | Nombre=${info?.compradorNombre} | Empresa=${info?.compradorEmpresa}`);
+      }
+    });
+
+    setCompradorMesa(asignacionPorDefecto);
+    setSimResults(null); // Limpiar simulación al recargar Excel
+  };
+  reader.readAsArrayBuffer(file);
+};
+
+
+  // 3. Simular la agenda antes de crear en Firebase
+  const handleSimulateAgenda = () => {
     setLoading(true);
-    setCreatedMeetings(0);
-    setGlobalMessage("");
 
     // Prepara slots por mesa y hora
     const slotsByMesa = {};
@@ -118,98 +246,65 @@ const ImportMeetingsFromExcelPage = () => {
       )
     );
 
-    // Agrupa matches por comprador
-    const matchesPorComprador = {};
-    matches.forEach((row) => {
-      if (!matchesPorComprador[row.compradorId])
-        matchesPorComprador[row.compradorId] = [];
-      matchesPorComprador[row.compradorId].push(row);
-    });
+    // SIMULAR
+    const { resultado, pendientes } = simulateScheduleWithSwaps(
+      matches,
+      slotsByMesa,
+      compradorMesa
+    );
 
-    // Mapa: para saber si un vendedor ya está ocupado en cada slot global (independiente de mesa)
-    const vendedorOcupadoEnSlot = new Map(); // key: vendedorId + slotKey
-    // Mapa: para saber si un comprador ya está ocupado en cada slot (no estrictamente necesario si se usa solo slots de su mesa, pero seguro)
-    const compradorOcupadoEnSlot = new Map();
+    setSimResults({ resultado, pendientes });
+    setGlobalMessage(
+      `Simulación: ${resultado.length} reuniones asignadas, ${pendientes.length} pendientes por conflictos.`
+    );
+    setCreatedMeetings(resultado.length);
+    setLoading(false);
+  };
 
-    let totalCreated = 0;
-    let pendientes = [];
+  // 4. Crear en Firestore solo las asignadas en simResults
+  const handleCreateMeetings = async () => {
+    if (!simResults || !simResults.resultado) {
+      setGlobalMessage("Primero debes simular la agenda.");
+      return;
+    }
+    setLoading(true);
+    setCreatedMeetings(0);
+    setGlobalMessage("");
 
-    for (const compradorId of Object.keys(matchesPorComprador)) {
-      const mesa = compradorMesa[compradorId];
-      if (!mesa || !slotsByMesa[mesa]) {
-        pendientes.push({ compradorId, motivo: "No tiene mesa o no hay slots en mesa" });
-        continue;
-      }
-
-      const misSlots = slotsByMesa[mesa];
-      const matchesOrdenados = matchesPorComprador[compradorId].sort(
-        (a, b) => Number(b.matchScore) - Number(a.matchScore)
-      );
-
-      // Para cada match, busca el primer slot libre donde el vendedor NO esté ocupado en ese horario
-      let slotIdx = 0;
-      for (const match of matchesOrdenados) {
-        // Busca el próximo slot libre en esa mesa para este comprador
-        while (
-          slotIdx < misSlots.length &&
-          (compradorOcupadoEnSlot.has(`${compradorId}_${misSlots[slotIdx].startTime}`) ||
-            vendedorOcupadoEnSlot.has(`${match.vendedorId}_${misSlots[slotIdx].startTime}`))
-        ) {
-          slotIdx++;
-        }
-        if (slotIdx >= misSlots.length) {
-          pendientes.push({ compradorId, vendedorId: match.vendedorId, motivo: "Sin slots libres en mesa" });
-          continue;
-        }
-
-        const slot = misSlots[slotIdx];
-
-        try {
-          const meetingRef = await addDoc(
-            collection(db, "events", eventId, "meetings"),
-            {
-              eventId,
-              requesterId: match.compradorId,
-              receiverId: match.vendedorId,
-              status: "accepted",
-              createdAt: new Date(),
-              timeSlot: `${slot.startTime} - ${slot.endTime}`,
-              tableAssigned: slot.tableNumber?.toString(),
-              participants: [
-                match.compradorId,
-                match.vendedorId,
-              ],
-              motivoMatch: "Compatibilidad IA",
-              razonMatch: `Score: ${match.matchScore}`,
-              scoreMatch: match.matchScore,
-              agendadoAutomatico: true,
-              ordenMatchComprador: match.ordenMatchComprador,
-              ordenMatchVendedor: match.ordenMatchVendedor,
-            }
-          );
-          await updateDoc(doc(db, "agenda", slot.id), {
-            available: false,
-            meetingId: meetingRef.id,
-          });
-          totalCreated++;
-          compradorOcupadoEnSlot.set(`${compradorId}_${slot.startTime}`, true);
-          vendedorOcupadoEnSlot.set(`${match.vendedorId}_${slot.startTime}`, true);
-          slotIdx++;
-        } catch (e) {
-          pendientes.push({ compradorId, vendedorId: match.vendedorId, motivo: "Error al agendar" });
-        }
+    for (const { match, slot } of simResults.resultado) {
+      try {
+        const meetingRef = await addDoc(
+          collection(db, "events", eventId, "meetings"),
+          {
+            eventId,
+            requesterId: match.compradorId,
+            receiverId: match.vendedorId,
+            status: "accepted",
+            createdAt: new Date(),
+            timeSlot: `${slot.startTime} - ${slot.endTime}`,
+            tableAssigned: slot.tableNumber?.toString(),
+            participants: [match.compradorId, match.vendedorId],
+            motivoMatch: "Compatibilidad IA",
+            razonMatch: `Score: ${match.matchScore}`,
+            scoreMatch: match.matchScore,
+            agendadoAutomatico: true,
+            ordenMatchComprador: match.ordenMatchComprador,
+            ordenMatchVendedor: match.ordenMatchVendedor,
+          }
+        );
+        await updateDoc(doc(db, "agenda", slot.id), {
+          available: false,
+          meetingId: meetingRef.id,
+        });
+      } catch (e) {
+        // Manejo de errores si falla
       }
     }
 
     setGlobalMessage(
-      `Se crearon ${totalCreated} reuniones. ${
-        pendientes.length
-          ? `Pendientes: ${pendientes.length} reuniones no pudieron ser agendadas (ver consola).`
-          : ""
-      }`
+      `¡Listo! Se crearon ${simResults.resultado.length} reuniones en agenda.`
     );
-    console.log("Pendientes no agendados:", pendientes);
-    setCreatedMeetings(totalCreated);
+    setCreatedMeetings(simResults.resultado.length);
     setLoading(false);
   };
 
@@ -235,7 +330,6 @@ const ImportMeetingsFromExcelPage = () => {
   // -- RESUMEN DINÁMICO --
   const resumen = (() => {
     if (matches.length === 0) return null;
-
     const compradoresUnicosSet = new Set(matches.map((m) => m.compradorId));
     const vendedoresUnicos = new Set(matches.map((m) => m.vendedorId));
     const slotsDisponibles = agenda.filter((a) => a.available).length;
@@ -413,16 +507,55 @@ const ImportMeetingsFromExcelPage = () => {
         </Card>
       )}
 
-      {/* Botón para crear reuniones */}
+      {/* Botón para simular agenda */}
       {matches.length > 0 && (
+        <Button
+          mt="md"
+          onClick={handleSimulateAgenda}
+          loading={loading}
+          color="orange"
+          disabled={Object.values(compradorMesa).some((m) => !m)}
+        >
+          Simular agenda y asignar reuniones
+        </Button>
+      )}
+
+      {/* Resultados de la simulación */}
+      {simResults && (
+        <Card mt="md" shadow="sm" p="md" withBorder>
+          <Title order={5} mb="xs">
+            Resultados de Simulación
+          </Title>
+          <Text>
+            Reuniones simuladas/agendadas: {simResults.resultado.length}
+            <br />
+            Reuniones NO agendadas: {simResults.pendientes.length}
+          </Text>
+          {simResults.pendientes.length > 0 && (
+            <Text mt="xs" color="red">
+              Ejemplo pendiente:{" "}
+              {simResults.pendientes
+                .slice(0, 5)
+                .map(
+                  (p) =>
+                    `${p.compradorNombre} vs ${p.vendedorNombre} (${p.motivo})`
+                )
+                .join("; ")}
+              {simResults.pendientes.length > 5 && " ..."}
+            </Text>
+          )}
+        </Card>
+      )}
+
+      {/* Botón para crear en firestore */}
+      {simResults && simResults.resultado.length > 0 && (
         <Button
           mt="md"
           onClick={handleCreateMeetings}
           loading={loading}
           color="teal"
-          disabled={Object.values(compradorMesa).some((m) => !m)}
         >
-          Crear reuniones en agenda
+          Crear reuniones en agenda de Firebase
         </Button>
       )}
 

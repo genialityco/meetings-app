@@ -114,27 +114,27 @@ const UserProfile = () => {
                 <strong>Nombre:</strong> {currentUser.data.nombre}
               </Text>
               <Text>
-                <strong>Cédula:</strong> {currentUser.data.cedula}
+                <strong>Cédula:</strong> {currentUser.data.cedula || "No proporcionada"}
               </Text>
               <Text>
                 <strong>Empresa:</strong> {currentUser.data.empresa}
               </Text>
-              <Text>
+              {/* <Text>
                 <strong>Cargo:</strong> {currentUser.data.cargo}
-              </Text>
+              </Text> */}
               <Text span={2}>
                 <strong>Descripción:</strong> {currentUser.data.descripcion}
               </Text>
-              <Text span={2}>
+              {/* <Text span={2}>
                 <strong>Interés:</strong> {currentUser.data.interesPrincipal}
-              </Text>
+              </Text> */}
               <Text span={2}>
                 <strong>Necesidad:</strong> {currentUser.data.necesidad}
               </Text>
               <Text span={2}>
                 <strong>Contacto:</strong>{" "}
-                {currentUser.data.contacto?.correo || "No proporcionado"} -{" "}
-                {currentUser.data.contacto?.telefono || "No proporcionado"}
+                {currentUser.data.contacto?.correo || currentUser.data?.correo || "No proporcionado"} -{" "}
+                {currentUser.data.contacto?.telefono || currentUser.data?.telefono ||  "No proporcionado"}
               </Text>
             </SimpleGrid>
             <Group mt="md" position="apart">

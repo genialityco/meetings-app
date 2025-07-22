@@ -48,6 +48,10 @@ export default function MeetingsTab({
                   <strong>Reunión con:</strong>{" "}
                   {participant ? participant.empresa : "Cargando..."}
                 </Text>
+                             <Text>
+                  <strong>Asistente:</strong>{" "}
+                  {participant ? participant.nombre : "Cargando..."}
+                </Text>
                 <Text>
                   <strong>Horario:</strong> {meeting.timeSlot || "Por asignar"}
                 </Text>

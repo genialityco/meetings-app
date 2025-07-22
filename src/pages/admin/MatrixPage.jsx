@@ -14,6 +14,7 @@ import {
   Alert,
   TextInput,
   Select,
+  Tooltip,
 } from "@mantine/core";
 import { db } from "../../firebase/firebaseConfig";
 import {
@@ -99,6 +100,27 @@ function ParticipantsChips({ participants }) {
         </Chip>
       ))}
     </Flex>
+  );
+}
+
+// Retorna asistentes libres para ese slot (o que ya estaban en esa reunión)
+function getAvailableUsersForSlot(assistants, meetings, slot, meeting = null) {
+  // Busca participantes ocupados en ese mismo slot, ignorando la reunión actual (si existe)
+  const occupiedIds = new Set();
+  meetings.forEach((m) => {
+    if (
+      (!meeting || m.id !== meeting.id) &&
+      m.timeSlot &&
+      m.timeSlot.startsWith(slot.startTime)
+    ) {
+      m.participants.forEach((pid) => occupiedIds.add(pid));
+    }
+  });
+
+  // Los asistentes libres o que ya están en la reunión actual
+  const allowedIds = meeting?.participants || [];
+  return assistants.filter(
+    (a) => !occupiedIds.has(a.id) || allowedIds.includes(a.id)
   );
 }
 
@@ -540,9 +562,59 @@ const MatrixPage = () => {
                           <Table.Td>
                             <StatusBadge status={cell.status} />
                             {cell.status === "accepted" && (
-                              <ParticipantsChips
-                                participants={cell.participants}
-                              />
+                              <Tooltip
+                                multiline
+                                width={320}
+                                withArrow
+                                label={
+                                  <>
+                                    <b>Participantes:</b>
+                                    {cell.meetingData?.participants?.map(
+                                      (pid, idx) => {
+                                        const info = participantsInfo[pid];
+                                        if (!info)
+                                          return <div key={pid}>{pid}</div>;
+                                        return (
+                                          <div
+                                            key={pid}
+                                            style={{ marginBottom: 6 }}
+                                          >
+                                            <b>
+                                              {info.nombre} ({info.empresa})
+                                            </b>
+                                            <div>
+                                              <span
+                                                style={{ color: "#6c6c6c" }}
+                                              >
+                                                Descripción:{" "}
+                                              </span>
+                                              {info.descripcion || (
+                                                <i>No especificada</i>
+                                              )}
+                                            </div>
+                                            <div>
+                                              <span
+                                                style={{ color: "#6c6c6c" }}
+                                              >
+                                                Necesidad:{" "}
+                                              </span>
+                                              {info.necesidad || (
+                                                <i>No especificada</i>
+                                              )}
+                                            </div>
+                                          </div>
+                                        );
+                                      }
+                                    )}
+                                  </>
+                                }
+                              >
+                                <div>
+                                  <ParticipantsChips
+                                    participants={cell.participants}
+                                  />
+                                </div>
+                              </Tooltip>
                             )}
                           </Table.Td>
                         </Table.Tr>
@@ -593,9 +665,25 @@ const MatrixPage = () => {
                     border: "1px solid #e5e7eb",
                   }}
                 >
-                  <Title order={5} align="center" mb="xs">
-                    {asistente.nombre} ({asistente.empresa})
-                  </Title>
+                  <Tooltip
+                    label={
+                      <>
+                        <div>
+                          <b>Descripción:</b> {asistente.descripcion}
+                        </div>
+                        <div>
+                          <b>Necesidad:</b> {asistente.necesidad}
+                        </div>
+                      </>
+                    }
+                    multiline
+                    withArrow
+                  >
+                    <Title order={5} align="center" mb="xs">
+                      {asistente.nombre} ({asistente.empresa})
+                    </Title>
+                  </Tooltip>
+
                   <Divider mb="sm" />
                   <Table striped highlightOnHover>
                     <Table.Thead>
@@ -696,7 +784,6 @@ const MatrixPage = () => {
         </Tabs.Panel>
       </Tabs>
 
-      {/* Modal para crear reunión rápida */}
       <QuickMeetingModal
         opened={quickModal.opened}
         onClose={() =>
@@ -704,11 +791,15 @@ const MatrixPage = () => {
         }
         slot={quickModal.slot}
         defaultUser={quickModal.defaultUser}
-        assistants={asistentes}
+        assistants={getAvailableUsersForSlot(
+          asistentes,
+          meetings,
+          quickModal.slot || {}
+        )}
         onCreate={handleQuickCreateMeeting}
         loading={creatingMeeting}
       />
-      {/* Modal para editar reunión */}
+
       <EditMeetingModal
         opened={editModal.opened}
         onClose={() =>
@@ -716,7 +807,12 @@ const MatrixPage = () => {
         }
         slot={editModal.slot}
         meeting={editModal.meeting}
-        assistants={asistentes}
+        assistants={getAvailableUsersForSlot(
+          asistentes,
+          meetings,
+          editModal.slot || {},
+          editModal.meeting
+        )}
         onUpdate={handleEditMeeting}
         onCancel={handleCancelMeeting}
         loading={creatingMeeting}
