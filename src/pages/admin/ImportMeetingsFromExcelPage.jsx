@@ -33,9 +33,7 @@ const ImportMeetingsFromExcelPage = () => {
   const [loading, setLoading] = useState(false);
   const [globalMessage, setGlobalMessage] = useState("");
   const [createdMeetings, setCreatedMeetings] = useState(0);
-
-  // NUEVO: Para asignar mesa a cada comprador
-  const [compradorMesa, setCompradorMesa] = useState({}); // { compradorId: mesaNumber }
+  const [compradorMesa, setCompradorMesa] = useState({}); // { compradorId: mesa }
 
   // 1. Cargar asistentes y slots de agenda
   useEffect(() => {
@@ -65,7 +63,7 @@ const ImportMeetingsFromExcelPage = () => {
       const wb = XLSX.read(data, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
-      // Mapea las columnas exactamente como vienen del archivo
+      // Incluye la columna "mesa"
       const normalized = rows.map((row) => ({
         compradorId: row.compradorId,
         compradorNombre: row.comprador_nombre,
@@ -79,25 +77,20 @@ const ImportMeetingsFromExcelPage = () => {
         matchScore: Number(row.match_score ?? 0),
         ordenMatchComprador: row.orden_match_comprador,
         ordenMatchVendedor: row.orden_match_vendedor,
+        mesa: row.mesa ? String(row.mesa) : undefined,
       }));
       setMatches(normalized);
 
-      // --- Asigna mesa por defecto cíclica al cargar (puedes mejorar la lógica) ---
-      const compradoresUnicos = Array.from(new Set(normalized.map(m => m.compradorId)));
-      // Detectar mesas disponibles en agenda
-      const mesasDisponibles = Array.from(
-        new Set(
-          agenda
-            .filter(a => a.available)
-            .map(a => String(a.tableNumber))
-        )
+      const compradoresUnicos = Array.from(
+        new Set(normalized.map((m) => m.compradorId))
       );
-      // Si no hay agenda aún, se deja vacío
+      // Si el Excel trajo la mesa, úsala como valor inicial por comprador
       const asignacionPorDefecto = {};
-      compradoresUnicos.forEach((c, idx) => {
-        asignacionPorDefecto[c] = mesasDisponibles.length > 0
-          ? mesasDisponibles[idx % mesasDisponibles.length]
-          : ""; // string por Select
+      compradoresUnicos.forEach((c) => {
+        const matchWithMesa = normalized.find(
+          (m) => m.compradorId === c && m.mesa
+        );
+        asignacionPorDefecto[c] = matchWithMesa?.mesa || "";
       });
       setCompradorMesa(asignacionPorDefecto);
     };
@@ -110,89 +103,133 @@ const ImportMeetingsFromExcelPage = () => {
     setCreatedMeetings(0);
     setGlobalMessage("");
 
-    // Agrupa slots disponibles por mesa (tableNumber)
-    const mesas = {};
-    agenda.filter(a => a.available).forEach(slot => {
-      if (!mesas[slot.tableNumber]) mesas[slot.tableNumber] = [];
-      mesas[slot.tableNumber].push(slot);
+    // Prepara slots por mesa y hora
+    const slotsByMesa = {};
+    agenda
+      .filter((a) => a.available)
+      .forEach((slot) => {
+        const mesa = String(slot.tableNumber);
+        if (!slotsByMesa[mesa]) slotsByMesa[mesa] = [];
+        slotsByMesa[mesa].push(slot);
+      });
+    Object.values(slotsByMesa).forEach((arr) =>
+      arr.sort((a, b) =>
+        a.startTime < b.startTime ? -1 : a.startTime > b.startTime ? 1 : 0
+      )
+    );
+
+    // Agrupa matches por comprador
+    const matchesPorComprador = {};
+    matches.forEach((row) => {
+      if (!matchesPorComprador[row.compradorId])
+        matchesPorComprador[row.compradorId] = [];
+      matchesPorComprador[row.compradorId].push(row);
     });
 
-    // Agrupa matches por compradorId
-    const grouped = {};
-    matches.forEach(row => {
-      if (!grouped[row.compradorId]) grouped[row.compradorId] = [];
-      grouped[row.compradorId].push(row);
-    });
+    // Mapa: para saber si un vendedor ya está ocupado en cada slot global (independiente de mesa)
+    const vendedorOcupadoEnSlot = new Map(); // key: vendedorId + slotKey
+    // Mapa: para saber si un comprador ya está ocupado en cada slot (no estrictamente necesario si se usa solo slots de su mesa, pero seguro)
+    const compradorOcupadoEnSlot = new Map();
 
     let totalCreated = 0;
     let pendientes = [];
-    for (const compradorId in grouped) {
-      // Usa la mesa elegida por el usuario en la UI
-      const mesaSeleccionada = compradorMesa[compradorId];
-      const slotsMesa = mesas[mesaSeleccionada]?.splice(0, grouped[compradorId].length) || [];
 
-      if (slotsMesa.length < grouped[compradorId].length) {
-        pendientes.push(compradorId);
+    for (const compradorId of Object.keys(matchesPorComprador)) {
+      const mesa = compradorMesa[compradorId];
+      if (!mesa || !slotsByMesa[mesa]) {
+        pendientes.push({ compradorId, motivo: "No tiene mesa o no hay slots en mesa" });
         continue;
       }
 
-      for (let i = 0; i < grouped[compradorId].length && i < slotsMesa.length; i++) {
-        const match = grouped[compradorId][i];
+      const misSlots = slotsByMesa[mesa];
+      const matchesOrdenados = matchesPorComprador[compradorId].sort(
+        (a, b) => Number(b.matchScore) - Number(a.matchScore)
+      );
+
+      // Para cada match, busca el primer slot libre donde el vendedor NO esté ocupado en ese horario
+      let slotIdx = 0;
+      for (const match of matchesOrdenados) {
+        // Busca el próximo slot libre en esa mesa para este comprador
+        while (
+          slotIdx < misSlots.length &&
+          (compradorOcupadoEnSlot.has(`${compradorId}_${misSlots[slotIdx].startTime}`) ||
+            vendedorOcupadoEnSlot.has(`${match.vendedorId}_${misSlots[slotIdx].startTime}`))
+        ) {
+          slotIdx++;
+        }
+        if (slotIdx >= misSlots.length) {
+          pendientes.push({ compradorId, vendedorId: match.vendedorId, motivo: "Sin slots libres en mesa" });
+          continue;
+        }
+
+        const slot = misSlots[slotIdx];
+
         try {
-          const meetingRef = await addDoc(collection(db, "events", eventId, "meetings"), {
-            eventId,
-            requesterId: match.compradorId,
-            receiverId: match.vendedorId,
-            status: "accepted",
-            createdAt: new Date(),
-            timeSlot: `${slotsMesa[i].startTime} - ${slotsMesa[i].endTime}`,
-            tableAssigned: slotsMesa[i].tableNumber?.toString(),
-            participants: [match.compradorId, match.vendedorId],
-            motivoMatch: "Compatibilidad IA",
-            razonMatch: `Score: ${match.matchScore}`,
-            scoreMatch: match.matchScore,
-            agendadoAutomatico: true,
-            ordenMatchComprador: match.ordenMatchComprador,
-            ordenMatchVendedor: match.ordenMatchVendedor,
-          });
-          await updateDoc(doc(db, "agenda", slotsMesa[i].id), {
+          const meetingRef = await addDoc(
+            collection(db, "events", eventId, "meetings"),
+            {
+              eventId,
+              requesterId: match.compradorId,
+              receiverId: match.vendedorId,
+              status: "accepted",
+              createdAt: new Date(),
+              timeSlot: `${slot.startTime} - ${slot.endTime}`,
+              tableAssigned: slot.tableNumber?.toString(),
+              participants: [
+                match.compradorId,
+                match.vendedorId,
+              ],
+              motivoMatch: "Compatibilidad IA",
+              razonMatch: `Score: ${match.matchScore}`,
+              scoreMatch: match.matchScore,
+              agendadoAutomatico: true,
+              ordenMatchComprador: match.ordenMatchComprador,
+              ordenMatchVendedor: match.ordenMatchVendedor,
+            }
+          );
+          await updateDoc(doc(db, "agenda", slot.id), {
             available: false,
             meetingId: meetingRef.id,
           });
           totalCreated++;
-        } catch (e) { /* Puedes loguear error */ }
+          compradorOcupadoEnSlot.set(`${compradorId}_${slot.startTime}`, true);
+          vendedorOcupadoEnSlot.set(`${match.vendedorId}_${slot.startTime}`, true);
+          slotIdx++;
+        } catch (e) {
+          pendientes.push({ compradorId, vendedorId: match.vendedorId, motivo: "Error al agendar" });
+        }
       }
     }
 
     setGlobalMessage(
       `Se crearon ${totalCreated} reuniones. ${
         pendientes.length
-          ? `Pendientes: ${pendientes.length} compradores sin slots.` : ""
+          ? `Pendientes: ${pendientes.length} reuniones no pudieron ser agendadas (ver consola).`
+          : ""
       }`
     );
+    console.log("Pendientes no agendados:", pendientes);
     setCreatedMeetings(totalCreated);
     setLoading(false);
   };
 
   // -- Tabla editable de asignación de mesas por comprador --
-  const compradoresUnicos = Array.from(new Set(matches.map(m => m.compradorId)));
-  const compradoresData = compradoresUnicos.map(cid => {
-    const m = matches.find(r => r.compradorId === cid);
+  const compradoresUnicos = Array.from(
+    new Set(matches.map((m) => m.compradorId))
+  );
+  const compradoresData = compradoresUnicos.map((cid) => {
+    const m = matches.find((r) => r.compradorId === cid);
     return {
       compradorId: cid,
       compradorNombre: m.compradorNombre,
       compradorEmpresa: m.compradorEmpresa,
-      reuniones: matches.filter(r => r.compradorId === cid).length
-    }
+      reuniones: matches.filter((r) => r.compradorId === cid).length,
+    };
   });
 
   // Opciones de mesas en agenda
   const mesasDisponibles = Array.from(
-    new Set(
-      agenda
-        .filter(a => a.available)
-        .map(a => String(a.tableNumber))
-    )
+    new Set(agenda.filter((a) => a.available).map((a) => String(a.tableNumber)))
   ).sort((a, b) => Number(a) - Number(b));
 
   // -- RESUMEN DINÁMICO --
@@ -217,7 +254,9 @@ const ImportMeetingsFromExcelPage = () => {
       .filter(([, n]) => n < 3)
       .map(([nombre]) => nombre);
 
-    const matchFuerte = matches.filter((m) => Number(m.matchScore) >= 80).length;
+    const matchFuerte = matches.filter(
+      (m) => Number(m.matchScore) >= 80
+    ).length;
     const matchMedio = matches.filter(
       (m) => Number(m.matchScore) >= 40 && Number(m.matchScore) < 80
     ).length;
@@ -343,20 +382,20 @@ const ImportMeetingsFromExcelPage = () => {
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {compradoresData.map(c => (
+              {compradoresData.map((c) => (
                 <Table.Tr key={c.compradorId}>
                   <Table.Td>{c.compradorNombre}</Table.Td>
                   <Table.Td>{c.compradorEmpresa}</Table.Td>
                   <Table.Td>{c.reuniones}</Table.Td>
                   <Table.Td>
                     <Select
-                      data={mesasDisponibles.map(num => ({
+                      data={mesasDisponibles.map((num) => ({
                         value: num,
                         label: `Mesa ${num}`,
                       }))}
                       value={compradorMesa[c.compradorId] || ""}
-                      onChange={val =>
-                        setCompradorMesa(cm => ({
+                      onChange={(val) =>
+                        setCompradorMesa((cm) => ({
                           ...cm,
                           [c.compradorId]: val,
                         }))
@@ -381,7 +420,7 @@ const ImportMeetingsFromExcelPage = () => {
           onClick={handleCreateMeetings}
           loading={loading}
           color="teal"
-          disabled={Object.values(compradorMesa).some(m => !m)}
+          disabled={Object.values(compradorMesa).some((m) => !m)}
         >
           Crear reuniones en agenda
         </Button>

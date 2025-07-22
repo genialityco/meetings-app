@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   Container,
   Title,
@@ -28,12 +28,11 @@ import {
   addDoc,
   updateDoc,
 } from "firebase/firestore";
-import anime from "animejs";
 import { useParams } from "react-router-dom";
 import QuickMeetingModal from "./QuickMeetingModal";
 import EditMeetingModal from "./EditMeetingModal";
 
-// Genera los slots de tiempo según configuración
+// ----------------- Utilidades -------------------
 const generateTimeSlots = (start, end, meetingDuration, breakTime) => {
   const slots = [];
   let currentTime = new Date(`1970-01-01T${start}:00`);
@@ -47,7 +46,6 @@ const generateTimeSlots = (start, end, meetingDuration, breakTime) => {
   return slots;
 };
 
-// Verifica si un slot se solapa con algún bloque de descanso
 const slotOverlapsBreakBlock = (
   slotStart,
   meetingDuration,
@@ -104,16 +102,17 @@ function ParticipantsChips({ participants }) {
   );
 }
 
+// ----------------- Componente principal -------------------
 const MatrixPage = () => {
   const { eventId } = useParams();
   const [config, setConfig] = useState(null);
   const [agenda, setAgenda] = useState([]);
   const [meetings, setMeetings] = useState([]);
   const [participantsInfo, setParticipantsInfo] = useState({});
+  const [asistentes, setAsistentes] = useState([]);
   const [matrix, setMatrix] = useState([]);
   const [matrixUsuarios, setMatrixUsuarios] = useState([]);
-  const [asistentes, setAsistentes] = useState([]);
-  const tableRefs = useRef([]);
+  const [meetingsRemontadas, setMeetingsRemontadas] = useState([]);
   const [typeFilter, setTypeFilter] = useState("");
   const [quickModal, setQuickModal] = useState({
     opened: false,
@@ -170,7 +169,7 @@ const MatrixPage = () => {
     });
   }, [config, eventId]);
 
-  // Carga asistentes registrados al evento
+  // Carga asistentes registrados al evento (solo 1 vez)
   useEffect(() => {
     if (!eventId) return;
     (async () => {
@@ -181,26 +180,44 @@ const MatrixPage = () => {
     })();
   }, [eventId]);
 
-  // Carga info de participantes de cada reunión
+  // Carga rápida de info de participantes usando asistentes (más eficiente)
   useEffect(() => {
-    if (meetings.length === 0) return;
-    (async () => {
-      const users = {};
-      for (const mtg of meetings) {
-        for (const pid of mtg.participants) {
-          if (!users[pid]) {
-            const snap = await getDoc(doc(db, "users", pid));
-            if (snap.exists()) users[pid] = snap.data();
-          }
-        }
-      }
-      setParticipantsInfo(users);
-    })();
-  }, [meetings]);
+    if (asistentes.length === 0) return;
+    const users = {};
+    asistentes.forEach((a) => (users[a.id] = a));
+    setParticipantsInfo(users);
+  }, [asistentes]);
 
-  // Construye matriz por mesas, incluyendo bloques de descanso
+  // Detecta reuniones huérfanas/sobreescritas
   useEffect(() => {
-    if (!config) return;
+    if (meetings.length === 0 || agenda.length === 0) {
+      setMeetingsRemontadas([]);
+      return;
+    }
+    const meetingIdsEnAgenda = new Set(
+      agenda.map((a) => a.meetingId).filter(Boolean)
+    );
+    const huerfanas = meetings.filter((mtg) => !meetingIdsEnAgenda.has(mtg.id));
+    setMeetingsRemontadas(huerfanas);
+  }, [meetings, agenda]);
+
+  // MEMOIZA timeSlots (se calcula solo si la config cambia)
+  const timeSlots = useMemo(
+    () =>
+      config
+        ? generateTimeSlots(
+            config.config.startTime,
+            config.config.endTime,
+            config.config.meetingDuration,
+            config.config.breakTime
+          )
+        : [],
+    [config]
+  );
+
+  // MEMOIZA matriz por mesas
+  const memoMatrix = useMemo(() => {
+    if (!config) return [];
     const {
       numTables,
       meetingDuration,
@@ -209,13 +226,6 @@ const MatrixPage = () => {
       endTime,
       breakBlocks = [],
     } = config.config;
-
-    const timeSlots = generateTimeSlots(
-      startTime,
-      endTime,
-      meetingDuration,
-      breakTime
-    );
 
     // Inicializa matriz con estados 'available' o 'break'
     const baseMatrix = Array.from({ length: numTables }, () =>
@@ -241,7 +251,6 @@ const MatrixPage = () => {
 
     // Marca reuniones aceptadas
     meetings.forEach((mtg) => {
-      // El timeSlot de la reunión es string tipo "13:00 - 13:30"
       const [startTime] = mtg.timeSlot.split(" - ");
       const tIdx = Number(mtg.tableAssigned) - 1;
       const sIdx = timeSlots.indexOf(startTime);
@@ -251,7 +260,7 @@ const MatrixPage = () => {
           participants: mtg.participants.map((id) =>
             participantsInfo[id]
               ? `${participantsInfo[id].nombre} (${participantsInfo[id].empresa})`
-              : "Cargando..."
+              : id
           ),
           meetingId: mtg.id,
           meetingData: mtg,
@@ -259,12 +268,12 @@ const MatrixPage = () => {
       }
     });
 
-    setMatrix(baseMatrix);
-  }, [config, agenda, meetings, participantsInfo]);
+    return baseMatrix;
+  }, [config, agenda, meetings, participantsInfo, timeSlots]);
 
-  // Construye matriz por usuarios, también considerando descansos
-  useEffect(() => {
-    if (!config) return;
+  // MEMOIZA matriz por usuarios
+  const memoMatrixUsuarios = useMemo(() => {
+    if (!config || asistentes.length === 0) return [];
     const {
       meetingDuration,
       breakTime,
@@ -272,19 +281,13 @@ const MatrixPage = () => {
       endTime,
       breakBlocks = [],
     } = config.config;
-    const timeSlots = generateTimeSlots(
-      startTime,
-      endTime,
-      meetingDuration,
-      breakTime
-    );
 
-    const usersMatrix = asistentes.map((user) => {
+    return asistentes.map((user) => {
       const row = timeSlots.map((slot) => {
         if (slotOverlapsBreakBlock(slot, meetingDuration, breakBlocks)) {
           return { status: "break" };
         }
-        // Ahora compara solo el startTime contra el inicio del timeSlot
+        // Solo compara el startTime
         const mtg = meetings.find((m) => {
           if (!m.timeSlot) return false;
           const [start] = m.timeSlot.split(" - ");
@@ -302,48 +305,31 @@ const MatrixPage = () => {
       });
       return { asistente: user, row };
     });
+  }, [config, asistentes, meetings, participantsInfo, timeSlots]);
 
-    setMatrixUsuarios(usersMatrix);
-  }, [config, asistentes, meetings, participantsInfo]);
+  // Tabla usuarios filtrada
+  const filteredMatrixUsuarios = useMemo(
+    () =>
+      memoMatrixUsuarios.filter(({ asistente }) => {
+        const searchTerm = userSearch.toLowerCase();
+        const matchesSearch =
+          (asistente.nombre || "").toLowerCase().includes(searchTerm) ||
+          (asistente.empresa || "").toLowerCase().includes(searchTerm);
+        const matchesType =
+          !typeFilter ||
+          (asistente.tipoAsistente || "").toLowerCase() ===
+            typeFilter.toLowerCase();
 
-  // Animación de fondo de celdas
-  useEffect(() => {
-    matrix.flat().forEach((_, idx) => {
-      const ref = tableRefs.current[idx];
-      if (ref) {
-        anime({
-          targets: ref,
-          backgroundColor: getColor(
-            matrix[Math.floor(idx / matrix[0].length)][idx % matrix[0].length]
-              .status
-          ),
-          duration: 500,
-          easing: "easeInOutQuad",
-        });
-      }
-    });
-  }, [matrix]);
+        return matchesSearch && matchesType;
+      }),
+    [memoMatrixUsuarios, userSearch, typeFilter]
+  );
 
-  // Colores según estado
-  const getColor = (status) => {
-    switch (status) {
-      case "available":
-        return "#d3d3d3";
-      case "occupied":
-        return "#ffa500";
-      case "accepted":
-        return "#4caf50";
-      case "break":
-        return "#90caf9";
-      default:
-        return "#d3d3d3";
-    }
-  };
+  // ----------------- Acciones rápidas -------------------
 
   const handleQuickCreateMeeting = async ({ user1, user2, slot }) => {
     setCreatingMeeting(true);
     try {
-      // 1. Crear el documento en meetings
       const meetingRef = await addDoc(
         collection(db, "events", eventId, "meetings"),
         {
@@ -357,8 +343,6 @@ const MatrixPage = () => {
           participants: [user1, user2],
         }
       );
-
-      // 2. Actualizar el slot en agenda
       await updateDoc(doc(db, "agenda", slot.id), {
         available: false,
         meetingId: meetingRef.id,
@@ -376,12 +360,10 @@ const MatrixPage = () => {
   const handleEditMeeting = async ({ meetingId, user1, user2 }) => {
     setCreatingMeeting(true);
     try {
-      // 1. Actualiza la reunión
       await updateDoc(doc(db, "events", eventId, "meetings", meetingId), {
         participants: [user1, user2],
         requesterId: user1,
         receiverId: user2,
-        // Puedes actualizar más campos si deseas
       });
 
       setGlobalMessage("¡Reunión actualizada!");
@@ -397,11 +379,9 @@ const MatrixPage = () => {
     if (!window.confirm("¿Seguro que quieres cancelar esta reunión?")) return;
     setCreatingMeeting(true);
     try {
-      // Cancela la reunión
       await updateDoc(doc(db, "events", eventId, "meetings", meetingId), {
         status: "cancelled",
       });
-      // Libera el slot en agenda
       if (slotId) {
         await updateDoc(doc(db, "agenda", slotId), {
           available: true,
@@ -417,24 +397,55 @@ const MatrixPage = () => {
     setCreatingMeeting(false);
   };
 
-  const filteredMatrixUsuarios = matrixUsuarios.filter(({ asistente }) => {
-    const searchTerm = userSearch.toLowerCase();
-    const matchesSearch =
-      (asistente.nombre || "").toLowerCase().includes(searchTerm) ||
-      (asistente.empresa || "").toLowerCase().includes(searchTerm);
-    const matchesType =
-      !typeFilter ||
-      (asistente.tipoAsistente || "").toLowerCase() ===
-        typeFilter.toLowerCase();
-
-    return matchesSearch && matchesType;
-  });
+  // ----------------- Render -------------------
 
   return (
     <Container fluid>
       <Title order={2} mt="md" mb="md" align="center">
         Matriz Rueda de Negocios — Evento {config?.eventName || "Desconocido"}
       </Title>
+
+      {meetingsRemontadas.length > 0 && (
+        <Card mt="md" shadow="md" p="md" withBorder>
+          <Title order={5} mb="xs">
+            Reuniones huérfanas / sobreescritas ({meetingsRemontadas.length})
+          </Title>
+          <Text size="sm" mb="sm">
+            Estas reuniones existen en la base, pero ya no están asociadas a
+            ningún slot de agenda. Pueden ser reuniones antiguas, remontadas o
+            mal referenciadas.
+          </Text>
+          <ScrollArea h={220}>
+            <Table striped highlightOnHover>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Hora</Table.Th>
+                  <Table.Th>Mesa</Table.Th>
+                  <Table.Th>Participantes</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {meetingsRemontadas.map((mtg) => (
+                  <Table.Tr key={mtg.id}>
+                    <Table.Td>{mtg.timeSlot}</Table.Td>
+                    <Table.Td>{mtg.tableAssigned}</Table.Td>
+                    <Table.Td>
+                      <ParticipantsChips
+                        participants={mtg.participants.map((pid) =>
+                          participantsInfo[pid]
+                            ? `${participantsInfo[pid].nombre} (${participantsInfo[pid].empresa})`
+                            : pid
+                        )}
+                      />
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </ScrollArea>
+        </Card>
+      )}
+
       <Tabs defaultValue="mesas">
         <Tabs.List>
           <Tabs.Tab value="mesas">Por Mesas</Tabs.Tab>
@@ -444,7 +455,7 @@ const MatrixPage = () => {
         <Tabs.Panel value="mesas" pt="md">
           <ScrollArea>
             <Flex gap="lg" justify="center" align="flex-start" wrap="wrap">
-              {matrix.map((table, ti) => (
+              {memoMatrix.map((table, ti) => (
                 <Card
                   key={ti}
                   shadow="md"
@@ -479,9 +490,6 @@ const MatrixPage = () => {
                       {table.map((cell, si) => (
                         <Table.Tr
                           key={`${ti}-${si}`}
-                          ref={(el) =>
-                            (tableRefs.current[ti * matrix[0].length + si] = el)
-                          }
                           style={{
                             backgroundColor: getColor(cell.status),
                             borderRadius: 5,
@@ -498,13 +506,7 @@ const MatrixPage = () => {
                                   ...agenda.find(
                                     (s) =>
                                       s.tableNumber === ti + 1 &&
-                                      s.startTime ===
-                                        generateTimeSlots(
-                                          config.config.startTime,
-                                          config.config.endTime,
-                                          config.config.meetingDuration,
-                                          config.config.breakTime
-                                        )[si]
+                                      s.startTime === timeSlots[si]
                                   ),
                                 },
                                 defaultUser: null,
@@ -533,14 +535,7 @@ const MatrixPage = () => {
                           }}
                         >
                           <Table.Td style={{ fontWeight: 500 }}>
-                            {
-                              generateTimeSlots(
-                                config.config.startTime,
-                                config.config.endTime,
-                                config.config.meetingDuration,
-                                config.config.breakTime
-                              )[si]
-                            }
+                            {timeSlots[si]}
                           </Table.Td>
                           <Table.Td>
                             <StatusBadge status={cell.status} />
@@ -610,12 +605,7 @@ const MatrixPage = () => {
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
-                      {generateTimeSlots(
-                        config.config.startTime,
-                        config.config.endTime,
-                        config.config.meetingDuration,
-                        config.config.breakTime
-                      ).map((slot, i) => {
+                      {timeSlots.map((slot, i) => {
                         const cell = row[i];
                         return (
                           <Table.Tr
@@ -626,11 +616,10 @@ const MatrixPage = () => {
                                 cell.status === "available"
                                   ? "pointer"
                                   : cell.status === "accepted"
-                                  ? "pointer" // <-- habilita cursor para aceptadas también
+                                  ? "pointer"
                                   : "default",
                             }}
                             onClick={() => {
-                              // Si está disponible: abrir creación rápida
                               if (cell.status === "available") {
                                 setQuickModal({
                                   opened: true,
@@ -644,10 +633,7 @@ const MatrixPage = () => {
                                   },
                                   defaultUser: asistente,
                                 });
-                              }
-                              // Si es aceptada: abrir modal de edición
-                              else if (cell.status === "accepted") {
-                                // Encuentra el meeting para este usuario y slot
+                              } else if (cell.status === "accepted") {
                                 const meeting = meetings.find((m) => {
                                   if (!m.timeSlot) return false;
                                   const [start] = m.timeSlot.split(" - ");
@@ -692,7 +678,7 @@ const MatrixPage = () => {
                                     participants={cell.participants.map((pid) =>
                                       participantsInfo[pid]
                                         ? `${participantsInfo[pid].nombre} (${participantsInfo[pid].empresa})`
-                                        : "Cargando..."
+                                        : pid
                                     )}
                                   />
                                 </>
@@ -709,6 +695,7 @@ const MatrixPage = () => {
           </ScrollArea>
         </Tabs.Panel>
       </Tabs>
+
       {/* Modal para crear reunión rápida */}
       <QuickMeetingModal
         opened={quickModal.opened}
@@ -750,5 +737,21 @@ const MatrixPage = () => {
     </Container>
   );
 };
+
+// ----------------- Helper de color -------------------
+function getColor(status) {
+  switch (status) {
+    case "available":
+      return "#d3d3d3";
+    case "occupied":
+      return "#ffa500";
+    case "accepted":
+      return "#4caf50";
+    case "break":
+      return "#90caf9";
+    default:
+      return "#d3d3d3";
+  }
+}
 
 export default MatrixPage;
