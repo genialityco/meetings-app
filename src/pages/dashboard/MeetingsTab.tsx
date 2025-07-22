@@ -46,7 +46,7 @@ export default function MeetingsTab({
               <Card key={meeting.id} shadow="sm" p="lg">
                 <Text>
                   <strong>Reunión con:</strong>{" "}
-                  {participant ? participant.nombre : "Cargando..."}
+                  {participant ? participant.empresa : "Cargando..."}
                 </Text>
                 <Text>
                   <strong>Horario:</strong> {meeting.timeSlot || "Por asignar"}
@@ -60,6 +60,9 @@ export default function MeetingsTab({
                     <>
                       <Text size="sm">
                         🏢 <strong>Empresa:</strong> {participant.empresa}
+                      </Text>
+                                            <Text size="sm">
+                        🏢 <strong>Asistente:</strong> {participant.nombre}
                       </Text>
                       <Text size="sm">
                         🏷 <strong>Cargo:</strong> {participant.cargo}
