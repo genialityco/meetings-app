@@ -172,7 +172,7 @@ export const UserProvider = ({ children }) => {
     // Busca el usuario por correo y evento
     const q = query(
       collection(db, "users"),
-      where("contacto.correo", "==", correo.trim().toLowerCase()),
+      where("correo", "==", correo.trim().toLowerCase()),
       where("eventId", "==", eventId)
     );
     const querySnapshot = await getDocs(q);

@@ -8,22 +8,21 @@ import {
   TextInput,
   Text,
   Alert,
+  Group,
+  Divider,
 } from "@mantine/core";
 import { doc, updateDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../../firebase/firebaseConfig";
 
-// Funciones auxiliares
+// Aux: "HH:mm" a minutos
 function timeToMinutes(timeStr) {
-  const [hours, minutes] = timeStr.split(":").map(Number);
-  return hours * 60 + minutes;
+  if (!timeStr) return 0;
+  const [h, m] = timeStr.split(":").map(Number);
+  return h * 60 + m;
 }
 
-/* ===================================================
-   Componente EditEventConfigModal
-   – Modal para editar la configuración de un evento,
-     mostrando un resumen de las citas posibles.
-=================================================== */
+// Modal de configuración de evento/agendamiento
 const EditEventConfigModal = ({
   opened,
   onClose,
@@ -31,129 +30,99 @@ const EditEventConfigModal = ({
   refreshEvents,
   setGlobalMessage,
 }) => {
-  // Campos generales del evento
+  // ---- Estados ----
   const [eventName, setEventName] = useState(event.eventName || "");
   const [eventImageUrl, setEventImageUrl] = useState(event.eventImage || "");
   const [eventImageFile, setEventImageFile] = useState(null);
   const [backgroundImageUrl, setBackgroundImageUrl] = useState(event.backgroundImage || "");
   const [backgroundImageFile, setBackgroundImageFile] = useState(null);
 
-  // Campos de configuración del evento
+  // Config básicos
   const [maxPersons, setMaxPersons] = useState(event.config?.maxPersons || 100);
   const [numTables, setNumTables] = useState(event.config?.numTables || 50);
-  const [meetingDuration, setMeetingDuration] = useState(
-    event.config?.meetingDuration || 10
-  );
+  const [meetingDuration, setMeetingDuration] = useState(event.config?.meetingDuration || 10);
   const [breakTime, setBreakTime] = useState(event.config?.breakTime || 5);
-  const [startTime, setStartTime] = useState(
-    event.config?.startTime || "09:00"
-  );
+  const [startTime, setStartTime] = useState(event.config?.startTime || "09:00");
   const [endTime, setEndTime] = useState(event.config?.endTime || "18:00");
   const [tableNamesInput, setTableNamesInput] = useState(
-    event.config?.tableNames?.join(", ") || ""
+    (event.config?.tableNames || []).join(", ")
   );
-  const [breakBlocks, setBreakBlocks] = useState(
-    event.config?.breakBlocks || [{ start: "", end: "" }]
+  // Bloques de descanso
+  const [breakBlocks, setBreakBlocks] = useState(event.config?.breakBlocks?.length
+    ? event.config.breakBlocks
+    : []);
+  // Máximo de citas por usuario (editable y calculado)
+  const [maxMeetingsPerUser, setMaxMeetingsPerUser] = useState(
+    event.config?.maxMeetingsPerUser ?? 1
   );
 
-  // Maneja el cambio en el input de tipo "file"
+  // Archivos de imagen
   const handleFileChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      setEventImageFile(e.target.files[0]);
-    }
+    if (e.target.files && e.target.files[0]) setEventImageFile(e.target.files[0]);
   };
   const handleBackgroundFileChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      setBackgroundImageFile(e.target.files[0]);
-    }
+    if (e.target.files && e.target.files[0]) setBackgroundImageFile(e.target.files[0]);
   };
 
-  // Función para subir la imagen a Firebase Storage y obtener la URL
+  // Subida a Storage
   const uploadImage = async (file) => {
     const storageRef = ref(storage, `events/${file.name}-${Date.now()}`);
     await uploadBytes(storageRef, file);
     return await getDownloadURL(storageRef);
   };
 
-  // Cálculo de resumen: total de bloques, total de slots, y máximo de citas por usuario
+  // ------ RESUMEN CALCULADO ------
   const configSummary = useMemo(() => {
-    try {
-      const totalMinutes = timeToMinutes(endTime) - timeToMinutes(startTime);
-      const blockLength = meetingDuration + breakTime;
-      const totalBlocks = Math.floor(totalMinutes / blockLength);
-      const totalSlots = totalBlocks * numTables;
-      const maxMeetingsPerUser = totalBlocks;
+    const totalMinutes = timeToMinutes(endTime) - timeToMinutes(startTime);
+    const blockLen = meetingDuration + breakTime;
+    // Filtrar descansos válidos
+    const validBreakBlocks = breakBlocks.filter(
+      (b) => b.start && b.end && b.start < b.end
+    );
+    const totalBreakMinutes = validBreakBlocks.reduce((acc, block) => {
+      return acc + (timeToMinutes(block.end) - timeToMinutes(block.start));
+    }, 0);
 
-      // Calcular bloques de descanso válidos
-      const validBreakBlocks = breakBlocks.filter(
-        (b) => b.start && b.end && b.start < b.end
-      );
+    // Calcular minutos hábiles descontando descansos definidos
+    const workingMinutes = totalMinutes - totalBreakMinutes;
+    const totalBlocks = Math.floor(workingMinutes / blockLen);
+    const totalSlots = totalBlocks * numTables;
 
-      const totalBreakMinutes = validBreakBlocks.reduce((acc, block) => {
-        const minutes = timeToMinutes(block.end) - timeToMinutes(block.start);
-        return acc + minutes;
-      }, 0);
-
-      return {
-        totalBlocks,
-        totalSlots,
-        maxMeetingsPerUser,
-        breakBlocksCount: validBreakBlocks.length,
-        totalBreakMinutes,
-      };
-    } catch {
-      return {
-        totalBlocks: 0,
-        totalSlots: 0,
-        maxMeetingsPerUser: 0,
-        breakBlocksCount: 0,
-        totalBreakMinutes: 0,
-      };
-    }
+    return {
+      totalBlocks,
+      totalSlots,
+      maxMeetingsPerUser: totalBlocks,
+      breakBlocksCount: validBreakBlocks.length,
+      totalBreakMinutes,
+    };
   }, [startTime, endTime, meetingDuration, breakTime, numTables, breakBlocks]);
 
-  const [maxMeetingsPerUser, setMaxMeetingsPerUser] = useState(
-    event.config?.maxMeetingsPerUser ?? configSummary.maxMeetingsPerUser
-  );
-
-  // Guardar los cambios en Firestore
+  // ------ GUARDADO ------
   const saveConfig = async () => {
     let finalEventImage = eventImageUrl;
     let finalBackgroundImage = backgroundImageUrl;
-    if (eventImageFile) {
-      try {
-        finalEventImage = await uploadImage(eventImageFile);
-      } catch (error) {
-        console.error("Error subiendo la imagen:", error);
-        setGlobalMessage?.("Error al subir la imagen.");
-        return;
-      }
-    }
-    if (backgroundImageFile) {
-      try {
-        finalBackgroundImage = await uploadImage(backgroundImageFile);
-      } catch (error) {
-        console.error("Error subiendo la imagen de fondo:", error);
-        setGlobalMessage?.("Error al subir la imagen de fondo.");
-        return;
-      }
+
+    try {
+      if (eventImageFile) finalEventImage = await uploadImage(eventImageFile);
+      if (backgroundImageFile) finalBackgroundImage = await uploadImage(backgroundImageFile);
+    } catch (err) {
+      setGlobalMessage?.("Error al subir la(s) imagen(es)");
+      return;
     }
 
-    // Procesar tableNames
+    // Nombres de mesas (si los dan, forzar a la cantidad real)
     let tableNames = [];
     if (tableNamesInput.trim() !== "") {
-      tableNames = tableNamesInput
-        .split(",")
-        .map((name) => name.trim())
-        .filter((name) => name !== "");
-      if (tableNames.length !== numTables) {
-        setNumTables(tableNames.length);
-      }
+      tableNames = tableNamesInput.split(",").map((t) => t.trim()).filter(Boolean);
+      if (tableNames.length !== numTables) setNumTables(tableNames.length);
     } else {
-      tableNames = Array.from({ length: numTables }, (_, i) =>
-        (i + 1).toString()
-      );
+      tableNames = Array.from({ length: numTables }, (_, i) => `Mesa ${i + 1}`);
     }
+
+    // Formato: [{start: "10:00", end: "10:15"}, ...]
+    const breakBlocksSanitized = breakBlocks.filter(
+      (b) => b.start && b.end && b.start < b.end
+    );
 
     const newConfig = {
       maxPersons,
@@ -163,8 +132,8 @@ const EditEventConfigModal = ({
       startTime,
       endTime,
       tableNames,
-      maxMeetingsPerUser,
-      breakBlocks,
+      breakBlocks: breakBlocksSanitized,
+      maxMeetingsPerUser: maxMeetingsPerUser || configSummary.maxMeetingsPerUser,
     };
 
     try {
@@ -174,50 +143,35 @@ const EditEventConfigModal = ({
         backgroundImage: finalBackgroundImage,
         config: newConfig,
       });
-
-      setGlobalMessage("Configuración actualizada correctamente.");
+      setGlobalMessage?.("Configuración actualizada correctamente");
       onClose();
       refreshEvents();
     } catch (error) {
-      console.error("Error al actualizar configuración:", error);
-      setGlobalMessage("Error al actualizar configuración.");
+      setGlobalMessage("Error al actualizar configuración");
     }
   };
 
+  // ---------- UI ----------
   return (
-    <Modal
-      opened={opened}
-      onClose={onClose}
-      title="Editar Configuración del Evento"
-    >
-      <Stack spacing="xs">
-        {/* Campos para nombre e imagen del evento */}
+    <Modal opened={opened} onClose={onClose} title="Configuración del evento" size="xl">
+      <Stack>
         <TextInput
           label="Nombre del Evento"
           value={eventName}
           onChange={(e) => setEventName(e.target.value)}
         />
-
         <TextInput
           label="URL de la imagen del Evento (opcional)"
-          placeholder="https://..."
           value={eventImageUrl}
           onChange={(e) => setEventImageUrl(e.target.value)}
         />
-
-        {/* File input para subir la imagen al Storage */}
-        <input type="file" accept="image/*" onChange={handleFileChange} />
-
-        {/* Imagen de fondo */}
+        <input type="file" accept="image/*" onChange={handleFileChange} style={{ marginBottom: 12 }} />
         <TextInput
-          label="URL de la imagen de fondo (opcional)"
-          placeholder="https://..."
+          label="URL imagen de fondo (opcional)"
           value={backgroundImageUrl}
           onChange={(e) => setBackgroundImageUrl(e.target.value)}
         />
-        <input type="file" accept="image/*" onChange={handleBackgroundFileChange} />
-
-        {/* Campos de configuración */}
+        <input type="file" accept="image/*" onChange={handleBackgroundFileChange} style={{ marginBottom: 12 }} />
         <NumberInput
           label="Cantidad máxima de personas"
           value={maxPersons}
@@ -231,9 +185,9 @@ const EditEventConfigModal = ({
           min={1}
         />
         <TextInput
-          label="Nombres de mesas (opcional)"
-          placeholder="Ej. Mesa 1, Mesa 2, ..."
+          label="Nombres de mesas (separados por coma)"
           value={tableNamesInput}
+          placeholder="Ejemplo: Mesa 1, Mesa 2, VIP, ..."
           onChange={(e) => setTableNamesInput(e.target.value)}
         />
         <NumberInput
@@ -248,30 +202,23 @@ const EditEventConfigModal = ({
           onChange={setBreakTime}
           min={0}
         />
-        <TextInput
-          label="Hora de inicio (HH:mm)"
-          type="time"
-          value={startTime}
-          onChange={(e) => setStartTime(e.target.value)}
-        />
-        <TextInput
-          label="Hora de fin (HH:mm)"
-          type="time"
-          value={endTime}
-          onChange={(e) => setEndTime(e.target.value)}
-        />
-
-        <NumberInput
-          label="Límite máximo de citas por usuario"
-          value={maxMeetingsPerUser}
-          onChange={setMaxMeetingsPerUser}
-          min={1}
-          description="Cuántas citas como máximo puede aceptar cada usuario"
-        />
-
-        <Text weight={500}>Bloques de descanso</Text>
+        <Group grow>
+          <TextInput
+            label="Hora de inicio"
+            type="time"
+            value={startTime}
+            onChange={(e) => setStartTime(e.target.value)}
+          />
+          <TextInput
+            label="Hora de fin"
+            type="time"
+            value={endTime}
+            onChange={(e) => setEndTime(e.target.value)}
+          />
+        </Group>
+        <Divider label="Bloques de descanso (opcional)" my="sm" />
         {breakBlocks.map((block, idx) => (
-          <Stack key={idx} spacing={4}>
+          <Group key={idx} align="flex-end" spacing="xs" noWrap>
             <Text size="sm">Bloque #{idx + 1}</Text>
             <TextInput
               label="Inicio"
@@ -282,6 +229,7 @@ const EditEventConfigModal = ({
                 updated[idx].start = e.target.value;
                 setBreakBlocks(updated);
               }}
+              style={{ width: 120 }}
             />
             <TextInput
               label="Fin"
@@ -292,35 +240,36 @@ const EditEventConfigModal = ({
                 updated[idx].end = e.target.value;
                 setBreakBlocks(updated);
               }}
+              style={{ width: 120 }}
             />
             <Button
               variant="subtle"
               color="red"
               size="xs"
-              onClick={() =>
-                setBreakBlocks(breakBlocks.filter((_, i) => i !== idx))
-              }
+              onClick={() => setBreakBlocks(breakBlocks.filter((_, i) => i !== idx))}
             >
-              Eliminar bloque
+              Eliminar
             </Button>
-          </Stack>
+          </Group>
         ))}
-
         <Button
           variant="outline"
           size="xs"
-          onClick={() =>
-            setBreakBlocks([...breakBlocks, { start: "", end: "" }])
-          }
+          onClick={() => setBreakBlocks([...breakBlocks, { start: "", end: "" }])}
+          style={{ width: 180 }}
         >
-          Añadir otro bloque
+          Añadir bloque de descanso
         </Button>
-
-        {/* Resumen de la configuración */}
-        <Alert color="blue" variant="light">
-          <Text>
-            <strong>Resumen de la configuración:</strong>
-          </Text>
+        <Divider my="xs" />
+        <NumberInput
+          label="Límite máximo de citas por usuario"
+          value={maxMeetingsPerUser}
+          onChange={setMaxMeetingsPerUser}
+          min={1}
+          description="Puedes dejarlo igual al número de bloques, o ajustarlo según la lógica del evento."
+        />
+        <Alert color="blue" variant="light" mt="md">
+          <Text><b>Resumen configuración agenda:</b></Text>
           <Text size="sm">
             • Bloques de reunión: {configSummary.totalBlocks}
           </Text>
@@ -328,22 +277,19 @@ const EditEventConfigModal = ({
             • Slots totales (bloques × mesas): {configSummary.totalSlots}
           </Text>
           <Text size="sm">
-            • Citas máximas por usuario (1 cita por bloque):{" "}
-            {configSummary.maxMeetingsPerUser}
+            • Citas máximas por usuario (teórico): {configSummary.maxMeetingsPerUser}
           </Text>
           <Text size="sm">
-            • Citas máximas por usuario (configurable): {maxMeetingsPerUser}
+            • Límite máximo de citas por usuario (editable): {maxMeetingsPerUser}
           </Text>
           <Text size="sm">
             • Bloques de descanso definidos: {configSummary.breakBlocksCount}
           </Text>
           <Text size="sm">
-            • Tiempo total de descansos: {configSummary.totalBreakMinutes}{" "}
-            minutos
+            • Tiempo total de descansos: {configSummary.totalBreakMinutes} minutos
           </Text>
         </Alert>
-
-        <Button onClick={saveConfig}>Guardar Configuración</Button>
+        <Button onClick={saveConfig} mt="md">Guardar configuración</Button>
       </Stack>
     </Modal>
   );

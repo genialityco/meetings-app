@@ -267,7 +267,7 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Compradores");
-    XLSX.writeFile(wb, "compradores_evento_matchs.xlsx");
+    XLSX.writeFile(wb, "compradores_evento_final.xlsx");
   };
 
   // 2. Función para exportar vendedores
@@ -289,7 +289,7 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Vendedores");
-    XLSX.writeFile(wb, "vendedores_evento_matchs.xlsx");
+    XLSX.writeFile(wb, "vendedores_evento_final.xlsx");
   };
 
   return (

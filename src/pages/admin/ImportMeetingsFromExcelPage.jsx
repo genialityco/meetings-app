@@ -1,4 +1,3 @@
-// ./pages/admin/ImportMeetingsFromExcelPage.jsx
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import * as XLSX from "xlsx";
@@ -38,12 +37,10 @@ const ImportMeetingsFromExcelPage = () => {
     if (!eventId) return;
     const fetchAll = async () => {
       setLoading(true);
-      // Asistentes
       const snap = await getDocs(
         query(collection(db, "users"), where("eventId", "==", eventId))
       );
       setAttendees(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      // Slots de agenda
       const snap2 = await getDocs(
         query(collection(db, "agenda"), where("eventId", "==", eventId))
       );
@@ -63,97 +60,107 @@ const ImportMeetingsFromExcelPage = () => {
       const wb = XLSX.read(data, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
-      setMatches(rows);
+      // Mapea las columnas exactamente como vienen del archivo
+      const normalized = rows.map((row) => ({
+        compradorId: row.compradorId,
+        compradorNombre: row.comprador_nombre,
+        compradorEmpresa: row.comprador_empresa,
+        compradorNecesidad: row.comprador_necesidad,
+        vendedorId: row.vendedorId, // así viene en el archivo
+        vendedorNombre: row.vendedor_nombre,
+        vendedorEmpresa: row.vendedor_empresa,
+        vendedorDescripcion: row.vendedor_descripcion,
+        vendedorNecesidad: row.vendedor_necesidad,
+        matchScore: Number(row.match_score ?? 0),
+        ordenMatchComprador: row.orden_match_comprador,
+        ordenMatchVendedor: row.orden_match_vendedor,
+      }));
+      setMatches(normalized);
     };
     reader.readAsArrayBuffer(file);
   };
 
-  // 3. Crear reuniones en slots disponibles de agenda, manteniendo comprador en la misma mesa
-const handleCreateMeetings = async () => {
-  setLoading(true);
-  setCreatedMeetings(0);
-  setGlobalMessage("");
+  // 3. Crear reuniones agrupando matches por comprador y asignando slots por mesa
+  const handleCreateMeetings = async () => {
+    setLoading(true);
+    setCreatedMeetings(0);
+    setGlobalMessage("");
 
-  // Agrupa slots disponibles por mesa
-  const mesas = {};
-  agenda.filter(a => a.available).forEach(slot => {
-    if (!mesas[slot.tableNumber]) mesas[slot.tableNumber] = [];
-    mesas[slot.tableNumber].push(slot);
-  });
+    // Agrupa slots disponibles por mesa (tableNumber)
+    const mesas = {};
+    agenda.filter(a => a.available).forEach(slot => {
+      if (!mesas[slot.tableNumber]) mesas[slot.tableNumber] = [];
+      mesas[slot.tableNumber].push(slot);
+    });
 
-  // Agrupa matches por comprador
-  const grouped = {};
-  matches.forEach(row => {
-    if (!grouped[row.compradorId]) grouped[row.compradorId] = [];
-    grouped[row.compradorId].push(row);
-  });
+    // Agrupa matches por compradorId
+    const grouped = {};
+    matches.forEach(row => {
+      if (!grouped[row.compradorId]) grouped[row.compradorId] = [];
+      grouped[row.compradorId].push(row);
+    });
 
-  let totalCreated = 0;
-  let pendientes = [];
-  let mesasAsignadas = Object.keys(mesas); // Lista de mesas disponibles
+    let totalCreated = 0;
+    let pendientes = [];
+    let mesasAsignadas = Object.keys(mesas);
 
-  let compradorIndex = 0;
-  for (const compradorId in grouped) {
-    // Asigna la siguiente mesa libre
-    const mesaActual = mesasAsignadas[compradorIndex];
-    compradorIndex++;
+    let compradorIndex = 0;
+    for (const compradorId in grouped) {
+      // Asigna la siguiente mesa libre (cíclico)
+      const mesaActual = mesasAsignadas[compradorIndex % mesasAsignadas.length];
+      compradorIndex++;
 
-    const slotsMesa = mesas[mesaActual]?.splice(0, 24) || [];
+      const slotsMesa = mesas[mesaActual]?.splice(0, grouped[compradorId].length) || [];
 
-    if (slotsMesa.length < 24) {
-      pendientes.push(compradorId);
-      continue;
-    }
+      if (slotsMesa.length < grouped[compradorId].length) {
+        pendientes.push(compradorId);
+        continue;
+      }
 
-    for (let i = 0; i < grouped[compradorId].length && i < slotsMesa.length; i++) {
-      const match = grouped[compradorId][i];
-      try {
-        await addDoc(collection(db, "events", eventId, "meetings"), {
-          eventId,
-          requesterId: match.compradorId,
-          receiverId: match.vendedorId,
-          status: "accepted",
-          createdAt: new Date(),
-          timeSlot: `${slotsMesa[i].startTime} - ${slotsMesa[i].endTime}`,
-          tableAssigned: slotsMesa[i].tableNumber.toString(),
-          participants: [match.compradorId, match.vendedorId],
-          motivoMatch:
-            match.tipoAsignacion === "MATCH"
-              ? "Compatibilidad"
-              : "Mínimo por vendedor",
-          razonMatch: match.razon,
-          scoreMatch: match.score,
-          agendadoAutomatico: true,
-        });
-        await updateDoc(doc(db, "agenda", slotsMesa[i].id), {
-          available: false,
-          meetingId: "asignado-ia",
-        });
-        totalCreated++;
-      } catch (e) {
-        // Si falla, simplemente lo omite y sigue
+      for (let i = 0; i < grouped[compradorId].length && i < slotsMesa.length; i++) {
+        const match = grouped[compradorId][i];
+        try {
+          await addDoc(collection(db, "events", eventId, "meetings"), {
+            eventId,
+            requesterId: match.compradorId,
+            receiverId: match.vendedorId,
+            status: "accepted",
+            createdAt: new Date(),
+            timeSlot: `${slotsMesa[i].startTime} - ${slotsMesa[i].endTime}`,
+            tableAssigned: slotsMesa[i].tableNumber?.toString(),
+            participants: [match.compradorId, match.vendedorId],
+            motivoMatch: "Compatibilidad IA",
+            razonMatch: `Score: ${match.matchScore}`,
+            scoreMatch: match.matchScore,
+            agendadoAutomatico: true,
+            ordenMatchComprador: match.ordenMatchComprador,
+            ordenMatchVendedor: match.ordenMatchVendedor,
+          });
+          await updateDoc(doc(db, "agenda", slotsMesa[i].id), {
+            available: false,
+            meetingId: "asignado-ia",
+          });
+          totalCreated++;
+        } catch (e) {}
       }
     }
-  }
 
-  setGlobalMessage(
-    `Se crearon ${totalCreated} reuniones. ${
-      pendientes.length
-        ? `Pendientes: ${pendientes.length} compradores sin slots.`
-        : ""
-    }`
-  );
-  setCreatedMeetings(totalCreated);
-  setLoading(false);
-};
-
+    setGlobalMessage(
+      `Se crearon ${totalCreated} reuniones. ${
+        pendientes.length
+          ? `Pendientes: ${pendientes.length} compradores sin slots.` : ""
+      }`
+    );
+    setCreatedMeetings(totalCreated);
+    setLoading(false);
+  };
 
   // -- RESUMEN DINÁMICO --
   const resumen = (() => {
     if (matches.length === 0) return null;
 
     const compradoresUnicos = new Set(matches.map((m) => m.compradorId));
-    const vendedoresUnicos = new Set(matches.map((m) => m.vendedorId));
+    const vendedoresUnicos = new Set(matches.map((m) => m.vendedorId)); // corrijo aquí
     const slotsDisponibles = agenda.filter((a) => a.available).length;
     const reunionesPorComprador = matches.reduce((acc, m) => {
       acc[m.compradorNombre] = (acc[m.compradorNombre] || 0) + 1;
@@ -164,22 +171,21 @@ const handleCreateMeetings = async () => {
       return acc;
     }, {});
     const compradoresPorCompletar = Object.entries(reunionesPorComprador)
-      .filter(([, n]) => n < 24)
+      .filter(([, n]) => n < 18)
       .map(([nombre]) => nombre);
     const vendedoresConMenosDe3 = Object.entries(reunionesPorVendedor)
       .filter(([, n]) => n < 3)
       .map(([nombre]) => nombre);
 
-    const matchFuerte = matches.filter((m) => m.score >= 8).length;
+    const matchFuerte = matches.filter((m) => Number(m.matchScore) >= 80).length;
     const matchMedio = matches.filter(
-      (m) => m.score >= 4 && m.score < 8
+      (m) => Number(m.matchScore) >= 40 && Number(m.matchScore) < 80
     ).length;
-    const matchDebil = matches.filter((m) => m.score > 0 && m.score < 4).length;
-    const comodin = matches.filter(
-      (m) => m.tipoAsignacion === "COMODIN"
+    const matchDebil = matches.filter(
+      (m) => Number(m.matchScore) > 0 && Number(m.matchScore) < 40
     ).length;
-    const scoreMax = Math.max(...matches.map((m) => Number(m.score)));
-    const scoreMin = Math.min(...matches.map((m) => Number(m.score)));
+    const scoreMax = Math.max(...matches.map((m) => Number(m.matchScore)));
+    const scoreMin = Math.min(...matches.map((m) => Number(m.matchScore)));
 
     return {
       compradoresUnicos,
@@ -192,7 +198,6 @@ const handleCreateMeetings = async () => {
       matchFuerte,
       matchMedio,
       matchDebil,
-      comodin,
       scoreMax,
       scoreMin,
     };
@@ -252,7 +257,7 @@ const handleCreateMeetings = async () => {
             )}
           </Text>
           <Text mt="xs">
-            <b>Compradores con menos de 24 reuniones:</b>{" "}
+            <b>Compradores con menos de 18 reuniones:</b>{" "}
             {resumen.compradoresPorCompletar.length
               ? resumen.compradoresPorCompletar.join(", ")
               : "Ninguno"}
@@ -264,10 +269,9 @@ const handleCreateMeetings = async () => {
               : "Ninguno"}
           </Text>
           <Text mt="xs">
-            <b>Match fuerte (score ≥ 8):</b> {resumen.matchFuerte} <br />
-            <b>Match medio (score 4-7):</b> {resumen.matchMedio} <br />
-            <b>Match débil (score 1-3):</b> {resumen.matchDebil} <br />
-            <b>Asignaciones COMODIN:</b> {resumen.comodin}
+            <b>Match fuerte (score ≥ 80):</b> {resumen.matchFuerte} <br />
+            <b>Match medio (score 40-79):</b> {resumen.matchMedio} <br />
+            <b>Match débil (score 1-39):</b> {resumen.matchDebil}
           </Text>
           <Text mt="xs">
             <b>Score máximo:</b> {resumen.scoreMax} <br />
