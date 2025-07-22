@@ -27,9 +27,7 @@ const EditMeetingModal = ({
     if (meeting) {
       if (lockedUserId) {
         setUser1(lockedUserId);
-        setUser2(
-          meeting.participants.find((id) => id !== lockedUserId) || ""
-        );
+        setUser2(meeting.participants.find((id) => id !== lockedUserId) || "");
       } else {
         setUser1(meeting.participants[0]);
         setUser2(meeting.participants[1]);
@@ -43,13 +41,13 @@ const EditMeetingModal = ({
     label: `${a.nombre} (${a.empresa})`,
   }));
 
+  console.log("allMeetings", allMeetings);
+  console.log("meeting", meeting);
+  console.log("swapMode", swapMode);
+
   // Opciones para el swap (otras reuniones aceptadas)
   const swapOptions = allMeetings
-    .filter(
-      (m) =>
-        m.id !== meeting.id &&
-        m.status === "accepted"
-    )
+    .filter((m) => m.id !== meeting.id && m.status === "accepted")
     .map((m) => ({
       value: m.id,
       label: `Mesa ${m.tableAssigned} — ${m.timeSlot} (${m.participants
@@ -63,8 +61,7 @@ const EditMeetingModal = ({
     const [startTime] = mtg.timeSlot.split(" - ");
     return agenda.find(
       (s) =>
-        s.tableNumber === Number(mtg.tableAssigned) &&
-        s.startTime === startTime
+        s.tableNumber === Number(mtg.tableAssigned) && s.startTime === startTime
     );
   };
 
@@ -155,7 +152,8 @@ const EditMeetingModal = ({
       ) : (
         <>
           <Text c="dimmed" size="sm" mb="xs">
-            Selecciona la reunión con la que quieres intercambiar horario y mesa.
+            Selecciona la reunión con la que quieres intercambiar horario y
+            mesa.
           </Text>
           <Select
             label="Reunión para intercambiar"
@@ -169,25 +167,23 @@ const EditMeetingModal = ({
             <Text size="xs" mb="sm">
               <b>Resumen de la reunión seleccionada:</b>
               <br />
-              {
-                (() => {
-                  const m = allMeetings.find((x) => x.id === swapMeetingId);
-                  if (!m) return null;
-                  return (
-                    <>
-                      Mesa: {m.tableAssigned} <br />
-                      Hora: {m.timeSlot} <br />
-                      Participantes:{" "}
-                      {m.participants
-                        .map(
-                          (id) =>
-                            assistants.find((a) => a.id === id)?.nombre || id
-                        )
-                        .join(" vs ")}
-                    </>
-                  );
-                })()
-              }
+              {(() => {
+                const m = allMeetings.find((x) => x.id === swapMeetingId);
+                if (!m) return null;
+                return (
+                  <>
+                    Mesa: {m.tableAssigned} <br />
+                    Hora: {m.timeSlot} <br />
+                    Participantes:{" "}
+                    {m.participants
+                      .map(
+                        (id) =>
+                          assistants.find((a) => a.id === id)?.nombre || id
+                      )
+                      .join(" vs ")}
+                  </>
+                );
+              })()}
             </Text>
           )}
           <Group grow>

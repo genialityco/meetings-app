@@ -282,7 +282,7 @@ const MatrixPage = () => {
           status: "accepted",
           participants: mtg.participants.map((id) =>
             participantsInfo[id]
-              ? `${participantsInfo[id].nombre} (${participantsInfo[id].empresa})`
+              ? `${participantsInfo[id].empresa} (${participantsInfo[id].nombre})`
               : id
           ),
           meetingId: mtg.id,
@@ -420,7 +420,6 @@ const MatrixPage = () => {
     setCreatingMeeting(false);
   };
 
-
   const handleSwapMeetings = async (meetingA, slotA, meetingB, slotB) => {
     setCreatingMeeting(true);
     try {
@@ -498,7 +497,7 @@ const MatrixPage = () => {
                       <ParticipantsChips
                         participants={mtg.participants.map((pid) =>
                           participantsInfo[pid]
-                            ? `${participantsInfo[pid].nombre} (${participantsInfo[pid].empresa})`
+                            ? `${participantsInfo[pid].empresa} (${participantsInfo[pid].nombre})`
                             : pid
                         )}
                       />
@@ -623,7 +622,7 @@ const MatrixPage = () => {
                                             style={{ marginBottom: 6 }}
                                           >
                                             <b>
-                                              {info.nombre} ({info.empresa})
+                                              {info.empresa} ({info.nombre})
                                             </b>
                                             <div>
                                               <span
@@ -654,7 +653,11 @@ const MatrixPage = () => {
                               >
                                 <div>
                                   <ParticipantsChips
-                                    participants={cell.participants}
+                                    participants={cell.participants.map((pid) =>
+                                      participantsInfo[pid]
+                                        ? `${participantsInfo[pid].empresa} (${participantsInfo[pid].nombre})`
+                                        : pid
+                                    )}
                                   />
                                 </div>
                               </Tooltip>
@@ -808,7 +811,7 @@ const MatrixPage = () => {
                                   <ParticipantsChips
                                     participants={cell.participants.map((pid) =>
                                       participantsInfo[pid]
-                                        ? `${participantsInfo[pid].nombre} (${participantsInfo[pid].empresa})`
+                                        ? `${participantsInfo[pid].empresa} (${participantsInfo[pid].nombre})`
                                         : pid
                                     )}
                                   />
