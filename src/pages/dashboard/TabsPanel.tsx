@@ -5,23 +5,23 @@ import RequestsTab from "./RequestsTab";
 
 export default function TabsPanel({ dashboard }) {
   return (
-    <Tabs defaultValue="asistentes">
+    <Tabs defaultValue="reuniones">
       <Tabs.List>
-        <Tabs.Tab value="asistentes">Asistentes ({dashboard.assistants.length})</Tabs.Tab>
+        {/* <Tabs.Tab value="asistentes">Asistentes ({dashboard.assistants.length})</Tabs.Tab> */}
         <Tabs.Tab value="reuniones">Reuniones ({dashboard.acceptedMeetings.length})</Tabs.Tab>
-        <Tabs.Tab value="solicitudes">
+        {/* <Tabs.Tab value="solicitudes">
           Solicitudes ({dashboard.pendingRequests.length + dashboard.acceptedRequests.length + dashboard.rejectedRequests.length})
-        </Tabs.Tab>
+        </Tabs.Tab> */}
       </Tabs.List>
-      <Tabs.Panel value="asistentes" pt="md">
+      {/* <Tabs.Panel value="asistentes" pt="md">
         <AssistantsTab {...dashboard} />
-      </Tabs.Panel>
+      </Tabs.Panel> */}
       <Tabs.Panel value="reuniones" pt="md">
         <MeetingsTab {...dashboard} />
       </Tabs.Panel>
-      <Tabs.Panel value="solicitudes" pt="md">
+      {/* <Tabs.Panel value="solicitudes" pt="md">
         <RequestsTab {...dashboard} />
-      </Tabs.Panel>
+      </Tabs.Panel> */}
     </Tabs>
   );
 }

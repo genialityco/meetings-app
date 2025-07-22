@@ -20,6 +20,8 @@ import {
   Container,
   Card,
   Text,
+  Table,
+  Select,
 } from "@mantine/core";
 
 const ImportMeetingsFromExcelPage = () => {
@@ -31,6 +33,9 @@ const ImportMeetingsFromExcelPage = () => {
   const [loading, setLoading] = useState(false);
   const [globalMessage, setGlobalMessage] = useState("");
   const [createdMeetings, setCreatedMeetings] = useState(0);
+
+  // NUEVO: Para asignar mesa a cada comprador
+  const [compradorMesa, setCompradorMesa] = useState({}); // { compradorId: mesaNumber }
 
   // 1. Cargar asistentes y slots de agenda
   useEffect(() => {
@@ -66,7 +71,7 @@ const ImportMeetingsFromExcelPage = () => {
         compradorNombre: row.comprador_nombre,
         compradorEmpresa: row.comprador_empresa,
         compradorNecesidad: row.comprador_necesidad,
-        vendedorId: row.vendedorId, // así viene en el archivo
+        vendedorId: row.vendedorId,
         vendedorNombre: row.vendedor_nombre,
         vendedorEmpresa: row.vendedor_empresa,
         vendedorDescripcion: row.vendedor_descripcion,
@@ -76,11 +81,30 @@ const ImportMeetingsFromExcelPage = () => {
         ordenMatchVendedor: row.orden_match_vendedor,
       }));
       setMatches(normalized);
+
+      // --- Asigna mesa por defecto cíclica al cargar (puedes mejorar la lógica) ---
+      const compradoresUnicos = Array.from(new Set(normalized.map(m => m.compradorId)));
+      // Detectar mesas disponibles en agenda
+      const mesasDisponibles = Array.from(
+        new Set(
+          agenda
+            .filter(a => a.available)
+            .map(a => String(a.tableNumber))
+        )
+      );
+      // Si no hay agenda aún, se deja vacío
+      const asignacionPorDefecto = {};
+      compradoresUnicos.forEach((c, idx) => {
+        asignacionPorDefecto[c] = mesasDisponibles.length > 0
+          ? mesasDisponibles[idx % mesasDisponibles.length]
+          : ""; // string por Select
+      });
+      setCompradorMesa(asignacionPorDefecto);
     };
     reader.readAsArrayBuffer(file);
   };
 
-  // 3. Crear reuniones agrupando matches por comprador y asignando slots por mesa
+  // 3. Crear reuniones agrupando matches por comprador y usando la mesa asignada en compradorMesa
   const handleCreateMeetings = async () => {
     setLoading(true);
     setCreatedMeetings(0);
@@ -102,15 +126,10 @@ const ImportMeetingsFromExcelPage = () => {
 
     let totalCreated = 0;
     let pendientes = [];
-    let mesasAsignadas = Object.keys(mesas);
-
-    let compradorIndex = 0;
     for (const compradorId in grouped) {
-      // Asigna la siguiente mesa libre (cíclico)
-      const mesaActual = mesasAsignadas[compradorIndex % mesasAsignadas.length];
-      compradorIndex++;
-
-      const slotsMesa = mesas[mesaActual]?.splice(0, grouped[compradorId].length) || [];
+      // Usa la mesa elegida por el usuario en la UI
+      const mesaSeleccionada = compradorMesa[compradorId];
+      const slotsMesa = mesas[mesaSeleccionada]?.splice(0, grouped[compradorId].length) || [];
 
       if (slotsMesa.length < grouped[compradorId].length) {
         pendientes.push(compradorId);
@@ -120,7 +139,7 @@ const ImportMeetingsFromExcelPage = () => {
       for (let i = 0; i < grouped[compradorId].length && i < slotsMesa.length; i++) {
         const match = grouped[compradorId][i];
         try {
-          await addDoc(collection(db, "events", eventId, "meetings"), {
+          const meetingRef = await addDoc(collection(db, "events", eventId, "meetings"), {
             eventId,
             requesterId: match.compradorId,
             receiverId: match.vendedorId,
@@ -138,10 +157,10 @@ const ImportMeetingsFromExcelPage = () => {
           });
           await updateDoc(doc(db, "agenda", slotsMesa[i].id), {
             available: false,
-            meetingId: "asignado-ia",
+            meetingId: meetingRef.id,
           });
           totalCreated++;
-        } catch (e) {}
+        } catch (e) { /* Puedes loguear error */ }
       }
     }
 
@@ -155,12 +174,33 @@ const ImportMeetingsFromExcelPage = () => {
     setLoading(false);
   };
 
+  // -- Tabla editable de asignación de mesas por comprador --
+  const compradoresUnicos = Array.from(new Set(matches.map(m => m.compradorId)));
+  const compradoresData = compradoresUnicos.map(cid => {
+    const m = matches.find(r => r.compradorId === cid);
+    return {
+      compradorId: cid,
+      compradorNombre: m.compradorNombre,
+      compradorEmpresa: m.compradorEmpresa,
+      reuniones: matches.filter(r => r.compradorId === cid).length
+    }
+  });
+
+  // Opciones de mesas en agenda
+  const mesasDisponibles = Array.from(
+    new Set(
+      agenda
+        .filter(a => a.available)
+        .map(a => String(a.tableNumber))
+    )
+  ).sort((a, b) => Number(a) - Number(b));
+
   // -- RESUMEN DINÁMICO --
   const resumen = (() => {
     if (matches.length === 0) return null;
 
-    const compradoresUnicos = new Set(matches.map((m) => m.compradorId));
-    const vendedoresUnicos = new Set(matches.map((m) => m.vendedorId)); // corrijo aquí
+    const compradoresUnicosSet = new Set(matches.map((m) => m.compradorId));
+    const vendedoresUnicos = new Set(matches.map((m) => m.vendedorId));
     const slotsDisponibles = agenda.filter((a) => a.available).length;
     const reunionesPorComprador = matches.reduce((acc, m) => {
       acc[m.compradorNombre] = (acc[m.compradorNombre] || 0) + 1;
@@ -188,7 +228,7 @@ const ImportMeetingsFromExcelPage = () => {
     const scoreMin = Math.min(...matches.map((m) => Number(m.matchScore)));
 
     return {
-      compradoresUnicos,
+      compradoresUnicos: compradoresUnicosSet,
       vendedoresUnicos,
       slotsDisponibles,
       reunionesPorComprador,
@@ -214,6 +254,7 @@ const ImportMeetingsFromExcelPage = () => {
 
       <input type="file" accept=".xlsx,.xls" onChange={handleFile} />
 
+      {/* RESUMEN */}
       {resumen && (
         <Card mt="md" shadow="sm" p="md" withBorder>
           <Title order={5} mb="xs">
@@ -286,12 +327,61 @@ const ImportMeetingsFromExcelPage = () => {
         </Card>
       )}
 
+      {/* Tabla editable para asignación de mesa por comprador */}
+      {matches.length > 0 && (
+        <Card mt="md" shadow="sm" p="md" withBorder>
+          <Title order={5} mb="xs">
+            Asignación de Mesa por Comprador
+          </Title>
+          <Table striped withBorder>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Comprador</Table.Th>
+                <Table.Th>Empresa</Table.Th>
+                <Table.Th>Reuniones</Table.Th>
+                <Table.Th>Mesa Asignada</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {compradoresData.map(c => (
+                <Table.Tr key={c.compradorId}>
+                  <Table.Td>{c.compradorNombre}</Table.Td>
+                  <Table.Td>{c.compradorEmpresa}</Table.Td>
+                  <Table.Td>{c.reuniones}</Table.Td>
+                  <Table.Td>
+                    <Select
+                      data={mesasDisponibles.map(num => ({
+                        value: num,
+                        label: `Mesa ${num}`,
+                      }))}
+                      value={compradorMesa[c.compradorId] || ""}
+                      onChange={val =>
+                        setCompradorMesa(cm => ({
+                          ...cm,
+                          [c.compradorId]: val,
+                        }))
+                      }
+                      placeholder="Seleccionar mesa"
+                      searchable
+                      withinPortal
+                      required
+                    />
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Card>
+      )}
+
+      {/* Botón para crear reuniones */}
       {matches.length > 0 && (
         <Button
           mt="md"
           onClick={handleCreateMeetings}
           loading={loading}
           color="teal"
+          disabled={Object.values(compradorMesa).some(m => !m)}
         >
           Crear reuniones en agenda
         </Button>
