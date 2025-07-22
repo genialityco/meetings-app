@@ -121,13 +121,13 @@ export default function MeetingsTab({
                         ? "Ocultar info"
                         : "Ver más info"}
                     </Button>
-                    <Button
+                    {/* <Button
                       size="xs"
                       variant="outline"
                       onClick={() => prepareSlotSelection(meeting.id, true)}
                     >
                       Editar hora
-                    </Button>
+                    </Button> */}
                   </Group>
                 )}
               </Card>

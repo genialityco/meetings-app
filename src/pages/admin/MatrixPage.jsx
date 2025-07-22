@@ -28,6 +28,7 @@ import {
   getDocs,
   addDoc,
   updateDoc,
+  runTransaction,
 } from "firebase/firestore";
 import { useParams } from "react-router-dom";
 import QuickMeetingModal from "./QuickMeetingModal";
@@ -414,6 +415,48 @@ const MatrixPage = () => {
       setEditModal({ opened: false, meeting: null, slot: null });
     } catch (e) {
       setGlobalMessage("Error cancelando la reunión.");
+      console.error(e);
+    }
+    setCreatingMeeting(false);
+  };
+
+
+  const handleSwapMeetings = async (meetingA, slotA, meetingB, slotB) => {
+    setCreatingMeeting(true);
+    try {
+      // Usa una transacción para evitar inconsistencia
+      await runTransaction(db, async (transaction) => {
+        // 1. Actualiza meetingA con datos de meetingB
+        transaction.update(
+          doc(db, "events", eventId, "meetings", meetingA.id),
+          {
+            timeSlot: meetingB.timeSlot,
+            tableAssigned: meetingB.tableAssigned,
+          }
+        );
+        // 2. Actualiza meetingB con datos de meetingA
+        transaction.update(
+          doc(db, "events", eventId, "meetings", meetingB.id),
+          {
+            timeSlot: meetingA.timeSlot,
+            tableAssigned: meetingA.tableAssigned,
+          }
+        );
+
+        // 3. Actualiza la agenda
+        // slotA debe ahora tener el id de meetingB
+        transaction.update(doc(db, "agenda", slotA.id), {
+          meetingId: meetingB.id,
+        });
+        // slotB debe tener el id de meetingA
+        transaction.update(doc(db, "agenda", slotB.id), {
+          meetingId: meetingA.id,
+        });
+      });
+
+      setGlobalMessage("¡Reuniones intercambiadas exitosamente!");
+    } catch (e) {
+      setGlobalMessage("Error intercambiando reuniones.");
       console.error(e);
     }
     setCreatingMeeting(false);
@@ -817,6 +860,7 @@ const MatrixPage = () => {
         onCancel={handleCancelMeeting}
         loading={creatingMeeting}
         lockedUserId={editModal.lockedUserId}
+        onSwapMeetings={handleSwapMeetings}
       />
 
       {globalMessage && (
