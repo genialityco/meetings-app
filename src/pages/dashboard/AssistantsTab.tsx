@@ -36,7 +36,7 @@ export default function AssistantsTab({
       await sendMeetingRequest(assistant.id, assistant.telefono);
       showNotification({
         title: "Solicitud enviada",
-        message: `Solicitud enviada a ${assistant.nombre}`,
+        message: `Solicitud enviada a ${assistant.nombre}, quedará en lista de pendientes por aceptar.`,
         color: "teal",
       });
     } catch (e) {

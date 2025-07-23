@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Modal, Select, Button, Text, Group } from "@mantine/core";
 
 const EditMeetingModal = ({
@@ -16,14 +16,28 @@ const EditMeetingModal = ({
   onSwapMeetings,
   participantsInfo = {},
 }) => {
-  // Estados para editar participantes
+  // Estados para editar participantes y slot
   const [user1, setUser1] = useState("");
   const [user2, setUser2] = useState("");
+  const [selectedSlotId, setSelectedSlotId] = useState(slot?.id || "");
 
   // Estados para swap
   const [swapMode, setSwapMode] = useState(false);
   const [swapMeetingId, setSwapMeetingId] = useState("");
 
+  // Filtrar slots disponibles que coincidan con la hora del slot actual y que estén libres o sean la mesa actual
+  const slotsFiltered = useMemo(() => {
+    if (!agenda || !slot?.startTime || !meeting) return [];
+
+    return agenda.filter((s) => {
+      const isSameTime = s.startTime === slot.startTime;
+      const isAvailable = s.available;
+      const isCurrentTable = s.tableNumber === Number(meeting.tableAssigned);
+      return isSameTime && (isAvailable || isCurrentTable);
+    });
+  }, [agenda, slot, meeting]);
+
+  // Inicializa los estados cuando cambia meeting, lockedUserId, slot o slotsFiltered
   useEffect(() => {
     if (meeting) {
       if (lockedUserId) {
@@ -34,15 +48,29 @@ const EditMeetingModal = ({
         setUser2(meeting.participants[1]);
       }
     }
-  }, [meeting, lockedUserId]);
 
-  // Opciones para los selects de asistentes
+    if (slot && slotsFiltered.some((s) => s.id === slot.id)) {
+      setSelectedSlotId(slot.id);
+    } else if (slotsFiltered.length > 0) {
+      setSelectedSlotId(slotsFiltered[0].id);
+    } else {
+      setSelectedSlotId("");
+    }
+  }, [meeting, lockedUserId, slot, slotsFiltered]);
+
+  // Opciones para selects de asistentes
   const assistantOptions = assistants.map((a) => ({
     value: a.id,
     label: `${a.nombre} (${a.empresa})`,
   }));
 
-  // Opciones para el swap (otras reuniones aceptadas)
+  // Opciones para slots disponibles (filtrados)
+  const slotOptions = slotsFiltered.map((s) => ({
+    value: s.id,
+    label: `Mesa ${s.tableNumber} (${s.startTime} - ${s.endTime})`,
+  }));
+
+  // Opciones para swap
   const swapOptions = meeting
     ? allMeetings
         .filter((m) => m.id !== meeting.id && m.status === "accepted")
@@ -58,7 +86,13 @@ const EditMeetingModal = ({
         }))
     : [];
 
-  // Busca el slot de agenda para una reunión dada
+  // Slot seleccionado (memoizado)
+  const selectedSlot = useMemo(
+    () => slotsFiltered.find((s) => s.id === selectedSlotId),
+    [slotsFiltered, selectedSlotId]
+  );
+
+  // Obtiene slot de agenda para una reunión (si necesitas)
   const getSlotForMeeting = (mtg) => {
     if (!mtg) return null;
     const [startTime] = mtg.timeSlot.split(" - ");
@@ -68,14 +102,15 @@ const EditMeetingModal = ({
     );
   };
 
-  // Actualiza la reunión (editar participantes)
+  // Actualiza la reunión
   const handleUpdate = () => {
-    if (!user1 || !user2 || user1 === user2) return;
+    if (!user1 || !user2 || user1 === user2 || !selectedSlotId) return;
+    const slotElegido = slotsFiltered.find((s) => s.id === selectedSlotId);
     onUpdate({
       meetingId: meeting.id,
       user1,
       user2,
-      slot,
+      slot: slotElegido,
     });
   };
 
@@ -97,12 +132,24 @@ const EditMeetingModal = ({
 
   return (
     <Modal opened={opened} onClose={onClose} title="Editar reunión">
-      <Text mb="sm">
-        Mesa: {slot.tableNumber} <br />
-        Hora: {slot.startTime} - {slot.endTime}
-      </Text>
       {!swapMode ? (
         <>
+          <Select
+            label="Selecciona la mesa"
+            data={slotOptions}
+            value={selectedSlotId}
+            onChange={setSelectedSlotId}
+            required
+            searchable
+            mb="sm"
+          />
+          {selectedSlotId && selectedSlot && (
+            <Text mb="sm" size="sm">
+              <b>Mesa: {selectedSlot.tableNumber}</b> · Hora:{" "}
+              {selectedSlot.startTime} - {selectedSlot.endTime}
+            </Text>
+          )}
+
           <Select
             label="Participante 1"
             data={assistantOptions}
@@ -137,7 +184,7 @@ const EditMeetingModal = ({
             fullWidth
             onClick={handleUpdate}
             loading={loading}
-            disabled={user1 === user2 || !user1 || !user2}
+            disabled={user1 === user2 || !user1 || !user2 || !selectedSlotId}
           >
             Actualizar reunión
           </Button>
