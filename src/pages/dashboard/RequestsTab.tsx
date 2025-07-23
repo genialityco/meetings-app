@@ -27,9 +27,9 @@ export default function RequestsTab({
   return (
     <Tabs defaultValue="pendientes">
       <Tabs.List>
-        <Tabs.Tab value="pendientes">
+        {/* <Tabs.Tab value="pendientes">
           Pendientes ({pendingRequests.length})
-        </Tabs.Tab>
+        </Tabs.Tab> */}
         <Tabs.Tab value="aceptadas">
           Aceptadas ({acceptedRequests.length})
         </Tabs.Tab>
@@ -40,7 +40,7 @@ export default function RequestsTab({
       </Tabs.List>
 
       {/* Pendientes */}
-      <Tabs.Panel value="pendientes" pt="md">
+      {/* <Tabs.Panel value="pendientes" pt="md">
         <Stack>
           {pendingRequests.length > 0 ? (
             pendingRequests.map((request) => {
@@ -114,7 +114,7 @@ export default function RequestsTab({
             <Text>No tienes solicitudes de reunión pendientes.</Text>
           )}
         </Stack>
-      </Tabs.Panel>
+      </Tabs.Panel> */}
 
       {/* Aceptadas */}
       <Tabs.Panel value="aceptadas" pt="md">

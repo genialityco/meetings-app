@@ -9,7 +9,9 @@ export default function TabsPanel({ dashboard }) {
   return (
     <Tabs defaultValue="reuniones">
       <Tabs.List>
-        <Tabs.Tab value="reuniones">Reuniones ({dashboard.acceptedMeetings.length})</Tabs.Tab>
+        <Tabs.Tab value="reuniones">
+          Reuniones ({dashboard.acceptedMeetings.length})
+        </Tabs.Tab>
         <Tabs.Tab value="asistentes">
           {
             <Tabs.Tab value="asistentes">
@@ -24,7 +26,11 @@ export default function TabsPanel({ dashboard }) {
         </Tabs.Tab>
         <Tabs.Tab value="solicitudes">
           Solicitudes (
-          {dashboard.pendingRequests.length + dashboard.acceptedRequests.length + dashboard.rejectedRequests.length})
+          {dashboard.pendingRequests.length +
+            dashboard.acceptedRequests.length +
+            dashboard.rejectedRequests.length +
+            dashboard.sentRequests.length}
+          )
         </Tabs.Tab>
       </Tabs.List>
       <Tabs.Panel value="reuniones" pt="md">

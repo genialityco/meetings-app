@@ -9,6 +9,8 @@ import {
   TextInput,
   Select,
 } from "@mantine/core";
+import { showNotification } from "@mantine/notifications";
+import { useState } from "react";
 
 export default function AssistantsTab({
   filteredAssistants,
@@ -23,26 +25,47 @@ export default function AssistantsTab({
   setSelectedImage,
   interestOptions,
   interestFilter,
-  setInterestFilter
+  setInterestFilter,
 }) {
+  const [loadingId, setLoadingId] = useState(null);
+
+  // Función para manejar click
+  const handleSendMeeting = async (assistant) => {
+    setLoadingId(assistant.id);
+    try {
+      await sendMeetingRequest(assistant.id, assistant.telefono);
+      showNotification({
+        title: "Solicitud enviada",
+        message: `Solicitud enviada a ${assistant.nombre}`,
+        color: "teal",
+      });
+    } catch (e) {
+      showNotification({
+        title: "Error",
+        message: "No se pudo enviar la solicitud. Intenta de nuevo.",
+        color: "red",
+      });
+    } finally {
+      setLoadingId(null);
+    }
+  };
   return (
     <>
-<Group grow mb="md">
-  <TextInput
-    placeholder="Buscar por cualquier campo..."
-    value={searchTerm}
-    onChange={(e) => setSearchTerm(e.target.value)}
-  />
-  <Select
-    data={interestOptions}
-    placeholder="Filtrar por interés principal"
-    value={interestFilter}
-    onChange={setInterestFilter}
-    clearable
-    searchable
-  />
-</Group>
-
+      <Group grow mb="md">
+        <TextInput
+          placeholder="Buscar por cualquier campo..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+        <Select
+          data={interestOptions}
+          placeholder="Filtrar por interés principal"
+          value={interestFilter}
+          onChange={setInterestFilter}
+          clearable
+          searchable
+        />
+      </Group>
 
       <Group mb="md">
         <Button
@@ -137,12 +160,7 @@ export default function AssistantsTab({
                 <Group mt="auto">
                   <Button
                     mt="sm"
-                    onClick={() =>
-                      sendMeetingRequest(
-                        assistant.id,
-                        assistant.telefono
-                      )
-                    }
+                    onClick={() => handleSendMeeting(assistant)}
                     disabled={!solicitarReunionHabilitado}
                     fullWidth
                   >
