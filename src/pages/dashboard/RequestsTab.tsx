@@ -10,6 +10,7 @@ interface RequestsTabProps {
   assistants: Assistant[];
   updateMeetingStatus: (meetingId: string, status: string) => void;
   sendWhatsAppMessage: (participant: Assistant) => void;
+  cancelSentMeeting: (meetingId: string) => void;
 }
 
 export default function RequestsTab({
@@ -20,6 +21,7 @@ export default function RequestsTab({
   assistants,
   updateMeetingStatus,
   sendWhatsAppMessage,
+  cancelSentMeeting,
 }: RequestsTabProps) {
   // Helper para buscar usuario por id
   const findUser = (id) => assistants.find((u) => u.id === id);
@@ -261,6 +263,28 @@ export default function RequestsTab({
                       <Text size="sm" color="blue">
                         <strong>Estado:</strong> Pendiente
                       </Text>
+                      {request.status === "pending" && (
+                        <Group mt="sm">
+                          <Button
+                            color="red"
+                            variant="outline"
+                            onClick={() =>
+                              cancelSentMeeting(request.id, "cancel")
+                            }
+                          >
+                            Cancelar solicitud
+                          </Button>
+                          {/* Si quieres mostrar eliminar también:
+                    <Button
+                      color="red"
+                      variant="light"
+                      onClick={() => cancelSentMeeting(request.id, "delete")}
+                    >
+                      Eliminar solicitud
+                    </Button>
+                    */}
+                        </Group>
+                      )}
                     </>
                   ) : (
                     <Text>Cargando información del receptor...</Text>

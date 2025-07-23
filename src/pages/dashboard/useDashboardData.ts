@@ -10,6 +10,7 @@ import {
   getDocs,
   orderBy,
   getDoc,
+  deleteDoc,
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
@@ -405,6 +406,44 @@ export function useDashboardData(eventId?: string) {
   }, [uid, eventId]);
 
   // ---------------------- ACCIONES PRINCIPALES ----------------------
+  const cancelSentMeeting = async (
+    meetingId: string,
+    mode: "cancel" | "delete" = "cancel"
+  ) => {
+    if (!eventId) {
+      showNotification({
+        title: "Error",
+        message: "No se encontró el evento.",
+        color: "red",
+      });
+      return;
+    }
+    try {
+      const ref = doc(db, "events", eventId, "meetings", meetingId);
+
+      if (mode === "delete") {
+        await deleteDoc(ref);
+        showNotification({
+          title: "Solicitud eliminada",
+          message: "La solicitud fue eliminada correctamente.",
+          color: "teal",
+        });
+      } else {
+        await updateDoc(ref, { status: "cancelled" });
+        showNotification({
+          title: "Solicitud cancelada",
+          message: "La solicitud fue cancelada correctamente.",
+          color: "teal",
+        });
+      }
+    } catch (err) {
+      showNotification({
+        title: "Error",
+        message: "No se pudo cancelar o eliminar la solicitud.",
+        color: "red",
+      });
+    }
+  };
 
   const sendMeetingRequest = async (
     assistantId: string,
@@ -932,6 +971,7 @@ export function useDashboardData(eventId?: string) {
     acceptedMeetings,
     loadingMeetings,
     pendingRequests,
+    cancelSentMeeting,
     sentRequests,
     acceptedRequests,
     rejectedRequests,
