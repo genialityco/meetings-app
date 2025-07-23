@@ -466,10 +466,24 @@ const MatrixPage = () => {
   // ----------- CANCEL Y AGENDAR PENDIENTE EN SLOTS SOLO DEL USUARIO -----------
   const handleCancelMeeting = async (meetingId, slotId) => {
     setCreatingMeeting(true);
+    console.log("[handleCancelMeeting] Iniciando cancelación:", {
+      meetingId,
+      slotId,
+    });
+
     try {
       const cancelledMeeting = meetings.find((m) => m.id === meetingId);
-      if (!cancelledMeeting)
+      if (!cancelledMeeting) {
+        console.error(
+          "[handleCancelMeeting] No se encontró la reunión a cancelar:",
+          meetingId
+        );
         throw new Error("No se encontró la reunión a cancelar.");
+      }
+      console.log(
+        "[handleCancelMeeting] Reunión a cancelar:",
+        cancelledMeeting
+      );
 
       // Notifica por WhatsApp y SMS a todos los participantes
       for (const participantId of cancelledMeeting.participants) {
@@ -479,37 +493,45 @@ const MatrixPage = () => {
         );
         const other = asistentes.find((a) => a.id === otherId);
         try {
-        if (participant) {
-          // WhatsApp
-          dashboard.sendMeetingCancelledWhatsapp(participant.telefono, other, {
-            timeSlot: cancelledMeeting.timeSlot,
-            tableAssigned: cancelledMeeting.tableAssigned,
-          });
-          // // SMS
-          // dashboard.sendSms(
-          //   `¡Tu reunión ha sido cancelada!\nCon: ${
-          //     other?.nombre || ""
-          //   }\nEmpresa: ${other?.empresa || ""}\nHorario: ${
-          //     cancelledMeeting.timeSlot
-          //   }\nMesa: ${cancelledMeeting.tableAssigned}`,
-          //   participant.telefono
-          // );
-        }
-      } catch (error) {
+          if (participant) {
+            console.log(
+              `[handleCancelMeeting] Notificando a participante (${participantId}):`,
+              participant
+            );
+            // WhatsApp
+            dashboard.sendMeetingCancelledWhatsapp(
+              participant.telefono,
+              other,
+              {
+                timeSlot: cancelledMeeting.timeSlot,
+                tableAssigned: cancelledMeeting.tableAssigned,
+              }
+            );
+            // // SMS
+            // dashboard.sendSms(
+            //   `¡Tu reunión ha sido cancelada!\nCon: ${other?.nombre || ""}\nEmpresa: ${other?.empresa || ""}\nHorario: ${cancelledMeeting.timeSlot}\nMesa: ${cancelledMeeting.tableAssigned}`,
+            //   participant.telefono
+            // );
+          }
+        } catch (error) {
           console.error(
-            `Error notificando a ${participantId} (${participant?.nombre}):`,
+            `[handleCancelMeeting] Error notificando a ${participantId} (${participant?.nombre}):`,
             error
           );
         }
       }
 
       // 1. Marca la reunión como cancelada
+      console.log(
+        "[handleCancelMeeting] Marcando reunión como cancelada en Firestore..."
+      );
       await updateDoc(doc(db, "events", eventId, "meetings", meetingId), {
         status: "cancelled",
       });
 
       // 2. Libera el slot
       if (slotId) {
+        console.log("[handleCancelMeeting] Liberando slot en agenda:", slotId);
         await updateDoc(doc(db, "agenda", slotId), {
           available: true,
           meetingId: null,
@@ -523,8 +545,12 @@ const MatrixPage = () => {
       const pendientesRecibidas = pendingMeetings.filter(
         (req) => req.receiverId === userId
       );
+      console.log(
+        "[handleCancelMeeting] Pendientes recibidas para el usuario:",
+        pendientesRecibidas
+      );
 
-      // Ojo: excluye la reunión cancelada en el array de aceptadas
+      // Excluye la reunión cancelada en el array de aceptadas
       const reunionesAceptadas = meetings.filter(
         (m) => m.status === "accepted" && m.id !== meetingId
       );
@@ -548,6 +574,9 @@ const MatrixPage = () => {
           );
 
           if (!solicitanteOcupado && !receiverOcupado) {
+            console.log(
+              `[handleCancelMeeting] Agendando solicitud pendiente (ID: ${solicitud.id}) en el slot liberado.`
+            );
             // Acepta la solicitud pendiente
             await updateDoc(
               doc(db, "events", eventId, "meetings", solicitud.id),
@@ -567,6 +596,9 @@ const MatrixPage = () => {
             const requester = asistentes.find((a) => a.id === requesterId);
 
             if (receiver && requester) {
+              console.log(
+                `[handleCancelMeeting] Notificando a ambas partes por WhatsApp/SMS...`
+              );
               // WhatsApp
               dashboard.sendMeetingAcceptedWhatsapp(
                 receiver.telefono,
@@ -594,6 +626,9 @@ const MatrixPage = () => {
             );
             setEditModal({ opened: false, meeting: null, slot: null });
             setCreatingMeeting(false);
+            console.log(
+              "[handleCancelMeeting] Finalizó, solicitud re-agendada correctamente."
+            );
             return;
           }
         }
@@ -602,10 +637,13 @@ const MatrixPage = () => {
       setGlobalMessage("¡Reunión cancelada!");
       setEditModal({ opened: false, meeting: null, slot: null });
       setCreatingMeeting(false);
+      console.log(
+        "[handleCancelMeeting] Finalizó, reunión cancelada sin reasignar slot."
+      );
     } catch (e) {
       setGlobalMessage("Error cancelando la reunión.");
       setCreatingMeeting(false);
-      console.error(e);
+      console.error("[handleCancelMeeting] Error general:", e);
     }
   };
 
@@ -666,7 +704,7 @@ const MatrixPage = () => {
         Matriz Rueda de Negocios — Evento {config?.eventName || "Desconocido"}
       </Title>
 
-      {meetingsRemontadas.length > 0 && false &&  (
+      {meetingsRemontadas.length > 0 && false && (
         <Card mt="md" shadow="md" p="md" withBorder>
           <Title order={5} mb="xs">
             Reuniones huérfanas / sobreescritas ({meetingsRemontadas.length})

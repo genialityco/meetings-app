@@ -67,23 +67,28 @@ export default function MeetingsTab({
   const handleSaveSurvey = async () => {
     setSavingSurvey(true);
     try {
-      await setDoc(
-        doc(
-          db,
-          "meetingSurveys",
-          `${surveyModal.meeting.id}_${currentUser.uid}`
-        ),
-        {
-          meetingId: surveyModal.meeting.id,
-          userId: currentUser.uid,
-          value: surveyValue,
-          comments: surveyComments,
-          createdAt: new Date(),
-        }
-      );
+      const meeting = surveyModal.meeting;
+      const myId = currentUser.uid;
+      const myInfo = participantsInfo[myId] || currentUser.data;
+      const otherId =
+        meeting.requesterId === myId ? meeting.receiverId : meeting.requesterId;
+      const otherInfo = participantsInfo[otherId];
+
+      await setDoc(doc(db, "meetingSurveys", `${meeting.id}_${myId}`), {
+        meetingId: meeting.id,
+        userId: myId, // quien responde
+        userName: myInfo?.nombre || "",
+        userEmpresa: myInfo?.empresa || "",
+        otherUserId: otherId,
+        otherUserName: otherInfo?.nombre || "",
+        otherUserEmpresa: otherInfo?.empresa || "",
+        value: surveyValue,
+        comments: surveyComments,
+        createdAt: new Date(),
+      });
       setUserSurveys((prev) => ({
         ...prev,
-        [surveyModal.meeting.id]: {
+        [meeting.id]: {
           value: surveyValue,
           comments: surveyComments,
         },
