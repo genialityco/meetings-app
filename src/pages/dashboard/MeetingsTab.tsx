@@ -14,6 +14,7 @@ import {
 import { collection, doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig"; // Ajusta el path
 import { UserContext } from "../../context/UserContext";
+import { showNotification } from "@mantine/notifications";
 
 export default function MeetingsTab({
   acceptedMeetings,
@@ -25,6 +26,7 @@ export default function MeetingsTab({
   sendWhatsAppMessage,
   prepareSlotSelection,
   loadingMeetings,
+  cancelMeeting,
 }) {
   const { currentUser } = useContext(UserContext);
 
@@ -38,6 +40,7 @@ export default function MeetingsTab({
   const [savingSurvey, setSavingSurvey] = useState(false);
   const [userSurveys, setUserSurveys] = useState({}); // meetingId: {value, comments}
   const [loadingSurvey, setLoadingSurvey] = useState(false);
+  const [cancellingId, setCancellingId] = useState(null);
 
   // Abrir modal, carga datos o limpia
   const handleOpenSurvey = async (meeting) => {
@@ -98,6 +101,24 @@ export default function MeetingsTab({
       alert("Error guardando la encuesta");
     }
     setSavingSurvey(false);
+  };
+
+  const handleCancelMeeting = async (meeting) => {
+    if (!window.confirm("¿Seguro que deseas cancelar esta reunión?")) return;
+    setCancellingId(meeting.id);
+    try {
+      await cancelMeeting(meeting); // ahora SI arroja errores si algo sale mal
+      showNotification({
+        title: "Reunión cancelada",
+        message: "Se notificó a ambos participantes.",
+        color: "teal",
+      });
+    } catch (err) {
+      alert("Error al cancelar la reunión");
+      console.error("Error en handleCancelMeeting:", err);
+    } finally {
+      setCancellingId(null);
+    }
   };
 
   if (loadingMeetings) {
@@ -219,6 +240,15 @@ export default function MeetingsTab({
                         {surveyExists(meeting.id)
                           ? "Ver encuesta"
                           : "Llenar encuesta"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        color="red"
+                        loading={cancellingId === meeting.id}
+                        onClick={() => handleCancelMeeting(meeting)}
+                        disabled={cancellingId === meeting.id}
+                      >
+                        Cancelar reunión
                       </Button>
                     </Group>
                   )}

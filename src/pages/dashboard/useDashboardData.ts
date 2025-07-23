@@ -139,7 +139,7 @@ async function sendMeetingCancelledWhatsapp(
   meetingInfo: { timeSlot?: string; tableAssigned?: string }
 ) {
   if (!toPhone) return;
-  const phone = toPhone.replace(/[^\d]/g, "");
+  const phone = (toPhone || "").toString().replace(/[^\d]/g, "");
   const message =
     `¡Tu reunión ha sido cancelada!\n\n` +
     `Con: ${otherParticipant?.nombre || ""}\n` +
@@ -509,6 +509,73 @@ export function useDashboardData(eventId?: string) {
     } catch (e) {
       // console.error(e);
       return Promise.reject(e);
+    }
+  };
+
+  const cancelMeeting = async (meeting) => {
+    try {
+      // 1. Cancela la reunión en Firestore
+      await updateDoc(
+        doc(db, "events", meeting.eventId, "meetings", meeting.id),
+        { status: "cancelled" }
+      );
+
+      // 2. Libera el slot (si existe)
+      if (meeting.slotId) {
+        await updateDoc(doc(db, "agenda", meeting.slotId), {
+          available: true,
+          meetingId: null,
+        });
+      }
+
+      // 3. Obtén datos de los participantes (si no los tienes)
+      let requester = meeting.requester || null;
+      let receiver = meeting.receiver || null;
+
+      if (!requester || !receiver) {
+        const reqSnap = await getDoc(doc(db, "users", meeting.requesterId));
+        const recSnap = await getDoc(doc(db, "users", meeting.receiverId));
+        requester = reqSnap.exists() ? reqSnap.data() : {};
+        receiver = recSnap.exists() ? recSnap.data() : {};
+      }
+
+      // 4. Notifica a ambos por WhatsApp
+      if (requester?.telefono) {
+        console.log("Enviando requester");
+        await sendMeetingCancelledWhatsapp(requester.telefono, receiver, {
+          timeSlot: meeting.timeSlot,
+          tableAssigned: meeting.tableAssigned,
+        });
+      }
+      if (receiver?.telefono) {
+        console.log("Enviando reciver");
+
+        await sendMeetingCancelledWhatsapp(receiver.telefono, requester, {
+          timeSlot: meeting.timeSlot,
+          tableAssigned: meeting.tableAssigned,
+        });
+      }
+
+      // 5. Notifica por la app
+      await addDoc(collection(db, "notifications"), {
+        userId: meeting.requesterId,
+        title: "Reunión cancelada",
+        message: "Tu reunión fue cancelada.",
+        timestamp: new Date(),
+        read: false,
+      });
+      await addDoc(collection(db, "notifications"), {
+        userId: meeting.receiverId,
+        title: "Reunión cancelada",
+        message: "Tu reunión fue cancelada.",
+        timestamp: new Date(),
+        read: false,
+      });
+
+      return true; // <-- IMPORTANTE
+    } catch (err) {
+      console.error("Error en cancelMeeting:", err);
+      throw err; // <-- IMPORTANTE
     }
   };
 
@@ -997,6 +1064,7 @@ export function useDashboardData(eventId?: string) {
     sendMeetingAcceptedWhatsapp,
     sendMeetingCancelledWhatsapp,
     confirmAcceptWithSlot,
+    cancelMeeting,
 
     avatarModalOpened,
     setAvatarModalOpened,
