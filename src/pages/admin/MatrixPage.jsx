@@ -666,7 +666,7 @@ const MatrixPage = () => {
         Matriz Rueda de Negocios — Evento {config?.eventName || "Desconocido"}
       </Title>
 
-      {meetingsRemontadas.length > 0 && (
+      {meetingsRemontadas.length > 0 && false &&  (
         <Card mt="md" shadow="md" p="md" withBorder>
           <Title order={5} mb="xs">
             Reuniones huérfanas / sobreescritas ({meetingsRemontadas.length})
