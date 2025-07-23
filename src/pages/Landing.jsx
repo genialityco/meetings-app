@@ -356,18 +356,14 @@ const Landing = () => {
               {/* </a> */}
             </Flex>
           </Paper>
-          <Title order={2} align="center" my="md">
-            {event.eventName}
-          </Title>
+          <Text order={2} align="center" my="md">
+            <strong>{event.eventName}</strong>
+          </Text>
 
           <Text ta="justify" mb="lg">
             <strong>Plataforma de Networking y Reuniones de Negocio</strong>{" "}
             Conecta con otras empresas y permite que te encuentren para agendar
-            reuniones durante el evento
-          </Text>
-
-          <Text ta="justify" mb="lg">
-            Si ya se ha registrado, puede ingresar con su correo.
+            reuniones durante el evento,  Ingresa con el correo registrado de la empresa.
           </Text>
 
           {/* Sección de búsqueda de usuario */}
