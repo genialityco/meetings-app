@@ -199,7 +199,7 @@ const MatrixPage = () => {
     if (!config) return;
     const q = query(
       collection(db, "events", eventId, "meetings"),
-     where("status", "in", ["accepted", "pending"])
+      where("status", "in", ["accepted", "pending"])
     );
     return onSnapshot(q, (snap) => {
       setMeetings(
@@ -355,7 +355,7 @@ const MatrixPage = () => {
             table: mtg.tableAssigned,
             participants: mtg.participants.filter((pid) => pid !== user.id),
           };
-        } else if (mtg && mtg.status === "pending"  ) {
+        } else if (mtg && mtg.status === "pending") {
           return {
             status: "pending",
             table: mtg.tableAssigned,
@@ -408,6 +408,33 @@ const MatrixPage = () => {
         available: false,
         meetingId: meetingRef.id,
       });
+
+      // --- Notificar a ambos participantes ---
+      const receiver = asistentes.find((a) => a.id === user2);
+      const requester = asistentes.find((a) => a.id === user1);
+      const slotStr = `${slot.startTime} - ${slot.endTime}`;
+      const mesa = slot.tableNumber;
+
+      if (receiver && requester) {
+        // WhatsApp
+        dashboard.sendMeetingAcceptedWhatsapp(receiver.telefono, requester, {
+          timeSlot: slotStr,
+          tableAssigned: mesa,
+        });
+        dashboard.sendMeetingAcceptedWhatsapp(requester.telefono, receiver, {
+          timeSlot: slotStr,
+          tableAssigned: mesa,
+        });
+        // SMS
+        dashboard.sendSms(
+          `¡Tu reunión ha sido aceptada!\nCon: ${requester.nombre}\nEmpresa: ${requester.empresa}\nHorario: ${slotStr}\nMesa: ${mesa}`,
+          receiver.telefono
+        );
+        dashboard.sendSms(
+          `¡Tu reunión ha sido aceptada!\nCon: ${receiver.nombre}\nEmpresa: ${receiver.empresa}\nHorario: ${slotStr}\nMesa: ${mesa}`,
+          requester.telefono
+        );
+      }
 
       setGlobalMessage("¡Reunión creada correctamente!");
       setQuickModal({ opened: false, slot: null, defaultUser: null });
