@@ -180,7 +180,7 @@ const MatrixPage = () => {
     if (!config) return;
     const q = query(
       collection(db, "events", eventId, "meetings"),
-      where("status", "==", "accepted")
+     where("status", "in", ["accepted", "pending"])
     );
     return onSnapshot(q, (snap) => {
       setMeetings(
@@ -274,6 +274,7 @@ const MatrixPage = () => {
 
     // Marca reuniones aceptadas
     meetings.forEach((mtg) => {
+      if (mtg.status !== "accepted" || !mtg.timeSlot) return;
       const [startTime] = mtg.timeSlot.split(" - ");
       const tIdx = Number(mtg.tableAssigned) - 1;
       const sIdx = timeSlots.indexOf(startTime);
@@ -317,9 +318,15 @@ const MatrixPage = () => {
           return start === slot && m.participants.includes(user.id);
         });
 
-        if (mtg) {
+        if (mtg && mtg.status === "accepted") {
           return {
             status: "accepted",
+            table: mtg.tableAssigned,
+            participants: mtg.participants.filter((pid) => pid !== user.id),
+          };
+        } else if (mtg && mtg.status === "pending"  ) {
+          return {
+            status: "pending",
             table: mtg.tableAssigned,
             participants: mtg.participants.filter((pid) => pid !== user.id),
           };
@@ -398,6 +405,7 @@ const MatrixPage = () => {
     setCreatingMeeting(false);
   };
 
+  //CAFAM
   const handleCancelMeeting = async (meetingId, slotId) => {
     if (!window.confirm("¿Seguro que quieres cancelar esta reunión?")) return;
     setCreatingMeeting(true);

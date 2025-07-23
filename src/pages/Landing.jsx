@@ -347,13 +347,13 @@ const Landing = () => {
         >
           <Paper shadow="xl" withBorder radius="lg">
             <Flex justify="center">
-              <a
+              {/* <a
                 href="https://geniality.com.co/"
                 target="_blank"
                 rel="noopener noreferrer"
-              >
+              > */}
                 <Image src={event.eventImage} alt="Networking Event" />
-              </a>
+              {/* </a> */}
             </Flex>
           </Paper>
           <Title order={2} align="center" my="md">
