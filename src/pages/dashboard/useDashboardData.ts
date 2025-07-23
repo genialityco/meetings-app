@@ -119,10 +119,36 @@ async function sendMeetingAcceptedWhatsapp(
     `Mesa: ${meetingInfo.tableAssigned || ""}\n` +
     `¡Te esperamos!`;
 
-  await fetch("https://apiwhatsapp.geniality.com.co/send", {
+  await fetch("https://apiwhatsapp.geniality.com.co/api/send", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      clientId: "genialitybussiness",
+      phone: `57${phone}`,
+      message,
+    }),
+  }).catch(() => {});
+}
+
+async function sendMeetingCancelledWhatsapp(
+  toPhone: string,
+  otherParticipant: Assistant,
+  meetingInfo: { timeSlot?: string; tableAssigned?: string }
+) {
+  if (!toPhone) return;
+  const phone = toPhone.replace(/[^\d]/g, "");
+  const message =
+    `¡Tu reunión ha sido cancelada!\n\n` +
+    `Con: ${otherParticipant?.nombre || ""}\n` +
+    `Empresa: ${otherParticipant?.empresa || ""}\n` +
+    `Horario: ${meetingInfo.timeSlot || ""}\n` +
+    `Mesa: ${meetingInfo.tableAssigned || ""}\n`;
+
+  await fetch("https://apiwhatsapp.geniality.com.co/api/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      clientId: "genialitybussiness",
       phone: `57${phone}`,
       message,
     }),
@@ -833,8 +859,10 @@ export function useDashboardData(eventId?: string) {
     updateMeetingStatus,
     prepareSlotSelection,
     downloadVCard,
+    sendSms,
     sendWhatsAppMessage,
     sendMeetingAcceptedWhatsapp,
+    sendMeetingCancelledWhatsapp,
     confirmAcceptWithSlot,
 
     avatarModalOpened,

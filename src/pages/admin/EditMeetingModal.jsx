@@ -14,6 +14,7 @@ const EditMeetingModal = ({
   allMeetings = [],
   agenda = [],
   onSwapMeetings,
+  participantsInfo = {},
 }) => {
   // Estados para editar participantes
   const [user1, setUser1] = useState("");
@@ -41,19 +42,21 @@ const EditMeetingModal = ({
     label: `${a.nombre} (${a.empresa})`,
   }));
 
-  console.log("allMeetings", allMeetings);
-  console.log("meeting", meeting);
-  console.log("swapMode", swapMode);
-
   // Opciones para el swap (otras reuniones aceptadas)
-  const swapOptions = allMeetings
-    .filter((m) => m.id !== meeting.id && m.status === "accepted")
-    .map((m) => ({
-      value: m.id,
-      label: `Mesa ${m.tableAssigned} — ${m.timeSlot} (${m.participants
-        .map((id) => assistants.find((a) => a.id === id)?.nombre || id)
-        .join(" vs ")})`,
-    }));
+  const swapOptions = meeting
+    ? allMeetings
+        .filter((m) => m.id !== meeting.id && m.status === "accepted")
+        .map((m) => ({
+          value: m.id,
+          label: `Mesa ${m.tableAssigned} — ${m.timeSlot} ${m.participants
+            .map((id) =>
+              participantsInfo[id]
+                ? `${participantsInfo[id].empresa} (${participantsInfo[id].nombre})`
+                : id
+            )
+            .join(" vs ")}`,
+        }))
+    : [];
 
   // Busca el slot de agenda para una reunión dada
   const getSlotForMeeting = (mtg) => {

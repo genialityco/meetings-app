@@ -279,7 +279,7 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
       "nombre",
       "empresa",
       "descripcion",
-      "necesidad"
+      "necesidad",
       // agrega aquí más campos si los tienes configurados
     ];
     const wsData = [
@@ -377,6 +377,7 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
         <Table.ScrollContainer>
           <Table>
             <Table.Thead>
+              <Table.Th>ID</Table.Th>
               <Table.Tr>
                 {fields
                   .filter((f) => shownFields.includes(f.name))
@@ -389,6 +390,11 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
             <Table.Tbody>
               {attendees.map((a) => (
                 <Table.Tr key={a.id}>
+                  <Table.Td
+                    style={{ fontFamily: "monospace", fontSize: "0.85em" }}
+                  >
+                    {a.id}
+                  </Table.Td>
                   {fields
                     .filter((f) => shownFields.includes(f.name))
                     .map((f) => (

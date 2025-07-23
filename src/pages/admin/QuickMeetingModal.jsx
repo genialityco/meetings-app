@@ -13,8 +13,6 @@ const QuickMeetingModal = ({
   const [user1, setUser1] = useState(defaultUser ? defaultUser.id : "");
   const [user2, setUser2] = useState("");
 
-  console.log(assistants.length)
-
   // Cuando cambie defaultUser o se abra el modal, setea user1 y limpia user2
   useEffect(() => {
     setUser1(defaultUser ? defaultUser.id : "");
