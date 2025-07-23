@@ -711,24 +711,9 @@ const MatrixPage = () => {
                     border: "1px solid #e5e7eb",
                   }}
                 >
-                  <Tooltip
-                    label={
-                      <>
-                        <div>
-                          <b>Descripción:</b> {asistente.descripcion}
-                        </div>
-                        <div>
-                          <b>Necesidad:</b> {asistente.necesidad}
-                        </div>
-                      </>
-                    }
-                    multiline
-                    withArrow
-                  >
-                    <Title order={5} align="center" mb="xs">
-                      {asistente.nombre} ({asistente.empresa})
-                    </Title>
-                  </Tooltip>
+                  <Title order={5} align="center" mb="xs">
+                    {asistente.nombre} ({asistente.empresa})
+                  </Title>
 
                   <Divider mb="sm" />
                   <Table striped highlightOnHover>
@@ -808,13 +793,92 @@ const MatrixPage = () => {
                                   <Text size="xs" mb={2}>
                                     Mesa {cell.table}
                                   </Text>
-                                  <ParticipantsChips
-                                    participants={cell.participants.map((pid) =>
-                                      participantsInfo[pid]
-                                        ? `${participantsInfo[pid].empresa} (${participantsInfo[pid].nombre})`
-                                        : pid
-                                    )}
-                                  />
+                                  <Tooltip
+                                    multiline
+                                    width={340}
+                                    withArrow
+                                    label={
+                                      <div>
+                                        <div style={{ marginBottom: 12 }}>
+                                          <b>Usuario:</b>
+                                          <div>
+                                            <b>
+                                              {asistente.empresa} (
+                                              {asistente.nombre})
+                                            </b>
+                                          </div>
+                                          <div>
+                                            <span style={{ color: "#6c6c6c" }}>
+                                              Descripción:{" "}
+                                            </span>
+                                            {asistente.descripcion || (
+                                              <i>No especificada</i>
+                                            )}
+                                          </div>
+                                          <div>
+                                            <span style={{ color: "#6c6c6c" }}>
+                                              Necesidad:{" "}
+                                            </span>
+                                            {asistente.necesidad || (
+                                              <i>No especificada</i>
+                                            )}
+                                          </div>
+                                        </div>
+                                        <Divider my={4} />
+                                        <div>
+                                          <b>Contraparte:</b>
+                                          {cell.participants.map((pid) => {
+                                            const info = participantsInfo[pid];
+                                            if (!info)
+                                              return <div key={pid}>{pid}</div>;
+                                            return (
+                                              <div
+                                                key={pid}
+                                                style={{ marginBottom: 6 }}
+                                              >
+                                                <b>
+                                                  {info.empresa} ({info.nombre})
+                                                </b>
+                                                <div>
+                                                  <span
+                                                    style={{ color: "#6c6c6c" }}
+                                                  >
+                                                    Descripción:{" "}
+                                                  </span>
+                                                  {info.descripcion || (
+                                                    <i>No especificada</i>
+                                                  )}
+                                                </div>
+                                                <div>
+                                                  <span
+                                                    style={{ color: "#6c6c6c" }}
+                                                  >
+                                                    Necesidad:{" "}
+                                                  </span>
+                                                  {info.necesidad || (
+                                                    <i>No especificada</i>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    }
+                                  >
+                                    <div>
+                                      <ParticipantsChips
+                                        participants={[
+                                          `${asistente.empresa} (${asistente.nombre})`,
+                                          ...cell.participants.map((pid) =>
+                                            participantsInfo[pid]
+                                              ? `${participantsInfo[pid].empresa} (${participantsInfo[pid].nombre})`
+                                              : pid
+                                          ),
+                                        ]}
+                                      />
+                                    </div>
+                                  </Tooltip>
                                 </>
                               )}
                             </Table.Td>

@@ -139,6 +139,7 @@ export function useDashboardData(eventId?: string) {
   const [assistants, setAssistants] = useState<Assistant[]>([]);
   const [filteredAssistants, setFilteredAssistants] = useState<Assistant[]>([]);
   const [acceptedMeetings, setAcceptedMeetings] = useState<Meeting[]>([]);
+  const [loadingMeetings, setLoadingMeetings] = useState(true);
   const [pendingRequests, setPendingRequests] = useState<Meeting[]>([]);
   const [sentRequests, setSentRequests] = useState<Meeting[]>([]);
   const [acceptedRequests, setAcceptedRequests] = useState<Meeting[]>([]);
@@ -176,18 +177,18 @@ export function useDashboardData(eventId?: string) {
   // ---------------------- EFECTOS PRINCIPALES ----------------------
 
   // 1. Configuración del evento (eventConfig)
-useEffect(() => {
-  if (!eventId) return;
-  (async () => {
-    const ref = doc(db, "events", eventId);
-    const snap = await getDoc(ref);
-    if (snap.exists()) {
-      const config = snap.data().config || {};
-      setEventConfig(config);
-      setFormFields(config.formFields || []);
-    }
-  })();
-}, [eventId]);
+  useEffect(() => {
+    if (!eventId) return;
+    (async () => {
+      const ref = doc(db, "events", eventId);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        const config = snap.data().config || {};
+        setEventConfig(config);
+        setFormFields(config.formFields || []);
+      }
+    })();
+  }, [eventId]);
 
   // 2. Notificaciones del usuario
   useEffect(() => {
@@ -273,24 +274,25 @@ useEffect(() => {
   }, [uid, eventId]);
 
   // 5. Filtro de asistentes por searchTerm y showOnlyToday
-// Filtrar asistentes usando todos los campos visibles en formFields
-useEffect(() => {
-  const term = searchTerm.toLowerCase();
-  let filtered = assistants.filter((a) =>
-    formFields.some((f) => {
-      const value = (a[f.name] ?? "").toString().toLowerCase();
-      return value.includes(term);
-    })
-  );
-  // (puedes mantener el filtro por interés si quieres)
-  if (interestFilter) {
-    filtered = filtered.filter(
-      (a) => a[formFields.find(f => f.name === "interesPrincipal")?.name] === interestFilter
+  // Filtrar asistentes usando todos los campos visibles en formFields
+  useEffect(() => {
+    const term = searchTerm.toLowerCase();
+    let filtered = assistants.filter((a) =>
+      formFields.some((f) => {
+        const value = (a[f.name] ?? "").toString().toLowerCase();
+        return value.includes(term);
+      })
     );
-  }
-  setFilteredAssistants(filtered);
-}, [assistants, searchTerm, interestFilter, formFields]);
-
+    // (puedes mantener el filtro por interés si quieres)
+    if (interestFilter) {
+      filtered = filtered.filter(
+        (a) =>
+          a[formFields.find((f) => f.name === "interesPrincipal")?.name] ===
+          interestFilter
+      );
+    }
+    setFilteredAssistants(filtered);
+  }, [assistants, searchTerm, interestFilter, formFields]);
 
   // 6. Solicitudes enviadas por usuario actual (pendientes)
   useEffect(() => {
@@ -310,6 +312,7 @@ useEffect(() => {
   // 7. Reuniones aceptadas
   useEffect(() => {
     if (!uid || !eventId) return;
+    setLoadingMeetings(true); // <- ACTIVA loading
     const q = query(
       collection(db, "events", eventId, "meetings"),
       where("status", "==", "accepted"),
@@ -327,13 +330,12 @@ useEffect(() => {
           try {
             const uSnap = await getDoc(doc(db, "users", other));
             if (uSnap.exists()) info[other] = uSnap.data() as Assistant;
-          } catch (e) {
-            // ignore
-          }
+          } catch (e) {}
         }
       }
       setAcceptedMeetings(mts);
       setParticipantsInfo(info);
+      setLoadingMeetings(false); // <- DESACTIVA loading
     });
   }, [uid, eventId]);
 
@@ -791,18 +793,16 @@ useEffect(() => {
 
       // 7. WhatsApp
       if (requester?.telefono) {
-        await sendMeetingAcceptedWhatsapp(
-          requester.telefono,
-          receiver!,
-          { timeSlot: slot.startTime, tableAssigned: slot.tableNumber }
-        );
+        await sendMeetingAcceptedWhatsapp(requester.telefono, receiver!, {
+          timeSlot: slot.startTime,
+          tableAssigned: slot.tableNumber,
+        });
       }
       if (receiver?.telefono) {
-        await sendMeetingAcceptedWhatsapp(
-          receiver.telefono,
-          requester!,
-          { timeSlot: slot.startTime, tableAssigned: slot.tableNumber }
-        );
+        await sendMeetingAcceptedWhatsapp(receiver.telefono, requester!, {
+          timeSlot: slot.startTime,
+          tableAssigned: slot.tableNumber,
+        });
       }
 
       // 8. Cierra los modales y limpia estado
@@ -881,6 +881,7 @@ useEffect(() => {
     assistants,
     filteredAssistants,
     acceptedMeetings,
+    loadingMeetings,
     pendingRequests,
     sentRequests,
     acceptedRequests,
@@ -936,6 +937,6 @@ useEffect(() => {
     confirmModalOpened,
     setConfirmModalOpened,
     currentRequesterName,
-    formFields
+    formFields,
   };
 }

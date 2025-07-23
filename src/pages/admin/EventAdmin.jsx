@@ -263,6 +263,88 @@ const EventAdmin = () => {
     }
   };
 
+  // Exportar reuniones a Excel usando xlsx
+  const exportMeetingsToExcel = async () => {
+    try {
+      setActionLoading(true);
+
+      // Consulta todas las reuniones aceptadas del evento
+      const meetingsRef = collection(db, "events", event.id, "meetings");
+      const meetingsSnap = await getDocs(meetingsRef);
+
+      // Consulta la agenda para obtener los datos de slot (hora, mesa, etc)
+      const agendaQuery = query(
+        collection(db, "agenda"),
+        where("eventId", "==", event.id)
+      );
+      const agendaSnap = await getDocs(agendaQuery);
+      const agendaData = {};
+      agendaSnap.forEach((doc) => {
+        agendaData[doc.data().meetingId] = doc.data();
+      });
+
+      // Si tienes usuarios, para poner los nombres de participantes
+      const usersSnap = await getDocs(
+        query(collection(db, "users"), where("eventId", "==", event.id))
+      );
+      const usersMap = {};
+      usersSnap.forEach((d) => {
+        usersMap[d.id] = d.data();
+      });
+
+      const wsData = [
+        [
+          "Hora",
+          "Mesa",
+          "Participantes",
+          "Estado",
+          "Descripción reunión",
+          "Necesidad 1",
+          "Necesidad 2",
+        ],
+        ...meetingsSnap.docs.map((doc) => {
+          const meeting = doc.data();
+          // Busca el slot de agenda para la hora y mesa
+          const agendaSlot = Object.values(agendaData).find(
+            (a) => a.meetingId === doc.id
+          );
+          // Participantes bonitos: Empresa (Nombre)
+          const participantes =
+            (meeting.participants || [])
+              .map((pid) =>
+                usersMap[pid]
+                  ? `${usersMap[pid].empresa || ""} (${
+                      usersMap[pid].nombre || ""
+                    })`
+                  : pid
+              )
+              .join(" / ") || "";
+          // Puedes agregar más campos si tienes, como necesidades, descripciones, etc.
+          return [
+            agendaSlot
+              ? `${agendaSlot.startTime} - ${agendaSlot.endTime}`
+              : meeting.timeSlot,
+            agendaSlot ? agendaSlot.tableNumber : meeting.tableAssigned,
+            participantes,
+            meeting.status,
+            meeting.descripcion || "",
+            usersMap[meeting.participants?.[0]]?.necesidad || "",
+            usersMap[meeting.participants?.[1]]?.necesidad || "",
+          ];
+        }),
+      ];
+
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Reuniones");
+      XLSX.writeFile(wb, `reuniones_${event?.eventName || event.id}.xlsx`);
+    } catch (e) {
+      setGlobalMessage("Error al exportar reuniones.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Exportar asistentes a Excel usando xlsx
   const exportToExcel = () => {
     const wsData = [
@@ -291,19 +373,6 @@ const EventAdmin = () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Asistentes");
     XLSX.writeFile(wb, `asistentes_${event?.eventName || eventId}.xlsx`);
-  };
-
-  // Eliminar asistente por id
-  const handleDeleteAttendee = async (attendeeId) => {
-    if (!window.confirm("¿Seguro que deseas eliminar este asistente?")) return;
-    try {
-      await deleteDoc(doc(db, "users", attendeeId));
-      setAttendees((prev) => prev.filter((a) => a.id !== attendeeId));
-      setGlobalMessage("Asistente eliminado correctamente.");
-    } catch (e) {
-      console.log(e);
-      setGlobalMessage("Error al eliminar el asistente.");
-    }
   };
 
   const fetchMeetingsCounts = async () => {
@@ -468,6 +537,14 @@ const EventAdmin = () => {
               color="violet"
             >
               Importar reuniones desde Excel
+            </Button>
+            <Button
+              color="teal"
+              onClick={exportMeetingsToExcel}
+              loading={actionLoading}
+              disabled={actionLoading}
+            >
+              Exportar reuniones a Excel
             </Button>
           </Group>
         </Group>
