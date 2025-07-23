@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 const QuickMeetingModal = ({
   opened,
   onClose,
-  slot,
+  slotsDisponibles = [],    // <-- Array de slots libres para ese horario (cada uno: {tableNumber, startTime, endTime, ...})
   defaultUser,
   assistants,
   onCreate,
@@ -12,12 +12,14 @@ const QuickMeetingModal = ({
 }) => {
   const [user1, setUser1] = useState(defaultUser ? defaultUser.id : "");
   const [user2, setUser2] = useState("");
+  const [selectedSlotId, setSelectedSlotId] = useState(""); // Selección de mesa
 
-  // Cuando cambie defaultUser o se abra el modal, setea user1 y limpia user2
+  // Reset form cuando cambian props relevantes
   useEffect(() => {
     setUser1(defaultUser ? defaultUser.id : "");
     setUser2("");
-  }, [defaultUser, opened]);
+    setSelectedSlotId("");
+  }, [defaultUser, opened, slotsDisponibles]);
 
   // Opciones: filtras para que user1 y user2 no sean iguales
   const assistantOptions = assistants.map((a) => ({
@@ -25,22 +27,66 @@ const QuickMeetingModal = ({
     label: `${a.nombre} (${a.empresa})`,
   }));
 
+  // Opciones para seleccionar mesa
+  const slotOptions = slotsDisponibles.map((s) => ({
+    value: s.id,
+    label: `Mesa ${s.tableNumber} (${s.startTime} - ${s.endTime})`,
+  }));
+
   const handleCreate = () => {
-    if (!user1 || !user2 || user1 === user2) return;
+    if (!user1 || !user2 || user1 === user2 || !selectedSlotId) return;
+    const slotElegido = slotsDisponibles.find((s) => s.id === selectedSlotId);
     onCreate({
       user1,
       user2,
-      slot,
+      slot: slotElegido, // Este es el slot completo
     });
   };
 
-  if (!slot) return null;
+  // Si no hay slots disponibles, muestra aviso
+  if (!opened) return null;
+  if (!slotsDisponibles || slotsDisponibles.length === 0)
+    return (
+      <Modal opened={opened} onClose={onClose} title="Crear reunión manual">
+        <Text>No hay mesas disponibles en este horario.</Text>
+      </Modal>
+    );
 
   return (
     <Modal opened={opened} onClose={onClose} title="Crear reunión manual">
-      <Text mb="sm">
-        Mesa: {slot.tableNumber} <br /> Hora: {slot.startTime} - {slot.endTime}
-      </Text>
+      <Select
+        label="Selecciona la mesa"
+        data={slotOptions}
+        value={selectedSlotId}
+        onChange={setSelectedSlotId}
+        required
+        searchable
+        mb="sm"
+        placeholder="Elige una mesa"
+      />
+      {selectedSlotId && (
+        <Text mb="sm" size="sm">
+          <b>
+            Mesa:{" "}
+            {
+              slotsDisponibles.find((s) => s.id === selectedSlotId)
+                ?.tableNumber
+            }
+          </b>
+          {" · "}
+          Hora:{" "}
+          {
+            slotsDisponibles.find((s) => s.id === selectedSlotId)
+              ?.startTime
+          }{" "}
+          -{" "}
+          {
+            slotsDisponibles.find((s) => s.id === selectedSlotId)
+              ?.endTime
+          }
+        </Text>
+      )}
+
       <Select
         label="Participante 1"
         data={assistantOptions}
@@ -64,7 +110,7 @@ const QuickMeetingModal = ({
         fullWidth
         onClick={handleCreate}
         loading={loading}
-        disabled={user1 === user2 || !user1 || !user2}
+        disabled={user1 === user2 || !user1 || !user2 || !selectedSlotId}
       >
         Crear reunión
       </Button>

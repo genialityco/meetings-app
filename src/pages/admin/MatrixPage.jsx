@@ -157,9 +157,10 @@ const MatrixPage = () => {
   const [typeFilter, setTypeFilter] = useState("");
   const [quickModal, setQuickModal] = useState({
     opened: false,
-    slot: null,
+    slotsDisponibles: [],
     defaultUser: null,
   });
+
   const [editModal, setEditModal] = useState({
     opened: false,
     meeting: null,
@@ -1027,16 +1028,15 @@ const MatrixPage = () => {
                             }}
                             onClick={() => {
                               if (cell.status === "available") {
+                                // Encuentra todos los slots (mesas) disponibles en ese horario (slot)
+                                const slotsDelHorario = agenda.filter(
+                                  (s) =>
+                                    s.startTime === slot && // slot es la hora actual de la fila
+                                    s.available // Solo slots libres
+                                );
                                 setQuickModal({
                                   opened: true,
-                                  slot: {
-                                    ...agenda.find(
-                                      (s) =>
-                                        s.tableNumber === cell.table ||
-                                        s.startTime === slot
-                                    ),
-                                    startTime: slot,
-                                  },
+                                  slotsDisponibles: slotsDelHorario,
                                   defaultUser: asistente,
                                 });
                               } else if (cell.status === "accepted") {
@@ -1185,14 +1185,18 @@ const MatrixPage = () => {
       <QuickMeetingModal
         opened={quickModal.opened}
         onClose={() =>
-          setQuickModal({ opened: false, slot: null, defaultUser: null })
+          setQuickModal({
+            opened: false,
+            slotsDisponibles: [],
+            defaultUser: null,
+          })
         }
-        slot={quickModal.slot}
+        slotsDisponibles={quickModal.slotsDisponibles || []}
         defaultUser={quickModal.defaultUser}
         assistants={getAvailableUsersForSlot(
           asistentes,
           meetings,
-          quickModal.slot || {}
+          quickModal.slotsDisponibles?.[0] || {}
         )}
         onCreate={handleQuickCreateMeeting}
         loading={creatingMeeting}
