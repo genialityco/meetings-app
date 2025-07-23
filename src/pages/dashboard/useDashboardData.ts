@@ -532,30 +532,30 @@ export function useDashboardData(eventId?: string) {
         const requester = requesterSnap.exists() ? (requesterSnap.data() as Assistant) : null;
         const receiver = receiverSnap.exists() ? (receiverSnap.data() as Assistant) : null;
 
-        if (requester?.telefono) {
-          await sendSms(
-            `Tu reunión con ${receiver?.nombre || "otro participante"} ha sido aceptada para ${
-              chosen.startTime
-            } en la mesa ${chosen.tableNumber}.`,
-            requester.telefono
-          );
-        }
-        if (receiver?.telefono) {
-          await sendSms(
-            `Tu reunión con ${requester?.nombre || "otro participante"} ha sido aceptada para ${
-              chosen.startTime
-            } en la mesa ${chosen.tableNumber}.`,
-            receiver.telefono
-          );
-        }
+        // if (requester?.telefono) {
+        //   await sendSms(
+        //     `Tu reunión con ${receiver?.nombre || "otro participante"} ha sido aceptada para ${
+        //       chosen.startTime
+        //     } en la mesa ${chosen.tableNumber}.`,
+        //     requester.telefono
+        //   );
+        // }
+        // if (receiver?.telefono) {
+        //   await sendSms(
+        //     `Tu reunión con ${requester?.nombre || "otro participante"} ha sido aceptada para ${
+        //       chosen.startTime
+        //     } en la mesa ${chosen.tableNumber}.`,
+        //     receiver.telefono
+        //   );
+        // }
 
         // Enviar WhatsApp a ambos participantes
         if (requester && receiver) {
-          await sendMeetingAcceptedWhatsapp(requester.telefono || "", receiver, {
+          sendMeetingAcceptedWhatsapp(requester.telefono || "", receiver, {
             timeSlot: `${chosen.startTime} - ${chosen.endTime}`,
             tableAssigned: chosen.tableNumber,
           });
-          await sendMeetingAcceptedWhatsapp(receiver.telefono || "", requester, {
+          sendMeetingAcceptedWhatsapp(receiver.telefono || "", requester, {
             timeSlot: `${chosen.startTime} - ${chosen.endTime}`,
             tableAssigned: chosen.tableNumber,
           });
