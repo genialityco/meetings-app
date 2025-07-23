@@ -546,6 +546,15 @@ const EventAdmin = () => {
             >
               Exportar reuniones a Excel
             </Button>
+            <Button
+              component={Link}
+              to={`/admin/event/${event.id}/agenda`}
+              loading={actionLoading}
+              disabled={actionLoading}
+              color="blue"
+            >
+              Ver Agenda
+            </Button>
           </Group>
         </Group>
       </Card>

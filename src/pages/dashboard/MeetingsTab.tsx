@@ -11,7 +11,15 @@ import {
   Textarea,
   Loader,
 } from "@mantine/core";
-import { collection, doc, getDoc, setDoc } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  setDoc,
+  where,
+} from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig"; // Ajusta el path
 import { UserContext } from "../../context/UserContext";
 import { showNotification } from "@mantine/notifications";
@@ -103,11 +111,32 @@ export default function MeetingsTab({
     setSavingSurvey(false);
   };
 
+  async function findSlotIdForMeeting(eventId, tableAssigned, timeSlot) {
+    const q = query(
+      collection(db, "agenda"),
+      where("eventId", "==", eventId),
+      where("tableNumber", "==", Number(tableAssigned)),
+      where("startTime", "==", timeSlot.split(" - ")[0]),
+      where("endTime", "==", timeSlot.split(" - ")[1])
+    );
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      return snap.docs[0].id;
+    }
+    return null;
+  }
+
   const handleCancelMeeting = async (meeting) => {
     if (!window.confirm("¿Seguro que deseas cancelar esta reunión?")) return;
     setCancellingId(meeting.id);
     try {
-      await cancelMeeting(meeting); // ahora SI arroja errores si algo sale mal
+      // Buscar slotId usando tableAssigned y timeSlot
+      const slotId = await findSlotIdForMeeting(
+        meeting.eventId,
+        meeting.tableAssigned,
+        meeting.timeSlot
+      );
+      await cancelMeeting({ ...meeting, slotId });
       showNotification({
         title: "Reunión cancelada",
         message: "Se notificó a ambos participantes.",
@@ -270,7 +299,7 @@ export default function MeetingsTab({
           <Loader />
         ) : surveyExists(surveyModal.meeting?.id) ? (
           <>
-            <Text weight={700} mb="md">
+            <Text fw={700} mb="md">
               Tus respuestas de encuesta
             </Text>
             <Text mb="xs">

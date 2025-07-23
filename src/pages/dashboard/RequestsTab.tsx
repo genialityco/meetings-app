@@ -22,6 +22,7 @@ export default function RequestsTab({
   updateMeetingStatus,
   sendWhatsAppMessage,
   cancelSentMeeting,
+  prepareSlotSelection
 }: RequestsTabProps) {
   // Helper para buscar usuario por id
   const findUser = (id) => assistants.find((u) => u.id === id);
@@ -87,9 +88,7 @@ export default function RequestsTab({
                   <Group mt="sm">
                     <Button
                       color="green"
-                      onClick={() =>
-                        updateMeetingStatus(request.id, "accepted")
-                      }
+                      onClick={() => prepareSlotSelection(request.id)}
                     >
                       Aceptar
                     </Button>
@@ -104,7 +103,9 @@ export default function RequestsTab({
                     <Button
                       variant="outline"
                       color="green"
-                      onClick={() => sendWhatsAppMessage(requester as Assistant)}
+                      onClick={() =>
+                        sendWhatsAppMessage(requester as Assistant)
+                      }
                     >
                       Enviar WhatsApp
                     </Button>

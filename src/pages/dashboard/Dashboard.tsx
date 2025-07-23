@@ -19,14 +19,14 @@ export default function Dashboard() {
         <Title order={2}>Dashboard</Title>
         <NotificationsMenu notifications={dashboard.notifications} />
       </Flex>
-      <PendingRequestsSection
+      {/* <PendingRequestsSection
         pendingRequests={dashboard.pendingRequests}
         assistants={dashboard.assistants}
         onAccept={dashboard.prepareSlotSelection}
         onReject={dashboard.updateMeetingStatus}
         prepareSlotSelectionLoading={dashboard.prepareSlotSelectionLoading}
         sendWhatsAppMessage={dashboard.sendWhatsAppMessage}
-      />
+      /> */}
       <TabsPanel dashboard={dashboard} />
       <AvatarModal
         opened={dashboard.avatarModalOpened}
