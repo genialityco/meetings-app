@@ -478,21 +478,27 @@ const MatrixPage = () => {
           (id) => id !== participantId
         );
         const other = asistentes.find((a) => a.id === otherId);
-
+        try {
         if (participant) {
           // WhatsApp
           dashboard.sendMeetingCancelledWhatsapp(participant.telefono, other, {
             timeSlot: cancelledMeeting.timeSlot,
             tableAssigned: cancelledMeeting.tableAssigned,
           });
-          // SMS
-          dashboard.sendSms(
-            `¡Tu reunión ha sido cancelada!\nCon: ${
-              other?.nombre || ""
-            }\nEmpresa: ${other?.empresa || ""}\nHorario: ${
-              cancelledMeeting.timeSlot
-            }\nMesa: ${cancelledMeeting.tableAssigned}`,
-            participant.telefono
+          // // SMS
+          // dashboard.sendSms(
+          //   `¡Tu reunión ha sido cancelada!\nCon: ${
+          //     other?.nombre || ""
+          //   }\nEmpresa: ${other?.empresa || ""}\nHorario: ${
+          //     cancelledMeeting.timeSlot
+          //   }\nMesa: ${cancelledMeeting.tableAssigned}`,
+          //   participant.telefono
+          // );
+        }
+      } catch (error) {
+          console.error(
+            `Error notificando a ${participantId} (${participant?.nombre}):`,
+            error
           );
         }
       }
