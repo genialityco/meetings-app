@@ -10,6 +10,7 @@ import {
   getDocs,
   orderBy,
   getDoc,
+  deleteDoc,
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
@@ -100,7 +101,9 @@ function sendWhatsAppMessage(participant: Assistant) {
     return;
   }
   const phone = participant.telefono.replace(/[^\d]/g, "");
-  const message = encodeURIComponent("Hola, me gustaría contactarte sobre la reunión.");
+  const message = encodeURIComponent(
+    "Hola, me gustaría contactarte sobre la reunión."
+  );
   window.open(`https://wa.me/57${phone}?text=${message}`, "_blank");
 }
 
@@ -136,7 +139,7 @@ async function sendMeetingCancelledWhatsapp(
   meetingInfo: { timeSlot?: string; tableAssigned?: string }
 ) {
   if (!toPhone) return;
-  const phone = toPhone.replace(/[^\d]/g, "");
+  const phone = (toPhone || "").toString().replace(/[^\d]/g, "");
   const message =
     `¡Tu reunión ha sido cancelada!\n\n` +
     `Con: ${otherParticipant?.nombre || ""}\n` +
@@ -172,7 +175,8 @@ export function useDashboardData(eventId?: string) {
     [userId: string]: Assistant;
   }>({});
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [solicitarReunionHabilitado, setSolicitarReunionHabilitado] = useState<boolean>(true);
+  const [solicitarReunionHabilitado, setSolicitarReunionHabilitado] =
+    useState<boolean>(true);
   const [eventConfig, setEventConfig] = useState<any>(null);
   const [formFields, setFormFields] = useState([]);
 
@@ -180,13 +184,16 @@ export function useDashboardData(eventId?: string) {
   const [avatarModalOpened, setAvatarModalOpened] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [pendingVisible, setPendingVisible] = useState(true);
-  const [expandedMeetingId, setExpandedMeetingId] = useState<string | null>(null);
+  const [expandedMeetingId, setExpandedMeetingId] = useState<string | null>(
+    null
+  );
   const [showOnlyToday, setShowOnlyToday] = useState(true);
   const [slotModalOpened, setSlotModalOpened] = useState(false);
   const [meetingToAccept, setMeetingToAccept] = useState<any>(null);
   const [meetingToEdit, setMeetingToEdit] = useState<any>(null);
   const [availableSlots, setAvailableSlots] = useState<any[]>([]);
-  const [prepareSlotSelectionLoading, setPrepareSlotSelectionLoading] = useState(false);
+  const [prepareSlotSelectionLoading, setPrepareSlotSelectionLoading] =
+    useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [selectedRange, setSelectedRange] = useState<string | null>(null);
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
@@ -213,9 +220,15 @@ export function useDashboardData(eventId?: string) {
   // 2. Notificaciones del usuario
   useEffect(() => {
     if (!uid) return;
-    const q = query(collection(db, "notifications"), where("userId", "==", uid), orderBy("timestamp", "desc"));
+    const q = query(
+      collection(db, "notifications"),
+      where("userId", "==", uid),
+      orderBy("timestamp", "desc")
+    );
     return onSnapshot(q, (snap) => {
-      const nots = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Notification));
+      const nots = snap.docs.map(
+        (d) => ({ id: d.id, ...d.data() } as Notification)
+      );
 
       // Mostrar notificaciones tipo toast solo las no leídas
       nots.forEach((n) => {
@@ -242,7 +255,9 @@ export function useDashboardData(eventId?: string) {
       const cfgRef = doc(db, "config", "generalSettings");
       const cfgSnap = await getDoc(cfgRef);
       if (cfgSnap.exists()) {
-        setSolicitarReunionHabilitado(cfgSnap.data().solicitarReunionHabilitado);
+        setSolicitarReunionHabilitado(
+          cfgSnap.data().solicitarReunionHabilitado
+        );
       }
     })();
   }, []);
@@ -298,22 +313,26 @@ export function useDashboardData(eventId?: string) {
     // (puedes mantener el filtro por interés si quieres)
     if (interestFilter) {
       filtered = filtered.filter(
-        (a) => a[formFields.find((f) => f.name === "interesPrincipal")?.name] === interestFilter
+        (a) =>
+          a[formFields.find((f) => f.name === "interesPrincipal")?.name] ===
+          interestFilter
       );
     }
 
     //Filtro tipo de tipoAsistente para ver los tipos de asistentes diferentes a mi
     if (currentUser?.data?.tipoAsistente) {
       filtered = filtered.filter(
-        (a) => a[formFields.find((f) => f.name === "tipoAsistente")?.name] !== currentUser?.data?.tipoAsistente 
+        (a) =>
+          a[formFields.find((f) => f.name === "tipoAsistente")?.name] !==
+          currentUser?.data?.tipoAsistente
       );
 
-      console.log(filtered.filter(
-        (a) =>  (!(a[formFields.find((f) => f.name === "empresa")?.name]))
-      ))
+      console.log(
+        filtered.filter(
+          (a) => !a[formFields.find((f) => f.name === "empresa")?.name]
+        )
+      );
     }
-
-
 
     setFilteredAssistants(filtered);
   }, [assistants, searchTerm, interestFilter, formFields]);
@@ -327,7 +346,9 @@ export function useDashboardData(eventId?: string) {
       where("status", "==", "pending")
     );
     return onSnapshot(q, (snap) => {
-      setSentRequests(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Meeting)));
+      setSentRequests(
+        snap.docs.map((d) => ({ id: d.id, ...d.data() } as Meeting))
+      );
     });
   }, [uid, eventId]);
 
@@ -364,7 +385,10 @@ export function useDashboardData(eventId?: string) {
   // 8. Solicitudes donde usuario es receptor
   useEffect(() => {
     if (!uid || !eventId) return;
-    const q = query(collection(db, "events", eventId, "meetings"), where("receiverId", "==", uid));
+    const q = query(
+      collection(db, "events", eventId, "meetings"),
+      where("receiverId", "==", uid)
+    );
     return onSnapshot(q, (snap) => {
       const pend: Meeting[] = [],
         acc: Meeting[] = [],
@@ -382,18 +406,62 @@ export function useDashboardData(eventId?: string) {
   }, [uid, eventId]);
 
   // ---------------------- ACCIONES PRINCIPALES ----------------------
-
-  const sendMeetingRequest = async (assistantId: string, assistantPhone: string) => {
-    if (!uid || !eventId) return;
-    try {
-      const meetingDoc = await addDoc(collection(db, "events", eventId, "meetings"), {
-        eventId,
-        requesterId: uid,
-        receiverId: assistantId,
-        status: "pending",
-        createdAt: new Date(),
-        participants: [uid, assistantId],
+  const cancelSentMeeting = async (
+    meetingId: string,
+    mode: "cancel" | "delete" = "cancel"
+  ) => {
+    if (!eventId) {
+      showNotification({
+        title: "Error",
+        message: "No se encontró el evento.",
+        color: "red",
       });
+      return;
+    }
+    try {
+      const ref = doc(db, "events", eventId, "meetings", meetingId);
+
+      if (mode === "delete") {
+        await deleteDoc(ref);
+        showNotification({
+          title: "Solicitud eliminada",
+          message: "La solicitud fue eliminada correctamente.",
+          color: "teal",
+        });
+      } else {
+        await updateDoc(ref, { status: "cancelled" });
+        showNotification({
+          title: "Solicitud cancelada",
+          message: "La solicitud fue cancelada correctamente.",
+          color: "teal",
+        });
+      }
+    } catch (err) {
+      showNotification({
+        title: "Error",
+        message: "No se pudo cancelar o eliminar la solicitud.",
+        color: "red",
+      });
+    }
+  };
+
+  const sendMeetingRequest = async (
+    assistantId: string,
+    assistantPhone: string
+  ) => {
+    if (!uid || !eventId) return Promise.reject();
+    try {
+      const meetingDoc = await addDoc(
+        collection(db, "events", eventId, "meetings"),
+        {
+          eventId,
+          requesterId: uid,
+          receiverId: assistantId,
+          status: "pending",
+          createdAt: new Date(),
+          participants: [uid, assistantId],
+        }
+      );
 
       const requester = currentUser?.data;
       const meetingId = meetingDoc.id;
@@ -416,10 +484,12 @@ export function useDashboardData(eventId?: string) {
         `3. Ir a la landing: ${landingUrl}`;
 
       // WhatsApp backend
-      fetch("https://apiwhatsapp.geniality.com.co/send", {
+      fetch("https://apiwhatsapp.geniality.com.co/api/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          clientId: "genialitybussiness",
+
           phone: `57${assistantPhone.replace(/[^\d]/g, "")}`,
           message,
         }),
@@ -429,12 +499,83 @@ export function useDashboardData(eventId?: string) {
       await addDoc(collection(db, "notifications"), {
         userId: assistantId,
         title: "Nueva solicitud de reunión",
-        message: `${requester?.nombre || "Alguien"} te ha enviado una solicitud de reunión.`,
+        message: `${
+          requester?.nombre || "Alguien"
+        } te ha enviado una solicitud de reunión.`,
         timestamp: new Date(),
         read: false,
       });
+      return Promise.resolve();
     } catch (e) {
       // console.error(e);
+      return Promise.reject(e);
+    }
+  };
+
+  const cancelMeeting = async (meeting) => {
+    try {
+      // 1. Cancela la reunión en Firestore
+      await updateDoc(
+        doc(db, "events", meeting.eventId, "meetings", meeting.id),
+        { status: "cancelled" }
+      );
+
+      // 2. Libera el slot (si existe)
+      if (meeting.slotId) {
+        await updateDoc(doc(db, "agenda", meeting.slotId), {
+          available: true,
+          meetingId: null,
+        });
+      }
+
+      // 3. Obtén datos de los participantes (si no los tienes)
+      let requester = meeting.requester || null;
+      let receiver = meeting.receiver || null;
+
+      if (!requester || !receiver) {
+        const reqSnap = await getDoc(doc(db, "users", meeting.requesterId));
+        const recSnap = await getDoc(doc(db, "users", meeting.receiverId));
+        requester = reqSnap.exists() ? reqSnap.data() : {};
+        receiver = recSnap.exists() ? recSnap.data() : {};
+      }
+
+      // 4. Notifica a ambos por WhatsApp
+      if (requester?.telefono) {
+        console.log("Enviando requester");
+        await sendMeetingCancelledWhatsapp(requester.telefono, receiver, {
+          timeSlot: meeting.timeSlot,
+          tableAssigned: meeting.tableAssigned,
+        });
+      }
+      if (receiver?.telefono) {
+        console.log("Enviando reciver");
+
+        await sendMeetingCancelledWhatsapp(receiver.telefono, requester, {
+          timeSlot: meeting.timeSlot,
+          tableAssigned: meeting.tableAssigned,
+        });
+      }
+
+      // 5. Notifica por la app
+      await addDoc(collection(db, "notifications"), {
+        userId: meeting.requesterId,
+        title: "Reunión cancelada",
+        message: "Tu reunión fue cancelada.",
+        timestamp: new Date(),
+        read: false,
+      });
+      await addDoc(collection(db, "notifications"), {
+        userId: meeting.receiverId,
+        title: "Reunión cancelada",
+        message: "Tu reunión fue cancelada.",
+        timestamp: new Date(),
+        read: false,
+      });
+
+      return true; // <-- IMPORTANTE
+    } catch (err) {
+      console.error("Error en cancelMeeting:", err);
+      throw err; // <-- IMPORTANTE
     }
   };
 
@@ -452,18 +593,27 @@ export function useDashboardData(eventId?: string) {
         // Lógica de slots y confirmación automática
         const accQ = query(
           collection(db, "events", eventId, "meetings"),
-          where("participants", "array-contains-any", [data.requesterId, data.receiverId]),
+          where("participants", "array-contains-any", [
+            data.requesterId,
+            data.receiverId,
+          ]),
           where("status", "==", "accepted")
         );
         const accSn = await getDocs(accQ);
         const occupied = new Set(accSn.docs.map((d) => d.data().timeSlot));
 
         const limit = eventConfig.maxMeetingsPerUser ?? Infinity;
-        const requesterCount = accSn.docs.filter((d) => d.data().participants.includes(data.requesterId)).length;
-        const receiverCount = accSn.docs.filter((d) => d.data().participants.includes(data.receiverId)).length;
+        const requesterCount = accSn.docs.filter((d) =>
+          d.data().participants.includes(data.requesterId)
+        ).length;
+        const receiverCount = accSn.docs.filter((d) =>
+          d.data().participants.includes(data.receiverId)
+        ).length;
 
         if (requesterCount >= limit) {
-          return alert(`El solicitante ya alcanzó el límite de ${limit} citas.`);
+          return alert(
+            `El solicitante ya alcanzó el límite de ${limit} citas.`
+          );
         }
         if (receiverCount >= limit) {
           return alert(`El receptor ya alcanzó el límite de ${limit} citas.`);
@@ -492,7 +642,13 @@ export function useDashboardData(eventId?: string) {
           slotStartDate.setHours(slotHour, slotMin, 0, 0);
           if (slotStartDate <= now) continue;
 
-          if (slotOverlapsBreakBlock(slot.startTime, eventConfig.meetingDuration, eventConfig.breakBlocks)) {
+          if (
+            slotOverlapsBreakBlock(
+              slot.startTime,
+              eventConfig.meetingDuration,
+              eventConfig.breakBlocks
+            )
+          ) {
             continue;
           }
 
@@ -502,7 +658,9 @@ export function useDashboardData(eventId?: string) {
         }
 
         if (!chosen) {
-          return alert("No hay slots libres fuera de descansos y horarios pasados.");
+          return alert(
+            "No hay slots libres fuera de descansos y horarios pasados."
+          );
         }
 
         // 3. Actualizar reunión y agenda
@@ -529,36 +687,52 @@ export function useDashboardData(eventId?: string) {
         // 5. Enviar SMS a ambos participantes
         const requesterSnap = await getDoc(doc(db, "users", data.requesterId));
         const receiverSnap = await getDoc(doc(db, "users", data.receiverId));
-        const requester = requesterSnap.exists() ? (requesterSnap.data() as Assistant) : null;
-        const receiver = receiverSnap.exists() ? (receiverSnap.data() as Assistant) : null;
+        const requester = requesterSnap.exists()
+          ? (requesterSnap.data() as Assistant)
+          : null;
+        const receiver = receiverSnap.exists()
+          ? (receiverSnap.data() as Assistant)
+          : null;
 
         // if (requester?.telefono) {
         //   await sendSms(
-        //     `Tu reunión con ${receiver?.nombre || "otro participante"} ha sido aceptada para ${
-        //       chosen.startTime
-        //     } en la mesa ${chosen.tableNumber}.`,
+        //     `Tu reunión con ${
+        //       receiver?.nombre || "otro participante"
+        //     } ha sido aceptada para ${chosen.startTime} en la mesa ${
+        //       chosen.tableNumber
+        //     }.`,
         //     requester.telefono
         //   );
         // }
         // if (receiver?.telefono) {
         //   await sendSms(
-        //     `Tu reunión con ${requester?.nombre || "otro participante"} ha sido aceptada para ${
-        //       chosen.startTime
-        //     } en la mesa ${chosen.tableNumber}.`,
+        //     `Tu reunión con ${
+        //       requester?.nombre || "otro participante"
+        //     } ha sido aceptada para ${chosen.startTime} en la mesa ${
+        //       chosen.tableNumber
+        //     }.`,
         //     receiver.telefono
         //   );
         // }
 
         // Enviar WhatsApp a ambos participantes
         if (requester && receiver) {
-          sendMeetingAcceptedWhatsapp(requester.telefono || "", receiver, {
-            timeSlot: `${chosen.startTime} - ${chosen.endTime}`,
-            tableAssigned: chosen.tableNumber,
-          });
-          sendMeetingAcceptedWhatsapp(receiver.telefono || "", requester, {
-            timeSlot: `${chosen.startTime} - ${chosen.endTime}`,
-            tableAssigned: chosen.tableNumber,
-          });
+          await sendMeetingAcceptedWhatsapp(
+            requester.telefono || "",
+            receiver,
+            {
+              timeSlot: `${chosen.startTime} - ${chosen.endTime}`,
+              tableAssigned: chosen.tableNumber,
+            }
+          );
+          await sendMeetingAcceptedWhatsapp(
+            receiver.telefono || "",
+            requester,
+            {
+              timeSlot: `${chosen.startTime} - ${chosen.endTime}`,
+              tableAssigned: chosen.tableNumber,
+            }
+          );
         }
       } else {
         // Rechazar reunión
@@ -631,10 +805,18 @@ export function useDashboardData(eventId?: string) {
         const slotDate = new Date(now);
         slotDate.setHours(h, m, 0, 0);
         if (slotDate <= now) return false;
-        if (slotOverlapsBreakBlock(slot.startTime, eventConfig.meetingDuration, eventConfig.breakBlocks)) return false;
+        if (
+          slotOverlapsBreakBlock(
+            slot.startTime,
+            eventConfig.meetingDuration,
+            eventConfig.breakBlocks
+          )
+        )
+          return false;
         const slotStart = h * 60 + m;
         const slotEnd = slotStart + eventConfig.meetingDuration;
-        if (occupiedRanges.some((r) => slotStart < r.end && slotEnd > r.start)) return false;
+        if (occupiedRanges.some((r) => slotStart < r.end && slotEnd > r.start))
+          return false;
         return true;
       });
 
@@ -653,7 +835,10 @@ export function useDashboardData(eventId?: string) {
 
       // 1. Si es edición, libera el slot anterior (en agenda) de esta reunión
       if (isEdit) {
-        const oldAgendaQ = query(collection(db, "agenda"), where("meetingId", "==", meetingId));
+        const oldAgendaQ = query(
+          collection(db, "agenda"),
+          where("meetingId", "==", meetingId)
+        );
         const oldAgendaSnap = await getDocs(oldAgendaQ);
         for (const oldSlot of oldAgendaSnap.docs) {
           await updateDoc(doc(db, "agenda", oldSlot.id), {
@@ -688,7 +873,8 @@ export function useDashboardData(eventId?: string) {
       // 4. Obtiene datos para notificaciones
       const mtgSnap = await getDoc(mtgRef);
       const data = mtgSnap.data() as Partial<Meeting>;
-      if (!data?.requesterId || !data?.receiverId) throw new Error("Datos de la reunión incompletos");
+      if (!data?.requesterId || !data?.receiverId)
+        throw new Error("Datos de la reunión incompletos");
       const { requesterId, receiverId } = data;
 
       const [reqSnap, recvSnap] = await Promise.all([
@@ -696,7 +882,9 @@ export function useDashboardData(eventId?: string) {
         getDoc(doc(db, "users", receiverId)),
       ]);
       const requester = reqSnap.exists() ? (reqSnap.data() as Assistant) : null;
-      const receiver = recvSnap.exists() ? (recvSnap.data() as Assistant) : null;
+      const receiver = recvSnap.exists()
+        ? (recvSnap.data() as Assistant)
+        : null;
 
       // 5. Notificaciones en la app
       const notificationsBatch = isEdit
@@ -704,32 +892,34 @@ export function useDashboardData(eventId?: string) {
             {
               userId: requesterId,
               title: "Reunión modificada",
-              message: `Tu reunión con ${receiver?.nombre || ""} fue movida a ${slot.startTime} (Mesa ${
-                slot.tableNumber
-              }).`,
+              message: `Tu reunión con ${receiver?.nombre || ""} fue movida a ${
+                slot.startTime
+              } (Mesa ${slot.tableNumber}).`,
             },
             {
               userId: receiverId,
               title: "Reunión modificada",
-              message: `Has cambiado la reunión con ${requester?.nombre || ""} a ${slot.startTime} (Mesa ${
-                slot.tableNumber
-              }).`,
+              message: `Has cambiado la reunión con ${
+                requester?.nombre || ""
+              } a ${slot.startTime} (Mesa ${slot.tableNumber}).`,
             },
           ]
         : [
             {
               userId: requesterId,
               title: "Reunión aceptada",
-              message: `Tu reunión con ${receiver?.nombre || ""} fue aceptada para ${slot.startTime} en Mesa ${
+              message: `Tu reunión con ${
+                receiver?.nombre || ""
+              } fue aceptada para ${slot.startTime} en Mesa ${
                 slot.tableNumber
               }.`,
             },
             {
               userId: receiverId,
               title: "Reunión confirmada",
-              message: `Has aceptado la reunión con ${requester?.nombre || ""} para ${slot.startTime} en Mesa ${
-                slot.tableNumber
-              }.`,
+              message: `Has aceptado la reunión con ${
+                requester?.nombre || ""
+              } para ${slot.startTime} en Mesa ${slot.tableNumber}.`,
             },
           ];
 
@@ -802,15 +992,19 @@ export function useDashboardData(eventId?: string) {
   }, [availableSlots]);
 
   const tableOptions = selectedRange
-    ? (groupedSlots.find((g) => g.id === selectedRange)?.slots || []).map((s: any) => ({
-        value: s.id,
-        label: `Mesa ${s.tableNumber}`,
-      }))
+    ? (groupedSlots.find((g) => g.id === selectedRange)?.slots || []).map(
+        (s: any) => ({
+          value: s.id,
+          label: `Mesa ${s.tableNumber}`,
+        })
+      )
     : [];
 
   const chosenSlot =
     selectedRange && selectedSlotId
-      ? groupedSlots.find((g) => g.id === selectedRange)?.slots.find((s: any) => s.id === selectedSlotId) || null
+      ? groupedSlots
+          .find((g) => g.id === selectedRange)
+          ?.slots.find((s: any) => s.id === selectedSlotId) || null
       : null;
 
   const currentRequesterName = meetingToAccept
@@ -819,12 +1013,17 @@ export function useDashboardData(eventId?: string) {
     ? (() => {
         const meeting = acceptedMeetings.find((m) => m.id === meetingToEdit);
         if (!meeting) return "";
-        const otherId = meeting.requesterId === uid ? meeting.receiverId : meeting.requesterId;
+        const otherId =
+          meeting.requesterId === uid
+            ? meeting.receiverId
+            : meeting.requesterId;
         return assistants.find((a) => a.id === otherId)?.nombre || "";
       })()
     : "";
 
-  const interestOptions = Array.from(new Set(assistants.map((a) => a.interesPrincipal).filter(Boolean))).map((i) => ({
+  const interestOptions = Array.from(
+    new Set(assistants.map((a) => a.interesPrincipal).filter(Boolean))
+  ).map((i) => ({
     value: i,
     label: i,
   }));
@@ -839,6 +1038,7 @@ export function useDashboardData(eventId?: string) {
     acceptedMeetings,
     loadingMeetings,
     pendingRequests,
+    cancelSentMeeting,
     sentRequests,
     acceptedRequests,
     rejectedRequests,
@@ -864,6 +1064,7 @@ export function useDashboardData(eventId?: string) {
     sendMeetingAcceptedWhatsapp,
     sendMeetingCancelledWhatsapp,
     confirmAcceptWithSlot,
+    cancelMeeting,
 
     avatarModalOpened,
     setAvatarModalOpened,

@@ -12,6 +12,8 @@ import { Container } from "@mantine/core";
 import MatrixPage from "./pages/admin/MatrixPage.jsx";
 import EventMatchPage from "./pages/admin/EventMatchPage.jsx";
 import ImportMeetingsFromExcelPage from "./pages/admin/ImportMeetingsFromExcelPage.jsx";
+import AgendaAdminPanel from "./pages/admin/AgendaAdminPanel.jsx";
+import MeetingSurveys from "./pages/admin/MeetingSurveys.jsx";
 
 const App = () => {
   const { currentUser } = useContext(UserContext);
@@ -44,6 +46,14 @@ const App = () => {
           element={<MeetingAutoResponse />}
         />
         <Route path="/admin/event/:eventId" element={<EventAdmin />} />
+        <Route
+          path="/admin/event/:eventId/agenda"
+          element={<AgendaAdminPanel />}
+        />
+        <Route
+          path="/admin/surveys"
+          element={<MeetingSurveys />}
+        />
       </Routes>
     </Container>
   );

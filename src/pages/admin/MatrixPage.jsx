@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Container,
   Title,
@@ -37,7 +37,8 @@ import QuickMeetingModal from "./QuickMeetingModal";
 import EditMeetingModal from "./EditMeetingModal";
 import { useDashboardData } from "../dashboard/useDashboardData";
 
-// ----------------- Utilidades -------------------
+// ----------- UTILIDADES -----------
+
 const generateTimeSlots = (start, end, meetingDuration, breakTime) => {
   const slots = [];
   let currentTime = new Date(`1970-01-01T${start}:00`);
@@ -125,7 +126,6 @@ function getAvailableUsersForSlot(assistants, meetings, slot, meeting = null) {
   );
 }
 
-// --- Función solapamiento horario
 function haySolapamiento(slotA, slotB) {
   if (!slotA || !slotB) return false;
   const [aStart, aEnd] = slotA.split(" - ").map((t) => t.trim());
@@ -141,7 +141,23 @@ function haySolapamiento(slotA, slotB) {
   return aStartMin < bEndMin && bStartMin < aEndMin;
 }
 
-// ----------------- Componente principal -------------------
+function getColor(status) {
+  switch (status) {
+    case "available":
+      return "#d3d3d3";
+    case "occupied":
+      return "#ffa500";
+    case "accepted":
+      return "#4caf50";
+    case "break":
+      return "#90caf9";
+    default:
+      return "#d3d3d3";
+  }
+}
+
+// ----------- COMPONENTE PRINCIPAL -----------
+
 const MatrixPage = () => {
   const { eventId } = useParams();
   const dashboard = useDashboardData(eventId);
@@ -151,15 +167,13 @@ const MatrixPage = () => {
   const [meetings, setMeetings] = useState([]);
   const [participantsInfo, setParticipantsInfo] = useState({});
   const [asistentes, setAsistentes] = useState([]);
-  const [matrix, setMatrix] = useState([]);
-  const [matrixUsuarios, setMatrixUsuarios] = useState([]);
-  const [meetingsRemontadas, setMeetingsRemontadas] = useState([]);
   const [typeFilter, setTypeFilter] = useState("");
   const [quickModal, setQuickModal] = useState({
     opened: false,
-    slot: null,
+    slotsDisponibles: [],
     defaultUser: null,
   });
+
   const [editModal, setEditModal] = useState({
     opened: false,
     meeting: null,
@@ -171,7 +185,7 @@ const MatrixPage = () => {
   const [userSearch, setUserSearch] = useState("");
   const [pendingMeetings, setPendingMeetings] = useState([]);
 
-  // Configuración
+  // Carga configuración evento
   useEffect(() => {
     if (!eventId) return;
     (async () => {
@@ -194,7 +208,7 @@ const MatrixPage = () => {
     });
   }, [config, eventId]);
 
-  // Suscripción a reuniones aceptadas
+  // Suscripción a reuniones aceptadas y pendientes
   useEffect(() => {
     if (!config) return;
     const q = query(
@@ -211,7 +225,7 @@ const MatrixPage = () => {
     });
   }, [config, eventId]);
 
-  // Carga asistentes registrados al evento (solo 1 vez)
+  // Carga asistentes
   useEffect(() => {
     if (!eventId) return;
     (async () => {
@@ -222,26 +236,13 @@ const MatrixPage = () => {
     })();
   }, [eventId]);
 
-  // Carga rápida de info de participantes usando asistentes (más eficiente)
+  // Map para info rápida
   useEffect(() => {
     if (asistentes.length === 0) return;
     const users = {};
     asistentes.forEach((a) => (users[a.id] = a));
     setParticipantsInfo(users);
   }, [asistentes]);
-
-  // Detecta reuniones huérfanas/sobreescritas
-  useEffect(() => {
-    if (meetings.length === 0 || agenda.length === 0) {
-      setMeetingsRemontadas([]);
-      return;
-    }
-    const meetingIdsEnAgenda = new Set(
-      agenda.map((a) => a.meetingId).filter(Boolean)
-    );
-    const huerfanas = meetings.filter((mtg) => !meetingIdsEnAgenda.has(mtg.id));
-    setMeetingsRemontadas(huerfanas);
-  }, [meetings, agenda]);
 
   // Solicitudes pendientes
   useEffect(() => {
@@ -255,7 +256,7 @@ const MatrixPage = () => {
     });
   }, [eventId]);
 
-  // MEMOIZA timeSlots (se calcula solo si la config cambia)
+  // Memoize timeSlots
   const timeSlots = useMemo(
     () =>
       config
@@ -269,19 +270,11 @@ const MatrixPage = () => {
     [config]
   );
 
-  // MEMOIZA matriz por mesas
+  // Memoize matriz por mesas
   const memoMatrix = useMemo(() => {
     if (!config) return [];
-    const {
-      numTables,
-      meetingDuration,
-      breakTime,
-      startTime,
-      endTime,
-      breakBlocks = [],
-    } = config.config;
+    const { numTables, meetingDuration, breakBlocks = [] } = config.config;
 
-    // Inicializa matriz con estados 'available' o 'break'
     const baseMatrix = Array.from({ length: numTables }, () =>
       timeSlots.map((slot) => ({
         status: slotOverlapsBreakBlock(slot, meetingDuration, breakBlocks)
@@ -291,7 +284,6 @@ const MatrixPage = () => {
       }))
     );
 
-    // Marca slots según datos de agenda
     agenda.forEach((slot) => {
       const tIdx = slot.tableNumber - 1;
       const sIdx = timeSlots.indexOf(slot.startTime);
@@ -303,7 +295,6 @@ const MatrixPage = () => {
       }
     });
 
-    // Marca reuniones aceptadas
     meetings.forEach((mtg) => {
       if (mtg.status !== "accepted" || !mtg.timeSlot) return;
       const [startTime] = mtg.timeSlot.split(" - ");
@@ -326,23 +317,16 @@ const MatrixPage = () => {
     return baseMatrix;
   }, [config, agenda, meetings, participantsInfo, timeSlots]);
 
-  // MEMOIZA matriz por usuarios
+  // Memoize matriz por usuarios
   const memoMatrixUsuarios = useMemo(() => {
     if (!config || asistentes.length === 0) return [];
-    const {
-      meetingDuration,
-      breakTime,
-      startTime,
-      endTime,
-      breakBlocks = [],
-    } = config.config;
+    const { meetingDuration, breakBlocks = [] } = config.config;
 
     return asistentes.map((user) => {
       const row = timeSlots.map((slot) => {
         if (slotOverlapsBreakBlock(slot, meetingDuration, breakBlocks)) {
           return { status: "break" };
         }
-        // Solo compara el startTime
         const mtg = meetings.find((m) => {
           if (!m.timeSlot) return false;
           const [start] = m.timeSlot.split(" - ");
@@ -368,7 +352,7 @@ const MatrixPage = () => {
     });
   }, [config, asistentes, meetings, participantsInfo, timeSlots]);
 
-  // Tabla usuarios filtrada
+  // Filtrado usuarios
   const filteredMatrixUsuarios = useMemo(
     () =>
       memoMatrixUsuarios.filter(({ asistente }) => {
@@ -386,8 +370,21 @@ const MatrixPage = () => {
     [memoMatrixUsuarios, userSearch, typeFilter]
   );
 
-  // ----------------- Acciones rápidas -------------------
+  // --------- FILTRAR SLOTS DISPONIBLES PARA EDICIÓN ---------
+  const slotsDisponiblesParaEdicion = useMemo(() => {
+    if (!editModal.meeting || !editModal.slot) return [];
 
+    return agenda.filter((slotItem) => {
+      const isSameTime = slotItem.startTime === editModal.slot.startTime;
+      const isAvailable = slotItem.available;
+      const isCurrentTable =
+        slotItem.tableNumber === Number(editModal.meeting.tableAssigned);
+      return isSameTime && (isAvailable || isCurrentTable);
+    });
+  }, [agenda, editModal.meeting, editModal.slot]);
+  //------------------------------------------------------------
+
+  // ------------ FUNCIONES DE CREACION, EDICIÓN, CANCELACIÓN, INTERCAMBIO ------------
   const handleQuickCreateMeeting = async ({ user1, user2, slot }) => {
     setCreatingMeeting(true);
     try {
@@ -445,31 +442,133 @@ const MatrixPage = () => {
     setCreatingMeeting(false);
   };
 
-  const handleEditMeeting = async ({ meetingId, user1, user2 }) => {
+  const handleEditMeeting = async ({ meetingId, user1, user2, slot }) => {
     setCreatingMeeting(true);
+
     try {
+      // Buscar reuniones aceptadas que tengan conflicto con el nuevo slot para user1 y user2
+      const reunionesAceptadas = meetings.filter(
+        (m) => m.status === "accepted" && m.id !== meetingId
+      );
+
+      const nuevoSlotStr = `${slot.startTime} - ${slot.endTime}`;
+
+      const hayConflicto = (userId) =>
+        reunionesAceptadas.some(
+          (m) =>
+            m.participants.includes(userId) &&
+            haySolapamiento(m.timeSlot, nuevoSlotStr)
+        );
+
+      if (hayConflicto(user1)) {
+        setGlobalMessage(
+          `El participante 1 no está disponible en el horario seleccionado.`
+        );
+        setCreatingMeeting(false);
+        return;
+      }
+      if (hayConflicto(user2)) {
+        setGlobalMessage(
+          `El participante 2 no está disponible en el horario seleccionado.`
+        );
+        setCreatingMeeting(false);
+        return;
+      }
+
+      // Obtener la reunión actual para liberar su slot anterior
+      const meetingActual = meetings.find((m) => m.id === meetingId);
+
+      if (!meetingActual) {
+        setGlobalMessage("Reunión no encontrada.");
+        setCreatingMeeting(false);
+        return;
+      }
+
+      // Buscar slot agenda actual (para liberar)
+      const slotActual = agenda.find(
+        (s) =>
+          s.tableNumber === Number(meetingActual.tableAssigned) &&
+          s.startTime === meetingActual.timeSlot.split(" - ")[0]
+      );
+
+      // Actualizar reunión con nuevos datos
       await updateDoc(doc(db, "events", eventId, "meetings", meetingId), {
         participants: [user1, user2],
         requesterId: user1,
         receiverId: user2,
+        timeSlot: nuevoSlotStr,
+        tableAssigned: slot.tableNumber.toString(),
       });
 
-      setGlobalMessage("¡Reunión actualizada!");
+      // Liberar slot anterior si existe y no es el mismo que el nuevo
+      if (slotActual && slotActual.id !== slot.id) {
+        await updateDoc(doc(db, "agenda", slotActual.id), {
+          available: true,
+          meetingId: null,
+        });
+      }
+
+      // Marcar nuevo slot como ocupado
+      await updateDoc(doc(db, "agenda", slot.id), {
+        available: false,
+        meetingId,
+      });
+
+      // Opcional: notificar a ambos participantes (como haces en creación)
+      const receiver = asistentes.find((a) => a.id === user2);
+      const requester = asistentes.find((a) => a.id === user1);
+      const mesa = slot.tableNumber;
+
+      if (receiver && requester) {
+        dashboard.sendMeetingAcceptedWhatsapp(receiver.telefono, requester, {
+          timeSlot: nuevoSlotStr,
+          tableAssigned: mesa,
+        });
+        dashboard.sendMeetingAcceptedWhatsapp(requester.telefono, receiver, {
+          timeSlot: nuevoSlotStr,
+          tableAssigned: mesa,
+        });
+        dashboard.sendSms(
+          `¡Tu reunión ha sido actualizada!\nCon: ${requester.nombre}\nEmpresa: ${requester.empresa}\nHorario: ${nuevoSlotStr}\nMesa: ${mesa}`,
+          receiver.telefono
+        );
+        dashboard.sendSms(
+          `¡Tu reunión ha sido actualizada!\nCon: ${receiver.nombre}\nEmpresa: ${receiver.empresa}\nHorario: ${nuevoSlotStr}\nMesa: ${mesa}`,
+          requester.telefono
+        );
+      }
+
+      setGlobalMessage("¡Reunión actualizada correctamente!");
       setEditModal({ opened: false, meeting: null, slot: null });
     } catch (e) {
       setGlobalMessage("Error actualizando la reunión.");
       console.error(e);
     }
+
     setCreatingMeeting(false);
   };
 
   // ----------- CANCEL Y AGENDAR PENDIENTE EN SLOTS SOLO DEL USUARIO -----------
   const handleCancelMeeting = async (meetingId, slotId) => {
     setCreatingMeeting(true);
+    console.log("[handleCancelMeeting] Iniciando cancelación:", {
+      meetingId,
+      slotId,
+    });
+
     try {
       const cancelledMeeting = meetings.find((m) => m.id === meetingId);
-      if (!cancelledMeeting)
+      if (!cancelledMeeting) {
+        console.error(
+          "[handleCancelMeeting] No se encontró la reunión a cancelar:",
+          meetingId
+        );
         throw new Error("No se encontró la reunión a cancelar.");
+      }
+      console.log(
+        "[handleCancelMeeting] Reunión a cancelar:",
+        cancelledMeeting
+      );
 
       // Notifica por WhatsApp y SMS a todos los participantes
       for (const participantId of cancelledMeeting.participants) {
@@ -479,37 +578,45 @@ const MatrixPage = () => {
         );
         const other = asistentes.find((a) => a.id === otherId);
         try {
-        if (participant) {
-          // WhatsApp
-          dashboard.sendMeetingCancelledWhatsapp(participant.telefono, other, {
-            timeSlot: cancelledMeeting.timeSlot,
-            tableAssigned: cancelledMeeting.tableAssigned,
-          });
-          // // SMS
-          // dashboard.sendSms(
-          //   `¡Tu reunión ha sido cancelada!\nCon: ${
-          //     other?.nombre || ""
-          //   }\nEmpresa: ${other?.empresa || ""}\nHorario: ${
-          //     cancelledMeeting.timeSlot
-          //   }\nMesa: ${cancelledMeeting.tableAssigned}`,
-          //   participant.telefono
-          // );
-        }
-      } catch (error) {
+          if (participant) {
+            console.log(
+              `[handleCancelMeeting] Notificando a participante (${participantId}):`,
+              participant
+            );
+            // WhatsApp
+            dashboard.sendMeetingCancelledWhatsapp(
+              participant.telefono,
+              other,
+              {
+                timeSlot: cancelledMeeting.timeSlot,
+                tableAssigned: cancelledMeeting.tableAssigned,
+              }
+            );
+            // // SMS
+            // dashboard.sendSms(
+            //   `¡Tu reunión ha sido cancelada!\nCon: ${other?.nombre || ""}\nEmpresa: ${other?.empresa || ""}\nHorario: ${cancelledMeeting.timeSlot}\nMesa: ${cancelledMeeting.tableAssigned}`,
+            //   participant.telefono
+            // );
+          }
+        } catch (error) {
           console.error(
-            `Error notificando a ${participantId} (${participant?.nombre}):`,
+            `[handleCancelMeeting] Error notificando a ${participantId} (${participant?.nombre}):`,
             error
           );
         }
       }
 
       // 1. Marca la reunión como cancelada
+      console.log(
+        "[handleCancelMeeting] Marcando reunión como cancelada en Firestore..."
+      );
       await updateDoc(doc(db, "events", eventId, "meetings", meetingId), {
         status: "cancelled",
       });
 
       // 2. Libera el slot
       if (slotId) {
+        console.log("[handleCancelMeeting] Liberando slot en agenda:", slotId);
         await updateDoc(doc(db, "agenda", slotId), {
           available: true,
           meetingId: null,
@@ -523,8 +630,12 @@ const MatrixPage = () => {
       const pendientesRecibidas = pendingMeetings.filter(
         (req) => req.receiverId === userId
       );
+      console.log(
+        "[handleCancelMeeting] Pendientes recibidas para el usuario:",
+        pendientesRecibidas
+      );
 
-      // Ojo: excluye la reunión cancelada en el array de aceptadas
+      // Excluye la reunión cancelada en el array de aceptadas
       const reunionesAceptadas = meetings.filter(
         (m) => m.status === "accepted" && m.id !== meetingId
       );
@@ -548,6 +659,9 @@ const MatrixPage = () => {
           );
 
           if (!solicitanteOcupado && !receiverOcupado) {
+            console.log(
+              `[handleCancelMeeting] Agendando solicitud pendiente (ID: ${solicitud.id}) en el slot liberado.`
+            );
             // Acepta la solicitud pendiente
             await updateDoc(
               doc(db, "events", eventId, "meetings", solicitud.id),
@@ -567,6 +681,9 @@ const MatrixPage = () => {
             const requester = asistentes.find((a) => a.id === requesterId);
 
             if (receiver && requester) {
+              console.log(
+                `[handleCancelMeeting] Notificando a ambas partes por WhatsApp/SMS...`
+              );
               // WhatsApp
               dashboard.sendMeetingAcceptedWhatsapp(
                 receiver.telefono,
@@ -594,6 +711,9 @@ const MatrixPage = () => {
             );
             setEditModal({ opened: false, meeting: null, slot: null });
             setCreatingMeeting(false);
+            console.log(
+              "[handleCancelMeeting] Finalizó, solicitud re-agendada correctamente."
+            );
             return;
           }
         }
@@ -602,10 +722,13 @@ const MatrixPage = () => {
       setGlobalMessage("¡Reunión cancelada!");
       setEditModal({ opened: false, meeting: null, slot: null });
       setCreatingMeeting(false);
+      console.log(
+        "[handleCancelMeeting] Finalizó, reunión cancelada sin reasignar slot."
+      );
     } catch (e) {
       setGlobalMessage("Error cancelando la reunión.");
       setCreatingMeeting(false);
-      console.error(e);
+      console.error("[handleCancelMeeting] Error general:", e);
     }
   };
 
@@ -659,53 +782,11 @@ const MatrixPage = () => {
     }
   }
 
-  // --- UI RENDER IGUAL ---
   return (
     <Container fluid>
       <Title order={2} mt="md" mb="md" align="center">
         Matriz Rueda de Negocios — Evento {config?.eventName || "Desconocido"}
       </Title>
-
-      {meetingsRemontadas.length > 0 && false &&  (
-        <Card mt="md" shadow="md" p="md" withBorder>
-          <Title order={5} mb="xs">
-            Reuniones huérfanas / sobreescritas ({meetingsRemontadas.length})
-          </Title>
-          <Text size="sm" mb="sm">
-            Estas reuniones existen en la base, pero ya no están asociadas a
-            ningún slot de agenda. Pueden ser reuniones antiguas, remontadas o
-            mal referenciadas.
-          </Text>
-          <ScrollArea h={220}>
-            <Table striped highlightOnHover>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Hora</Table.Th>
-                  <Table.Th>Mesa</Table.Th>
-                  <Table.Th>Participantes</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {meetingsRemontadas.map((mtg) => (
-                  <Table.Tr key={mtg.id}>
-                    <Table.Td>{mtg.timeSlot}</Table.Td>
-                    <Table.Td>{mtg.tableAssigned}</Table.Td>
-                    <Table.Td>
-                      <ParticipantsChips
-                        participants={mtg.participants.map((pid) =>
-                          participantsInfo[pid]
-                            ? `${participantsInfo[pid].empresa} (${participantsInfo[pid].nombre})`
-                            : pid
-                        )}
-                      />
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </ScrollArea>
-        </Card>
-      )}
 
       <Tabs defaultValue="mesas">
         <Tabs.List>
@@ -713,6 +794,7 @@ const MatrixPage = () => {
           <Tabs.Tab value="usuarios">Por Usuarios</Tabs.Tab>
         </Tabs.List>
 
+        {/* Panel Mesas */}
         <Tabs.Panel value="mesas" pt="md">
           <ScrollArea>
             <Flex gap="lg" justify="center" align="flex-start" wrap="wrap">
@@ -809,7 +891,7 @@ const MatrixPage = () => {
                                   <>
                                     <b>Participantes:</b>
                                     {cell.meetingData?.participants?.map(
-                                      (pid, idx) => {
+                                      (pid) => {
                                         const info = participantsInfo[pid];
                                         if (!info)
                                           return <div key={pid}>{pid}</div>;
@@ -870,7 +952,7 @@ const MatrixPage = () => {
           </ScrollArea>
         </Tabs.Panel>
 
-        {/* Vista por Usuarios */}
+        {/* Panel Usuarios */}
         <Tabs.Panel value="usuarios" pt="md">
           <Flex gap="md" mb="md" wrap="wrap">
             <TextInput
@@ -989,16 +1071,13 @@ const MatrixPage = () => {
                             }}
                             onClick={() => {
                               if (cell.status === "available") {
+                                // Slots disponibles para esa hora
+                                const slotsDelHorario = agenda.filter(
+                                  (s) => s.startTime === slot && s.available
+                                );
                                 setQuickModal({
                                   opened: true,
-                                  slot: {
-                                    ...agenda.find(
-                                      (s) =>
-                                        s.tableNumber === cell.table ||
-                                        s.startTime === slot
-                                    ),
-                                    startTime: slot,
-                                  },
+                                  slotsDisponibles: slotsDelHorario,
                                   defaultUser: asistente,
                                 });
                               } else if (cell.status === "accepted") {
@@ -1016,7 +1095,7 @@ const MatrixPage = () => {
                                     meeting.timeSlot.split(" - ");
                                   setEditModal({
                                     opened: true,
-                                    meeting: meeting,
+                                    meeting,
                                     slot: {
                                       tableNumber: meeting.tableAssigned,
                                       startTime,
@@ -1116,7 +1195,6 @@ const MatrixPage = () => {
                                     }
                                   >
                                     <div>
-                                      <p>{cell.id}</p>
                                       <ParticipantsChips
                                         participants={[
                                           `${asistente.empresa} (${asistente.nombre})`,
@@ -1147,14 +1225,18 @@ const MatrixPage = () => {
       <QuickMeetingModal
         opened={quickModal.opened}
         onClose={() =>
-          setQuickModal({ opened: false, slot: null, defaultUser: null })
+          setQuickModal({
+            opened: false,
+            slotsDisponibles: [],
+            defaultUser: null,
+          })
         }
-        slot={quickModal.slot}
+        slotsDisponibles={quickModal.slotsDisponibles || []}
         defaultUser={quickModal.defaultUser}
         assistants={getAvailableUsersForSlot(
           asistentes,
           meetings,
-          quickModal.slot || {}
+          quickModal.slotsDisponibles?.[0] || {}
         )}
         onCreate={handleQuickCreateMeeting}
         loading={creatingMeeting}
@@ -1181,6 +1263,7 @@ const MatrixPage = () => {
         allMeetings={meetings}
         agenda={agenda}
         participantsInfo={participantsInfo}
+        slotsDisponibles={slotsDisponiblesParaEdicion} // Aquí está el filtro aplicado
       />
 
       {globalMessage && (
