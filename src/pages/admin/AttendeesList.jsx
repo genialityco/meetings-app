@@ -1,24 +1,5 @@
-import {
-  Card,
-  Table,
-  Button,
-  Loader,
-  Text,
-  Group,
-  Title,
-  MultiSelect,
-  Modal,
-} from "@mantine/core";
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-  deleteDoc,
-  doc,
-  addDoc,
-  updateDoc,
-} from "firebase/firestore";
+import { Card, Table, Button, Loader, Text, Group, Title, MultiSelect, Modal } from "@mantine/core";
+import { collection, query, where, getDocs, deleteDoc, doc, addDoc, updateDoc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
@@ -66,6 +47,23 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
   const [deleteAllModal, setDeleteAllModal] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
 
+function parseFirestoreTimestamp(input) {
+  if (!input) return null;
+
+  // Case 1: Firestore Timestamp object (has .toDate)
+  if (typeof input.toDate === 'function') {
+    return input.toDate().toLocaleString();
+  }
+
+  // Case 2: Plain object with seconds & nanoseconds
+  if (typeof input.seconds === 'number' && typeof input.nanoseconds === 'number') {
+    return new Date(input.seconds * 1000 + input.nanoseconds / 1e6).toLocaleString();
+  }
+
+  return null; // fallback if not recognized
+}
+
+
   useEffect(() => {
     setFields(getEventTableFields(event));
     setShownFields(getEventTableFields(event).map((f) => f.name));
@@ -80,18 +78,22 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
   const fetchAttendees = async () => {
     try {
       setLoading(true);
-      const q = query(
-        collection(db, "users"),
-        where("eventId", "==", event.id)
-      );
+      const q = query(collection(db, "users"), where("eventId", "==", event.id));
       const snapshot = await getDocs(q);
-      const list = snapshot.docs.map((docItem) => ({
-        id: docItem.id,
-        ...docItem.data(),
-      }));
+      const list = snapshot.docs.map((docItem) => {
+        const lastConnectedTimestamp = docItem.data().lastConnection;
+        const formatted = parseFirestoreTimestamp(lastConnectedTimestamp);
+        return {
+          id: docItem.id,
+          ...docItem.data(),
+          lastConnectionFormatted: formatted, // Formatear fecha
+        };
+      });
       setAttendees(list);
+      console.log("Asistentes bjt:", list);
     } catch (error) {
       setGlobalMessage("Error al obtener asistentes.");
+      console.log("Error al obtener asistentes.:", error);
     } finally {
       setLoading(false);
     }
@@ -152,9 +154,7 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
 
   // Paso 2: Cuando se crea un nuevo campo desde el wizard (lo agrega a la config del evento)
   const handleCreateField = async ({ excelCol, label, type }) => {
-    const fieldName = `custom_${label
-      .toLowerCase()
-      .replace(/\s/g, "_")}_${Math.floor(Math.random() * 10000)}`;
+    const fieldName = `custom_${label.toLowerCase().replace(/\s/g, "_")}_${Math.floor(Math.random() * 10000)}`;
     // Añadir a la config en Firestore
     try {
       const currentFields = event.config.formFields || [];
@@ -190,9 +190,7 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
         const fieldConfig = fields.find((f) => f.name === fieldName);
         if (fieldConfig?.type === "select" && value) {
           const option = fieldConfig.options?.find(
-            (op) =>
-              String(op.label).toLowerCase().trim() ===
-              String(value).toLowerCase().trim()
+            (op) => String(op.label).toLowerCase().trim() === String(value).toLowerCase().trim()
           );
           value = option?.value || value;
         }
@@ -210,9 +208,7 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
         let value = f.value;
         if (fieldConfig?.type === "select" && value) {
           const option = fieldConfig.options?.find(
-            (op) =>
-              String(op.label).toLowerCase().trim() ===
-              String(value).toLowerCase().trim()
+            (op) => String(op.label).toLowerCase().trim() === String(value).toLowerCase().trim()
           );
           value = option?.value || value;
         }
@@ -248,16 +244,14 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
 
   const exportCompradoresToExcel = () => {
     // Puedes ajustar estos campos según tu modelo
-    const compradores = attendees.filter(
-      (a) => a.tipoAsistente === "comprador"
-    );
-    if (compradores.length === 0)
-      return setGlobalMessage("No hay compradores.");
+    const compradores = attendees.filter((a) => a.tipoAsistente === "comprador");
+    if (compradores.length === 0) return setGlobalMessage("No hay compradores.");
     const fieldsComprador = [
       "id",
       "nombre",
       "empresa",
       "necesidad",
+      "lastConnectionFormatted",
       // agrega aquí más campos si los tienes configurados
     ];
     const wsData = [
@@ -280,6 +274,7 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
       "empresa",
       "descripcion",
       "necesidad",
+      "lastConnectionFormatted",
       // agrega aquí más campos si los tienes configurados
     ];
     const wsData = [
@@ -314,30 +309,15 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
               }}
             />
           </Button>
-          <Button onClick={handleExportCurrentToExcel}>
-            Exportar a Excel (solo columnas visibles)
-          </Button>
-          <Button
-            variant="outline"
-            color="indigo"
-            onClick={exportCompradoresToExcel}
-          >
+          <Button onClick={handleExportCurrentToExcel}>Exportar a Excel (solo columnas visibles)</Button>
+          <Button variant="outline" color="indigo" onClick={exportCompradoresToExcel}>
             Exportar compradores (Excel)
           </Button>
-          <Button
-            variant="outline"
-            color="orange"
-            onClick={exportVendedoresToExcel}
-          >
+          <Button variant="outline" color="orange" onClick={exportVendedoresToExcel}>
             Exportar vendedores (Excel)
           </Button>
           {attendees.length > 0 && (
-            <Button
-              color="red"
-              variant="outline"
-              onClick={() => setDeleteAllModal(true)}
-              loading={deletingAll}
-            >
+            <Button color="red" variant="outline" onClick={() => setDeleteAllModal(true)} loading={deletingAll}>
               Eliminar TODOS
             </Button>
           )}
@@ -390,20 +370,21 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
             <Table.Tbody>
               {attendees.map((a) => (
                 <Table.Tr key={a.id}>
+<<<<<<< HEAD
                   {/* <Table.Td
                     style={{ fontFamily: "monospace", fontSize: "0.85em" }}
                   >
                     {a.id}
                   </Table.Td> */}
+=======
+                  <Table.Td style={{ fontFamily: "monospace", fontSize: "0.85em" }}>{a.id}</Table.Td>
+>>>>>>> 5ee7c342fc068d647983eb700f04dce1138c6e8e
                   {fields
                     .filter((f) => shownFields.includes(f.name))
                     .map((f) => (
                       <Table.Td key={f.name}>
                         {f.type === "select"
-                          ? f.options?.find((op) => op.value === a[f.name])
-                              ?.label ||
-                            a[f.name] ||
-                            getValue(a, f.name)
+                          ? f.options?.find((op) => op.value === a[f.name])?.label || a[f.name] || getValue(a, f.name)
                           : getValue(a, f.name)}
                       </Table.Td>
                     ))}
@@ -424,11 +405,7 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
                       color="red"
                       size="xs"
                       onClick={() => {
-                        if (
-                          window.confirm(
-                            "¿Estás seguro que deseas eliminar este asistente?"
-                          )
-                        ) {
+                        if (window.confirm("¿Estás seguro que deseas eliminar este asistente?")) {
                           removeAttendee(a.id);
                         }
                       }}
@@ -467,22 +444,13 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
         centered
       >
         <Text>
-          ¿Estás seguro que deseas eliminar <b>todos los asistentes</b> del
-          evento? Esta acción es irreversible.
+          ¿Estás seguro que deseas eliminar <b>todos los asistentes</b> del evento? Esta acción es irreversible.
         </Text>
         <Group mt="md" position="apart">
-          <Button
-            variant="default"
-            onClick={() => setDeleteAllModal(false)}
-            disabled={deletingAll}
-          >
+          <Button variant="default" onClick={() => setDeleteAllModal(false)} disabled={deletingAll}>
             Cancelar
           </Button>
-          <Button
-            color="red"
-            onClick={handleDeleteAllAttendees}
-            loading={deletingAll}
-          >
+          <Button color="red" onClick={handleDeleteAllAttendees} loading={deletingAll}>
             Eliminar todos
           </Button>
         </Group>
