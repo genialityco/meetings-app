@@ -481,16 +481,15 @@ const Landing = () => {
           }}
         >
           {/* Header visual del evento */}
-          <Paper shadow="xs" withBorder radius="lg">
-            <Flex justify="center" align="center" p="md">
-              <Image
-                src={event.eventImage}
-                w={isMobile ? 260 : 500}
-                alt="Networking Event"
-                fit="contain"
-              />
-            </Flex>
-          </Paper>
+          <Flex justify="center" align="center" p="md">
+            <Image
+              src={event.eventImage}
+              w={isMobile ? 350 : 700}
+              alt="Networking Event"
+              fit="contain"
+              style={{boxShadow: '10px 30px 40px rgba(0, 0, 0, 0.1)', borderRadius: 8}}
+            />
+          </Flex>
 
           <Title order={isMobile ? 4 : 3} ta="center" my="md">
             {event.eventName || "Evento de Networking"}
