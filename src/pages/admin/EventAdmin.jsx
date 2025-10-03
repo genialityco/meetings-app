@@ -296,11 +296,15 @@ const EventAdmin = () => {
         [
           "Hora",
           "Mesa",
-          "Participantes",
+          "Participante 1 (Empresa)",
+          "Participante 1 (Nombre)",
+          "Participante 1 (Necesidad)",
+          "Participante 2 (Empresa)",
+          "Participante 2 (Nombre)",
+          "Participante 2 (Necesidad)",
           "Estado",
           "Descripción reunión",
-          "Necesidad 1",
-          "Necesidad 2",
+          "Fecha creación",
         ],
         ...meetingsSnap.docs.map((doc) => {
           const meeting = doc.data();
@@ -308,28 +312,42 @@ const EventAdmin = () => {
           const agendaSlot = Object.values(agendaData).find(
             (a) => a.meetingId === doc.id
           );
-          // Participantes bonitos: Empresa (Nombre)
-          const participantes =
-            (meeting.participants || [])
-              .map((pid) =>
-                usersMap[pid]
-                  ? `${usersMap[pid].empresa || ""} (${
-                      usersMap[pid].nombre || ""
-                    })`
-                  : pid
-              )
-              .join(" / ") || "";
-          // Puedes agregar más campos si tienes, como necesidades, descripciones, etc.
+
+          // Obtener datos de cada participante
+          const participant1 = meeting.participants?.[0]
+            ? usersMap[meeting.participants[0]]
+            : null;
+          const participant2 = meeting.participants?.[1]
+            ? usersMap[meeting.participants[1]]
+            : null;
+
+          // Formatear la fecha de creación si existe
+          let createdAtFormatted = "";
+          if (meeting.createdAt) {
+            // Si es un timestamp de Firestore
+            if (meeting.createdAt.toDate) {
+              createdAtFormatted = meeting.createdAt.toDate().toLocaleString();
+            }
+            // Si ya es una cadena de texto
+            else if (typeof meeting.createdAt === "string") {
+              createdAtFormatted = meeting.createdAt;
+            }
+          }
+
           return [
             agendaSlot
               ? `${agendaSlot.startTime} - ${agendaSlot.endTime}`
               : meeting.timeSlot,
             agendaSlot ? agendaSlot.tableNumber : meeting.tableAssigned,
-            participantes,
+            participant1?.empresa || "",
+            participant1?.nombre || "",
+            participant1?.necesidad || "",
+            participant2?.empresa || "",
+            participant2?.nombre || "",
+            participant2?.necesidad || "",
             meeting.status,
             meeting.descripcion || "",
-            usersMap[meeting.participants?.[0]]?.necesidad || "",
-            usersMap[meeting.participants?.[1]]?.necesidad || "",
+            createdAtFormatted,
           ];
         }),
       ];

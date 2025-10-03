@@ -1,4 +1,5 @@
-import { useEffect, useState, useContext, useCallback } from "react";
+/* eslint-disable react/prop-types */
+import { useEffect, useState, useContext, useCallback, useMemo } from "react";
 import {
   TextInput,
   Button,
@@ -15,6 +16,11 @@ import {
   Container,
   Checkbox,
   Box,
+  Group,
+  Avatar,
+  Alert,
+  Tabs,
+  Badge,
 } from "@mantine/core";
 import { RichTextEditor, Link } from "@mantine/tiptap";
 import { useEditor } from "@tiptap/react";
@@ -30,7 +36,9 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../firebase/firebaseConfig";
 import { useMediaQuery } from "@mantine/hooks";
 
-// Subir imagen a Firebase Storage
+const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
+
+// ---- helpers ----
 const uploadProfilePicture = async (file, uid) => {
   const storageRef = ref(storage, `profilePictures/${uid}/${file.name}`);
   await uploadBytes(storageRef, file);
@@ -38,8 +46,31 @@ const uploadProfilePicture = async (file, uid) => {
   return photoURL;
 };
 
-const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
+const isValidEmail = (v = "") =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim());
 
+const formatDateCO = (value) => {
+  if (!value) return null;
+  const d =
+    typeof value?.toDate === "function"
+      ? value.toDate()
+      : value instanceof Date
+      ? value
+      : new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString("es-CO", { timeZone: "America/Bogota" });
+};
+
+const InfoLine = ({ label, value }) => (
+  <Group wrap="nowrap" gap="xs">
+    <Text fw={500}>{label}:</Text>
+    <Text c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>
+      {value || "—"}
+    </Text>
+  </Group>
+);
+
+// --------- Componente principal ----------
 const Landing = () => {
   const navigate = useNavigate();
   const { eventId } = useParams();
@@ -48,17 +79,24 @@ const Landing = () => {
 
   const [event, setEvent] = useState({});
   const [registrationEnabled, setRegistrationEnabled] = useState(true);
-  const [formValues, setFormValues] = useState({});
-  const [profilePicPreview, setProfilePicPreview] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [searchCedula, setSearchCedula] = useState("");
-  const [searchError, setSearchError] = useState("");
-  const [showInfo, setShowInfo] = useState(false);
-  const [tratamientoError, setTratamientoError] = useState("");
 
+  // UI state
+  const [activeTab, setActiveTab] = useState("login"); // 'login' | 'register'
   const isMobile = useMediaQuery("(max-width: 600px)");
 
-  // Editor solo para descripcion/richtext
+  // Login state
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [showProfileSummary, setShowProfileSummary] = useState(false);
+
+  // Form state (se comparte entre registro y edición)
+  const [formValues, setFormValues] = useState({});
+  const [profilePicPreview, setProfilePicPreview] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [tratamientoError, setTratamientoError] = useState("");
+
+  // Editor tiptap (solo si hay richtext en form)
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -75,19 +113,6 @@ const Landing = () => {
       }));
     },
   });
-
-  // Cargar datos del usuario si ya existe
-  useEffect(() => {
-    if (currentUser?.data) {
-      setFormValues((prev) => ({
-        ...prev,
-        ...currentUser.data,
-      }));
-      if (currentUser.data.photoURL) {
-        setProfilePicPreview(currentUser.data.photoURL);
-      }
-    }
-  }, [currentUser]);
 
   // Cargar configuración del evento
   useEffect(() => {
@@ -111,16 +136,31 @@ const Landing = () => {
     }
   }, [eventId]);
 
-  // Obtener valor de cualquier campo, soportando contacto.*
-  function getValueForField(fieldName) {
-    if (fieldName.startsWith("contacto.")) {
-      return formValues.contacto?.[fieldName.split(".")[1]] || "";
+  // Prefill cuando el contexto ya tiene user.data (p.ej., al volver de login)
+  useEffect(() => {
+    if (currentUser?.data) {
+      setFormValues((prev) => ({
+        ...prev,
+        ...currentUser.data,
+      }));
+      if (currentUser.data.photoURL) {
+        setProfilePicPreview(currentUser.data.photoURL);
+      }
     }
-    return formValues[fieldName] ?? "";
-  }
+  }, [currentUser]);
 
-  // Actualizar formValues de cualquier campo (soporta contacto.*, file y checkboxes)
-  function handleDynamicChange(field, value) {
+  // helpers de campos dinámicos
+  const getValueForField = useCallback(
+    (fieldName) => {
+      if (fieldName.startsWith("contacto.")) {
+        return formValues.contacto?.[fieldName.split(".")[1]] || "";
+      }
+      return formValues[fieldName] ?? "";
+    },
+    [formValues]
+  );
+
+  const handleDynamicChange = useCallback((field, value) => {
     if (field.startsWith("contacto.")) {
       const key = field.split(".")[1];
       setFormValues((prev) => ({
@@ -130,26 +170,44 @@ const Landing = () => {
     } else {
       setFormValues((prev) => ({ ...prev, [field]: value }));
     }
-  }
+  }, []);
 
-  // Buscar usuario por cédula
-  const handleSearchByCedula = async () => {
-    setLoading(true);
-    setSearchError("");
-    setShowInfo(false);
-
-    const result = await loginByEmail(searchCedula, eventId);
-
-    if (result?.success) {
-      navigate(`/dashboard/${eventId}`);
-    } else {
-      setSearchError("No se encuentra registrada esta cédula para este evento");
-      setShowInfo(true);
+  // Login por correo — si existe, muestro resumen y opción de actualizar o entrar
+  const handleLogin = useCallback(async () => {
+    setLoginError("");
+    if (!isValidEmail(loginEmail)) {
+      setLoginError("Por favor ingresa un correo válido.");
+      return;
     }
-    setLoading(false);
-  };
+    setLoginLoading(true);
+    try {
+      const result = await loginByEmail(loginEmail.trim(), eventId);
+      if (result?.success) {
+        // Asumimos que currentUser se pobla; muestro el resumen.
+        setShowProfileSummary(true);
+        // Prellenar formulario con datos actuales (por si decide actualizar)
+        if (result?.user?.data) {
+          setFormValues((prev) => ({ ...prev, ...result.user.data }));
+          if (result.user.data.photoURL) {
+            setProfilePicPreview(result.user.data.photoURL);
+          }
+        }
+      } else {
+        setLoginError(
+          "No se encontró un participante con este correo para este evento."
+        );
+        setShowProfileSummary(false);
+      }
+    } catch (e) {
+      console.error(e);
+      setLoginError("Ocurrió un error al intentar ingresar.");
+      setShowProfileSummary(false);
+    } finally {
+      setLoginLoading(false);
+    }
+  }, [loginByEmail, loginEmail, eventId]);
 
-  // Submit registro/actualización
+  // Guardar (tanto registro nuevo como actualización)
   const handleSubmit = useCallback(async () => {
     setTratamientoError("");
     if (!formValues[CONSENTIMIENTO_FIELD_NAME]) {
@@ -158,64 +216,53 @@ const Landing = () => {
       );
       return;
     }
-    setLoading(true);
-    try {
-      const uid = currentUser.uid;
-      let dataToUpdate = { ...formValues, eventId };
+    if (!isValidEmail(formValues?.email || formValues?.correo || "")) {
+      // intenta leer de "email" o "correo" según cómo hayas nombrado el campo
+      // si usas campo dinámico “contacto.correo”, captura más abajo
+    }
 
-      // Manejar upload foto (si el campo existe)
+    setSaving(true);
+    try {
+      const uid = currentUser?.uid;
+      let dataToUpdate = {
+        ...formValues,
+        eventId,
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Soporte para contacto.correo si lo usas como login
+      if (!dataToUpdate.email && dataToUpdate?.contacto?.correo) {
+        dataToUpdate.email = dataToUpdate.contacto.correo;
+      }
+
       if (formValues.photo) {
         const photoURL = await uploadProfilePicture(formValues.photo, uid);
         dataToUpdate.photoURL = photoURL;
-        delete dataToUpdate.photo; // No enviar objeto File a Firestore
+        delete dataToUpdate.photo; // no subir File a Firestore
       }
+
       await updateUser(uid, dataToUpdate);
+
+      // Si viene desde login-tab, después de actualizar puede entrar al directorio
+      // o lo llevamos directo:
       navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
     } catch (error) {
-      console.error("Error en el registro:", error);
+      console.error("Error en el guardado:", error);
+    } finally {
+      setSaving(false);
     }
-    setLoading(false);
   }, [currentUser, formValues, navigate, updateUser, eventId]);
 
-  const handleGoToDashboard = () => {
-    navigate("/dashboard");
-  };
+  const handleGoToDashboard = useCallback(() => {
+    navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
+  }, [navigate, eventId]);
 
-  // Si el usuario aún está cargando, muestra un Loader
-  if (userLoading) return <Loader />;
-
-  // Si no existe eventId, mostramos mensaje
-  if (!eventId) {
-    return (
-      <Container>
-        <Paper
-          shadow="md"
-          p="xl"
-          style={{ maxWidth: 500, margin: "40px auto" }}
-        >
-          <Text align="center">
-            Esta es una plataforma de networking desarrollada por Geniality SAS.
-            <br />
-            Visítanos:{" "}
-            <a
-              href="https://geniality.com.co/"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              https://geniality.com.co
-            </a>
-          </Text>
-        </Paper>
-      </Container>
-    );
-  }
-
-  // Render dinámico de los campos configurados en Firestore
-  function renderDynamicFormFields() {
+  // Render de campos dinámicos (reutilizable para registrar/editar)
+  const renderDynamicFormFields = useCallback(() => {
     if (!Array.isArray(event?.config?.formFields)) return null;
 
     return event.config.formFields.map((field) => {
-      // Foto de perfil (file input)
+      // Foto perfil
       if (field.name === "photo") {
         return (
           <FileInput
@@ -224,7 +271,7 @@ const Landing = () => {
             placeholder="Selecciona o toma una foto"
             accept="image/png,image/jpeg"
             inputProps={{ capture: "user" }}
-            value={formValues.photo}
+            value={formValues.photo || null}
             onChange={(file) => {
               handleDynamicChange("photo", file);
               if (file) {
@@ -237,7 +284,7 @@ const Landing = () => {
         );
       }
 
-      // RichText (solo descripcion, adaptarlo para más si usas otros richtext)
+      // RichText
       if (field.type === "richtext") {
         return (
           <div key={field.name}>
@@ -249,7 +296,7 @@ const Landing = () => {
         );
       }
 
-      // Select (incluye soporte para options dinámicas)
+      // Select
       if (field.type === "select") {
         return (
           <Select
@@ -261,11 +308,12 @@ const Landing = () => {
             onChange={(value) => handleDynamicChange(field.name, value)}
             required={field.required}
             mb="sm"
+            searchable
           />
         );
       }
 
-      // Checkbox personalizado (no consentimiento)
+      // Checkbox (excepto consentimiento)
       if (
         field.type === "checkbox" &&
         field.name !== CONSENTIMIENTO_FIELD_NAME
@@ -284,7 +332,7 @@ const Landing = () => {
         );
       }
 
-      // Campos de contacto anidados (correo/teléfono)
+      // Campos de contacto
       if (
         field.name === "contacto.correo" ||
         field.name === "contacto.telefono"
@@ -301,7 +349,7 @@ const Landing = () => {
         );
       }
 
-      // TextInput por defecto para otros campos
+      // TextInput por defecto
       return (
         <TextInput
           key={field.name}
@@ -313,6 +361,96 @@ const Landing = () => {
         />
       );
     });
+  }, [
+    event?.config?.formFields,
+    formValues,
+    getValueForField,
+    handleDynamicChange,
+    editor,
+  ]);
+
+  // Vista resumen de perfil tras login
+  const ProfileSummary = useMemo(() => {
+    if (!showProfileSummary) return null;
+
+    const data = currentUser?.data || formValues || {};
+    const avatarSrc = data?.photoURL || profilePicPreview || null;
+
+    return (
+      <Paper withBorder shadow="sm" radius="md" p="md">
+        <Group align="flex-start" wrap="nowrap">
+          <Avatar src={avatarSrc} size={64} radius="xl">
+            {String(data?.name || data?.nombres || "U")
+              .slice(0, 1)
+              .toUpperCase()}
+          </Avatar>
+          <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
+            <Group justify="space-between" wrap="nowrap">
+              <Title order={5} lineClamp={1}>
+                {data?.name || data?.nombres || "Participante"}
+              </Title>
+              <Badge variant="light">Registrado</Badge>
+            </Group>
+            <InfoLine label="Empresa" value={data?.empresa || data?.company} />
+            <InfoLine
+              label="Teléfono"
+              value={data?.telefono || data?.contacto?.telefono}
+            />
+            {data?.createdAt && (
+              <Text size="xs" c="dimmed">
+                Registrado: {formatDateCO(data.createdAt)}
+              </Text>
+            )}
+          </Stack>
+        </Group>
+
+        <Group mt="md" grow={isMobile}>
+          <Button
+            variant="default"
+            onClick={() => setShowProfileSummary(false)}
+          >
+            Actualizar mis datos
+          </Button>
+          <Button onClick={handleGoToDashboard}>Entrar al directorio</Button>
+        </Group>
+      </Paper>
+    );
+  }, [
+    showProfileSummary,
+    currentUser,
+    formValues,
+    profilePicPreview,
+    isMobile,
+    handleGoToDashboard,
+  ]);
+
+  // Si el usuario aún está cargando, loader
+  if (userLoading) return <Loader />;
+
+  // Sin eventId -> landing básica
+  if (!eventId) {
+    return (
+      <Container>
+        <Paper
+          shadow="md"
+          p="xl"
+          style={{ maxWidth: 520, margin: "40px auto" }}
+        >
+          <Text ta="center">
+            Esta es una plataforma de networking desarrollada por Geniality SAS.
+            <br />
+            Visítanos:{" "}
+            <a
+              href="https://geniality.com.co/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              https://geniality.com.co
+            </a>
+          </Text>
+        </Paper>
+      </Container>
+    );
   }
 
   return (
@@ -327,135 +465,164 @@ const Landing = () => {
         backgroundPosition: "center center",
         backgroundSize: "cover",
         backgroundRepeat: "no-repeat",
-        padding: 0,
-        margin: 0,
       }}
     >
-      <Container
-        fluid
-        style={{ padding: 0, minHeight: "100vh", background: "transparent" }}
-      >
+      <Container fluid style={{ padding: 0, minHeight: "100vh" }}>
         <Paper
           shadow="xl"
           withBorder
           radius="lg"
-          p="xl"
+          p={isMobile ? "lg" : "xl"}
           style={{
-            maxWidth: isMobile ? 300 : 500,
+            maxWidth: isMobile ? 360 : 720,
             margin: "40px auto",
+            background: "rgba(255,255,255,0.95)",
+            backdropFilter: "blur(6px)",
           }}
         >
-          <Paper shadow="xl" withBorder radius="lg">
-            <Flex justify="center">
-              {/* <a
-                href="https://geniality.com.co/"
-                target="_blank"
-                rel="noopener noreferrer"
-              > */}
-                <Image src={event.eventImage} alt="Networking Event" />
-              {/* </a> */}
+          {/* Header visual del evento */}
+          <Paper shadow="xs" withBorder radius="lg">
+            <Flex justify="center" align="center" p="md">
+              <Image
+                src={event.eventImage}
+                w={isMobile ? 260 : 500}
+                alt="Networking Event"
+                fit="contain"
+              />
             </Flex>
           </Paper>
-          <Text order={2} align="center" my="md">
-            <strong>{event.eventName}</strong>
-          </Text>
+
+          <Title order={isMobile ? 4 : 3} ta="center" my="md">
+            {event.eventName || "Evento de Networking"}
+          </Title>
 
           <Text ta="justify" mb="lg">
-            <strong>Plataforma de Networking y Reuniones de Negocio</strong>{" "}
+            <strong>Plataforma de Networking y Reuniones de Negocio.</strong>{" "}
             Conecta con otras empresas y permite que te encuentren para agendar
-            reuniones durante el evento,  Ingresa con el correo registrado de la empresa.
+            reuniones durante el evento. Ingresa con el correo registrado de la
+            empresa o regístrate si es tu primera vez.
           </Text>
 
-          {/* Sección de búsqueda de usuario */}
-          <Stack>
-            <TextInput
-              label="Ingrese con su correo"
-              placeholder="Correo electronico"
-              value={searchCedula}
-              onChange={(e) => setSearchCedula(e.target.value)}
-            />
-            {searchError && <Text c="red">{searchError}</Text>}
-            <Button
-              onClick={handleSearchByCedula}
-              loading={loading}
-              color="#00b481"
-            >
-              <Text
-                c="black"
-                fw={700}
-                fz={isMobile ? "md" : "lg"}
-                tt="uppercase"
-              >
-                Ingresar
-              </Text>
-            </Button>
-          </Stack>
-          <Divider my="md" />
+          <Tabs
+            value={activeTab}
+            onChange={setActiveTab}
+            variant="pills"
+            radius="md"
+            keepMounted={false}
+          >
+            <Tabs.List grow>
+              <Tabs.Tab value="login">Ingresar</Tabs.Tab>
+              <Tabs.Tab value="register" disabled={!registrationEnabled}>
+                Registrarse
+              </Tabs.Tab>
+            </Tabs.List>
 
-          {registrationEnabled ? (
-            <Stack>
-              <Text ta="justify" my="lg" size="lg">
-                Para un registro nuevo diligencia el formulario.
-              </Text>
-
-              {/* --- FORMULARIO DINÁMICO --- */}
-              {renderDynamicFormFields()}
-
-              {/* Vista previa de la foto */}
-              {profilePicPreview && (
-                <Image
-                  src={profilePicPreview}
-                  alt="Vista previa de la foto de perfil"
-                  height={150}
-                  fit="cover"
-                  radius="md"
-                  mt="sm"
+            {/* --------- TAB INGRESAR --------- */}
+            <Tabs.Panel value="login" pt="md">
+              <Stack>
+                <TextInput
+                  label="Correo electrónico"
+                  placeholder="tu@empresa.com"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                  required
                 />
+                {loginError && (
+                  <Alert color="red" variant="light">
+                    {loginError}
+                  </Alert>
+                )}
+                {!showProfileSummary && (
+                  <Group justify="flex-end">
+                    <Button loading={loginLoading} onClick={handleLogin}>
+                      Ingresar
+                    </Button>
+                  </Group>
+                )}
+
+                {showProfileSummary && ProfileSummary}
+
+                {/* Si elige actualizar, muestro el formulario debajo */}
+                {!showProfileSummary && currentUser?.data && (
+                  <Alert color="yellow" variant="light">
+                    Ya tienes información guardada. Si deseas actualizarla, usa
+                    la pestaña “Registrarse” (está habilitada como edición).
+                  </Alert>
+                )}
+              </Stack>
+            </Tabs.Panel>
+
+            {/* --------- TAB REGISTRARSE / EDITAR --------- */}
+            <Tabs.Panel value="register" pt="md">
+              {!registrationEnabled && (
+                <Text ta="center" c="gray" mt="md">
+                  Los nuevos registros están inhabilitados para este evento.
+                </Text>
               )}
 
-              {/* Consentimiento al final */}
-              <Checkbox
-                label={
-                  event.config?.tratamientoDatosText ||
-                  "Al utilizar este aplicativo, autorizo a GEN.IALITY SAS identificada con NIT 901555490, ..."
-                }
-                checked={!!formValues[CONSENTIMIENTO_FIELD_NAME]}
-                onChange={(e) =>
-                  handleDynamicChange(
-                    CONSENTIMIENTO_FIELD_NAME,
-                    e.currentTarget.checked
-                  )
-                }
-                required
-                mt="md"
-              />
-              {tratamientoError && <Text color="red">{tratamientoError}</Text>}
+              {registrationEnabled && (
+                <Stack>
+                  <Text ta="justify" my="sm" size="lg">
+                    {currentUser?.data
+                      ? "Actualiza tu información antes de continuar."
+                      : "Completa el formulario para crear tu registro."}
+                  </Text>
 
-              <Button onClick={handleSubmit} loading={loading}>
-                {currentUser?.data ? "Actualizar" : "Registrarse"}
-              </Button>
-              {currentUser?.data && (
-                <Button onClick={handleGoToDashboard}>
-                  Ir a la dashboard
-                </Button>
+                  {/* Form dinámico */}
+                  {renderDynamicFormFields()}
+
+                  {/* Vista previa foto */}
+                  {profilePicPreview && (
+                    <Image
+                      src={profilePicPreview}
+                      alt="Vista previa de la foto de perfil"
+                      height={150}
+                      fit="cover"
+                      radius="md"
+                      mt="sm"
+                    />
+                  )}
+
+                  {/* Consentimiento */}
+                  <Checkbox
+                    label={
+                      event.config?.tratamientoDatosText ||
+                      "Al utilizar este aplicativo, autorizo a GEN.IALITY SAS identificada con NIT 901555490, ..."
+                    }
+                    checked={!!formValues[CONSENTIMIENTO_FIELD_NAME]}
+                    onChange={(e) =>
+                      handleDynamicChange(
+                        CONSENTIMIENTO_FIELD_NAME,
+                        e.currentTarget.checked
+                      )
+                    }
+                    required
+                    mt="md"
+                  />
+                  {tratamientoError && <Text c="red">{tratamientoError}</Text>}
+
+                  <Group justify="space-between" grow={isMobile}>
+                    {currentUser?.data && (
+                      <Button variant="default" onClick={handleGoToDashboard}>
+                        Entrar al directorio
+                      </Button>
+                    )}
+                    <Button onClick={handleSubmit} loading={saving}>
+                      {currentUser?.data ? "Guardar cambios" : "Registrarme"}
+                    </Button>
+                  </Group>
+                </Stack>
               )}
-            </Stack>
-          ) : (
-            <Text align="center" color="gray" mt="md">
-              Los nuevos registros están inhabilitados para este evento.
-            </Text>
-          )}
+            </Tabs.Panel>
+          </Tabs>
 
-          {showInfo && (
-            <>
-              <Divider my="md" />
-              <Text align="center" color="gray">
-                Si no se encuentra registrada su cédula, significa que no
-                asistió presencialmente al evento y no podrá acceder al
-                directorio.
-              </Text>
-            </>
-          )}
+          {/* Nota informativa opcional */}
+          <Divider my="lg" />
+          <Text ta="center" c="dimmed" fz="sm">
+            ¿Problemas para ingresar? Verifica que tu correo esté registrado por
+            la organización del evento.
+          </Text>
         </Paper>
       </Container>
     </Box>

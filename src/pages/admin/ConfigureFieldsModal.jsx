@@ -16,11 +16,7 @@ import {
 } from "@mantine/core";
 import { updateDoc, doc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
-import {
-  IconGripVertical,
-  IconTrash,
-  IconPlus,
-} from "@tabler/icons-react";
+import { IconGripVertical, IconTrash, IconPlus } from "@tabler/icons-react";
 import {
   DndContext,
   closestCenter,
@@ -49,6 +45,7 @@ const AVAILABLE_FIELDS = [
     options: [
       { value: "comprador", label: "Comprador" },
       { value: "vendedor", label: "Vendedor" },
+      { value: "otro", label: "Otro" },
     ],
   },
   {
@@ -91,7 +88,13 @@ const getDefaultFields = (formFields) => {
 };
 
 // --------- DND-kit item -------------
-function SortableFieldItem({ field, idx, handleDeleteCustomField, handleLabelChange, handleToggleRequired }) {
+function SortableFieldItem({
+  field,
+  idx,
+  handleDeleteCustomField,
+  handleLabelChange,
+  handleToggleRequired,
+}) {
   const {
     attributes,
     listeners,
@@ -133,7 +136,9 @@ function SortableFieldItem({ field, idx, handleDeleteCustomField, handleLabelCha
         size="sm"
         label="Obligatorio"
         checked={field.required}
-        onChange={(e) => handleToggleRequired(field.name, e.currentTarget.checked)}
+        onChange={(e) =>
+          handleToggleRequired(field.name, e.currentTarget.checked)
+        }
       />
       <Text size="xs" color="dimmed">
         {field.type === "checkbox"
@@ -181,17 +186,21 @@ export default function ConfigureFieldsModal({
   );
   const [newFieldLabel, setNewFieldLabel] = useState("");
   const [newFieldType, setNewFieldType] = useState("text");
-  const [newSelectOptions, setNewSelectOptions] = useState("Opción 1, Opción 2");
+  const [newSelectOptions, setNewSelectOptions] =
+    useState("Opción 1, Opción 2");
 
-useEffect(() => {
-  if (opened) {
-    setFields(event?.config?.formFields || getDefaultFields([]));
-    setTratamientoText(event?.config?.tratamientoDatosText || CONSENTIMIENTO_FIELD.legalText);
-    setConsentimientoLabel(event?.config?.tratamientoDatosLabel || CONSENTIMIENTO_FIELD.label);
-  }
-  // eslint-disable-next-line
-}, [opened]);
-
+  useEffect(() => {
+    if (opened) {
+      setFields(event?.config?.formFields || getDefaultFields([]));
+      setTratamientoText(
+        event?.config?.tratamientoDatosText || CONSENTIMIENTO_FIELD.legalText
+      );
+      setConsentimientoLabel(
+        event?.config?.tratamientoDatosLabel || CONSENTIMIENTO_FIELD.label
+      );
+    }
+    // eslint-disable-next-line
+  }, [opened]);
 
   const handleToggleField = (fieldName, checked) => {
     if (checked) {

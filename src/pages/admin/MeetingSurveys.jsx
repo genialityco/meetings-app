@@ -1,8 +1,48 @@
-import React, { useEffect, useState, useContext } from "react";
-import { collection, query, onSnapshot } from "firebase/firestore";
+import { useEffect, useState, useContext } from "react";
+import { collection, query, onSnapshot, doc, getDoc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
-import { Table, Loader, Text } from "@mantine/core";
+import { Table, Loader, Text, Button, Group } from "@mantine/core";
 import { UserContext } from "../../context/UserContext";
+import * as XLSX from "xlsx";
+
+// Función para obtener datos de usuario
+const getUserInfo = async (userId) => {
+  if (!userId) return { name: "-", empresa: "-" };
+  const userRef = doc(db, "users", userId);
+  const userSnap = await getDoc(userRef);
+  if (!userSnap.exists()) return { name: "-", empresa: "-" };
+  const d = userSnap.data();
+  return {
+    name: d.displayName || d.name || "-",
+    empresa: d.empresa || d.company || "-",
+  };
+};
+
+const fetchSurveyInfo = async (survey) => {
+  if (
+    survey.userName &&
+    survey.userEmpresa &&
+    survey.otherUserName &&
+    survey.otherUserEmpresa
+  ) {
+    return survey;
+  }
+  if (!survey.meetingId) return survey;
+  const eventId = "VAqwPf9LAXVnggomWK7t";
+  const meetingRef = doc(db, "events", eventId, "meetings", survey.meetingId);
+  const meetingSnap = await getDoc(meetingRef);
+  if (!meetingSnap.exists()) return survey;
+  const meeting = meetingSnap.data();
+  const receiverInfo = await getUserInfo(meeting.receiverId);
+  const requesterInfo = await getUserInfo(meeting.requesterId);
+  return {
+    ...survey,
+    userName: requesterInfo.name,
+    userEmpresa: requesterInfo.empresa,
+    otherUserName: receiverInfo.name,
+    otherUserEmpresa: receiverInfo.empresa,
+  };
+};
 
 const MeetingSurveys = () => {
   const { currentUser } = useContext(UserContext);
@@ -11,20 +51,15 @@ const MeetingSurveys = () => {
 
   useEffect(() => {
     if (!currentUser?.uid) return;
-
     const q = query(collection(db, "meetingSurveys"));
-    // Sin filtro, trae todas. Si quieres solo las de este usuario, añade:
-    // where("userId", "==", currentUser.uid)
-
     const unsubscribe = onSnapshot(
       q,
-      (querySnapshot) => {
-        const surveysData = [];
+      async (querySnapshot) => {
+        let surveysData = [];
         querySnapshot.forEach((doc) => {
           const data = doc.data();
           surveysData.push({
             id: doc.id,
-            meetingId: data.meetingId,
             value: data.value,
             comments: data.comments,
             createdAt: data.createdAt?.toDate
@@ -34,9 +69,14 @@ const MeetingSurveys = () => {
             userEmpresa: data.userEmpresa,
             otherUserName: data.otherUserName,
             otherUserEmpresa: data.otherUserEmpresa,
+            meetingId: data.meetingId,
           });
         });
-        setSurveys(surveysData);
+
+        const completedSurveys = await Promise.all(
+          surveysData.map(async (s) => await fetchSurveyInfo(s))
+        );
+        setSurveys(completedSurveys);
         setLoading(false);
       },
       (error) => {
@@ -44,9 +84,27 @@ const MeetingSurveys = () => {
         setLoading(false);
       }
     );
-
     return () => unsubscribe();
   }, [currentUser]);
+
+  // ---- EXPORTAR A EXCEL ----
+  const handleExportExcel = () => {
+    // Armar los datos para exportar
+    const dataToExport = surveys.map((survey) => ({
+      "Valor estimado": survey.value || "-",
+      Comentarios: survey.comments || "-",
+      "Empresa 1": survey.userEmpresa || "-",
+      "Empresa 2": survey.otherUserEmpresa || "-",
+      Fecha: survey.createdAt
+        ? new Date(survey.createdAt).toLocaleString()
+        : "-",
+    }));
+    // Crear el libro y hoja de Excel
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Encuestas");
+    XLSX.writeFile(workbook, "encuestas_meetings.xlsx");
+  };
 
   if (loading) return <Loader />;
 
@@ -59,34 +117,31 @@ const MeetingSurveys = () => {
 
   return (
     <>
-      <Text>Total: {surveys.length}</Text>
+      <Group mb="md" justify="space-between">
+        <Text>Total: {surveys.length}</Text>
+        <Button onClick={handleExportExcel} color="green">
+          Exportar a Excel
+        </Button>
+      </Group>
       <Table striped highlightOnHover>
-        <thead>
-          <tr>
-            <th>Valor estimado</th>
-            <th>Comentarios</th>
-            <th>Fecha</th>
-            <th>Usuario</th>
-            <th>Empresa</th>
-            <th>Otro Usuario</th>
-            <th>Empresa Otro</th>
-          </tr>
-        </thead>
-        <tbody>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>Valor estimado</Table.Th>
+            <Table.Th>Comentarios</Table.Th>
+            <Table.Th>Empresa 1</Table.Th>
+            <Table.Th>Empresa 2</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
           {surveys.map((survey) => (
-            <tr key={survey.id}>
-              <td>{survey.value || "-"}</td>
-              <td>{survey.comments || "-"}</td>
-              <td>
-                {survey.createdAt ? survey.createdAt.toLocaleString() : "-"}
-              </td>
-              <td>{survey.userName || "-"}</td>
-              <td>{survey.userEmpresa || "-"}</td>
-              <td>{survey.otherUserName || "-"}</td>
-              <td>{survey.otherUserEmpresa || "-"}</td>
-            </tr>
+            <Table.Tr key={survey.id}>
+              <Table.Td>{survey.value || "-"}</Table.Td>
+              <Table.Td>{survey.comments || "-"}</Table.Td>
+              <Table.Td>{survey.userEmpresa || "-"}</Table.Td>
+              <Table.Td>{survey.otherUserEmpresa || "-"}</Table.Td>
+            </Table.Tr>
           ))}
-        </tbody>
+        </Table.Tbody>
       </Table>
     </>
   );

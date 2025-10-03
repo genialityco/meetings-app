@@ -390,11 +390,11 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
             <Table.Tbody>
               {attendees.map((a) => (
                 <Table.Tr key={a.id}>
-                  <Table.Td
+                  {/* <Table.Td
                     style={{ fontFamily: "monospace", fontSize: "0.85em" }}
                   >
                     {a.id}
-                  </Table.Td>
+                  </Table.Td> */}
                   {fields
                     .filter((f) => shownFields.includes(f.name))
                     .map((f) => (
