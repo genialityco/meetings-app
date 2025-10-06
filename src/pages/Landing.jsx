@@ -34,6 +34,7 @@ import { UserContext } from "../context/UserContext";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../firebase/firebaseConfig";
 import { useMediaQuery } from "@mantine/hooks";
+import Placeholder from "@tiptap/extension-placeholder";
 
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
 
@@ -103,8 +104,11 @@ const Landing = () => {
       Link,
       Highlight,
       TextAlign.configure({ types: ["heading", "paragraph"] }),
+      Placeholder.configure({
+      placeholder: "Describe tu empresa, productos o servicios...",
+    }),
     ],
-    content: formValues.descripcion || "<p>Escribe aquí la descripción...</p>",
+    content: formValues.descripcion || "",
     onUpdate: ({ editor }) => {
       setFormValues((prev) => ({
         ...prev,
