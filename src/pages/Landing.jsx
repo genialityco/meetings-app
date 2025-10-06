@@ -15,7 +15,6 @@ import {
   Flex,
   Container,
   Checkbox,
-  Box,
   Group,
   Avatar,
   Alert,
@@ -454,177 +453,183 @@ const Landing = () => {
   }
 
   return (
-    <Box
+    <Container
+      fluid
+      p={0}
       style={{
         minHeight: "100vh",
-        width: "100vw",
-        backgroundImage:
+        // Fondo en el Container
+        backgroundImage: `url('${
           event.backgroundImage && event.backgroundImage.startsWith("http")
-            ? `url('${event.backgroundImage}')`
-            : `url('/FONDO-DESKTOP.png')`,
-        backgroundPosition: "center center",
+            ? event.backgroundImage
+            : "/FONDO-DESKTOP.png"
+        }')`,
+        backgroundPosition: "center",
         backgroundSize: "cover",
         backgroundRepeat: "no-repeat",
+
+        // Centrado del contenido
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
       }}
     >
-      <Container fluid style={{ padding: 0, minHeight: "100vh" }}>
-        <Paper
-          shadow="xl"
-          withBorder
-          radius="lg"
-          p={isMobile ? "lg" : "xl"}
-          style={{
-            maxWidth: isMobile ? 360 : 720,
-            margin: "40px auto",
-            background: "rgba(255,255,255,0.95)",
-            backdropFilter: "blur(6px)",
-          }}
+      <Paper
+        shadow="xl"
+        withBorder
+        radius="lg"
+        p={isMobile ? "md" : "xl"}
+        style={{
+          width: "100%",
+          maxWidth: 720,
+          margin: isMobile ? "16px" : "24px",
+          background: "rgba(255,255,255,0.95)",
+          backdropFilter: "blur(6px)",
+        }}
+      >
+        {/* Header visual del evento */}
+        <Flex justify="center" align="center" p="md">
+          <Image
+            src={event.eventImage}
+            alt="Networking Event"
+            fit="contain"
+            w="100%"
+            maw={isMobile ? 300 : 600}
+            style={{
+              boxShadow: "10px 30px 40px rgba(0, 0, 0, 0.1)",
+              borderRadius: 8,
+            }}
+          />
+        </Flex>
+
+        <Title order={isMobile ? 4 : 3} ta="center" my="md">
+          {event.eventName || "Evento de Networking"}
+        </Title>
+
+        <Text ta="justify" mb="lg">
+          <strong>Plataforma de Networking y Reuniones de Negocio.</strong>{" "}
+          Conecta con otras empresas y permite que te encuentren para agendar
+          reuniones durante el evento. Ingresa con el correo registrado de la
+          empresa o regístrate si es tu primera vez.
+        </Text>
+
+        <Tabs
+          value={activeTab}
+          onChange={setActiveTab}
+          variant="pills"
+          radius="md"
+          keepMounted={false}
         >
-          {/* Header visual del evento */}
-          <Flex justify="center" align="center" p="md">
-            <Image
-              src={event.eventImage}
-              w={isMobile ? 350 : 700}
-              alt="Networking Event"
-              fit="contain"
-              style={{boxShadow: '10px 30px 40px rgba(0, 0, 0, 0.1)', borderRadius: 8}}
-            />
-          </Flex>
+          <Tabs.List grow>
+            <Tabs.Tab value="login">Ingresar</Tabs.Tab>
+            <Tabs.Tab value="register" disabled={!registrationEnabled}>
+              Registrarse
+            </Tabs.Tab>
+          </Tabs.List>
 
-          <Title order={isMobile ? 4 : 3} ta="center" my="md">
-            {event.eventName || "Evento de Networking"}
-          </Title>
+          {/* --------- TAB INGRESAR --------- */}
+          <Tabs.Panel value="login" pt="md">
+            <Stack>
+              <TextInput
+                label="Correo electrónico"
+                placeholder="tu@empresa.com"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                required
+              />
+              {loginError && (
+                <Alert color="red" variant="light">
+                  {loginError}
+                </Alert>
+              )}
+              {!showProfileSummary && (
+                <Group justify="flex-end">
+                  <Button loading={loginLoading} onClick={handleLogin}>
+                    Ingresar
+                  </Button>
+                </Group>
+              )}
 
-          <Text ta="justify" mb="lg">
-            <strong>Plataforma de Networking y Reuniones de Negocio.</strong>{" "}
-            Conecta con otras empresas y permite que te encuentren para agendar
-            reuniones durante el evento. Ingresa con el correo registrado de la
-            empresa o regístrate si es tu primera vez.
-          </Text>
+              {showProfileSummary && ProfileSummary}
 
-          <Tabs
-            value={activeTab}
-            onChange={setActiveTab}
-            variant="pills"
-            radius="md"
-            keepMounted={false}
-          >
-            <Tabs.List grow>
-              <Tabs.Tab value="login">Ingresar</Tabs.Tab>
-              <Tabs.Tab value="register" disabled={!registrationEnabled}>
-                Registrarse
-              </Tabs.Tab>
-            </Tabs.List>
+              {!showProfileSummary && currentUser?.data && (
+                <Alert color="yellow" variant="light">
+                  Ya tienes información guardada. Si deseas actualizarla, usa la
+                  pestaña “Registrarse” (está habilitada como edición).
+                </Alert>
+              )}
+            </Stack>
+          </Tabs.Panel>
 
-            {/* --------- TAB INGRESAR --------- */}
-            <Tabs.Panel value="login" pt="md">
+          {/* --------- TAB REGISTRARSE / EDITAR --------- */}
+          <Tabs.Panel value="register" pt="md">
+            {!registrationEnabled && (
+              <Text ta="center" c="gray" mt="md">
+                Los nuevos registros están inhabilitados para este evento.
+              </Text>
+            )}
+
+            {registrationEnabled && (
               <Stack>
-                <TextInput
-                  label="Correo electrónico"
-                  placeholder="tu@empresa.com"
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-                  required
-                />
-                {loginError && (
-                  <Alert color="red" variant="light">
-                    {loginError}
-                  </Alert>
-                )}
-                {!showProfileSummary && (
-                  <Group justify="flex-end">
-                    <Button loading={loginLoading} onClick={handleLogin}>
-                      Ingresar
-                    </Button>
-                  </Group>
-                )}
-
-                {showProfileSummary && ProfileSummary}
-
-                {/* Si elige actualizar, muestro el formulario debajo */}
-                {!showProfileSummary && currentUser?.data && (
-                  <Alert color="yellow" variant="light">
-                    Ya tienes información guardada. Si deseas actualizarla, usa
-                    la pestaña “Registrarse” (está habilitada como edición).
-                  </Alert>
-                )}
-              </Stack>
-            </Tabs.Panel>
-
-            {/* --------- TAB REGISTRARSE / EDITAR --------- */}
-            <Tabs.Panel value="register" pt="md">
-              {!registrationEnabled && (
-                <Text ta="center" c="gray" mt="md">
-                  Los nuevos registros están inhabilitados para este evento.
+                <Text ta="justify" my="sm" size="lg">
+                  {currentUser?.data
+                    ? "Actualiza tu información antes de continuar."
+                    : "Completa el formulario para crear tu registro."}
                 </Text>
-              )}
 
-              {registrationEnabled && (
-                <Stack>
-                  <Text ta="justify" my="sm" size="lg">
-                    {currentUser?.data
-                      ? "Actualiza tu información antes de continuar."
-                      : "Completa el formulario para crear tu registro."}
-                  </Text>
+                {renderDynamicFormFields()}
 
-                  {/* Form dinámico */}
-                  {renderDynamicFormFields()}
-
-                  {/* Vista previa foto */}
-                  {profilePicPreview && (
-                    <Image
-                      src={profilePicPreview}
-                      alt="Vista previa de la foto de perfil"
-                      height={150}
-                      fit="cover"
-                      radius="md"
-                      mt="sm"
-                    />
-                  )}
-
-                  {/* Consentimiento */}
-                  <Checkbox
-                    label={
-                      event.config?.tratamientoDatosText ||
-                      "Al utilizar este aplicativo, autorizo a GEN.IALITY SAS identificada con NIT 901555490, ..."
-                    }
-                    checked={!!formValues[CONSENTIMIENTO_FIELD_NAME]}
-                    onChange={(e) =>
-                      handleDynamicChange(
-                        CONSENTIMIENTO_FIELD_NAME,
-                        e.currentTarget.checked
-                      )
-                    }
-                    required
-                    mt="md"
+                {profilePicPreview && (
+                  <Image
+                    src={profilePicPreview}
+                    alt="Vista previa de la foto de perfil"
+                    height={150}
+                    fit="cover"
+                    radius="md"
+                    mt="sm"
                   />
-                  {tratamientoError && <Text c="red">{tratamientoError}</Text>}
+                )}
 
-                  <Group justify="space-between" grow={isMobile}>
-                    {currentUser?.data && (
-                      <Button variant="default" onClick={handleGoToDashboard}>
-                        Entrar al directorio
-                      </Button>
-                    )}
-                    <Button onClick={handleSubmit} loading={saving}>
-                      {currentUser?.data ? "Guardar cambios" : "Registrarme"}
+                <Checkbox
+                  label={
+                    event.config?.tratamientoDatosText ||
+                    "Al utilizar este aplicativo, autorizo a GEN.IALITY SAS identificada con NIT 901555490, ..."
+                  }
+                  checked={!!formValues[CONSENTIMIENTO_FIELD_NAME]}
+                  onChange={(e) =>
+                    handleDynamicChange(
+                      CONSENTIMIENTO_FIELD_NAME,
+                      e.currentTarget.checked
+                    )
+                  }
+                  required
+                  mt="md"
+                />
+                {tratamientoError && <Text c="red">{tratamientoError}</Text>}
+
+                <Group justify="space-between" grow={isMobile}>
+                  {currentUser?.data && (
+                    <Button variant="default" onClick={handleGoToDashboard}>
+                      Entrar al directorio
                     </Button>
-                  </Group>
-                </Stack>
-              )}
-            </Tabs.Panel>
-          </Tabs>
+                  )}
+                  <Button onClick={handleSubmit} loading={saving}>
+                    {currentUser?.data ? "Guardar cambios" : "Registrarme"}
+                  </Button>
+                </Group>
+              </Stack>
+            )}
+          </Tabs.Panel>
+        </Tabs>
 
-          {/* Nota informativa opcional */}
-          <Divider my="lg" />
-          <Text ta="center" c="dimmed" fz="sm">
-            ¿Problemas para ingresar? Verifica que tu correo esté registrado por
-            la organización del evento.
-          </Text>
-        </Paper>
-      </Container>
-    </Box>
+        <Divider my="lg" />
+        <Text ta="center" c="dimmed" fz="sm">
+          ¿Problemas para ingresar? Verifica que tu correo esté registrado por
+          la organización del evento.
+        </Text>
+      </Paper>
+    </Container>
   );
 };
 

@@ -8,7 +8,7 @@ import PhonesAdminPage from "./pages/PhonesAdminPage.tsx";
 import MeetingAutoResponse from "./pages/MeetingAutoResponse";
 import EventAdmin from "./pages/admin/EventAdmin";
 import Dashboard from "./pages/dashboard/Dashboard.tsx";
-import { Container } from "@mantine/core";
+// import { Container } from "@mantine/core";
 import MatrixPage from "./pages/admin/MatrixPage.jsx";
 import EventMatchPage from "./pages/admin/EventMatchPage.jsx";
 import ImportMeetingsFromExcelPage from "./pages/admin/ImportMeetingsFromExcelPage.jsx";
@@ -19,7 +19,7 @@ const App = () => {
   const { currentUser } = useContext(UserContext);
 
   return (
-    <Container fluid>
+    <>
       {currentUser?.data && <UserProfile />}
       <Routes>
         <Route path="/" element={<Landing />} />
@@ -55,7 +55,7 @@ const App = () => {
           element={<MeetingSurveys />}
         />
       </Routes>
-    </Container>
+    </>
   );
 };
 
