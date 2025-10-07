@@ -491,6 +491,7 @@ const Landing = () => {
               w={isMobile ? 350 : 700}
               alt="Networking Event"
               fit="contain"
+              unoptimized
               style={{boxShadow: '10px 30px 40px rgba(0, 0, 0, 0.1)', borderRadius: 8}}
             />
           </Flex>

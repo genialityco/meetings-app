@@ -17,6 +17,8 @@ import { UserContext } from "../../context/UserContext";
 import { AgendaSlot, Assistant, Meeting, Notification } from "./types";
 import { showNotification } from "@mantine/notifications";
 
+const API_WP_URL= "https://apiwhatsapp.geniality.com.co/api/send"
+
 // Helpers (puedes moverlos a helpers.ts si prefieres)
 function slotOverlapsBreakBlock(
   slotStart: string,
@@ -96,6 +98,7 @@ END:VCARD`;
 }
 
 function sendWhatsAppMessage(participant: Assistant) {
+  console.log("entro en send wp")
   if (!participant.telefono) {
     alert("No hay número de teléfono para WhatsApp");
     return;
@@ -122,7 +125,7 @@ async function sendMeetingAcceptedWhatsapp(
     `Mesa: ${meetingInfo.tableAssigned || ""}\n` +
     `¡Te esperamos!`;
 
-  await fetch("https://apiwhatsapp.geniality.com.co/api/send", {
+  await fetch(API_WP_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -147,7 +150,7 @@ async function sendMeetingCancelledWhatsapp(
     `Horario: ${meetingInfo.timeSlot || ""}\n` +
     `Mesa: ${meetingInfo.tableAssigned || ""}\n`;
 
-  await fetch("https://apiwhatsapp.geniality.com.co/api/send", {
+  await fetch(API_WP_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -306,7 +309,7 @@ export function useDashboardData(eventId?: string) {
     const term = searchTerm.toLowerCase();
     let filtered = assistants.filter((a) =>
       formFields.some((f) => {
-        const value = (a[f.name] ?? "").toString().toLowerCase();
+        const value = (a[f.name ] ?? "").toString().toLowerCase();
         return value.includes(term);
       })
     );
@@ -406,6 +409,8 @@ export function useDashboardData(eventId?: string) {
   }, [uid, eventId]);
 
   // ---------------------- ACCIONES PRINCIPALES ----------------------
+
+
   const cancelSentMeeting = async (
     meetingId: string,
     mode: "cancel" | "delete" = "cancel"
@@ -760,7 +765,6 @@ export function useDashboardData(eventId?: string) {
     } else {
       setMeetingToEdit(null);
     }
-
     const mtgRef = doc(db, "events", eventId!, "meetings", meetingId);
     const mtgSnap = await getDoc(mtgRef);
     if (!mtgSnap.exists()) throw new Error("Reunión no existe");
@@ -798,6 +802,7 @@ export function useDashboardData(eventId?: string) {
       )
     );
     const now = new Date();
+    console.log("slots disponibles", agSn)
     const filtered = agSn.docs
       .map((d) => ({ id: d.id, ...(d.data() as Omit<AgendaSlot, "id">) }))
       .filter((slot) => {
@@ -819,7 +824,6 @@ export function useDashboardData(eventId?: string) {
           return false;
         return true;
       });
-
     setAvailableSlots(filtered);
     setPrepareSlotSelectionLoading(false);
     setSlotModalOpened(true);

@@ -1,4 +1,5 @@
 // Dashboard/Dashboard.tsx
+
 import { Container, Title, Flex } from "@mantine/core";
 import { useParams } from "react-router-dom";
 import { useDashboardData } from "./useDashboardData";
@@ -15,7 +16,7 @@ export default function Dashboard() {
 
   return (
     <Container fluid>
-      <Flex gap="md">
+      <Flex gap="md" pt="sm">
         <Title order={2}>Dashboard</Title>
         <NotificationsMenu notifications={dashboard.notifications} />
       </Flex>

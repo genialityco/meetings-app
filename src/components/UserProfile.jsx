@@ -83,12 +83,12 @@ const UserProfile = () => {
 
   return (
     <Card shadow="md" style={{ margin: "20px auto" }}>
-      <UnstyledButton onClick={() => setOpenedCollapse((o) => !o)}>
-        <Group position="apart" noWrap style={{ width: "100%" }}>
+      <UnstyledButton onClick={() => setOpenedCollapse((o) => !o)} style={{ width: "100%" }}>
+        <Group position="apart">
           <Title order={3}>Ver mi Información</Title>
-          <ActionIcon variant="transparent">
+          <div>
             {openedCollapse ? <FaChevronUp size={16} /> : <FaChevronDown size={16} />}
-          </ActionIcon>
+          </div>
         </Group>
       </UnstyledButton>
       <Collapse in={openedCollapse}>

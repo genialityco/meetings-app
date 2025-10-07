@@ -259,7 +259,6 @@ export default function MeetingsTab({
                       </Button>
                       {/* Encuesta: solo botón para abrir modal */}
                       <Button
-                        mt="md"
                         color={surveyExists(meeting.id) ? "gray" : "violet"}
                         variant={
                           surveyExists(meeting.id) ? "outline" : "filled"
