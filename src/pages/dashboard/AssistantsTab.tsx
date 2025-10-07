@@ -10,6 +10,7 @@ import {
   Select,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
+import React from "react";
 import { useState } from "react";
 
 export default function AssistantsTab({
@@ -173,7 +174,14 @@ export default function AssistantsTab({
             </Grid.Col>
           ))
         ) : (
-          <Text>No hay asistentes registrados.</Text>
+          <Text mt={20} style={{ whiteSpace: "pre-line", lineHeight: 1.8 }}>
+            🌟 <strong>¡Eres el primero en dar el paso!</strong>{"\n\n"}
+            En <strong>Gen.Networking</strong> valoramos a quienes se anticipan, porque son los que abren camino y marcan la diferencia.{"\n"}
+            Por ser de los primeros, tu perfil tendrá <strong>posición destacada en el directorio</strong> y <strong>prioridad en las reuniones</strong>.{"\n"}
+            Muy pronto te avisaremos cuando más participantes se unan, para que empieces a <strong>conectar</strong> y <strong>generar nuevas oportunidades</strong>.{"\n"}
+            Si necesitas ayuda, escríbenos a WhatsApp: <strong>+57 300 216 2757</strong>.{"\n"}
+            🙌 Gracias por ser quien da el primer paso — <strong>la red comienza contigo.</strong>
+          </Text>
         )}
       </Grid>
     </>
