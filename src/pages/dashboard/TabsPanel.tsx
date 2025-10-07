@@ -5,12 +5,8 @@ import RequestsTab from "./RequestsTab";
 
 export default function TabsPanel({ dashboard }) {
   return (
-    <Tabs defaultValue="reuniones">
+    <Tabs defaultValue="asistentes">
       <Tabs.List>
-        <Tabs.Tab value="reuniones">
-          Reuniones ({dashboard.acceptedMeetings.length})
-        </Tabs.Tab>
-
         <Tabs.Tab value="asistentes">
           {dashboard.currentUser?.data?.tipoAsistente
             ? dashboard.currentUser?.data?.tipoAsistente === "vendedor"
@@ -19,6 +15,11 @@ export default function TabsPanel({ dashboard }) {
             : "Asistentes"}{" "}
           ({dashboard.filteredAssistants.length})
         </Tabs.Tab>
+
+        <Tabs.Tab value="reuniones">
+          Reuniones ({dashboard.acceptedMeetings.length})
+        </Tabs.Tab>
+
 
         <Tabs.Tab value="solicitudes">
           Solicitudes (
