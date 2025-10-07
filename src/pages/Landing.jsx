@@ -75,7 +75,7 @@ const InfoLine = ({ label, value }) => (
 const Landing = () => {
   const navigate = useNavigate();
   const { eventId } = useParams();
-  const { userLoading, loginByEmail, currentUser, updateUser } =
+  const { userLoading, loginByEmail, currentUser, updateUser, logout } =
     useContext(UserContext);
 
   const [event, setEvent] = useState({});
@@ -89,7 +89,7 @@ const Landing = () => {
   const [loginEmail, setLoginEmail] = useState("");
   const [loginError, setLoginError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
-  const [showProfileSummary, setShowProfileSummary] = useState(false);
+  const [showProfileSummary, setShowProfileSummary] = useState(true);
 
   // Form state (se comparte entre registro y edición)
   const [formValues, setFormValues] = useState({});
@@ -106,20 +106,32 @@ const Landing = () => {
       Highlight,
       TextAlign.configure({ types: ["heading", "paragraph"] }),
       Placeholder.configure({
-      placeholder: "Describe tu empresa, productos o servicios...",
-    }),
+        placeholder: "Describe tu empresa, productos o servicios...",
+      }),
     ],
-    content: formValues.descripcion || "",
+    content: "",
     onUpdate: ({ editor }) => {
       setFormValues((prev) => ({
         ...prev,
-        descripcion: editor.getText(),
+        descripcion: editor,
       }));
     },
   });
 
+  // FIX 1: Actualizar el editor cuando formValues.descripcion cambia
+  useEffect(() => {
+    if (editor && formValues.descripcion) {
+      const currentContent = editor;
+      // Solo actualizar si el contenido es diferente para evitar loops
+      if (currentContent !== formValues.descripcion) {
+        editor.commands.setContent(formValues.descripcion);
+      }
+    }
+  }, [editor, formValues.descripcion]);
+
   // Cargar configuración del evento
   useEffect(() => {
+
     if (eventId) {
       const unsubscribe = onSnapshot(
         doc(db, "events", eventId),
@@ -139,6 +151,23 @@ const Landing = () => {
       return () => unsubscribe();
     }
   }, [eventId]);
+
+  useEffect(() => {
+     if (currentUser?.data){
+      if (currentUser.data.eventId !== eventId) {
+        logout();
+        setShowProfileSummary(false);
+        setFormValues({});
+        setProfilePicPreview(null);
+        setActiveTab("login");
+        if (editor) {
+          editor.commands.setContent("");
+        }
+      }
+    }
+    setShowProfileSummary(currentUser?.data );
+  },[currentUser, eventId, logout]);
+
 
   // Prefill cuando el contexto ya tiene user.data (p.ej., al volver de login)
   useEffect(() => {
@@ -212,7 +241,7 @@ const Landing = () => {
   }, [loginByEmail, loginEmail, eventId]);
 
   // Guardar (tanto registro nuevo como actualización)
-  const handleSubmit = useCallback(async () => {
+   const handleSubmit = useCallback(async () => {
     setTratamientoError("");
     if (!formValues[CONSENTIMIENTO_FIELD_NAME]) {
       setTratamientoError(
@@ -237,6 +266,9 @@ const Landing = () => {
       // Soporte para contacto.correo si lo usas como login
       if (!dataToUpdate.email && dataToUpdate?.contacto?.correo) {
         dataToUpdate.email = dataToUpdate.contacto.correo;
+      }
+       if (!currentUser?.data?.createdAt) {
+        dataToUpdate.createdAt = new Date().toISOString();
       }
 
       if (formValues.photo) {
@@ -294,6 +326,8 @@ const Landing = () => {
           <div key={field.name}>
             <Title order={6}>{field.label}</Title>
             <RichTextEditor editor={editor}>
+            
+
               <RichTextEditor.Content />
             </RichTextEditor>
           </div>
@@ -409,12 +443,12 @@ const Landing = () => {
         </Group>
 
         <Group mt="md" grow={isMobile}>
-          <Button
+          {/* <Button
             variant="default"
             onClick={() => setShowProfileSummary(false)}
           >
             Actualizar mis datos
-          </Button>
+          </Button> */}
           <Button onClick={handleGoToDashboard}>Entrar al directorio</Button>
         </Group>
       </Paper>
@@ -478,20 +512,20 @@ const Landing = () => {
           radius="lg"
           p={isMobile ? "lg" : "xl"}
           style={{
-            maxWidth: isMobile ? 360 : 720,
+            maxWidth: isMobile ? "100%" : 720,
             margin: "40px auto",
             background: "rgba(255,255,255,0.95)",
             backdropFilter: "blur(6px)",
           }}
         >
           {/* Header visual del evento */}
-          <Flex justify="center" align="center" p="md">
+          <Flex justify="center" align="center"  w={"100%"}>
             <Image
               src={event.eventImage}
-              w={isMobile ? 350 : 700}
               alt="Networking Event"
+              w={"100vh"}
               fit="contain"
-              style={{boxShadow: '10px 30px 40px rgba(0, 0, 0, 0.1)', borderRadius: 8}}
+              style={{boxShadow: '10px 30px 40px rgba(0, 0, 0, 0.1)', borderRadius: 8, maxWidth: isMobile ? "100%" : "100%"}}
             />
           </Flex>
 
@@ -516,7 +550,7 @@ const Landing = () => {
             <Tabs.List grow>
               <Tabs.Tab value="login">Ingresar</Tabs.Tab>
               <Tabs.Tab value="register" disabled={!registrationEnabled}>
-                Registrarse
+                {currentUser?.data ? "Actualizar datos" : "Registrarse"}
               </Tabs.Tab>
             </Tabs.List>
 
@@ -547,12 +581,12 @@ const Landing = () => {
                 {showProfileSummary && ProfileSummary}
 
                 {/* Si elige actualizar, muestro el formulario debajo */}
-                {!showProfileSummary && currentUser?.data && (
+                {/* {!showProfileSummary && currentUser?.data && (
                   <Alert color="yellow" variant="light">
                     Ya tienes información guardada. Si deseas actualizarla, usa
-                    la pestaña “Registrarse” (está habilitada como edición).
+                    la pestaña "Registrarse" (está habilitada como edición).
                   </Alert>
-                )}
+                )} */}
               </Stack>
             </Tabs.Panel>
 
