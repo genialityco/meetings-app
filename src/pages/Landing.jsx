@@ -15,6 +15,7 @@ import {
   Flex,
   Container,
   Checkbox,
+  Box,
   Group,
   Avatar,
   Alert,
@@ -457,25 +458,17 @@ const Landing = () => {
   }
 
   return (
-    <Container
-      fluid
-      p={0}
+    <Box
       style={{
         minHeight: "100vh",
-        // Fondo en el Container
-        backgroundImage: `url('${
+        width: "100vw",
+        backgroundImage:
           event.backgroundImage && event.backgroundImage.startsWith("http")
-            ? event.backgroundImage
-            : "/FONDO-DESKTOP.png"
-        }')`,
-        backgroundPosition: "center",
+            ? `url('${event.backgroundImage}')`
+            : `url('/FONDO-DESKTOP.png')`,
+        backgroundPosition: "center center",
         backgroundSize: "cover",
         backgroundRepeat: "no-repeat",
-
-        // Centrado del contenido
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
       }}
     >
       <Container fluid style={{ padding: 0, minHeight: "100vh" }}>
@@ -502,134 +495,140 @@ const Landing = () => {
             />
           </Flex>
 
-        <Title order={isMobile ? 4 : 3} ta="center" my="md">
-          {event.eventName || "Evento de Networking"}
-        </Title>
+          <Title order={isMobile ? 4 : 3} ta="center" my="md">
+            {event.eventName || "Evento de Networking"}
+          </Title>
 
-        <Text ta="justify" mb="lg">
-          <strong>Plataforma de Networking y Reuniones de Negocio.</strong>{" "}
-          Conecta con otras empresas y permite que te encuentren para agendar
-          reuniones durante el evento. Ingresa con el correo registrado de la
-          empresa o regístrate si es tu primera vez.
-        </Text>
+          <Text ta="justify" mb="lg">
+            <strong>Plataforma de Networking y Reuniones de Negocio.</strong>{" "}
+            Conecta con otras empresas y permite que te encuentren para agendar
+            reuniones durante el evento. Ingresa con el correo registrado de la
+            empresa o regístrate si es tu primera vez.
+          </Text>
 
-        <Tabs
-          value={activeTab}
-          onChange={setActiveTab}
-          variant="pills"
-          radius="md"
-          keepMounted={false}
-        >
-          <Tabs.List grow>
-            <Tabs.Tab value="login">Ingresar</Tabs.Tab>
-            <Tabs.Tab value="register" disabled={!registrationEnabled}>
-              Registrarse
-            </Tabs.Tab>
-          </Tabs.List>
+          <Tabs
+            value={activeTab}
+            onChange={setActiveTab}
+            variant="pills"
+            radius="md"
+            keepMounted={false}
+          >
+            <Tabs.List grow>
+              <Tabs.Tab value="login">Ingresar</Tabs.Tab>
+              <Tabs.Tab value="register" disabled={!registrationEnabled}>
+                Registrarse
+              </Tabs.Tab>
+            </Tabs.List>
 
-          {/* --------- TAB INGRESAR --------- */}
-          <Tabs.Panel value="login" pt="md">
-            <Stack>
-              <TextInput
-                label="Correo electrónico"
-                placeholder="tu@empresa.com"
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-                required
-              />
-              {loginError && (
-                <Alert color="red" variant="light">
-                  {loginError}
-                </Alert>
-              )}
-              {!showProfileSummary && (
-                <Group justify="flex-end">
-                  <Button loading={loginLoading} onClick={handleLogin}>
-                    Ingresar
-                  </Button>
-                </Group>
-              )}
-
-              {showProfileSummary && ProfileSummary}
-
-              {!showProfileSummary && currentUser?.data && (
-                <Alert color="yellow" variant="light">
-                  Ya tienes información guardada. Si deseas actualizarla, usa la
-                  pestaña “Registrarse” (está habilitada como edición).
-                </Alert>
-              )}
-            </Stack>
-          </Tabs.Panel>
-
-          {/* --------- TAB REGISTRARSE / EDITAR --------- */}
-          <Tabs.Panel value="register" pt="md">
-            {!registrationEnabled && (
-              <Text ta="center" c="gray" mt="md">
-                Los nuevos registros están inhabilitados para este evento.
-              </Text>
-            )}
-
-            {registrationEnabled && (
+            {/* --------- TAB INGRESAR --------- */}
+            <Tabs.Panel value="login" pt="md">
               <Stack>
-                <Text ta="justify" my="sm" size="lg">
-                  {currentUser?.data
-                    ? "Actualiza tu información antes de continuar."
-                    : "Completa el formulario para crear tu registro."}
-                </Text>
-
-                {renderDynamicFormFields()}
-
-                {profilePicPreview && (
-                  <Image
-                    src={profilePicPreview}
-                    alt="Vista previa de la foto de perfil"
-                    height={150}
-                    fit="cover"
-                    radius="md"
-                    mt="sm"
-                  />
+                <TextInput
+                  label="Correo electrónico"
+                  placeholder="tu@empresa.com"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                  required
+                />
+                {loginError && (
+                  <Alert color="red" variant="light">
+                    {loginError}
+                  </Alert>
+                )}
+                {!showProfileSummary && (
+                  <Group justify="flex-end">
+                    <Button loading={loginLoading} onClick={handleLogin}>
+                      Ingresar
+                    </Button>
+                  </Group>
                 )}
 
-                <Checkbox
-                  label={
-                    event.config?.tratamientoDatosText ||
-                    "Al utilizar este aplicativo, autorizo a GEN.IALITY SAS identificada con NIT 901555490, ..."
-                  }
-                  checked={!!formValues[CONSENTIMIENTO_FIELD_NAME]}
-                  onChange={(e) =>
-                    handleDynamicChange(
-                      CONSENTIMIENTO_FIELD_NAME,
-                      e.currentTarget.checked
-                    )
-                  }
-                  required
-                  mt="md"
-                />
-                {tratamientoError && <Text c="red">{tratamientoError}</Text>}
+                {showProfileSummary && ProfileSummary}
 
-                <Group justify="space-between" grow={isMobile}>
-                  {currentUser?.data && (
-                    <Button variant="default" onClick={handleGoToDashboard}>
-                      Entrar al directorio
-                    </Button>
-                  )}
-                  <Button onClick={handleSubmit} loading={saving}>
-                    {currentUser?.data ? "Guardar cambios" : "Registrarme"}
-                  </Button>
-                </Group>
+                {/* Si elige actualizar, muestro el formulario debajo */}
+                {!showProfileSummary && currentUser?.data && (
+                  <Alert color="yellow" variant="light">
+                    Ya tienes información guardada. Si deseas actualizarla, usa
+                    la pestaña “Registrarse” (está habilitada como edición).
+                  </Alert>
+                )}
               </Stack>
-            )}
-          </Tabs.Panel>
-        </Tabs>
+            </Tabs.Panel>
 
-        <Divider my="lg" />
-        <Text ta="center" c="dimmed" fz="sm">
-          ¿Problemas para ingresar? Verifica que tu correo esté registrado por
-          la organización del evento.
-        </Text>
-      </Paper>
-    </Container>
+            {/* --------- TAB REGISTRARSE / EDITAR --------- */}
+            <Tabs.Panel value="register" pt="md">
+              {!registrationEnabled && (
+                <Text ta="center" c="gray" mt="md">
+                  Los nuevos registros están inhabilitados para este evento.
+                </Text>
+              )}
+
+              {registrationEnabled && (
+                <Stack>
+                  <Text ta="justify" my="sm" size="lg">
+                    {currentUser?.data
+                      ? "Actualiza tu información antes de continuar."
+                      : "Completa el formulario para crear tu registro."}
+                  </Text>
+
+                  {/* Form dinámico */}
+                  {renderDynamicFormFields()}
+
+                  {/* Vista previa foto */}
+                  {profilePicPreview && (
+                    <Image
+                      src={profilePicPreview}
+                      alt="Vista previa de la foto de perfil"
+                      height={150}
+                      fit="cover"
+                      radius="md"
+                      mt="sm"
+                    />
+                  )}
+
+                  {/* Consentimiento */}
+                  <Checkbox
+                    label={
+                      event.config?.tratamientoDatosText ||
+                      "Al utilizar este aplicativo, autorizo a GEN.IALITY SAS identificada con NIT 901555490, ..."
+                    }
+                    checked={!!formValues[CONSENTIMIENTO_FIELD_NAME]}
+                    onChange={(e) =>
+                      handleDynamicChange(
+                        CONSENTIMIENTO_FIELD_NAME,
+                        e.currentTarget.checked
+                      )
+                    }
+                    required
+                    mt="md"
+                  />
+                  {tratamientoError && <Text c="red">{tratamientoError}</Text>}
+
+                  <Group justify="space-between" grow={isMobile}>
+                    {currentUser?.data && (
+                      <Button variant="default" onClick={handleGoToDashboard}>
+                        Entrar al directorio
+                      </Button>
+                    )}
+                    <Button onClick={handleSubmit} loading={saving}>
+                      {currentUser?.data ? "Guardar cambios" : "Registrarme"}
+                    </Button>
+                  </Group>
+                </Stack>
+              )}
+            </Tabs.Panel>
+          </Tabs>
+
+          {/* Nota informativa opcional */}
+          <Divider my="lg" />
+          <Text ta="center" c="dimmed" fz="sm">
+            ¿Problemas para ingresar? Verifica que tu correo esté registrado por
+            la organización del evento.
+          </Text>
+        </Paper>
+      </Container>
+    </Box>
   );
 };
 
