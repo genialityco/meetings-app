@@ -561,36 +561,36 @@ const Landing = () => {
             {event.eventName || "Evento de Networking"}
           </Title>
           <Text ta="justify">
-            {event.config.eventDate && (
+            {event?.config?.eventDate && (
               <>
                 <Text span fw={700}>Fecha del evento:</Text>{" "}
-                {formatDate(event.config.eventDate)}
+                {formatDate(event?.config?.eventDate)}
               </>
             )}
           </Text>
 
           {/* Hora de inicio */}
           <Text ta="justify">
-            {event.config.eventStartTime && (
+            {event?.config?.eventStartTime && (
               <>
                 <Text span fw={700}>Hora de inicio:</Text>{" "}
-                {formatTime(event.config.eventStartTime)}
+                {formatTime(event?.config?.eventStartTime)}
               </>
             )}
           </Text>
 
           {/* Hora de finalización */}
           <Text ta="justify">
-            {event.config.eventEndTime && (
+            {event?.config?.eventEndTime && (
               <>
                 <Text span fw={700}>Hora de finalización:</Text>{" "}
-                {formatTime(event.config.eventEndTime)}
+                {formatTime(event?.config?.eventEndTime)}
               </>
             )}
           </Text>
 
           <Text ta="justify">
-            {event.config.eventLocation && (
+            {event?.config?.eventLocation && (
               <>
                 <Text span fw={700}>Lugar del evento:</Text> {event.config.eventLocation}
               </>
