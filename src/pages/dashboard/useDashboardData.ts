@@ -266,42 +266,57 @@ export function useDashboardData(eventId?: string) {
   }, []);
 
   // 4. Cargar lista de asistentes
-  useEffect(() => {
-    if (!eventId) return;
-    const q = query(collection(db, "users"), where("eventId", "==", eventId));
-    return onSnapshot(q, (snap) => {
-      const today = new Date().toISOString().split("T")[0];
-      const list = snap.docs
-        .filter((d) => d.id !== uid)
-        .map((d) => {
-          const data = d.data();
-          let last;
-          if (data.lastConnection?.toDate) {
-            last = data.lastConnection.toDate();
-          } else if (typeof data.lastConnection === "string") {
-            last = new Date(data.lastConnection);
-          } else if (data.lastConnection instanceof Date) {
-            last = data.lastConnection;
-          }
+ useEffect(() => {
+  if (!eventId) return;
+  const q = query(collection(db, "users"), where("eventId", "==", eventId));
+  return onSnapshot(q, (snap) => {
+    const today = new Date().toISOString().split("T")[0];
+    const list = snap.docs
+      .filter((d) => d.id !== uid)
+      .map((d) => {
+        const data = d.data();
+        let last;
+        if (data.lastConnection?.toDate) {
+          last = data.lastConnection.toDate();
+        } else if (typeof data.lastConnection === "string") {
+          last = new Date(data.lastConnection);
+        } else if (data.lastConnection instanceof Date) {
+          last = data.lastConnection;
+        }
 
-          const lastDateTimeStr = last
-            ? last.toLocaleString("es-CO", {
-                dateStyle: "short",
-                timeStyle: "short",
-              })
-            : null;
+        const lastDateTimeStr = last
+          ? last.toLocaleString("es-CO", {
+              dateStyle: "short",
+              timeStyle: "short",
+            })
+          : null;
 
-          return {
-            id: d.id,
-            ...data,
-            lastConnectionDateTime: lastDateTimeStr,
-            connectedToday: last?.toISOString().split("T")[0] === today,
-          } as Assistant;
-        });
-      setAssistants(list);
-      setFilteredAssistants(list);
-    });
-  }, [uid, eventId]);
+        return {
+          id: d.id,
+          ...data,
+          lastConnectionDateTime: lastDateTimeStr,
+          connectedToday: last?.toISOString().split("T")[0] === today,
+        } as Assistant;
+      })
+      .sort((a, b) => {
+        // Ordenar por createdAt: más antiguo primero
+        if (a.createdAt && b.createdAt) {
+          // Si ambos tienen createdAt, ordenar del más antiguo al más reciente
+          const timeA = a.createdAt.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt).getTime();
+          const timeB = b.createdAt.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt).getTime();
+          return timeA - timeB;
+        }
+        // Los que tienen createdAt van primero
+        if (a.createdAt) return -1;
+        if (b.createdAt) return 1;
+        // Si ninguno tiene createdAt, mantener orden original
+        return 0;
+      });
+      
+    setAssistants(list);
+    setFilteredAssistants(list);
+  });
+}, [uid, eventId]);
 
   // 5. Filtro de asistentes por searchTerm y showOnlyToday
   // Filtrar asistentes usando todos los campos visibles en formFields

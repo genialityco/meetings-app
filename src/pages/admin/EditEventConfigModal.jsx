@@ -14,6 +14,7 @@ import {
 import { doc, setDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../../firebase/firebaseConfig";
+import QRCode from "qrcode";
 
 // Aux: "HH:mm" a minutos
 function timeToMinutes(timeStr) {
@@ -42,6 +43,10 @@ const EditEventConfigModal = ({
   const [backgroundMobileImageUrl, setBackgroundMobileImageUrl] = useState(event.backgroundMobileImage || "");
   const [backgroundImageFile, setBackgroundImageFile] = useState(null);
   const [backgroundMobileImageFile, setBackgroundMobileImageFile] = useState(null);
+  
+  // Nuevo campo para Landing URL y QR
+  const [landingUrl, setLandingUrl] = useState(event.landingUrl || "");
+  const [landingQR, setLandingQR] = useState(event.landingQR || "");
 
   // Config básicos
   const [maxPersons, setMaxPersons] = useState(event.config?.maxPersons || 100);
@@ -80,6 +85,39 @@ const EditEventConfigModal = ({
     return await getDownloadURL(storageRef);
   };
 
+  // Generar QR y subirlo a Storage
+  const generateAndUploadQR = async (url) => {
+    try {
+      // Generar QR como data URL
+      const qrDataUrl = await QRCode.toDataURL(url, {
+        width: 500,
+        margin: 2,
+        color: {
+          dark: '#000000',
+          light: '#FFFFFF'
+        }
+      });
+      
+      // Convertir data URL a Blob
+      const response = await fetch(qrDataUrl);
+      const blob = await response.blob();
+      
+      // Crear un archivo con nombre único
+      const fileName = `qr-${event.id}-${Date.now()}.png`;
+      const file = new File([blob], fileName, { type: 'image/png' });
+      
+      // Subir a Storage
+      const storageRef = ref(storage, `events/qr/${fileName}`);
+      await uploadBytes(storageRef, file);
+      const downloadUrl = await getDownloadURL(storageRef);
+      
+      return downloadUrl;
+    } catch (error) {
+      console.error('Error generando QR:', error);
+      throw error;
+    }
+  };
+
   // ------ RESUMEN CALCULADO ------
   const configSummary = useMemo(() => {
     const totalMinutes = timeToMinutes(endTime) - timeToMinutes(startTime);
@@ -111,13 +149,21 @@ const EditEventConfigModal = ({
     let finalEventImage = eventImageUrl;
     let finalBackgroundImage = backgroundImageUrl;
     let finalBackgroundMobileImage = backgroundMobileImageUrl;
+    let finalLandingQR = landingQR;
 
     try {
       if (eventImageFile) finalEventImage = await uploadImage(eventImageFile);
       if (backgroundImageFile) finalBackgroundImage = await uploadImage(backgroundImageFile);
       if (backgroundMobileImageFile) finalBackgroundMobileImage = await uploadImage(backgroundMobileImageFile);
+      
+      // Generar y subir QR si hay una URL de landing
+      if (landingUrl && landingUrl.trim() !== "") {
+        setGlobalMessage?.("Generando código QR...");
+        finalLandingQR = await generateAndUploadQR(landingUrl);
+      }
     } catch (err) {
-      setGlobalMessage?.("Error al subir la(s) imagen(es)");
+      console.error(err);
+      setGlobalMessage?.("Error al subir la(s) imagen(es) o generar el QR");
       return;
     }
 
@@ -159,6 +205,8 @@ const EditEventConfigModal = ({
           eventImage: finalEventImage,
           backgroundImage: finalBackgroundImage,
           backgroundMobileImage: finalBackgroundMobileImage,
+          landingUrl,
+          landingQR: finalLandingQR,
           config: newConfig,
         },
         { merge: true }
@@ -167,6 +215,7 @@ const EditEventConfigModal = ({
       onClose();
       refreshEvents();
     } catch (error) {
+      console.error(error);
       setGlobalMessage("Error al actualizar configuración");
     }
   };
@@ -206,6 +255,23 @@ const EditEventConfigModal = ({
           placeholder="Ingrese la ubicación del evento"
           onChange={(e) => setEventLocation(e.target.value)}
         />
+        
+        <Divider label="Landing y código QR" my="sm" />
+        <TextInput
+          label="URL del Landing"
+          value={landingUrl}
+          placeholder="https://ejemplo.com/landing"
+          onChange={(e) => setLandingUrl(e.target.value)}
+          description="Se generará automáticamente un código QR con esta URL al guardar"
+        />
+        {landingQR && (
+          <Alert color="green" variant="light">
+            <Text size="sm">Código QR actual generado</Text>
+            <img src={landingQR} alt="QR Code" style={{ width: 150, marginTop: 8 }} />
+          </Alert>
+        )}
+        
+        <Divider label="Imágenes del evento" my="sm" />
         <TextInput
           label="URL de la imagen del Evento (opcional)"
           value={eventImageUrl}
@@ -224,6 +290,8 @@ const EditEventConfigModal = ({
           onChange={(e) => setBackgroundMobileImageUrl(e.target.value)}
         />
         <input type="file" accept="image/*" onChange={handleBackgroundMobileFileChange} style={{ marginBottom: 12 }} />
+        
+        <Divider label="Configuración de agendamiento" my="sm" />
         <NumberInput
           label="Cantidad máxima de personas"
           value={maxPersons}

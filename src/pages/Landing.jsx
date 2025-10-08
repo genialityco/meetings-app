@@ -171,7 +171,7 @@ const Landing = () => {
               eventData.config?.registrationEnabled ?? true
             );
           }
-        },
+        }, 
         (error) => {
           console.error("Error in real-time listener:", error);
         }
@@ -560,42 +560,54 @@ const Landing = () => {
           <Title order={isMobile ? 4 : 3} ta="center" my="md">
             {event.eventName || "Evento de Networking"}
           </Title>
-          <Text ta="justify">
-            {event?.config?.eventDate && (
-              <>
-                <Text span fw={700}>Fecha del evento:</Text>{" "}
-                {formatDate(event?.config?.eventDate)}
-              </>
-            )}
-          </Text>
+          <Group align="flex-start" justify="space-between">
+  <div style={{ flex: 1 }}>
+    <Text ta="justify">
+      {event?.config?.eventDate && (
+        <>
+          <Text span fw={700}>Fecha del evento:</Text>{" "}
+          {formatDate(event?.config?.eventDate)}
+        </>
+      )}
+    </Text>
 
-          {/* Hora de inicio */}
-          <Text ta="justify">
-            {event?.config?.eventStartTime && (
-              <>
-                <Text span fw={700}>Hora de inicio:</Text>{" "}
-                {formatTime(event?.config?.eventStartTime)}
-              </>
-            )}
-          </Text>
+    <Text ta="justify">
+      {event?.config?.eventStartTime && (
+        <>
+          <Text span fw={700}>Hora de inicio:</Text>{" "}
+          {formatTime(event?.config?.eventStartTime)}
+        </>
+      )}
+    </Text>
 
-          {/* Hora de finalización */}
-          <Text ta="justify">
-            {event?.config?.eventEndTime && (
-              <>
-                <Text span fw={700}>Hora de finalización:</Text>{" "}
-                {formatTime(event?.config?.eventEndTime)}
-              </>
-            )}
-          </Text>
+    <Text ta="justify">
+      {event?.config?.eventEndTime && (
+        <>
+          <Text span fw={700}>Hora de finalización:</Text>{" "}
+          {formatTime(event?.config?.eventEndTime)}
+        </>
+      )}
+    </Text>
 
-          <Text ta="justify">
-            {event?.config?.eventLocation && (
-              <>
-                <Text span fw={700}>Lugar del evento:</Text> {event.config.eventLocation}
-              </>
-            )}
-          </Text>
+    <Text ta="justify">
+      {event?.config?.eventLocation && (
+        <>
+          <Text span fw={700}>Lugar del evento:</Text>{" "}
+          {event.config.eventLocation}
+        </>
+      )}
+    </Text>
+  </div>
+
+  {event?.landingQR && (
+    <Image
+      src={event.landingQR}
+      alt="Código QR del evento"
+      w={120}
+      fit="contain"
+    />
+  )}
+</Group>
           <Text ta="justify" mb="lg" mt="lg">
             <strong>Plataforma de Networking y Reuniones de Negocio.</strong>{" "}
             Conecta con otras empresas y permite que te encuentren para agendar
@@ -673,7 +685,7 @@ const Landing = () => {
                   {renderDynamicFormFields()}
 
                   {/* Vista previa foto */}
-                  {profilePicPreview && (
+                  {/* {profilePicPreview && (
                     <Image
                       src={profilePicPreview}
                       alt="Vista previa de la foto de perfil"
@@ -682,7 +694,7 @@ const Landing = () => {
                       radius="md"
                       mt="sm"
                     />
-                  )}
+                  )} */}
 
                   {/* Consentimiento */}
                   <Checkbox
