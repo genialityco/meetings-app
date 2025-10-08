@@ -498,8 +498,8 @@ const Landing = () => {
         width: "100vw",
         backgroundImage:
           event.backgroundImage && event.backgroundImage.startsWith("http")
-            ? `url('${event.backgroundImage}')`
-            : `url('/FONDO-DESKTOP.png')`,
+            ? !isMobile ? `url('${event.backgroundImage}')`: `url('${event.backgroundMobileImage}')`
+            :  `url('/FONDO-DESKTOP.png')`,
         backgroundPosition: "center center",
         backgroundSize: "cover",
         backgroundRepeat: "no-repeat",

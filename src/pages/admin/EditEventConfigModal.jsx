@@ -35,7 +35,9 @@ const EditEventConfigModal = ({
   const [eventImageUrl, setEventImageUrl] = useState(event.eventImage || "");
   const [eventImageFile, setEventImageFile] = useState(null);
   const [backgroundImageUrl, setBackgroundImageUrl] = useState(event.backgroundImage || "");
+  const [backgroundMobileImageUrl, setBackgroundMobileImageUrl] = useState(event.backgroundMobileImage || "");
   const [backgroundImageFile, setBackgroundImageFile] = useState(null);
+  const [backgroundMobileImageFile, setBackgroundMobileImageFile] = useState(null);
 
   // Config básicos
   const [maxPersons, setMaxPersons] = useState(event.config?.maxPersons || 100);
@@ -63,6 +65,9 @@ const EditEventConfigModal = ({
   const handleBackgroundFileChange = (e) => {
     if (e.target.files && e.target.files[0]) setBackgroundImageFile(e.target.files[0]);
   };
+  const handleBackgroundMobileFileChange = (e) => {
+    if (e.target.files && e.target.files[0]) setBackgroundMobileImageFile(e.target.files[0]);
+  }
 
   // Subida a Storage
   const uploadImage = async (file) => {
@@ -101,10 +106,12 @@ const EditEventConfigModal = ({
   const saveConfig = async () => {
     let finalEventImage = eventImageUrl;
     let finalBackgroundImage = backgroundImageUrl;
+    let finalBackgroundMobileImage = backgroundMobileImageUrl;
 
     try {
       if (eventImageFile) finalEventImage = await uploadImage(eventImageFile);
       if (backgroundImageFile) finalBackgroundImage = await uploadImage(backgroundImageFile);
+      if (backgroundMobileImageFile) finalBackgroundMobileImage = await uploadImage(backgroundMobileImageFile);
     } catch (err) {
       setGlobalMessage?.("Error al subir la(s) imagen(es)");
       return;
@@ -141,6 +148,7 @@ const EditEventConfigModal = ({
         eventName,
         eventImage: finalEventImage,
         backgroundImage: finalBackgroundImage,
+        backgroundMobileImage: finalBackgroundMobileImage,
         config: newConfig,
       });
       setGlobalMessage?.("Configuración actualizada correctamente");
@@ -172,6 +180,12 @@ const EditEventConfigModal = ({
           onChange={(e) => setBackgroundImageUrl(e.target.value)}
         />
         <input type="file" accept="image/*" onChange={handleBackgroundFileChange} style={{ marginBottom: 12 }} />
+         <TextInput
+          label="URL imagen de fondo mobile (opcional)"
+          value={backgroundMobileImageUrl}
+          onChange={(e) => setBackgroundMobileImageUrl(e.target.value)}
+        />
+        <input type="file" accept="image/*" onChange={handleBackgroundMobileFileChange} style={{ marginBottom: 12 }} />
         <NumberInput
           label="Cantidad máxima de personas"
           value={maxPersons}
