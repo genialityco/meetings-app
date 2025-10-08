@@ -11,7 +11,7 @@ import {
   Group,
   Divider,
 } from "@mantine/core";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, setDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../../firebase/firebaseConfig";
 
@@ -32,6 +32,10 @@ const EditEventConfigModal = ({
 }) => {
   // ---- Estados ----
   const [eventName, setEventName] = useState(event.eventName || "");
+  const [eventDate, setEventDate] = useState(event.config?.eventDate || "");
+  const [eventStartTime, setEventStartTime] = useState(event.config?.eventStartTime || "");
+  const [eventEndTime, setEventEndTime] = useState(event.config?.eventEndTime || "");
+  const [eventLocation, setEventLocation] = useState(event.config?.eventLocation || "");
   const [eventImageUrl, setEventImageUrl] = useState(event.eventImage || "");
   const [eventImageFile, setEventImageFile] = useState(null);
   const [backgroundImageUrl, setBackgroundImageUrl] = useState(event.backgroundImage || "");
@@ -141,16 +145,24 @@ const EditEventConfigModal = ({
       tableNames,
       breakBlocks: breakBlocksSanitized,
       maxMeetingsPerUser: maxMeetingsPerUser || configSummary.maxMeetingsPerUser,
+      eventDate,
+      eventStartTime,
+      eventEndTime,
+      eventLocation,
     };
 
     try {
-      await updateDoc(doc(db, "events", event.id), {
-        eventName,
-        eventImage: finalEventImage,
-        backgroundImage: finalBackgroundImage,
-        backgroundMobileImage: finalBackgroundMobileImage,
-        config: newConfig,
-      });
+      await setDoc(
+        doc(db, "events", event.id),
+        {
+          eventName,
+          eventImage: finalEventImage,
+          backgroundImage: finalBackgroundImage,
+          backgroundMobileImage: finalBackgroundMobileImage,
+          config: newConfig,
+        },
+        { merge: true }
+      )
       setGlobalMessage?.("Configuración actualizada correctamente");
       onClose();
       refreshEvents();
@@ -169,6 +181,32 @@ const EditEventConfigModal = ({
           onChange={(e) => setEventName(e.target.value)}
         />
         <TextInput
+          label="Fecha del Evento"
+          type="date"
+          value={eventDate}
+          onChange={(e) => setEventDate(e.target.value)}
+        />
+        <Group grow>
+          <TextInput
+            label="Hora de inicio del evento"
+            type="time"
+            value={eventStartTime}
+            onChange={(e) => setEventStartTime(e.target.value)}
+          />
+          <TextInput
+            label="Hora de fin del evento"
+            type="time"
+            value={eventEndTime}
+            onChange={(e) => setEventEndTime(e.target.value)}
+          />
+        </Group>
+        <TextInput
+          label="Lugar del Evento"
+          value={eventLocation}
+          placeholder="Ingrese la ubicación del evento"
+          onChange={(e) => setEventLocation(e.target.value)}
+        />
+        <TextInput
           label="URL de la imagen del Evento (opcional)"
           value={eventImageUrl}
           onChange={(e) => setEventImageUrl(e.target.value)}
@@ -180,7 +218,7 @@ const EditEventConfigModal = ({
           onChange={(e) => setBackgroundImageUrl(e.target.value)}
         />
         <input type="file" accept="image/*" onChange={handleBackgroundFileChange} style={{ marginBottom: 12 }} />
-         <TextInput
+        <TextInput
           label="URL imagen de fondo mobile (opcional)"
           value={backgroundMobileImageUrl}
           onChange={(e) => setBackgroundMobileImageUrl(e.target.value)}

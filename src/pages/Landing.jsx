@@ -56,11 +56,38 @@ const formatDateCO = (value) => {
     typeof value?.toDate === "function"
       ? value.toDate()
       : value instanceof Date
-      ? value
-      : new Date(value);
+        ? value
+        : new Date(value);
   if (Number.isNaN(d.getTime())) return null;
   return d.toLocaleString("es-CO", { timeZone: "America/Bogota" });
 };
+
+function formatTime(timeString) {
+  if (!timeString) return "";
+
+  // Se espera formato "HH:mm" (por ejemplo "14:30")
+  const [hourStr, minuteStr] = timeString.split(":");
+  let hour = parseInt(hourStr, 10);
+  const minute = parseInt(minuteStr, 10);
+
+  const suffix = hour >= 12 ? "p. m." : "a. m.";
+  hour = hour % 12 || 12; // convierte 0 → 12 y 13→1, 14→2, etc.
+
+  return `${hour}:${minute.toString().padStart(2, "0")} ${suffix}`;
+}
+function formatDate(dateString) {
+  if (!dateString) return "";
+
+  const [year, month, day] = dateString.split("-").map(Number);
+
+  // Nombres de los meses en español
+  const months = [
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
+  ];
+
+  return `${day} de ${months[month - 1]} de ${year}`;
+}
 
 const InfoLine = ({ label, value }) => (
   <Group wrap="nowrap" gap="xs">
@@ -120,6 +147,7 @@ const Landing = () => {
 
   // FIX 1: Actualizar el editor cuando formValues.descripcion cambia
   useEffect(() => {
+
     if (editor && formValues.descripcion) {
       const currentContent = editor;
       // Solo actualizar si el contenido es diferente para evitar loops
@@ -131,7 +159,7 @@ const Landing = () => {
 
   // Cargar configuración del evento
   useEffect(() => {
-
+    console.log("event", event)
     if (eventId) {
       const unsubscribe = onSnapshot(
         doc(db, "events", eventId),
@@ -153,7 +181,7 @@ const Landing = () => {
   }, [eventId]);
 
   useEffect(() => {
-     if (currentUser?.data){
+    if (currentUser?.data) {
       if (currentUser.data.eventId !== eventId) {
         logout();
         setShowProfileSummary(false);
@@ -165,8 +193,8 @@ const Landing = () => {
         }
       }
     }
-    setShowProfileSummary(currentUser?.data );
-  },[currentUser, eventId, logout]);
+    setShowProfileSummary(currentUser?.data);
+  }, [currentUser, eventId, logout]);
 
 
   // Prefill cuando el contexto ya tiene user.data (p.ej., al volver de login)
@@ -241,7 +269,7 @@ const Landing = () => {
   }, [loginByEmail, loginEmail, eventId]);
 
   // Guardar (tanto registro nuevo como actualización)
-   const handleSubmit = useCallback(async () => {
+  const handleSubmit = useCallback(async () => {
     setTratamientoError("");
     if (!formValues[CONSENTIMIENTO_FIELD_NAME]) {
       setTratamientoError(
@@ -267,7 +295,7 @@ const Landing = () => {
       if (!dataToUpdate.email && dataToUpdate?.contacto?.correo) {
         dataToUpdate.email = dataToUpdate.contacto.correo;
       }
-       if (!currentUser?.data?.createdAt) {
+      if (!currentUser?.data?.createdAt) {
         dataToUpdate.createdAt = new Date().toISOString();
       }
 
@@ -326,7 +354,7 @@ const Landing = () => {
           <div key={field.name}>
             <Title order={6}>{field.label}</Title>
             <RichTextEditor editor={editor}>
-            
+
 
               <RichTextEditor.Content />
             </RichTextEditor>
@@ -498,8 +526,8 @@ const Landing = () => {
         width: "100vw",
         backgroundImage:
           event.backgroundImage && event.backgroundImage.startsWith("http")
-            ? !isMobile ? `url('${event.backgroundImage}')`: `url('${event.backgroundMobileImage}')`
-            :  `url('/FONDO-DESKTOP.png')`,
+            ? !isMobile ? `url('${event.backgroundImage}')` : `url('${event.backgroundMobileImage}')`
+            : `url('/FONDO-DESKTOP.png')`,
         backgroundPosition: "center center",
         backgroundSize: "cover",
         backgroundRepeat: "no-repeat",
@@ -519,21 +547,56 @@ const Landing = () => {
           }}
         >
           {/* Header visual del evento */}
-          <Flex justify="center" align="center"  w={"100%"}>
+          <Flex justify="center" align="center" w={"100%"}>
             <Image
               src={event.eventImage}
               alt="Networking Event"
               w={"100vh"}
               fit="contain"
-              style={{boxShadow: '10px 30px 40px rgba(0, 0, 0, 0.1)', borderRadius: 8, maxWidth: isMobile ? "100%" : "100%"}}
+              style={{ boxShadow: '10px 30px 40px rgba(0, 0, 0, 0.1)', borderRadius: 8, maxWidth: isMobile ? "100%" : "100%" }}
             />
           </Flex>
 
           <Title order={isMobile ? 4 : 3} ta="center" my="md">
             {event.eventName || "Evento de Networking"}
           </Title>
+          <Text ta="justify">
+            {event.config.eventDate && (
+              <>
+                <Text span fw={700}>Fecha del evento:</Text>{" "}
+                {formatDate(event.config.eventDate)}
+              </>
+            )}
+          </Text>
 
-          <Text ta="justify" mb="lg">
+          {/* Hora de inicio */}
+          <Text ta="justify">
+            {event.config.eventStartTime && (
+              <>
+                <Text span fw={700}>Hora de inicio:</Text>{" "}
+                {formatTime(event.config.eventStartTime)}
+              </>
+            )}
+          </Text>
+
+          {/* Hora de finalización */}
+          <Text ta="justify">
+            {event.config.eventEndTime && (
+              <>
+                <Text span fw={700}>Hora de finalización:</Text>{" "}
+                {formatTime(event.config.eventEndTime)}
+              </>
+            )}
+          </Text>
+
+          <Text ta="justify">
+            {event.config.eventLocation && (
+              <>
+                <Text span fw={700}>Lugar del evento:</Text> {event.config.eventLocation}
+              </>
+            )}
+          </Text>
+          <Text ta="justify" mb="lg" mt="lg">
             <strong>Plataforma de Networking y Reuniones de Negocio.</strong>{" "}
             Conecta con otras empresas y permite que te encuentren para agendar
             reuniones durante el evento. Ingresa con el correo registrado de la
