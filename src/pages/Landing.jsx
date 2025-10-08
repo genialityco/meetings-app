@@ -140,7 +140,7 @@ const Landing = () => {
     onUpdate: ({ editor }) => {
       setFormValues((prev) => ({
         ...prev,
-        descripcion: editor,
+        descripcion: editor.getHTML(),
       }));
     },
   });
@@ -148,13 +148,12 @@ const Landing = () => {
   // FIX 1: Actualizar el editor cuando formValues.descripcion cambia
   useEffect(() => {
 
-    if (editor && formValues.descripcion) {
-      const currentContent = editor;
-      // Solo actualizar si el contenido es diferente para evitar loops
-      if (currentContent !== formValues.descripcion) {
-        editor.commands.setContent(formValues.descripcion);
-      }
+   if (editor && formValues.descripcion) {
+    const currentHTML = editor.getHTML();
+    if (currentHTML !== formValues.descripcion) {
+      editor.commands.setContent(formValues.descripcion, false);
     }
+  }
   }, [editor, formValues.descripcion]);
 
   // Cargar configuración del evento
