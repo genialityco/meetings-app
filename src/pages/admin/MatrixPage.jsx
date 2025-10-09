@@ -272,50 +272,52 @@ const MatrixPage = () => {
 
   // Memoize matriz por mesas
   const memoMatrix = useMemo(() => {
-    if (!config) return [];
-    const { numTables, meetingDuration, breakBlocks = [] } = config.config;
+  if (!config) return [];
+  const { numTables, meetingDuration, breakBlocks = [] } = config.config;
 
-    const baseMatrix = Array.from({ length: numTables }, () =>
-      timeSlots.map((slot) => ({
-        status: slotOverlapsBreakBlock(slot, meetingDuration, breakBlocks)
-          ? "break"
-          : "available",
+  const baseMatrix = Array.from({ length: numTables }, () =>
+    timeSlots.map((slot) => ({
+      status: slotOverlapsBreakBlock(slot, meetingDuration, breakBlocks)
+        ? "break"
+        : "available",
+      participants: [],
+    }))
+  );
+
+  agenda.forEach((slot) => {
+    const tIdx = slot.tableNumber - 1;
+    const sIdx = timeSlots.indexOf(slot.startTime);
+    // ✅ Añade validación para tIdx < numTables
+    if (tIdx >= 0 && tIdx < numTables && sIdx >= 0) {
+      baseMatrix[tIdx][sIdx] = {
+        status: slot.available ? "available" : "occupied",
         participants: [],
-      }))
-    );
+      };
+    }
+  });
 
-    agenda.forEach((slot) => {
-      const tIdx = slot.tableNumber - 1;
-      const sIdx = timeSlots.indexOf(slot.startTime);
-      if (tIdx >= 0 && sIdx >= 0) {
-        baseMatrix[tIdx][sIdx] = {
-          status: slot.available ? "available" : "occupied",
-          participants: [],
-        };
-      }
-    });
+  meetings.forEach((mtg) => {
+    if (mtg.status !== "accepted" || !mtg.timeSlot) return;
+    const [startTime] = mtg.timeSlot.split(" - ");
+    const tIdx = Number(mtg.tableAssigned) - 1;
+    const sIdx = timeSlots.indexOf(startTime);
+    // ✅ Añade validación para tIdx < numTables
+    if (tIdx >= 0 && tIdx < numTables && sIdx >= 0) {
+      baseMatrix[tIdx][sIdx] = {
+        status: "accepted",
+        participants: mtg.participants.map((id) =>
+          participantsInfo[id]
+            ? `${participantsInfo[id].empresa} (${participantsInfo[id].nombre})`
+            : id
+        ),
+        meetingId: mtg.id,
+        meetingData: mtg,
+      };
+    }
+  });
 
-    meetings.forEach((mtg) => {
-      if (mtg.status !== "accepted" || !mtg.timeSlot) return;
-      const [startTime] = mtg.timeSlot.split(" - ");
-      const tIdx = Number(mtg.tableAssigned) - 1;
-      const sIdx = timeSlots.indexOf(startTime);
-      if (tIdx >= 0 && sIdx >= 0) {
-        baseMatrix[tIdx][sIdx] = {
-          status: "accepted",
-          participants: mtg.participants.map((id) =>
-            participantsInfo[id]
-              ? `${participantsInfo[id].empresa} (${participantsInfo[id].nombre})`
-              : id
-          ),
-          meetingId: mtg.id,
-          meetingData: mtg,
-        };
-      }
-    });
-
-    return baseMatrix;
-  }, [config, agenda, meetings, participantsInfo, timeSlots]);
+  return baseMatrix;
+}, [config, agenda, meetings, participantsInfo, timeSlots]);
 
   // Memoize matriz por usuarios
   const memoMatrixUsuarios = useMemo(() => {

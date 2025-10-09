@@ -33,11 +33,51 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 const AVAILABLE_FIELDS = [
-  { name: "nombre", label: "Nombre completo", type: "text" },
-  { name: "cedula", label: "Cédula", type: "text" },
-  { name: "empresa", label: "Empresa", type: "text" },
-  { name: "cargo", label: "Cargo", type: "text" },
-  { name: "descripcion", label: "Descripción breve", type: "richtext" },
+  { 
+    name: "nombre", 
+    label: "Nombre completo", 
+    type: "text",
+    validation: {
+      minLength: 3,
+      maxLength: 100,
+      pattern: /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/,
+      errorMessage: "Debe contener solo letras y espacios"
+    }
+  },
+  { 
+    name: "cedula", 
+    label: "Cédula", 
+    type: "text",
+    validation: {
+      pattern: /^[0-9]{6,10}$/,
+      errorMessage: "Debe contener entre 6 y 10 dígitos"
+    }
+  },
+  { 
+    name: "empresa", 
+    label: "Empresa", 
+    type: "text",
+    validation: {
+      minLength: 2,
+      maxLength: 100
+    }
+  },
+  { 
+    name: "cargo", 
+    label: "Cargo", 
+    type: "text",
+    validation: {
+      maxLength: 100
+    }
+  },
+  { 
+    name: "descripcion", 
+    label: "Descripción breve", 
+    type: "richtext",
+    validation: {
+      maxLength: 500
+    }
+  },
   {
     name: "tipoAsistente",
     label: "Tipo de asistente",
@@ -47,6 +87,7 @@ const AVAILABLE_FIELDS = [
       { value: "vendedor", label: "Vendedor" },
       { value: "otro", label: "Otro" },
     ],
+  
   },
   {
     name: "interesPrincipal",
@@ -58,9 +99,32 @@ const AVAILABLE_FIELDS = [
       { value: "abierto", label: "Abierto" },
     ],
   },
-  { name: "necesidad", label: "Necesidad para networking", type: "text" },
-  { name: "correo", label: "Correo", type: "text" },
-  { name: "telefono", label: "Teléfono", type: "text" },
+  { 
+    name: "necesidad", 
+    label: "Necesidad para networking", 
+    type: "text",
+    validation: {
+      maxLength: 200
+    }
+  },
+  { 
+    name: "correo", 
+    label: "Correo", 
+    type: "text",
+    validation: {
+      pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+      errorMessage: "Debe ser un correo electrónico válido"
+    }
+  },
+  { 
+    name: "telefono", 
+    label: "Teléfono", 
+    type: "text",
+    validation: {
+      pattern: /^[0-9]{7,10}$/,
+      errorMessage: "Debe contener entre 7 y 10 dígitos"
+    }
+  },
 ];
 
 const CONSENTIMIENTO_FIELD = {
@@ -212,18 +276,20 @@ export default function ConfigureFieldsModal({
   };
 
   const handleToggleRequired = (fieldName, checked) => {
-    setFields(
-      fields.map((f) =>
-        f.name === fieldName ? { ...f, required: checked } : f
-      )
-    );
-  };
+  setFields(fields.map((f) =>
+    f.name === fieldName
+      ? { ...f, required: checked, validation: f.validation || AVAILABLE_FIELDS.find(a => a.name === f.name)?.validation }
+      : f
+  ));
+};
 
-  const handleLabelChange = (fieldName, value) => {
-    setFields(
-      fields.map((f) => (f.name === fieldName ? { ...f, label: value } : f))
-    );
-  };
+ const handleLabelChange = (fieldName, value) => {
+  setFields(fields.map((f) =>
+    f.name === fieldName
+      ? { ...f, label: value, validation: f.validation || AVAILABLE_FIELDS.find(a => a.name === f.name)?.validation }
+      : f
+  ));
+};
 
   const handleAddCustomField = () => {
     if (!newFieldLabel.trim()) return;
@@ -273,20 +339,39 @@ export default function ConfigureFieldsModal({
     setFields((fields) => arrayMove(fields, oldIndex, newIndex));
   };
 
-  const handleSave = async () => {
-    try {
-      await updateDoc(doc(db, "events", event.id), {
-        "config.formFields": fields,
-        "config.tratamientoDatosText": tratamientoText,
-        "config.tratamientoDatosLabel": consentimientoLabel,
-      });
-      setGlobalMessage("Campos del formulario actualizados correctamente.");
-      refreshEvents();
-      onClose();
-    } catch (error) {
-      setGlobalMessage("Error al guardar configuración.");
-    }
-  };
+ const handleSave = async () => {
+  try {
+    const sanitizedFields = fields.map((f) => {
+      const base = AVAILABLE_FIELDS.find((a) => a.name === f.name);
+      let validation = f.validation || base?.validation;
+
+      // 🔄 Si hay un pattern tipo RegExp, conviértelo a string
+      if (validation && validation.pattern instanceof RegExp) {
+        validation = {
+          ...validation,
+          pattern: validation.pattern.toString(), // convierte /regex/ a texto
+        };
+      }
+
+      return base && base.validation
+        ? { ...f, validation }
+        : f;
+    });
+
+    await updateDoc(doc(db, "events", event.id), {
+      "config.formFields": sanitizedFields,
+      "config.tratamientoDatosText": tratamientoText,
+      "config.tratamientoDatosLabel": consentimientoLabel,
+    });
+
+    setGlobalMessage("Campos del formulario actualizados correctamente.");
+    refreshEvents();
+    onClose();
+  } catch (error) {
+    console.error("Error al guardar configuración:", error);
+    setGlobalMessage("Error al guardar configuración.");
+  }
+};
 
   return (
     <Modal

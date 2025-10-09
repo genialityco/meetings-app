@@ -166,8 +166,8 @@ export function useDashboardData(eventId?: string) {
   const uid = currentUser?.uid as string | undefined;
 
   // ---------------------- ESTADOS PRINCIPALES ----------------------
-  const [assistants, setAssistants] = useState<any[]>([]);
-  const [filteredAssistants, setFilteredAssistants] = useState<any[]>([]);
+  const [assistants, setAssistants] = useState<Assistant[]>([]);
+  const [filteredAssistants, setFilteredAssistants] = useState<Assistant[]>([]);
   const [acceptedMeetings, setAcceptedMeetings] = useState<Meeting[]>([]);
   const [loadingMeetings, setLoadingMeetings] = useState(true);
   const [pendingRequests, setPendingRequests] = useState<Meeting[]>([]);
@@ -268,18 +268,14 @@ export function useDashboardData(eventId?: string) {
   // 4. Cargar lista de asistentes
  useEffect(() => {
   if (!eventId) return;
-
   const q = query(collection(db, "users"), where("eventId", "==", eventId));
   return onSnapshot(q, (snap) => {
     const today = new Date().toISOString().split("T")[0];
-
-    // Convertimos los documentos
     const list = snap.docs
       .filter((d) => d.id !== uid)
       .map((d) => {
         const data = d.data();
         let last;
-
         if (data.lastConnection?.toDate) {
           last = data.lastConnection.toDate();
         } else if (typeof data.lastConnection === "string") {
@@ -303,49 +299,22 @@ export function useDashboardData(eventId?: string) {
         } as Assistant;
       })
       .sort((a, b) => {
+        // Ordenar por createdAt: más antiguo primero
         if (a.createdAt && b.createdAt) {
-          const timeA = a.createdAt.toMillis
-            ? a.createdAt.toMillis()
-            : new Date(a.createdAt).getTime();
-          const timeB = b.createdAt.toMillis
-            ? b.createdAt.toMillis()
-            : new Date(b.createdAt).getTime();
+          // Si ambos tienen createdAt, ordenar del más antiguo al más reciente
+          const timeA = a.createdAt.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt).getTime();
+          const timeB = b.createdAt.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt).getTime();
           return timeA - timeB;
         }
+        // Los que tienen createdAt van primero
         if (a.createdAt) return -1;
         if (b.createdAt) return 1;
+        // Si ninguno tiene createdAt, mantener orden original
         return 0;
       });
-
-    // 🔹 Agrupar por empresa
-    const empresaCounts: Record<string, number> = {};
-
-    // 1️⃣ Contar cuántos hay por empresa
-    list.forEach((a) => {
-      const empresa = a.empresa?.trim() || "Sin empresa";
-      empresaCounts[empresa] = (empresaCounts[empresa] || 0) + 1;
-    });
-
-    // 2️⃣ Crear grupos según la cantidad
-    const agrupado: Record<string, Assistant[]> = {};
-
-    list.forEach((a) => {
-      const empresa = a.empresa?.trim() || "Sin empresa";
-      const grupo = empresaCounts[empresa] > 1 ? empresa : "Otras empresas";
-
-      if (!agrupado[grupo]) agrupado[grupo] = [];
-      agrupado[grupo].push(a);
-    });
-
-    // 🔹 Convertimos el objeto agrupado a un array para iterarlo fácilmente
-    const agrupadoArray = Object.entries(agrupado).map(([empresa, asistentes]) => ({
-      empresa,
-      asistentes,
-    }));
-
-    // 👉 Aquí actualizas tu estado con la lista agrupada
-    setAssistants(agrupadoArray);
-    setFilteredAssistants(agrupadoArray);
+      
+    setAssistants(list);
+    setFilteredAssistants(list);
   });
 }, [uid, eventId]);
 
@@ -376,11 +345,6 @@ export function useDashboardData(eventId?: string) {
           currentUser?.data?.tipoAsistente
       );
 
-      console.log(
-        filtered.filter(
-          (a) => !a[formFields.find((f) => f.name === "empresa")?.name]
-        )
-      );
     }
 
     setFilteredAssistants(filtered);
