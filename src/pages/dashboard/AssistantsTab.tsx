@@ -49,6 +49,7 @@ export default function AssistantsTab({
       setLoadingId(null);
     }
   };
+
   return (
     <>
       <Group grow mb="md">

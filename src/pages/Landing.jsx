@@ -36,6 +36,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../firebase/firebaseConfig";
 import { useMediaQuery } from "@mantine/hooks";
 import Placeholder from "@tiptap/extension-placeholder";
+import { collection, query, where, getDocs } from "firebase/firestore";
 
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
 
@@ -107,29 +108,38 @@ const InfoLine = ({ label, value }) => (
 );
 const validateField = (field, value) => {
   const { validation = {}, required = true } = field;
-  const errors = [];
 
-  // Handle empty required fields
   if (required && (!value || value.trim() === "")) {
-    return validation.errorMessage || `El campo ${field.label} es obligatorio`;
+    return validation?.errorMessage || `El campo ${field.label} es obligatorio`;
   }
 
-  // MinLength validation
-  if (validation.minLength && value.length < validation.minLength) {
+  if (validation?.minLength && value?.length < validation.minLength) {
     return validation.errorMessage || `Debe tener al menos ${validation.minLength} caracteres`;
   }
 
-  // MaxLength validation
-  if (validation.maxLength && value.length > validation.maxLength) {
+  if (validation?.maxLength && value?.length > validation.maxLength) {
     return validation.errorMessage || `No puede exceder ${validation.maxLength} caracteres`;
   }
 
-  // Pattern validation
-  if (validation.pattern && !validation.pattern.test(value)) {
-    return validation.errorMessage || `El formato no es válido`;
+  if (validation?.pattern) {
+    try {
+      // 🔧 Elimina las barras iniciales y finales si existen
+      let patternString = validation.pattern.trim();
+      if (patternString.startsWith("/") && patternString.endsWith("/")) {
+        patternString = patternString.slice(1, -1);
+      }
+
+      const regex = new RegExp(patternString);
+
+      if (!regex.test(value)) {
+        return validation.errorMessage || `El formato no es válido`;
+      }
+    } catch (err) {
+      console.warn(`Regex inválido: ${validation.pattern}`, err);
+    }
   }
 
-  return null; // No errors
+  return null;
 };
 
 // --------- Componente principal ----------
@@ -324,41 +334,67 @@ const Landing = () => {
 
   // Guardar (tanto registro nuevo como actualización)
  const handleSubmit = useCallback(async () => {
-    setTratamientoError("");
-    if (!validateForm()) {
-      return; // Stop if validation fails
+  setTratamientoError("");
+  if (!validateForm()) {
+    return; // Detiene si la validación falla
+  }
+
+  setSaving(true);
+  try {
+    const uid = currentUser?.uid;
+    let dataToUpdate = {
+      ...formValues,
+      eventId,
+      updatedAt: new Date().toISOString(),
+    };
+    
+    // Normalizar el campo de correo
+    if (!dataToUpdate.email && dataToUpdate?.contacto?.correo) {
+      dataToUpdate.email = dataToUpdate.contacto.correo;
+    }
+    
+    console.log("Form values to save:", dataToUpdate);
+    // ⚠️ Verificar si el correo ya existe (y no pertenece al mismo usuario)
+    if (dataToUpdate.correo) {
+      const usersRef = collection(db, "users");
+      const q = query(usersRef, where("correo", "==", dataToUpdate.correo));
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        const existingUser = querySnapshot.docs[0];
+        const existingData = existingUser.data();
+
+        // ⚠️ Si el correo existe y el eventId es el mismo (y no es el mismo usuario)
+        if (existingUser.id !== uid && existingData.eventId === eventId) {
+          alert("⚠️ Este correo ya está registrado para este evento.");
+          setSaving(false);
+          return;
+    }
+  }
     }
 
-    setSaving(true);
-    try {
-      const uid = currentUser?.uid;
-      let dataToUpdate = {
-        ...formValues,
-        eventId,
-        updatedAt: new Date().toISOString(),
-      };
-
-      if (!dataToUpdate.email && dataToUpdate?.contacto?.correo) {
-        dataToUpdate.email = dataToUpdate.contacto.correo;
-      }
-      if (!currentUser?.data?.createdAt) {
-        dataToUpdate.createdAt = new Date().toISOString();
-      }
-
-      if (formValues.photo) {
-        const photoURL = await uploadProfilePicture(formValues.photo, uid);
-        dataToUpdate.photoURL = photoURL;
-        delete dataToUpdate.photo;
-      }
-
-      await updateUser(uid, dataToUpdate);
-      navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
-    } catch (error) {
-      console.error("Error en el guardado:", error);
-    } finally {
-      setSaving(false);
+    // Si el usuario no tiene fecha de creación, se agrega
+    if (!currentUser?.data?.createdAt) {
+      dataToUpdate.createdAt = new Date().toISOString();
     }
-  }, [currentUser, formValues, navigate, updateUser, eventId, validateForm]);
+
+    // Si se cargó una foto, se sube primero
+    if (formValues.photo) {
+      const photoURL = await uploadProfilePicture(formValues.photo, uid);
+      dataToUpdate.photoURL = photoURL;
+      delete dataToUpdate.photo;
+    }
+
+    // Guardar/actualizar el usuario
+    await updateUser(uid, dataToUpdate);
+    navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
+
+  } catch (error) {
+    console.error("Error en el guardado:", error);
+  } finally {
+    setSaving(false);
+  }
+}, [currentUser, formValues, navigate, updateUser, eventId, validateForm]);
 
   const handleGoToDashboard = useCallback(() => {
     navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
