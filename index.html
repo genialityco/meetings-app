@@ -21,6 +21,17 @@
 <body>
   <div id="root"></div>
   <script type="module" src="/src/index.jsx"></script>
+  <script>
+    (function () {
+      const badChar = /%C2%A0/ig;
+      const current = window.location.href;
+
+      if (badChar.test(current)) {
+        const clean = current.replace(badChar, '');
+        window.location.replace(clean);
+      }
+    })();
+  </script>
 </body>
 
 </html>
