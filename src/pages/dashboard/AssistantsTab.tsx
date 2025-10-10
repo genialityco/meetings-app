@@ -33,7 +33,7 @@ export default function AssistantsTab({
   setInterestFilter,
 }) {
   const [loadingId, setLoadingId] = useState(null);
-  const [viewMode, setViewMode] = useState("cards"); // "cards" o "companies"
+  const [viewMode, setViewMode] = useState("companies"); // "cards" o "companies"
   const [selectedAssistantPerCompany, setSelectedAssistantPerCompany] = useState({});
 
   // Agrupar asistentes por empresa
@@ -266,7 +266,7 @@ export default function AssistantsTab({
                             {assistant.nombre}
                           </Text>
                           <Text size="xs" c="dimmed">
-                            {assistant.cargo}
+                            {assistant?.cargo || ""}
                           </Text>
                         </div>
                       </Group>
@@ -315,10 +315,7 @@ export default function AssistantsTab({
                           📧 <strong>Correo:</strong>{" "}
                           {selectedAssistant.correo || "No disponible"}
                         </Text>
-                        <Text size="sm">
-                          📝 <strong>Descripción:</strong>{" "}
-                          {selectedAssistant.descripcion || "No especificada"}
-                        </Text>
+                       
                         <Text size="sm">
                           🎯 <strong>Interés Principal:</strong>{" "}
                           {selectedAssistant.interesPrincipal || "No especificado"}
@@ -408,7 +405,7 @@ export default function AssistantsTab({
 
       <Text mb="md">
         Máximo, puedes agendar{" "}
-        <strong>{eventConfig?.maxMeetingsPerUser ?? "∞"}</strong> reuniones
+        <strong>{eventConfig?.maxMeetingsPerUser ?? "∞"}</strong> {eventConfig?.maxMeetingsPerUser === 1 ? "reunión" : "reuniones"}.
       </Text>
 
       {viewMode === "cards" ? renderCardView() : renderCompanyView()}
