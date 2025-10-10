@@ -494,12 +494,12 @@ export function useDashboardData(eventId?: string) {
         `Correo: ${requester?.correo || ""}\n` +
         `Teléfono: ${requester?.telefono || ""}\n\n` +
         `Opciones:\n` +
-        `*1. Aceptar:* ${acceptUrl}\n` +
-        `*2. Rechazar:* ${rejectUrl}\n` +
-        `3. Ir a la landing: ${landingUrl}`;
+        `*1. Aceptar:* \n${acceptUrl}\n` +
+        `*2. Rechazar:* \n${rejectUrl}\n` +
+        `3. Ir a la landing: \n${landingUrl}`;
 
       // WhatsApp backend
-      fetch("https://apiwhatsapp.geniality.com.co/api/send", {
+      fetch(API_WP_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
