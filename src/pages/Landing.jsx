@@ -36,6 +36,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../firebase/firebaseConfig";
 import { useMediaQuery } from "@mantine/hooks";
 import Placeholder from "@tiptap/extension-placeholder";
+import { collection, query, where, getDocs } from "firebase/firestore";
 
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
 
@@ -60,6 +61,14 @@ const formatDateCO = (value) => {
         : new Date(value);
   if (Number.isNaN(d.getTime())) return null;
   return d.toLocaleString("es-CO", { timeZone: "America/Bogota" });
+};
+
+// Función para eliminar tags HTML
+const stripHtmlTags = (html) => {
+  if (!html) return "";
+  const tmp = document.createElement("DIV");
+  tmp.innerHTML = html;
+  return tmp.textContent || tmp.innerText || "";
 };
 
 function formatTime(timeString) {
@@ -97,6 +106,41 @@ const InfoLine = ({ label, value }) => (
     </Text>
   </Group>
 );
+const validateField = (field, value) => {
+  const { validation = {}, required = true } = field;
+
+  if (required && (!value || value.trim() === "")) {
+    return validation?.errorMessage || `El campo ${field.label} es obligatorio`;
+  }
+
+  if (validation?.minLength && value?.length < validation.minLength) {
+    return validation.errorMessage || `Debe tener al menos ${validation.minLength} caracteres`;
+  }
+
+  if (validation?.maxLength && value?.length > validation.maxLength) {
+    return validation.errorMessage || `No puede exceder ${validation.maxLength} caracteres`;
+  }
+
+  if (validation?.pattern) {
+    try {
+      // 🔧 Elimina las barras iniciales y finales si existen
+      let patternString = validation.pattern.trim();
+      if (patternString.startsWith("/") && patternString.endsWith("/")) {
+        patternString = patternString.slice(1, -1);
+      }
+
+      const regex = new RegExp(patternString);
+
+      if (!regex.test(value)) {
+        return validation.errorMessage || `El formato no es válido`;
+      }
+    } catch (err) {
+      console.warn(`Regex inválido: ${validation.pattern}`, err);
+    }
+  }
+
+  return null;
+};
 
 // --------- Componente principal ----------
 const Landing = () => {
@@ -123,7 +167,7 @@ const Landing = () => {
   const [profilePicPreview, setProfilePicPreview] = useState(null);
   const [saving, setSaving] = useState(false);
   const [tratamientoError, setTratamientoError] = useState("");
-
+  const [formErrors, setFormErrors] = useState({});
   // Editor tiptap (solo si hay richtext en form)
   const editor = useEditor({
     extensions: [
@@ -138,22 +182,52 @@ const Landing = () => {
     ],
     content: "",
     onUpdate: ({ editor }) => {
+      const htmlContent = editor.getHTML();
+      const plainText = stripHtmlTags(htmlContent);
       setFormValues((prev) => ({
         ...prev,
-        descripcion: editor.getHTML(),
+        descripcion: plainText,
       }));
     },
   });
 
-  // FIX 1: Actualizar el editor cuando formValues.descripcion cambia
-  useEffect(() => {
+   // helpers de campos dinámicos
+  const getValueForField = useCallback(
+    (fieldName) => {
+      if (fieldName.startsWith("contacto.")) {
+        return formValues.contacto?.[fieldName.split(".")[1]] || "";
+      }
+      return formValues[fieldName] ?? "";
+    },
+    [formValues]
+  );
+  const validateForm = useCallback(() => {
+    const errors = {};
+    event?.config?.formFields?.forEach((field) => {
+      const value = getValueForField(field.name);
+      const error = validateField(field, value);
+      if (error) {
+        errors[field.name] = error;
+      }
+    });
 
-   if (editor && formValues.descripcion) {
-    const currentHTML = editor.getHTML();
-    if (currentHTML !== formValues.descripcion) {
-      editor.commands.setContent(formValues.descripcion, false);
+    // Special case for consentimiento
+    if (!formValues[CONSENTIMIENTO_FIELD_NAME]) {
+      errors[CONSENTIMIENTO_FIELD_NAME] = "Debes aceptar el tratamiento de datos para continuar.";
     }
-  }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0; // Return true if no errors
+  }, [event?.config?.formFields, formValues, getValueForField]);
+
+  // Actualizar el editor cuando formValues.descripcion cambia
+  useEffect(() => {
+    if (editor && formValues.descripcion) {
+      const currentText = stripHtmlTags(editor.getHTML());
+      if (currentText !== formValues.descripcion) {
+        editor.commands.setContent(formValues.descripcion, false);
+      }
+    }
   }, [editor, formValues.descripcion]);
 
   // Cargar configuración del evento
@@ -209,16 +283,7 @@ const Landing = () => {
     }
   }, [currentUser]);
 
-  // helpers de campos dinámicos
-  const getValueForField = useCallback(
-    (fieldName) => {
-      if (fieldName.startsWith("contacto.")) {
-        return formValues.contacto?.[fieldName.split(".")[1]] || "";
-      }
-      return formValues[fieldName] ?? "";
-    },
-    [formValues]
-  );
+ 
 
   const handleDynamicChange = useCallback((field, value) => {
     if (field.startsWith("contacto.")) {
@@ -268,53 +333,68 @@ const Landing = () => {
   }, [loginByEmail, loginEmail, eventId]);
 
   // Guardar (tanto registro nuevo como actualización)
-  const handleSubmit = useCallback(async () => {
-    setTratamientoError("");
-    if (!formValues[CONSENTIMIENTO_FIELD_NAME]) {
-      setTratamientoError(
-        "Debes aceptar el tratamiento de datos para continuar."
-      );
-      return;
+ const handleSubmit = useCallback(async () => {
+  setTratamientoError("");
+  if (!validateForm()) {
+    return; // Detiene si la validación falla
+  }
+
+  setSaving(true);
+  try {
+    const uid = currentUser?.uid;
+    let dataToUpdate = {
+      ...formValues,
+      eventId,
+      updatedAt: new Date().toISOString(),
+    };
+    
+    // Normalizar el campo de correo
+    if (!dataToUpdate.email && dataToUpdate?.contacto?.correo) {
+      dataToUpdate.email = dataToUpdate.contacto.correo;
     }
-    if (!isValidEmail(formValues?.email || formValues?.correo || "")) {
-      // intenta leer de "email" o "correo" según cómo hayas nombrado el campo
-      // si usas campo dinámico “contacto.correo”, captura más abajo
+    
+    console.log("Form values to save:", dataToUpdate);
+    // ⚠️ Verificar si el correo ya existe (y no pertenece al mismo usuario)
+    if (dataToUpdate.correo) {
+      const usersRef = collection(db, "users");
+      const q = query(usersRef, where("correo", "==", dataToUpdate.correo));
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        const existingUser = querySnapshot.docs[0];
+        const existingData = existingUser.data();
+
+        // ⚠️ Si el correo existe y el eventId es el mismo (y no es el mismo usuario)
+        if (existingUser.id !== uid && existingData.eventId === eventId) {
+          alert("⚠️ Este correo ya está registrado para este evento.");
+          setSaving(false);
+          return;
+    }
+  }
     }
 
-    setSaving(true);
-    try {
-      const uid = currentUser?.uid;
-      let dataToUpdate = {
-        ...formValues,
-        eventId,
-        updatedAt: new Date().toISOString(),
-      };
-
-      // Soporte para contacto.correo si lo usas como login
-      if (!dataToUpdate.email && dataToUpdate?.contacto?.correo) {
-        dataToUpdate.email = dataToUpdate.contacto.correo;
-      }
-      if (!currentUser?.data?.createdAt) {
-        dataToUpdate.createdAt = new Date().toISOString();
-      }
-
-      if (formValues.photo) {
-        const photoURL = await uploadProfilePicture(formValues.photo, uid);
-        dataToUpdate.photoURL = photoURL;
-        delete dataToUpdate.photo; // no subir File a Firestore
-      }
-
-      await updateUser(uid, dataToUpdate);
-
-      // Si viene desde login-tab, después de actualizar puede entrar al directorio
-      // o lo llevamos directo:
-      navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
-    } catch (error) {
-      console.error("Error en el guardado:", error);
-    } finally {
-      setSaving(false);
+    // Si el usuario no tiene fecha de creación, se agrega
+    if (!currentUser?.data?.createdAt) {
+      dataToUpdate.createdAt = new Date().toISOString();
     }
-  }, [currentUser, formValues, navigate, updateUser, eventId]);
+
+    // Si se cargó una foto, se sube primero
+    if (formValues.photo) {
+      const photoURL = await uploadProfilePicture(formValues.photo, uid);
+      dataToUpdate.photoURL = photoURL;
+      delete dataToUpdate.photo;
+    }
+
+    // Guardar/actualizar el usuario
+    await updateUser(uid, dataToUpdate);
+    navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
+
+  } catch (error) {
+    console.error("Error en el guardado:", error);
+  } finally {
+    setSaving(false);
+  }
+}, [currentUser, formValues, navigate, updateUser, eventId, validateForm]);
 
   const handleGoToDashboard = useCallback(() => {
     navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
@@ -325,7 +405,9 @@ const Landing = () => {
     if (!Array.isArray(event?.config?.formFields)) return null;
 
     return event.config.formFields.map((field) => {
-      // Foto perfil
+      const fieldError = formErrors[field.name];
+
+      // Photo field
       if (field.name === "photo") {
         return (
           <FileInput
@@ -342,26 +424,32 @@ const Landing = () => {
               } else {
                 setProfilePicPreview(null);
               }
+              setFormErrors((prev) => ({ ...prev, [field.name]: null }));
             }}
+            error={fieldError}
+            required={field.required}
           />
         );
       }
 
-      // RichText
+      // RichText field
       if (field.type === "richtext") {
         return (
           <div key={field.name}>
             <Title order={6}>{field.label}</Title>
             <RichTextEditor editor={editor}>
-
-
               <RichTextEditor.Content />
             </RichTextEditor>
+            {fieldError && (
+              <Text c="red" size="sm" mt="xs">
+                {fieldError}
+              </Text>
+            )}
           </div>
         );
       }
 
-      // Select
+      // Select field
       if (field.type === "select") {
         return (
           <Select
@@ -370,15 +458,20 @@ const Landing = () => {
             placeholder="Selecciona una opción"
             data={field.options || []}
             value={getValueForField(field.name)}
-            onChange={(value) => handleDynamicChange(field.name, value)}
+            onChange={(value) => {
+              handleDynamicChange(field.name, value);
+              const error = validateField(field, value);
+              setFormErrors((prev) => ({ ...prev, [field.name]: error }));
+            }}
             required={field.required}
             mb="sm"
             searchable
+            error={fieldError}
           />
         );
       }
 
-      // Checkbox (excepto consentimiento)
+      // Checkbox (except consentimiento)
       if (
         field.type === "checkbox" &&
         field.name !== CONSENTIMIENTO_FIELD_NAME
@@ -388,47 +481,39 @@ const Landing = () => {
             key={field.name}
             label={field.label}
             checked={!!getValueForField(field.name)}
-            onChange={(e) =>
-              handleDynamicChange(field.name, e.currentTarget.checked)
-            }
+            onChange={(e) => {
+              handleDynamicChange(field.name, e.currentTarget.checked);
+              const error = validateField(field, e.currentTarget.checked ? "checked" : "");
+              setFormErrors((prev) => ({ ...prev, [field.name]: error }));
+            }}
             required={field.required}
             mb="sm"
+            error={fieldError}
           />
         );
       }
 
-      // Campos de contacto
-      if (
-        field.name === "contacto.correo" ||
-        field.name === "contacto.telefono"
-      ) {
-        return (
-          <TextInput
-            key={field.name}
-            label={field.label}
-            placeholder={field.label}
-            value={getValueForField(field.name)}
-            onChange={(e) => handleDynamicChange(field.name, e.target.value)}
-            required={field.required}
-          />
-        );
-      }
-
-      // TextInput por defecto
+      // TextInput for contacto fields or default text
       return (
         <TextInput
           key={field.name}
           label={field.label}
           placeholder={field.label}
           value={getValueForField(field.name)}
-          onChange={(e) => handleDynamicChange(field.name, e.target.value)}
+          onChange={(e) => {
+            handleDynamicChange(field.name, e.target.value);
+            const error = validateField(field, e.target.value);
+            setFormErrors((prev) => ({ ...prev, [field.name]: error }));
+          }}
           required={field.required}
+          error={fieldError}
         />
       );
     });
   }, [
     event?.config?.formFields,
     formValues,
+    formErrors,
     getValueForField,
     handleDynamicChange,
     editor,
@@ -560,53 +645,53 @@ const Landing = () => {
             {event.eventName || "Evento de Networking"}
           </Title>
           <Group align="flex-start" justify="space-between">
-  <div style={{ flex: 1 }}>
-    <Text ta="justify">
-      {event?.config?.eventDate && (
-        <>
-          <Text span fw={700}>Fecha del evento:</Text>{" "}
-          {formatDate(event?.config?.eventDate)}
-        </>
-      )}
-    </Text>
+            <div style={{ flex: 1 }}>
+              <Text ta="justify">
+                {event?.config?.eventDate && (
+                  <>
+                    <Text span fw={700}>Fecha del evento:</Text>{" "}
+                    {formatDate(event?.config?.eventDate)}
+                  </>
+                )}
+              </Text>
 
-    <Text ta="justify">
-      {event?.config?.eventStartTime && (
-        <>
-          <Text span fw={700}>Hora de inicio:</Text>{" "}
-          {formatTime(event?.config?.eventStartTime)}
-        </>
-      )}
-    </Text>
+              <Text ta="justify">
+                {event?.config?.eventStartTime && (
+                  <>
+                    <Text span fw={700}>Hora de inicio:</Text>{" "}
+                    {formatTime(event?.config?.eventStartTime)}
+                  </>
+                )}
+              </Text>
 
-    <Text ta="justify">
-      {event?.config?.eventEndTime && (
-        <>
-          <Text span fw={700}>Hora de finalización:</Text>{" "}
-          {formatTime(event?.config?.eventEndTime)}
-        </>
-      )}
-    </Text>
+              <Text ta="justify">
+                {event?.config?.eventEndTime && (
+                  <>
+                    <Text span fw={700}>Hora de finalización:</Text>{" "}
+                    {formatTime(event?.config?.eventEndTime)}
+                  </>
+                )}
+              </Text>
 
-    <Text ta="justify">
-      {event?.config?.eventLocation && (
-        <>
-          <Text span fw={700}>Lugar del evento:</Text>{" "}
-          {event.config.eventLocation}
-        </>
-      )}
-    </Text>
-  </div>
+              <Text ta="justify">
+                {event?.config?.eventLocation && (
+                  <>
+                    <Text span fw={700}>Lugar del evento:</Text>{" "}
+                    {event.config.eventLocation}
+                  </>
+                )}
+              </Text>
+            </div>
 
-  {event?.landingQR && (
-    <Image
-      src={event.landingQR}
-      alt="Código QR del evento"
-      w={120}
-      fit="contain"
-    />
-  )}
-</Group>
+            {event?.landingQR && (
+              <Image
+                src={event.landingQR}
+                alt="Código QR del evento"
+                w={120}
+                fit="contain"
+              />
+            )}
+          </Group>
           <Text ta="justify" mb="lg" mt="lg">
             <strong>Plataforma de Networking y Reuniones de Negocio.</strong>{" "}
             Conecta con otras empresas y permite que te encuentren para agendar

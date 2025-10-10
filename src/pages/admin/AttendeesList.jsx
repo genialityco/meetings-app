@@ -309,7 +309,7 @@ function parseFirestoreTimestamp(input) {
               }}
             />
           </Button>
-          <Button onClick={handleExportCurrentToExcel}>Exportar a Excel (solo columnas visibles)</Button>
+          <Button onClick={handleExportCurrentToExcel}>Exportar todos a Excel (solo columnas visibles)</Button>
           <Button variant="outline" color="indigo" onClick={exportCompradoresToExcel}>
             Exportar compradores (Excel)
           </Button>

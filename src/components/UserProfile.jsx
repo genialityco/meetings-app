@@ -122,9 +122,7 @@ const UserProfile = () => {
               {/* <Text>
                 <strong>Cargo:</strong> {currentUser.data.cargo}
               </Text> */}
-              <Text span={2}>
-                <strong>Descripción:</strong> {currentUser.data.descripcion}
-              </Text>
+             
               {/* <Text span={2}>
                 <strong>Interés:</strong> {currentUser.data.interesPrincipal}
               </Text> */}
@@ -139,6 +137,12 @@ const UserProfile = () => {
                 <strong>Teléfono:</strong>{" "}
                 {currentUser.data.telefono || "No proporcionado"}
               </Text>
+               <div
+              style={{ fontSize: "16px", lineHeight: 1.6 }}
+              dangerouslySetInnerHTML={{
+                __html: `<strong>Descripción:</strong> ${currentUser.data.descripcion || ""}`,
+              }}
+            ></div>
             </SimpleGrid>
             <Group mt="md" position="apart">
               <Button onClick={() => setEditModalOpened(true)} color="blue">
