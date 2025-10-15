@@ -390,7 +390,7 @@ console.log("acceptedRequests", acceptedRequests);
                         {requester.necesidad || "No especificada"}
                       </Text>
                       <Text size="sm" color="blue">
-                        <strong>Esta solicitud fue tomada.</strong>
+                        <strong>Esta solicitud fue tomada por otro asistente de tu empresa.</strong>
                       </Text>
                     </>
                   ) : (
