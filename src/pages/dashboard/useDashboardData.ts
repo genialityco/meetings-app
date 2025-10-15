@@ -781,7 +781,7 @@ export function useDashboardData(eventId?: string) {
   meetingId: string
 ) => {
   try {
-    console.log("changeMeetingAssistantId", meetingId);
+   
     if (!uid || !eventId || !eventConfig) return;
 
     const mtgRef = doc(db, "events", eventId, "meetings", meetingId);
@@ -790,7 +790,7 @@ export function useDashboardData(eventId?: string) {
     if (!mtgSnap.exists()) throw new Error("Meeting does not exist.");
 
     const meetingData = mtgSnap.data() as Meeting;
-    console.log("meetingData", meetingData);
+    
 
     // 1️⃣ Extraer receiverId anterior
     const oldReceiverId = meetingData.receiverId;
@@ -807,7 +807,7 @@ export function useDashboardData(eventId?: string) {
       updatedAt: new Date(),
     });
 
-    console.log("✅ Asistente receptor actualizado correctamente");
+
 
   } catch (error) {
     console.error("❌ Error al actualizar el asistente receptor:", error);
@@ -842,10 +842,10 @@ const changeAssistant = async (requester: Assistant, timeSlot: string, tableAssi
         data.participants.forEach((p: string) => busyIds.add(p));
       }
     });
-    console.log("companyGroups", companyGroups);
+
 
    const available = employees.filter(a => !busyIds.has(a.id)); // excluir los ocupados
-   console.log("available", available);
+  
 
 // 5️⃣ Guardar en el estado
 setAvailableAsistents(available);
@@ -857,14 +857,16 @@ setAvailableAsistents(available);
 
   // Seleccionar slots disponibles para aceptar/reagendar reuniones
   const prepareSlotSelection = async (meetingId: string, isEdit = false) => {
-    setPrepareSlotSelectionLoading(true);
+  setPrepareSlotSelectionLoading(true);
 
+  try {
     if (isEdit) {
       setMeetingToEdit(meetingId);
       setMeetingToAccept(null);
     } else {
       setMeetingToEdit(null);
     }
+
     const mtgRef = doc(db, "events", eventId!, "meetings", meetingId);
     const mtgSnap = await getDoc(mtgRef);
     if (!mtgSnap.exists()) throw new Error("Reunión no existe");
@@ -874,25 +876,50 @@ setAvailableAsistents(available);
       setMeetingToAccept({ id: meetingId, requesterId, receiverId });
     }
 
-    // Slots ocupados por cualquiera de los dos usuarios
-    const accSn = await getDocs(
-      query(
-        collection(db, "events", eventId!, "meetings"),
-        where("status", "==", "accepted"),
-        where("participants", "array-contains-any", [requesterId, receiverId])
-      )
-    );
+    // Fecha del evento
+    const eventDayISO = String(eventConfig.eventDate); // "YYYY-MM-DD"
+    const eventDate = parseISODate(eventDayISO);
+
+    // Para saber si el evento es hoy y así bloquear horas pasadas solo en ese caso
+    const today = new Date();
+    const todayMid = new Date(today); todayMid.setHours(0,0,0,0);
+    const eventMid = new Date(eventDate); eventMid.setHours(0,0,0,0);
+    const isEventToday = todayMid.getTime() === eventMid.getTime();
+    const now = new Date();
+
+    // Reuniones aceptadas (mismo día del evento)
+    // meetingDate: "YYYY-MM-DD"
+    let accSn;
+    try {
+      accSn = await getDocs(
+        query(
+          collection(db, "events", eventId!, "meetings"),
+          where("status", "==", "accepted"),
+          where("participants", "array-contains-any", [requesterId, receiverId]),
+          where("meetingDate", "==", eventDayISO)
+        )
+      );
+    } catch {
+      accSn = await getDocs(
+        query(
+          collection(db, "events", eventId!, "meetings"),
+          where("status", "==", "accepted"),
+          where("participants", "array-contains-any", [requesterId, receiverId])
+        )
+      );
+    }
+
     const occupiedRanges = accSn.docs
-      .map((d) => d.data().timeSlot)
+      .map((d) => d.data().timeSlot as string | undefined)
       .filter(Boolean)
       .map((ts) => {
-        const [s, e] = ts.split(" - ");
+        const [s, e] = ts!.split(" - ");
         const [sh, sm] = s.split(":").map(Number);
         const [eh, em] = e.split(":").map(Number);
         return { start: sh * 60 + sm, end: eh * 60 + em };
       });
 
-    // Agenda de slots disponibles
+    // Agenda de slots disponibles (agenda es por evento)
     const agSn = await getDocs(
       query(
         collection(db, "agenda"),
@@ -901,33 +928,47 @@ setAvailableAsistents(available);
         orderBy("startTime")
       )
     );
-    const now = new Date();
-    console.log("slots disponibles", agSn)
+
     const filtered = agSn.docs
       .map((d) => ({ id: d.id, ...(d.data() as Omit<AgendaSlot, "id">) }))
       .filter((slot) => {
         const [h, m] = slot.startTime.split(":").map(Number);
-        const slotDate = new Date(now);
-        slotDate.setHours(h, m, 0, 0);
-        if (slotDate <= now) return false;
+
+        // la fecha/hora del slot con la FECHA DEL EVENTO (y no con hoy)
+        const slotDateTime = new Date(eventDate);
+        slotDateTime.setHours(h, m, 0, 0);
+
+        // Regla: solo bloquear slots pasados si el evento es hoy
+        // Si el evento es futuro, muestra todos los slots del evento
+        if (isEventToday && slotDateTime <= now) return false;
+
+        // Respeta bloques de descanso
         if (
           slotOverlapsBreakBlock(
             slot.startTime,
             eventConfig.meetingDuration,
             eventConfig.breakBlocks
           )
-        )
-          return false;
+        ) return false;
+
+        // verificación de solape con aceptadas del mismo día (ocupadas en minutos)
         const slotStart = h * 60 + m;
         const slotEnd = slotStart + eventConfig.meetingDuration;
         if (occupiedRanges.some((r) => slotStart < r.end && slotEnd > r.start))
           return false;
+
         return true;
       });
+
     setAvailableSlots(filtered);
-    setPrepareSlotSelectionLoading(false);
     setSlotModalOpened(true);
-  };
+  } finally {
+    setPrepareSlotSelectionLoading(false);
+  }
+};
+function parseISODate(dateStr: string): Date {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d);}
 
   // Confirmar la selección de slot para la reunión
   const confirmAcceptWithSlot = async (meetingId: string, slot: any) => {

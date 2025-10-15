@@ -231,17 +231,20 @@ function parseFirestoreTimestamp(input) {
 
   // Exporta SOLO los campos visibles
   const handleExportCurrentToExcel = () => {
-    const visibleFields = fields.filter((f) => shownFields.includes(f.name));
-    const wsData = [
-      visibleFields.map((f) => f.label),
-      ...attendees.map((a) => visibleFields.map((f) => getValue(a, f.name))),
-    ];
-    const ws = XLSX.utils.aoa_to_sheet(wsData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Asistentes");
-    XLSX.writeFile(wb, `asistentes_${event?.eventName || event.id}.xlsx`);
-  };
+  const visibleFields = fields.filter((f) => shownFields.includes(f.name));
+  const allFields = [{ name: "id", label: "ID" }, ...visibleFields];
 
+  const wsData = [
+    allFields.map((f) => f.label),
+    ...attendees.map((a) => allFields.map((f) => getValue(a, f.name))),
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Asistentes");
+
+  XLSX.writeFile(wb, `asistentes_${event?.eventName || event.id}.xlsx`);
+};
   const exportCompradoresToExcel = () => {
     // Puedes ajustar estos campos según tu modelo
     const compradores = attendees.filter((a) => a.tipoAsistente === "comprador");
