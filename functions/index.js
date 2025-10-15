@@ -13,7 +13,7 @@ export const notifyMeetingsScheduled = onSchedule(
   },
   async () => {
     const db = getFirestore();
-    const eventId = "Y1jcc3z7dqr9BbFfENz5";
+    const eventId = "DKyGhDkDlzXRBfnCxnrk";
 
     const nowUTC = new Date();
     const nowBogota = new Date(nowUTC.toLocaleString("en-US", { timeZone: "America/Bogota" }));
@@ -75,8 +75,8 @@ export const notifyMeetingsScheduled = onSchedule(
             }
 
             const message = `👋 Hola ${user.nombre?.trim() || "asistente"}!
-Tu reunión asignada (${meeting.timeSlot}) del evento ${eventData.eventName || "GENIALITY"} empezará en menos de 5 minutos.
-Por favor dirígete a tu mesa asignada (${meeting.tableAssigned}).`;
+Recuerde que tiene una reunión asignada (${meeting.timeSlot}) y su reunión de networking ${eventData.eventName.toUpperCase() || "START"} empezará en menos de 5 minutos.
+Por favor diríjase a su mesa asignada (${meeting.tableAssigned}).`;
 
             console.log(`📲 Enviando WhatsApp a ${user.nombre} (${phone})...`);
 
@@ -85,7 +85,7 @@ Por favor dirígete a tu mesa asignada (${meeting.tableAssigned}).`;
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  clientId: "genialitybussinesstest",
+                  clientId: "genialitybussiness",
                   phone: `57${phone}`,
                   message,
                 }),
