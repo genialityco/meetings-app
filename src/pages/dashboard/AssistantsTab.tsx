@@ -12,6 +12,7 @@ import {
   Stack,
   Divider,
   Box,
+  Alert,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import React, { useEffect, useState, useMemo } from "react";
@@ -31,30 +32,47 @@ export default function AssistantsTab({
   interestOptions,
   interestFilter,
   setInterestFilter,
+  setCompanyGroups,
 }) {
   const [loadingId, setLoadingId] = useState(null);
-  const [viewMode, setViewMode] = useState("companies"); // "cards" o "companies"
+  const [loadingCompany, setLoadingCompany] = useState(null);
+  const [viewMode, setViewMode] = useState("companies");
   const [selectedAssistantPerCompany, setSelectedAssistantPerCompany] = useState({});
 
   // Agrupar asistentes por empresa
   const companiesData = useMemo(() => {
-    const grouped = new Map();
-
-    filteredAssistants.forEach((assistant) => {
-      const company = assistant.empresa?.trim().toLowerCase() || "Sin empresa";
-
-      if (!grouped.has(company)) {
-        grouped.set(company, []);
-      }
-      grouped.get(company).push(assistant);
-    });
-
-    // Convertir a array de objetos {empresa, asistentes}
-    return Array.from(grouped.entries()).map(([empresa, asistentes]) => ({
-      empresa,
-      asistentes,
-    }));
-  }, [filteredAssistants]);
+  const grouped = new Map();
+  
+  filteredAssistants.forEach((assistant) => {
+    // Buscar el campo NIT dinámico (custom_nit_*)
+    const nitField = Object.keys(assistant).find(key => 
+      key.startsWith('custom_nit_')
+    );
+    
+    // Obtener el valor del NIT y normalizarlo (sin guiones y en minúsculas)
+    const nitValue = nitField && assistant[nitField] 
+      ? assistant[nitField].toString().split("-")[0].toLowerCase()
+      : "sin-nit";
+    
+    // Si no existe este NIT en el mapa, crear la entrada
+    if (!grouped.has(nitValue)) {
+      grouped.set(nitValue, []);
+    }
+    
+    // Agregar el asistente al grupo
+    grouped.get(nitValue).push(assistant);
+  });
+  
+  // Convertir el Map a array y usar el nombre de empresa del primer asistente
+  const group = Array.from(grouped.entries()).map(([nit, asistentes]) => ({
+    empresa: asistentes[0]?.empresa?.trim() || "Sin empresa",
+    asistentes,
+  }));
+  
+  console.log("Companies Data:", group);
+  setCompanyGroups(group);
+  return group;
+}, [filteredAssistants]);
 
   const handleSendMeeting = async (assistant) => {
     setLoadingId(assistant.id);
@@ -76,6 +94,43 @@ export default function AssistantsTab({
     }
   };
 
+  const handleSendMeetingToAllCompany = async (empresa, asistentes) => {
+    setLoadingCompany(empresa);
+    
+    let successCount = 0;
+    let errorCount = 0;
+    const groupId = `mtg_${Date.now()}`;
+
+    try {
+      // Enviar solicitudes a todos los asistentes de la empresa
+      for (const assistant of asistentes) {
+        try {
+          await sendMeetingRequest(assistant.id, assistant.telefono, groupId);
+          successCount++;
+        } catch (error) {
+          errorCount++;
+          console.error(`Error enviando solicitud a ${assistant.nombre}:`, error);
+        }
+      }
+
+      if (successCount > 0) {
+        showNotification({
+          title: "Solicitudes enviadas",
+          message: `Se enviaron ${successCount} solicitud${successCount !== 1 ? 'es' : ''} exitosamente${errorCount > 0 ? `. ${errorCount} fallaron.` : '.'}`,
+          color: errorCount > 0 ? "yellow" : "teal",
+        });
+      } else {
+        showNotification({
+          title: "Error",
+          message: "No se pudo enviar ninguna solicitud. Intenta de nuevo.",
+          color: "red",
+        });
+      }
+    } finally {
+      setLoadingCompany(null);
+    }
+  };
+
   const handleSelectAssistant = (company, assistantId) => {
     setSelectedAssistantPerCompany((prev) => ({
       ...prev,
@@ -88,105 +143,124 @@ export default function AssistantsTab({
   }, [filteredAssistants]);
 
   const renderCardView = () => (
-    <Grid>
-      {filteredAssistants.length > 0 ? (
-        filteredAssistants.map((assistant) => (
-          <Grid.Col
-            span={{ xs: 12, sm: 6, md: 4 }}
-            key={assistant.id}
-            style={{ height: 400 }}
-          >
-            <Card
-              shadow="sm"
-              p="lg"
-              style={{
-                height: "100%",
-                display: "flex",
-                flexDirection: "column",
-              }}
+    <>
+      {filteredAssistants.length > 0 && filteredAssistants.length <= 10 && (
+        <Alert
+          mb="md"
+          color="blue"
+          title="🎉 ¡Aún estás entre los primeros!"
+          styles={{
+            message: { lineHeight: 1.6 }
+          }}
+        >
+          Solo hay <strong>{filteredAssistants.length} asistente{filteredAssistants.length !== 1 ? "s" : ""}</strong> registrado{filteredAssistants.length !== 1 ? "s" : ""}.{" "}
+          Aprovecha esta oportunidad para conectar con los pioneros del evento y obtener <strong>máxima visibilidad</strong> en el directorio.{" "}
+          Los primeros en llegar, son los primeros en destacar.
+        </Alert>
+      )}
+
+      <Grid>
+        {filteredAssistants.length > 0 ? (
+          filteredAssistants.map((assistant) => (
+            <Grid.Col
+              span={{ xs: 12, sm: 6, md: 4 }}
+              key={assistant.id}
+              style={{ height: 400 }}
             >
-              <Group justify="center" mb="md">
-                <Avatar
-                  src={assistant.photoURL}
-                  alt={`Avatar de ${assistant.nombre}`}
-                  radius="50%"
-                  size="xl"
-                  style={{ cursor: "pointer" }}
-                  onClick={() => {
-                    setSelectedImage(assistant.photoURL);
-                    setAvatarModalOpened(true);
-                  }}
-                >
-                  {!assistant.photoURL &&
-                    assistant.nombre &&
-                    assistant.nombre[0]}
-                </Avatar>
-              </Group>
-              <Title order={5} mb={4} style={{ textAlign: "center" }}>
-                📛 {assistant.nombre}
-              </Title>
-              <div
+              <Card
+                shadow="sm"
+                p="lg"
                 style={{
-                  flex: 1,
-                  overflowY: "auto",
-                  minHeight: 0,
-                  marginBottom: 8,
+                  height: "100%",
+                  display: "flex",
+                  flexDirection: "column",
                 }}
               >
-                <Text size="sm">
-                  🏢 <strong>Empresa:</strong> {assistant.empresa}
-                </Text>
-                <Text size="sm">
-                  🏷 <strong>Cargo:</strong> {assistant.cargo}
-                </Text>
-                <Text size="sm">
-                  📧 <strong>Correo:</strong>{" "}
-                  {assistant.correo || "No disponible"}
-                </Text>
-                <Text size="sm">
-                  📝 <strong>Descripción:</strong>{" "}
-                  {assistant.descripcion || "No especificada"}
-                </Text>
-                <Text size="sm">
-                  🎯 <strong>Interés Principal:</strong>{" "}
-                  {assistant.interesPrincipal || "No especificado"}
-                </Text>
-                <Text size="sm">
-                  🔍 <strong>Necesidad:</strong>{" "}
-                  {assistant.necesidad || "No especificada"}
-                </Text>
-                <Text size="sm">
-                  🕓 <strong>Última conexión:</strong>{" "}
-                  {assistant.lastConnectionDateTime || "No registrada"}
-                </Text>
-              </div>
-              <Group mt="auto">
-                <Button
-                  mt="sm"
-                  onClick={() => handleSendMeeting(assistant)}
-                  disabled={!solicitarReunionHabilitado || loadingId === assistant.id}
-                  loading={loadingId === assistant.id}
-                  fullWidth
+                <Group justify="center" mb="md">
+                  <Avatar
+                    src={assistant.photoURL}
+                    alt={`Avatar de ${assistant.nombre}`}
+                    radius="50%"
+                    size="xl"
+                    style={{ cursor: "pointer" }}
+                    onClick={() => {
+                      setSelectedImage(assistant.photoURL);
+                      setAvatarModalOpened(true);
+                    }}
+                  >
+                    {!assistant.photoURL &&
+                      assistant.nombre &&
+                      assistant.nombre[0]}
+                  </Avatar>
+                </Group>
+                <Title order={5} mb={4} style={{ textAlign: "center" }}>
+                  📛 {assistant.nombre}
+                </Title>
+                <div
+                  style={{
+                    flex: 1,
+                    overflowY: "auto",
+                    minHeight: 0,
+                    marginBottom: 8,
+                  }}
                 >
-                  {solicitarReunionHabilitado
-                    ? "Solicitar reunión"
-                    : "Solicitudes deshabilitadas"}
-                </Button>
-              </Group>
-            </Card>
-          </Grid.Col>
-        ))
-      ) : (
-        <Text mt={20} style={{ whiteSpace: "pre-line", lineHeight: 1.8 }}>
-          🌟 <strong>¡Eres el primero en dar el paso!</strong>{"\n\n"}
-          En <strong>Gen.Networking</strong> valoramos a quienes se anticipan, porque son los que abren camino y marcan la diferencia.{"\n"}
-          Por ser de los primeros, tu perfil tendrá <strong>posición destacada en el directorio</strong> y <strong>prioridad en las reuniones</strong>.{"\n"}
-          Muy pronto te avisaremos cuando más participantes se unan, para que empieces a <strong>conectar</strong> y <strong>generar nuevas oportunidades</strong>.{"\n"}
-          Si necesitas ayuda, escríbenos a WhatsApp: <strong>+57 300 216 2757</strong>.{"\n"}
-          🙌 Gracias por ser quien da el primer paso — <strong>la red comienza contigo.</strong>
-        </Text>
-      )}
-    </Grid>
+                  <Text size="sm">
+                    🏢 <strong>Empresa:</strong> {assistant.empresa}
+                  </Text>
+                  {assistant.cargo && (
+                    <Text size="sm">
+                      🏷 <strong>Cargo:</strong> {assistant.cargo}
+                    </Text>
+                  )}
+                  <Text size="sm">
+                    📧 <strong>Correo:</strong>{" "}
+                    {assistant.correo || "No disponible"}
+                  </Text>
+                  <Text size="sm">
+                    📝 <strong>Descripción:</strong>{" "}
+                    {assistant.descripcion || "No especificada"}
+                  </Text>
+                  <Text size="sm">
+                    🎯 <strong>Interés Principal:</strong>{" "}
+                    {assistant.interesPrincipal || "No especificado"}
+                  </Text>
+                  <Text size="sm">
+                    🔍 <strong>Necesidad:</strong>{" "}
+                    {assistant.necesidad || "No especificada"}
+                  </Text>
+                  <Text size="sm">
+                    🕓 <strong>Última conexión:</strong>{" "}
+                    {assistant.lastConnectionDateTime || "No registrada"}
+                  </Text>
+                </div>
+                <Group mt="auto">
+                  <Button
+                    mt="sm"
+                    onClick={() => handleSendMeeting(assistant)}
+                    disabled={!solicitarReunionHabilitado || loadingId === assistant.id}
+                    loading={loadingId === assistant.id}
+                    fullWidth
+                  >
+                    {solicitarReunionHabilitado
+                      ? "Solicitar reunión"
+                      : "Solicitudes deshabilitadas"}
+                  </Button>
+                </Group>
+              </Card>
+            </Grid.Col>
+          ))
+        ) : (
+          <Text mt={20} style={{ whiteSpace: "pre-line", lineHeight: 1.8 }}>
+            🌟 <strong>¡Eres el primero en dar el paso!</strong>{"\n\n"}
+            En <strong>Gen.Networking</strong> valoramos a quienes se anticipan, porque son los que abren camino y marcan la diferencia.{"\n"}
+            Por ser de los primeros, tu perfil tendrá <strong>posición destacada en el directorio</strong> y <strong>prioridad en las reuniones</strong>.{"\n"}
+            Muy pronto te avisaremos cuando más participantes se unan, para que empieces a <strong>conectar</strong> y <strong>generar nuevas oportunidades</strong>.{"\n"}
+            Si necesitas ayuda, escríbenos a WhatsApp: <strong>+57 300 216 2757</strong>.{"\n"}
+            🙌 Gracias por ser quien da el primer paso — <strong>la red comienza contigo.</strong>
+          </Text>
+        )}
+      </Grid>
+    </>
   );
 
   const renderCompanyView = () => (
@@ -201,15 +275,14 @@ export default function AssistantsTab({
               <Card shadow="sm" p="lg" withBorder style={{ height: "100%" }}>
                 {/* Header de la empresa */}
                 <Group justify="space-between" mb="md">
-                  <Box >
-                  <Title order={4}>🏢 {empresa.toUpperCase()}</Title>
-                  <Text size="sm" >
+                  <Box>
+                    <Title order={4}>🏢 {empresa.toUpperCase()}</Title>
+                    <Text size="sm">
                       <strong>NIT:</strong>{" "}
                       {Object.keys(asistentes[0]).find(key => key.startsWith('custom_nit_'))
                         ? asistentes[0][Object.keys(asistentes[0]).find(key => key.startsWith('custom_nit_')) || '']
                         : "No disponible"}
                     </Text>
-
                   </Box>
                   <Badge color="blue" variant="light">
                     {asistentes.length} asistente{asistentes.length !== 1 ? "s" : ""}
@@ -223,7 +296,7 @@ export default function AssistantsTab({
                   size="md"
                   style={{
                     display: "-webkit-box",
-                    WebkitLineClamp: 3,      // 🔹 máximo 3 líneas
+                    WebkitLineClamp: 3,
                     WebkitBoxOrient: "vertical",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
@@ -231,6 +304,24 @@ export default function AssistantsTab({
                 >
                   {asistentes[0].descripcion || ""}
                 </Text>
+
+                {/* Botón para solicitar a todos */}
+                {asistentes.length > 1 && (
+                  <Button
+                    fullWidth
+                    mb="md"
+                    variant="dark"
+                    color="blue"
+                    onClick={() => handleSendMeetingToAllCompany(empresa, asistentes)}
+                    disabled={!solicitarReunionHabilitado || loadingCompany === empresa}
+                    loading={loadingCompany === empresa}
+                  >
+                    {solicitarReunionHabilitado
+                      ? `Solicitar reunión con todos (${asistentes.length})`
+                      : "Solicitudes deshabilitadas"}
+                  </Button>
+                )}
+
                 {/* Lista de asistentes */}
                 <Stack gap="xs" mb="md" style={{ maxHeight: 210, overflowY: "auto" }}>
                   {asistentes.map((assistant) => (
@@ -308,14 +399,16 @@ export default function AssistantsTab({
                       </Title>
 
                       <Stack gap="xs">
-                        <Text size="sm">
-                          🏷 <strong>Cargo:</strong> {selectedAssistant.cargo}
-                        </Text>
+                        {selectedAssistant.cargo && (
+                          <Text size="sm">
+                            🏷 <strong>Cargo:</strong> {selectedAssistant.cargo}
+                          </Text>
+                        )}
                         <Text size="sm">
                           📧 <strong>Correo:</strong>{" "}
                           {selectedAssistant.correo || "No disponible"}
                         </Text>
-                       
+
                         <Text size="sm">
                           🎯 <strong>Interés Principal:</strong>{" "}
                           {selectedAssistant.interesPrincipal || "No especificado"}

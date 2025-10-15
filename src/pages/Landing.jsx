@@ -344,6 +344,7 @@ const Landing = () => {
     const uid = currentUser?.uid;
     let dataToUpdate = {
       ...formValues,
+      correo: formValues["correo"].toLowerCase().trim(),
       eventId,
       updatedAt: new Date().toISOString(),
     };
@@ -729,13 +730,13 @@ const Landing = () => {
                     {loginError}
                   </Alert>
                 )}
-                {!showProfileSummary && (
+                
                   <Group justify="flex-end">
                     <Button loading={loginLoading} onClick={handleLogin}>
                       Ingresar
                     </Button>
                   </Group>
-                )}
+                
 
                 {showProfileSummary && ProfileSummary}
 
