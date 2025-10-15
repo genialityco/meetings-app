@@ -1,16 +1,22 @@
 // Dashboard/RequestsTab.tsx
-import { Tabs, Stack, Card, Text, Button, Group } from "@mantine/core";
+"use client";
+
+import { Tabs, Stack, Card, Text, Button, Group, Select } from "@mantine/core";
 import { Assistant, Meeting } from "./types";
+import { useState } from "react";
 
 interface RequestsTabProps {
   pendingRequests: Meeting[];
   acceptedRequests: Meeting[];
   rejectedRequests: Meeting[];
+  takenRequests: Meeting[];
   sentRequests: Meeting[];
   assistants: Assistant[];
+  availableAsistents: Assistant[];
   updateMeetingStatus: (meetingId: string, status: string) => void;
   sendWhatsAppMessage: (participant: Assistant) => void;
   cancelSentMeeting: (meetingId: string) => void;
+  changeAssistant: (participant: Assistant, slot: string, table: string) => void;
 }
 
 export default function RequestsTab({
@@ -18,15 +24,21 @@ export default function RequestsTab({
   acceptedRequests,
   rejectedRequests,
   sentRequests,
+  takenRequests,
   assistants,
   updateMeetingStatus,
   sendWhatsAppMessage,
   cancelSentMeeting,
-  prepareSlotSelection
+  changeAssistant,
+  changeMeetingAssistantId,
+  prepareSlotSelection,
+  availableAsistents
 }: RequestsTabProps) {
   // Helper para buscar usuario por id
   const findUser = (id) => assistants.find((u) => u.id === id);
-
+  const [selectedAssistantId, setSelectedAssistantId] = useState<string | null>(null);
+  const [selectedForChangeId, setSelectedForChangeId] = useState<string | null>(null);
+console.log("acceptedRequests", acceptedRequests);
   return (
     <Tabs defaultValue="pendientes">
       <Tabs.List>
@@ -40,6 +52,7 @@ export default function RequestsTab({
           Rechazadas ({rejectedRequests.length})
         </Tabs.Tab>
         <Tabs.Tab value="enviadas">Enviadas ({sentRequests.length})</Tabs.Tab>
+        <Tabs.Tab value="taken">Otras ({takenRequests.length})</Tabs.Tab>
       </Tabs.List>
 
       {/* Pendientes */}
@@ -166,6 +179,46 @@ export default function RequestsTab({
                         <strong>Mesa:</strong>{" "}
                         {request.tableAssigned || "Por asignar"}
                       </Text>
+                      <Group mt="sm">
+                        <Button
+                          variant="outline"
+                          color="green"
+                          onClick={() =>{
+                            changeAssistant(requester as Assistant, request.timeSlot as string, request.tableAssigned as string);
+                            setSelectedAssistantId(request.id)
+                          }
+                          }
+                        >
+                          cambiar asistente
+                        </Button>
+                         {availableAsistents && availableAsistents.length > 0 &&  selectedAssistantId == request.id && (
+    <Select
+      placeholder="Selecciona asistente"
+      data={availableAsistents
+        .filter(a => a.nombre) // solo los que tengan nombre
+        .map(a => ({
+          value: a.id,
+          label: a.nombre,
+        }))}
+        onChange={(value) => setSelectedForChangeId(value)}
+      size="sm"
+      style={{ width: 220 }}
+    />
+  )}
+   { selectedForChangeId &&  selectedAssistantId == request.id &&(
+  <Button
+                          variant="outline"
+                          color="blue"
+                          onClick={() =>{
+                           changeMeetingAssistantId(selectedForChangeId, request.id)
+                           setSelectedAssistantId(null);
+                          }
+                          }
+                        >
+                          cambiar asistente
+                        </Button>
+            )}
+                      </Group>
                     </>
                   ) : (
                     <Text>Cargando información del solicitante...</Text>
@@ -295,6 +348,59 @@ export default function RequestsTab({
             })
           ) : (
             <Text>No tienes solicitudes enviadas pendientes.</Text>
+          )}
+        </Stack>
+      </Tabs.Panel>
+      <Tabs.Panel value="taken" pt="md">
+        <Stack>
+          {takenRequests.length > 0 ? (
+            takenRequests.map((request) => {
+              const requester = findUser(request.requesterId);
+              return (
+                <Card key={request.id} shadow="sm" p="lg">
+                  {requester ? (
+                    <>
+                      <Text>
+                        <strong>📛 Nombre:</strong> {requester.nombre}
+                      </Text>
+                      <Text size="sm">
+                        🏢 <strong>Empresa:</strong> {requester.empresa}
+                      </Text>
+                      <Text size="sm">
+                        🏷 <strong>Cargo:</strong> {requester.cargo}
+                      </Text>
+                      <Text size="sm">
+                        📧 <strong>Correo:</strong>{" "}
+                        {requester.correo || "No disponible"}
+                      </Text>
+                      <Text size="sm">
+                        📞 <strong>Teléfono:</strong>{" "}
+                        {requester.telefono || "No disponible"}
+                      </Text>
+                      <Text size="sm">
+                        📝 <strong>Descripción:</strong>{" "}
+                        {requester.descripcion || "No especificada"}
+                      </Text>
+                      <Text size="sm">
+                        🎯 <strong>Interés Principal:</strong>{" "}
+                        {requester.interesPrincipal || "No especificado"}
+                      </Text>
+                      <Text size="sm">
+                        🔍 <strong>Necesidad:</strong>{" "}
+                        {requester.necesidad || "No especificada"}
+                      </Text>
+                      <Text size="sm" color="blue">
+                        <strong>Esta solicitud fue tomada.</strong>
+                      </Text>
+                    </>
+                  ) : (
+                    <Text>Cargando información del solicitante...</Text>
+                  )}
+                </Card>
+              );
+            })
+          ) : (
+            <Text>No tienes solicitudes</Text>
           )}
         </Stack>
       </Tabs.Panel>

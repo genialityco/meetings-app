@@ -11,13 +11,16 @@ import {
   orderBy,
   getDoc,
   deleteDoc,
+  writeBatch
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
 import { AgendaSlot, Assistant, Meeting, Notification } from "./types";
 import { showNotification } from "@mantine/notifications";
+import { group } from "console";
 
 const API_WP_URL= "https://apiwhatsapp.geniality.com.co/api/send"
+const CLIENT_ID= "genialitybussinesstest"
 
 // Helpers (puedes moverlos a helpers.ts si prefieres)
 function slotOverlapsBreakBlock(
@@ -129,7 +132,7 @@ async function sendMeetingAcceptedWhatsapp(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      clientId: "genialitybussiness",
+      clientId: CLIENT_ID,
       phone: `57${phone}`,
       message,
     }),
@@ -154,7 +157,7 @@ async function sendMeetingCancelledWhatsapp(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      clientId: "genialitybussiness",
+      clientId: CLIENT_ID,
       phone: `57${phone}`,
       message,
     }),
@@ -174,6 +177,8 @@ export function useDashboardData(eventId?: string) {
   const [sentRequests, setSentRequests] = useState<Meeting[]>([]);
   const [acceptedRequests, setAcceptedRequests] = useState<Meeting[]>([]);
   const [rejectedRequests, setRejectedRequests] = useState<Meeting[]>([]);
+  const [takenRequests, setTakenRequests] = useState<Meeting[]>([]);
+
   const [participantsInfo, setParticipantsInfo] = useState<{
     [userId: string]: Assistant;
   }>({});
@@ -182,6 +187,8 @@ export function useDashboardData(eventId?: string) {
     useState<boolean>(true);
   const [eventConfig, setEventConfig] = useState<any>(null);
   const [formFields, setFormFields] = useState([]);
+  const [companyGroups, setCompanyGroups] = useState<any[]>([]); 
+  const [availableAsistents, setAvailableAsistents] = useState<Assistant[]>([]);
 
   // Modales y acciones de UI
   const [avatarModalOpened, setAvatarModalOpened] = useState(false);
@@ -405,16 +412,19 @@ export function useDashboardData(eventId?: string) {
     return onSnapshot(q, (snap) => {
       const pend: Meeting[] = [],
         acc: Meeting[] = [],
+        tak: Meeting[] = [],
         rej: Meeting[] = [];
       snap.docs.forEach((d) => {
         const r = { id: d.id, ...d.data() } as Meeting;
         if (r.status === "pending") pend.push(r);
         if (r.status === "accepted") acc.push(r);
         if (r.status === "rejected") rej.push(r);
+        if (r.status === "taken") tak.push(r);
       });
       setPendingRequests(pend);
       setAcceptedRequests(acc);
       setRejectedRequests(rej);
+      setTakenRequests(tak)
     });
   }, [uid, eventId]);
 
@@ -462,22 +472,23 @@ export function useDashboardData(eventId?: string) {
 
   const sendMeetingRequest = async (
     assistantId: string,
-    assistantPhone: string
+    assistantPhone: string,
+    groupId: string | null = null
   ) => {
     if (!uid || !eventId) return Promise.reject();
     try {
-      const meetingDoc = await addDoc(
-        collection(db, "events", eventId, "meetings"),
-        {
+      const data = {
           eventId,
           requesterId: uid,
           receiverId: assistantId,
           status: "pending",
           createdAt: new Date(),
           participants: [uid, assistantId],
-        }
-      );
-
+      }
+      if (groupId) {
+        data["groupId"] = groupId;
+      } 
+      const meetingDoc = await addDoc(collection(db, "events", eventId, "meetings"), data);
       const requester = currentUser?.data;
       const meetingId = meetingDoc.id;
       const baseUrl = window.location.origin;
@@ -503,7 +514,7 @@ export function useDashboardData(eventId?: string) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clientId: "genialitybussiness",
+          clientId: CLIENT_ID,
 
           phone: `57${assistantPhone.replace(/[^\d]/g, "")}`,
           message,
@@ -765,6 +776,85 @@ export function useDashboardData(eventId?: string) {
     }
   };
 
+ const changeMeetingAssistantId = async (
+  newAssistantId: string,
+  meetingId: string
+) => {
+  try {
+    console.log("changeMeetingAssistantId", meetingId);
+    if (!uid || !eventId || !eventConfig) return;
+
+    const mtgRef = doc(db, "events", eventId, "meetings", meetingId);
+    const mtgSnap = await getDoc(mtgRef);
+
+    if (!mtgSnap.exists()) throw new Error("Meeting does not exist.");
+
+    const meetingData = mtgSnap.data() as Meeting;
+    console.log("meetingData", meetingData);
+
+    // 1️⃣ Extraer receiverId anterior
+    const oldReceiverId = meetingData.receiverId;
+
+    // 2️⃣ Actualizar el array participants (reemplazar el anterior por el nuevo)
+    const updatedParticipants = meetingData.participants.map((p: string) =>
+      p === oldReceiverId ? newAssistantId : p
+    );
+
+    // 3️⃣ Actualizar en Firestore
+    await updateDoc(mtgRef, {
+      receiverId: newAssistantId,
+      participants: updatedParticipants,
+      updatedAt: new Date(),
+    });
+
+    console.log("✅ Asistente receptor actualizado correctamente");
+
+  } catch (error) {
+    console.error("❌ Error al actualizar el asistente receptor:", error);
+  }
+};
+         
+const changeAssistant = async (requester: Assistant, timeSlot: string, tableAssigned: string) => {
+  try {
+    // 1️⃣ Obtener los IDs de todos los asistentes del grupo
+    const employees = companyGroups.filter(e => e.empresa?.trim().toLowerCase() === currentUser?.data?.empresa?.trim().toLowerCase())
+  .flatMap(e =>
+    e.asistentes
+     
+  );
+
+
+    // 2️⃣ Buscar meetings aceptadas en el mismo slot con alguno de esos asistentes
+    const meetingsSnap = await getDocs(
+      query(
+        collection(db, "events", eventId!, "meetings"),
+        where("status", "==", "accepted"),
+        where("participants", "array-contains-any", employees.map(e => e.id)),
+        where("timeSlot", "==", timeSlot)
+      )
+    );
+
+    // 3️⃣ Extraer los IDs de los asistentes que ya están ocupados
+    const busyIds = new Set<string>();
+    meetingsSnap.forEach(doc => {
+      const data = doc.data();
+      if (Array.isArray(data.participants)) {
+        data.participants.forEach((p: string) => busyIds.add(p));
+      }
+    });
+    console.log("companyGroups", companyGroups);
+
+   const available = employees.filter(a => !busyIds.has(a.id)); // excluir los ocupados
+   console.log("available", available);
+
+// 5️⃣ Guardar en el estado
+setAvailableAsistents(available);
+
+  } catch (error) {
+    console.error("Error al cambiar asistente:", error);
+  }
+};
+
   // Seleccionar slots disponibles para aceptar/reagendar reuniones
   const prepareSlotSelection = async (meetingId: string, isEdit = false) => {
     setPrepareSlotSelectionLoading(true);
@@ -841,148 +931,174 @@ export function useDashboardData(eventId?: string) {
 
   // Confirmar la selección de slot para la reunión
   const confirmAcceptWithSlot = async (meetingId: string, slot: any) => {
-    setConfirmLoading(true);
-    const isEdit = meetingToEdit === meetingId;
+  setConfirmLoading(true);
+  const isEdit = meetingToEdit === meetingId;
 
-    try {
-      const mtgRef = doc(db, "events", eventId!, "meetings", meetingId);
+  try {
+    const mtgRef = doc(db, "events", eventId!, "meetings", meetingId);
+    const mtgSnap = await getDoc(mtgRef);
+    const data = mtgSnap.data() as Partial<Meeting>;
+    
+    if (!data?.requesterId || !data?.receiverId)
+      throw new Error("Datos de la reunión incompletos");
+    
+    const { requesterId, receiverId, groupId } = data;
 
-      // 1. Si es edición, libera el slot anterior (en agenda) de esta reunión
-      if (isEdit) {
-        const oldAgendaQ = query(
-          collection(db, "agenda"),
-          where("meetingId", "==", meetingId)
-        );
-        const oldAgendaSnap = await getDocs(oldAgendaQ);
-        for (const oldSlot of oldAgendaSnap.docs) {
-          await updateDoc(doc(db, "agenda", oldSlot.id), {
-            available: true,
-            meetingId: null,
-          });
+    // 1. Si existe groupId, actualizar el estado de todas las meetings del grupo
+    if (groupId) {
+      const groupMeetingsSnap = await getDocs(
+        query(
+          collection(db, "events", eventId!, "meetings"),
+          where("groupId", "==", groupId)
+        )
+      );
+
+      const batch = writeBatch(db);
+      
+      groupMeetingsSnap.docs.forEach((doc) => {
+        const meetingRef = doc.ref;
+        if (doc.id === meetingId) {
+          // La meeting seleccionada se marca como "accepted"
+          batch.update(meetingRef, { status: "accepted" });
+        } else {
+          // Las demás del grupo se marcan como "taken"
+          batch.update(meetingRef, { status: "taken" });
         }
-      }
-
-      if (!meetingId || !slot?.id) {
-        alert("No se seleccionó correctamente el horario. Intenta de nuevo.");
-        setConfirmLoading(false);
-        return;
-      }
-
-      // 2. Actualiza la reunión con el nuevo horario y mesa
-      const updatePayload: any = {
-        timeSlot: `${slot.startTime} - ${slot.endTime}`,
-        tableAssigned: slot.tableNumber.toString(),
-      };
-      if (!isEdit) {
-        updatePayload.status = "accepted";
-      }
-      await updateDoc(mtgRef, updatePayload);
-
-      // 3. Marca el nuevo slot como ocupado
-      await updateDoc(doc(db, "agenda", slot.id), {
-        available: false,
-        meetingId,
       });
 
-      // 4. Obtiene datos para notificaciones
-      const mtgSnap = await getDoc(mtgRef);
-      const data = mtgSnap.data() as Partial<Meeting>;
-      if (!data?.requesterId || !data?.receiverId)
-        throw new Error("Datos de la reunión incompletos");
-      const { requesterId, receiverId } = data;
-
-      const [reqSnap, recvSnap] = await Promise.all([
-        getDoc(doc(db, "users", requesterId)),
-        getDoc(doc(db, "users", receiverId)),
-      ]);
-      const requester = reqSnap.exists() ? (reqSnap.data() as Assistant) : null;
-      const receiver = recvSnap.exists()
-        ? (recvSnap.data() as Assistant)
-        : null;
-
-      // 5. Notificaciones en la app
-      const notificationsBatch = isEdit
-        ? [
-            {
-              userId: requesterId,
-              title: "Reunión modificada",
-              message: `Tu reunión con ${receiver?.nombre || ""} fue movida a ${
-                slot.startTime
-              } (Mesa ${slot.tableNumber}).`,
-            },
-            {
-              userId: receiverId,
-              title: "Reunión modificada",
-              message: `Has cambiado la reunión con ${
-                requester?.nombre || ""
-              } a ${slot.startTime} (Mesa ${slot.tableNumber}).`,
-            },
-          ]
-        : [
-            {
-              userId: requesterId,
-              title: "Reunión aceptada",
-              message: `Tu reunión con ${
-                receiver?.nombre || ""
-              } fue aceptada para ${slot.startTime} en Mesa ${
-                slot.tableNumber
-              }.`,
-            },
-            {
-              userId: receiverId,
-              title: "Reunión confirmada",
-              message: `Has aceptado la reunión con ${
-                requester?.nombre || ""
-              } para ${slot.startTime} en Mesa ${slot.tableNumber}.`,
-            },
-          ];
-
-      for (const notif of notificationsBatch) {
-        await addDoc(collection(db, "notifications"), {
-          ...notif,
-          timestamp: new Date(),
-          read: false,
-        });
-      }
-
-      // 6. SMS
-      const smsMsg = isEdit
-        ? `Tu reunión fue movida a ${slot.startTime} en Mesa ${slot.tableNumber}.`
-        : `Tu reunión fue aceptada para ${slot.startTime} en Mesa ${slot.tableNumber}.`;
-
-      if (requester?.telefono) {
-        await sendSms(smsMsg, requester.telefono);
-      }
-      if (receiver?.telefono) {
-        await sendSms(smsMsg, receiver.telefono);
-      }
-
-      // 7. WhatsApp
-      if (requester?.telefono) {
-        await sendMeetingAcceptedWhatsapp(requester.telefono, receiver!, {
-          timeSlot: slot.startTime,
-          tableAssigned: slot.tableNumber,
-        });
-      }
-      if (receiver?.telefono) {
-        await sendMeetingAcceptedWhatsapp(receiver.telefono, requester!, {
-          timeSlot: slot.startTime,
-          tableAssigned: slot.tableNumber,
-        });
-      }
-
-      // 8. Cierra los modales y limpia estado
-      setSlotModalOpened(false);
-      setConfirmModalOpened(false);
-      setMeetingToEdit(null);
-      setMeetingToAccept(null);
-    } catch (e) {
-      // Manejo de errores (puedes mostrar notificación)
-      console.error(e);
-    } finally {
-      setConfirmLoading(false);
+      await batch.commit();
     }
-  };
+
+    // 2. Si es edición, libera el slot anterior (en agenda) de esta reunión
+    if (isEdit) {
+      const oldAgendaQ = query(
+        collection(db, "agenda"),
+        where("meetingId", "==", meetingId)
+      );
+      const oldAgendaSnap = await getDocs(oldAgendaQ);
+      for (const oldSlot of oldAgendaSnap.docs) {
+        await updateDoc(doc(db, "agenda", oldSlot.id), {
+          available: true,
+          meetingId: null,
+        });
+      }
+    }
+
+    if (!meetingId || !slot?.id) {
+      alert("No se seleccionó correctamente el horario. Intenta de nuevo.");
+      setConfirmLoading(false);
+      return;
+    }
+
+    // 3. Actualiza la reunión con el nuevo horario y mesa
+    const updatePayload: any = {
+      timeSlot: `${slot.startTime} - ${slot.endTime}`,
+      tableAssigned: slot.tableNumber.toString(),
+    };
+    if (!isEdit) {
+      updatePayload.status = "accepted";
+    }
+    await updateDoc(mtgRef, updatePayload);
+
+    // 4. Marca el nuevo slot como ocupado
+    await updateDoc(doc(db, "agenda", slot.id), {
+      available: false,
+      meetingId,
+    });
+
+    // 5. Obtiene datos para notificaciones
+    const [reqSnap, recvSnap] = await Promise.all([
+      getDoc(doc(db, "users", requesterId)),
+      getDoc(doc(db, "users", receiverId)),
+    ]);
+    const requester = reqSnap.exists() ? (reqSnap.data() as Assistant) : null;
+    const receiver = recvSnap.exists()
+      ? (recvSnap.data() as Assistant)
+      : null;
+
+    // 6. Notificaciones en la app
+    const notificationsBatch = isEdit
+      ? [
+          {
+            userId: requesterId,
+            title: "Reunión modificada",
+            message: `Tu reunión con ${receiver?.nombre || ""} fue movida a ${
+              slot.startTime
+            } (Mesa ${slot.tableNumber}).`,
+          },
+          {
+            userId: receiverId,
+            title: "Reunión modificada",
+            message: `Has cambiado la reunión con ${
+              requester?.nombre || ""
+            } a ${slot.startTime} (Mesa ${slot.tableNumber}).`,
+          },
+        ]
+      : [
+          {
+            userId: requesterId,
+            title: "Reunión aceptada",
+            message: `Tu reunión con ${
+              receiver?.nombre || ""
+            } fue aceptada para ${slot.startTime} en Mesa ${
+              slot.tableNumber
+            }.`,
+          },
+          {
+            userId: receiverId,
+            title: "Reunión confirmada",
+            message: `Has aceptado la reunión con ${
+              requester?.nombre || ""
+            } para ${slot.startTime} en Mesa ${slot.tableNumber}.`,
+          },
+        ];
+
+    for (const notif of notificationsBatch) {
+      await addDoc(collection(db, "notifications"), {
+        ...notif,
+        timestamp: new Date(),
+        read: false,
+      });
+    }
+
+    // 7. SMS
+    const smsMsg = isEdit
+      ? `Tu reunión fue movida a ${slot.startTime} en Mesa ${slot.tableNumber}.`
+      : `Tu reunión fue aceptada para ${slot.startTime} en Mesa ${slot.tableNumber}.`;
+
+    if (requester?.telefono) {
+      await sendSms(smsMsg, requester.telefono);
+    }
+    if (receiver?.telefono) {
+      await sendSms(smsMsg, receiver.telefono);
+    }
+
+    // 8. WhatsApp
+    if (requester?.telefono) {
+      await sendMeetingAcceptedWhatsapp(requester.telefono, receiver!, {
+        timeSlot: slot.startTime,
+        tableAssigned: slot.tableNumber,
+      });
+    }
+    if (receiver?.telefono) {
+      await sendMeetingAcceptedWhatsapp(receiver.telefono, requester!, {
+        timeSlot: slot.startTime,
+        tableAssigned: slot.tableNumber,
+      });
+    }
+
+    // 9. Cierra los modales y limpia estado
+    setSlotModalOpened(false);
+    setConfirmModalOpened(false);
+    setMeetingToEdit(null);
+    setMeetingToAccept(null);
+  } catch (e) {
+    // Manejo de errores (puedes mostrar notificación)
+    console.error(e);
+  } finally {
+    setConfirmLoading(false);
+  }
+};
 
   // ---- Agrupadores y selects de slots para el modal ----
   const groupedSlots = useMemo(() => {
@@ -1079,7 +1195,15 @@ export function useDashboardData(eventId?: string) {
     sendMeetingCancelledWhatsapp,
     confirmAcceptWithSlot,
     cancelMeeting,
+    changeAssistant,
+    changeMeetingAssistantId,
 
+    setTakenRequests,
+    takenRequests,
+    availableAsistents,
+    setAvailableAsistents,
+    setCompanyGroups,
+    companyGroups,
     avatarModalOpened,
     setAvatarModalOpened,
     selectedImage,

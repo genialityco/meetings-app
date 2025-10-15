@@ -32,6 +32,7 @@ export default function AssistantsTab({
   interestOptions,
   interestFilter,
   setInterestFilter,
+  setCompanyGroups,
 }) {
   const [loadingId, setLoadingId] = useState(null);
   const [loadingCompany, setLoadingCompany] = useState(null);
@@ -40,22 +41,38 @@ export default function AssistantsTab({
 
   // Agrupar asistentes por empresa
   const companiesData = useMemo(() => {
-    const grouped = new Map();
-
-    filteredAssistants.forEach((assistant) => {
-      const company = assistant.empresa?.trim().toLowerCase() || "Sin empresa";
-
-      if (!grouped.has(company)) {
-        grouped.set(company, []);
-      }
-      grouped.get(company).push(assistant);
-    });
-
-    return Array.from(grouped.entries()).map(([empresa, asistentes]) => ({
-      empresa,
-      asistentes,
-    }));
-  }, [filteredAssistants]);
+  const grouped = new Map();
+  
+  filteredAssistants.forEach((assistant) => {
+    // Buscar el campo NIT dinámico (custom_nit_*)
+    const nitField = Object.keys(assistant).find(key => 
+      key.startsWith('custom_nit_')
+    );
+    
+    // Obtener el valor del NIT y normalizarlo (sin guiones y en minúsculas)
+    const nitValue = nitField && assistant[nitField] 
+      ? assistant[nitField].toString().split("-")[0].toLowerCase()
+      : "sin-nit";
+    
+    // Si no existe este NIT en el mapa, crear la entrada
+    if (!grouped.has(nitValue)) {
+      grouped.set(nitValue, []);
+    }
+    
+    // Agregar el asistente al grupo
+    grouped.get(nitValue).push(assistant);
+  });
+  
+  // Convertir el Map a array y usar el nombre de empresa del primer asistente
+  const group = Array.from(grouped.entries()).map(([nit, asistentes]) => ({
+    empresa: asistentes[0]?.empresa?.trim() || "Sin empresa",
+    asistentes,
+  }));
+  
+  console.log("Companies Data:", group);
+  setCompanyGroups(group);
+  return group;
+}, [filteredAssistants]);
 
   const handleSendMeeting = async (assistant) => {
     setLoadingId(assistant.id);
@@ -82,12 +99,13 @@ export default function AssistantsTab({
     
     let successCount = 0;
     let errorCount = 0;
+    const groupId = `mtg_${Date.now()}`;
 
     try {
       // Enviar solicitudes a todos los asistentes de la empresa
       for (const assistant of asistentes) {
         try {
-          await sendMeetingRequest(assistant.id, assistant.telefono);
+          await sendMeetingRequest(assistant.id, assistant.telefono, groupId);
           successCount++;
         } catch (error) {
           errorCount++;
@@ -126,7 +144,7 @@ export default function AssistantsTab({
 
   const renderCardView = () => (
     <>
-      {filteredAssistants.length > 0 && filteredAssistants.length < 10 && (
+      {filteredAssistants.length > 0 && filteredAssistants.length <= 10 && (
         <Alert
           mb="md"
           color="blue"
