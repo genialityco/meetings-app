@@ -21,7 +21,7 @@ import { showNotification } from "@mantine/notifications";
 import { group } from "console";
 
 const API_WP_URL = "https://apiwhatsapp.geniality.com.co/api/send";
-const CLIENT_ID = "genialitybussiness";
+const CLIENT_ID = "genialitybussinesstest";
 
 // Helpers (puedes moverlos a helpers.ts si prefieres)
 function slotOverlapsBreakBlock(
