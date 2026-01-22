@@ -194,7 +194,7 @@ const Landing = () => {
    // helpers de campos dinámicos
   const getValueForField = useCallback(
     (fieldName) => {
-      if (fieldName.startsWith("contacto.")) {
+      if (fieldName.startsWith("contacto")) {
         return formValues.contacto?.[fieldName.split(".")[1]] || "";
       }
       return formValues[fieldName] ?? "";

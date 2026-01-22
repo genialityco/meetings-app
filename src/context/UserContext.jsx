@@ -168,15 +168,27 @@ export const UserProvider = ({ children }) => {
   const loginByEmail = async (correo, eventId) => {
   try {
     setUserLoading(true);
+    
+    const emailLowercase = correo.trim().toLowerCase();
 
-    // Busca el usuario por correo y evento
-    const q = query(
+    // Busca el usuario por correo principal y evento
+    let q = query(
       collection(db, "users"),
-      where("correo", "==", correo.trim().toLowerCase()),
+      where("correo", "==", emailLowercase),
       where("eventId", "==", eventId)
     );
-    const querySnapshot = await getDocs(q);
-
+    let querySnapshot = await getDocs(q);
+    
+    // Si no encuentra en correo, busca en contacto.correo
+    if (querySnapshot.empty) {
+      q = query(
+        collection(db, "users"),
+        where("contacto.correo", "==", emailLowercase),
+        where("eventId", "==", eventId)
+      );
+      querySnapshot = await getDocs(q);
+    }
+    
     if (querySnapshot.empty) {
       setUserLoading(false);
       return {
