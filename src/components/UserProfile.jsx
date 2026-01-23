@@ -74,6 +74,11 @@ const UserProfile = () => {
       // Asegura que NO incluya contacto anidado (opcional: limpia el objeto)
       if (dataToUpdate.contacto) delete dataToUpdate.contacto;
 
+      // Prevenir que se actualice el email principal u otros campos sensibles
+      delete dataToUpdate.email;
+      delete dataToUpdate.uid;
+      delete dataToUpdate.eventId;
+
       await updateUser(uid, dataToUpdate);
       setEditModalOpened(false);
     } catch (error) {
@@ -151,7 +156,7 @@ const UserProfile = () => {
                 Editar Perfil
               </Button>
               <Group gap="xs">
-                {logoutAdmin && (
+                {/* {logoutAdmin && (
                   <Button
                     onClick={() => {
                       logoutAdmin();
@@ -162,7 +167,7 @@ const UserProfile = () => {
                   >
                     Logout Admin
                   </Button>
-                )}
+                )} */}
                 <Button
                   onClick={() => {
                     logout();
@@ -245,6 +250,8 @@ const UserProfile = () => {
           <TextInput
             label="Correo de contacto (opcional)"
             value={editProfileData.correo || ""}
+            disabled={!!currentUser?.data}
+            placeholder="No se puede modificar"
             onChange={(e) =>
               setEditProfileData({ ...editProfileData, correo: e.target.value })
             }

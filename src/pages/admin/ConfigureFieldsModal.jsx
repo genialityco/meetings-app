@@ -54,6 +54,15 @@ const AVAILABLE_FIELDS = [
     }
   },
   { 
+    name: "nit", 
+    label: "NIT", 
+    type: "text",
+    validation: {
+      pattern: /^[0-9]{8,12}$/,
+      errorMessage: "Debe contener entre 8 y 12 dígitos"
+    }
+  },
+  { 
     name: "empresa", 
     label: "Empresa", 
     type: "text",

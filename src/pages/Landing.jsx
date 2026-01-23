@@ -508,6 +508,7 @@ const Landing = () => {
           }}
           required={field.required}
           error={fieldError}
+          disabled={currentUser?.data && field.name === "correo"}
         />
       );
     });
