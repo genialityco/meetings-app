@@ -14,6 +14,8 @@ import EventMatchPage from "./pages/admin/EventMatchPage.jsx";
 import ImportMeetingsFromExcelPage from "./pages/admin/ImportMeetingsFromExcelPage.jsx";
 import AgendaAdminPanel from "./pages/admin/AgendaAdminPanel.jsx";
 import MeetingSurveys from "./pages/admin/MeetingSurveys.jsx";
+import LoginPage from "./pages/LoginPage";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 const App = () => {
   const { currentUser } = useContext(UserContext);
@@ -28,31 +30,69 @@ const App = () => {
         <Route path="/dashboard" element={<Dashboard />} />
         {/* Ruta dashboard filtrada por evento */}
         <Route path="/dashboard/:eventId" element={<Dashboard />} />
-        <Route path="/admin" element={<AdminPanel />} />
-        <Route path="/matrix/:eventId" element={<MatrixPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        
+        {/* Rutas protegidas de admin */}
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute>
+              <AdminPanel />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/matrix/:eventId"
+          element={
+            <ProtectedRoute>
+              <MatrixPage />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/admin/event/:eventId/match"
-          element={<EventMatchPage />}
+          element={
+            <ProtectedRoute>
+              <EventMatchPage />
+            </ProtectedRoute>
+          }
         />
-
         <Route
           path="/admin/event/:eventId/import-meetings"
-          element={<ImportMeetingsFromExcelPage />}
+          element={
+            <ProtectedRoute>
+              <ImportMeetingsFromExcelPage />
+            </ProtectedRoute>
+          }
         />
-
         <Route path="/phonesadmin" element={<PhonesAdminPage />} />
         <Route
           path="/meeting-response/:eventId/:meetingId/:action"
           element={<MeetingAutoResponse />}
         />
-        <Route path="/admin/event/:eventId" element={<EventAdmin />} />
+        <Route
+          path="/admin/event/:eventId"
+          element={
+            <ProtectedRoute>
+              <EventAdmin />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/admin/event/:eventId/agenda"
-          element={<AgendaAdminPanel />}
+          element={
+            <ProtectedRoute>
+              <AgendaAdminPanel />
+            </ProtectedRoute>
+          }
         />
         <Route
           path="/admin/surveys"
-          element={<MeetingSurveys />}
+          element={
+            <ProtectedRoute>
+              <MeetingSurveys />
+            </ProtectedRoute>
+          }
         />
       </Routes>
     </>

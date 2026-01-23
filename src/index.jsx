@@ -11,6 +11,7 @@ import { Notifications } from "@mantine/notifications";
 import { ModalsProvider } from "@mantine/modals";
 import { BrowserRouter } from "react-router-dom";
 import { UserProvider } from "./context/UserContext.jsx";
+import { AuthProvider } from "./context/AuthContext.jsx";
 
 const theme = createTheme({
   fontFamily: "Playfair Display, serif",
@@ -29,15 +30,17 @@ const theme = createTheme({
 
 createRoot(document.getElementById("root")).render(
   // <StrictMode>
-  <UserProvider>
-    <BrowserRouter>
-      <MantineProvider theme={theme}>
-        <ModalsProvider>
-          <Notifications />
-          <App />
-        </ModalsProvider>
-      </MantineProvider>
-    </BrowserRouter>
-  </UserProvider>
+  <AuthProvider>
+    <UserProvider>
+      <BrowserRouter>
+        <MantineProvider theme={theme}>
+          <ModalsProvider>
+            <Notifications />
+            <App />
+          </ModalsProvider>
+        </MantineProvider>
+      </BrowserRouter>
+    </UserProvider>
+  </AuthProvider>
   // </StrictMode>
 );

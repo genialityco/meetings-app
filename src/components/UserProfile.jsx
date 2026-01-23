@@ -20,6 +20,7 @@ import {
 } from "@mantine/core";
 import { FaChevronDown, FaChevronUp } from "react-icons/fa";
 import { UserContext } from "../context/UserContext";
+import { AuthContext } from "../context/AuthContext";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../firebase/firebaseConfig";
 
@@ -33,6 +34,7 @@ const uploadProfilePicture = async (file, uid) => {
 
 const UserProfile = () => {
   const { currentUser, updateUser, logout, userLoading } = useContext(UserContext);
+  const { logout: logoutAdmin } = useContext(AuthContext);
   const uid = currentUser?.uid;
 
   const [editModalOpened, setEditModalOpened] = useState(false);
@@ -148,17 +150,31 @@ const UserProfile = () => {
               <Button onClick={() => setEditModalOpened(true)} color="blue">
                 Editar Perfil
               </Button>
-              <Button
-                onClick={() => {
-                  logout();
-                  if (currentUser?.data?.eventId) {
-                    window.location.assign(`/event/${currentUser.data.eventId}`);
-                  }
-                }}
-                color="red"
-              >
+              <Group gap="xs">
+                {logoutAdmin && (
+                  <Button
+                    onClick={() => {
+                      logoutAdmin();
+                      window.location.assign("/login");
+                    }}
+                    color="orange"
+                    variant="light"
+                  >
+                    Logout Admin
+                  </Button>
+                )}
+                <Button
+                  onClick={() => {
+                    logout();
+                    if (currentUser?.data?.eventId) {
+                      window.location.assign(`/event/${currentUser.data.eventId}`);
+                    }
+                  }}
+                  color="red"
+                >
                 Cerrar Sesión
               </Button>
+              </Group>
             </Group>
           </>
         ) : (
