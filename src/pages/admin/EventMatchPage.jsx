@@ -14,6 +14,7 @@ import {
   Stack,
   Modal,
   Checkbox,
+  TextInput,
 } from "@mantine/core";
 import {
   collection,
@@ -23,8 +24,10 @@ import {
   addDoc,
   updateDoc,
   doc,
+  getDoc,
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
+import * as XLSX from "xlsx";
 
 const LLAMA_API = "http://localhost:8080/api/match";
 
@@ -40,6 +43,8 @@ const EventMatchPage = () => {
   const [previewModalOpened, setPreviewModalOpened] = useState(false);
   const [selectedMatches, setSelectedMatches] = useState(new Set());
   const [useLocalLlama, setUseLocalLlama] = useState(false);
+  const [searchEmail, setSearchEmail] = useState("");
+  const [matchesWithSlots, setMatchesWithSlots] = useState([]);
 
   // 1. Cargar asistentes, agenda y config
   useEffect(() => {
@@ -59,14 +64,18 @@ const EventMatchPage = () => {
         const snap2 = await getDocs(q2);
         setAgenda(snap2.docs.map((d) => ({ id: d.id, ...d.data() })));
 
-        // Config del evento (máximo de reuniones)
-        const eventSnap = await getDocs(
-          query(collection(db, "events"), where("id", "==", eventId))
-        );
-        if (!eventSnap.empty) {
-          setEventConfig(eventSnap.docs[0].data().config);
+        // Cargar el documento del evento (por ID, no por campo "id")
+        const eventDoc = await getDoc(doc(db, "events", eventId));
+        if (eventDoc.exists()) {
+          const eventData = eventDoc.data();
+          setEventConfig(eventData.config || {});
+          console.log("Event config cargada:", eventData.config);
+        } else {
+          console.warn("Evento no encontrado");
+          setEventConfig({});
         }
       } catch (e) {
+        console.error("Error cargando datos:", e);
         setError("Error cargando asistentes, agenda o configuración");
       }
     };
@@ -145,7 +154,115 @@ const EventMatchPage = () => {
 
   const availableFields = getAvailableFields();
 
-  // Función para calcular compatibilidad local
+  // Exportar matches a Excel
+  const exportToExcel = () => {
+    if (matchesMatrix.length === 0) {
+      alert("No hay matches para exportar");
+      return;
+    }
+
+    // Crear array de datos para Excel
+    const data = [];
+    matchesMatrix.forEach((comprador) => {
+      const cmp = compradores.find((c) => c.id === comprador.compradorId);
+      
+      if (comprador.matches.length === 0) {
+        data.push({
+          "Comprador": cmp?.nombre || comprador.compradorNombre,
+          "Email Comprador": comprador.compradorEmail || "",
+          "Empresa Comprador": cmp?.empresa || "",
+          "Necesidad": cmp?.necesidad || "",
+          "Vendedor": "-",
+          "Email Vendedor": "-",
+          "Empresa Vendedor": "-",
+          "Score (%)": "-",
+          "Motivo Match": "-",
+          "Razón Match": "-",
+          "Horario Tentativo": "-",
+          "Mesa": "-",
+        });
+      } else {
+        comprador.matches.forEach((match) => {
+          const vendedor = vendedores.find((v) => v.id === match.vendedorId);
+          data.push({
+            "Comprador": cmp?.nombre || comprador.compradorNombre,
+            "Email Comprador": comprador.compradorEmail || "",
+            "Empresa Comprador": cmp?.empresa || "",
+            "Necesidad": cmp?.necesidad || "",
+            "Vendedor": vendedor?.nombre || match.vendedor || "-",
+            "Email Vendedor": match.vendedorEmail || "",
+            "Empresa Vendedor": vendedor?.empresa || "",
+            "Score (%)": match.score ? (match.score * 100).toFixed(0) : "-",
+            "Motivo Match": match.motivo || "-",
+            "Razón Match": match.razonMatch || "-",
+            "Horario Tentativo": match.tentativeSlot 
+              ? `${match.tentativeSlot.startTime} - ${match.tentativeSlot.endTime}`
+              : "No asignado",
+            "Mesa": match.tentativeSlot 
+              ? match.tentativeSlot.tableNumber
+              : "-",
+          });
+        });
+      }
+    });
+
+    // Crear workbook
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Matches");
+
+    // Ajustar ancho de columnas
+    const colWidths = [
+      { wch: 18 },  // Comprador
+      { wch: 22 },  // Email Comprador
+      { wch: 18 },  // Empresa Comprador
+      { wch: 20 },  // Necesidad
+      { wch: 18 },  // Vendedor
+      { wch: 22 },  // Email Vendedor
+      { wch: 18 },  // Empresa Vendedor
+      { wch: 12 },  // Score
+      { wch: 18 },  // Motivo Match
+      { wch: 30 },  // Razón Match
+      { wch: 22 },  // Horario Tentativo
+      { wch: 8 },   // Mesa
+    ];
+    worksheet["!cols"] = colWidths;
+
+    // Descargar archivo
+    const fileName = `matches_${new Date().toISOString().split("T")[0]}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+  };
+  const assignTentativeSlots = (results) => {
+    const availableSlots = agenda
+      .filter((slot) => slot.available)
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+    let slotIndex = 0;
+    const resultsWithSlots = results.map((comprador) => ({
+      ...comprador,
+      matches: comprador.matches.map((match) => {
+        const tentativeSlot =
+          slotIndex < availableSlots.length
+            ? availableSlots[slotIndex]
+            : null;
+        slotIndex++;
+        return {
+          ...match,
+          tentativeSlot: tentativeSlot
+            ? {
+                id: tentativeSlot.id,
+                startTime: tentativeSlot.startTime,
+                endTime: tentativeSlot.endTime,
+                tableNumber: tentativeSlot.tableNumber,
+              }
+            : null,
+          slotAssigned: tentativeSlot ? true : false,
+        };
+      }),
+    }));
+
+    return resultsWithSlots;
+  };
   const calculateLocalMatch = (comprador, vendedor) => {
     // No crear match con la misma empresa (si el campo existe)
     if (availableFields.tieneEmpresa) {
@@ -260,7 +377,8 @@ const EventMatchPage = () => {
 
       if (res.ok) {
         const data = await res.json();
-        setMatchesMatrix(data.results || []);
+        const resultsWithSlots = assignTentativeSlots(data.results || []);
+        setMatchesMatrix(resultsWithSlots);
         setUseLocalLlama(true);
         if (data.message) setGlobalMessage(data.message);
       } else {
@@ -277,6 +395,8 @@ const EventMatchPage = () => {
 
   // Generar matches localmente
   const generateLocalMatches = () => {
+    const maxMeetingsPerUser = eventConfig?.maxMeetingsPerUser ?? 10;
+
     const results = compradores.map((comprador) => {
       const matches = vendedores
         .map((vendedor) => {
@@ -284,26 +404,32 @@ const EventMatchPage = () => {
           return {
             vendedor: vendedor.nombre,
             vendedorId: vendedor.id,
+            vendedorEmail: vendedor.correo,
             score: matchData.score,
             motivo: matchData.motivo,
             razonMatch: matchData.razonMatch,
           };
         })
-        .filter((m) => m.score > 0) // Mostrar todos los matches con score > 0
-        .sort((a, b) => b.score - a.score);
+        .filter((m) => m.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, maxMeetingsPerUser);
 
       return {
         compradorId: comprador.id,
         compradorNombre: comprador.nombre,
+        compradorEmail: comprador.correo,
         matches,
       };
     });
 
-    setMatchesMatrix(results);
+    // Asignar slots tentativos
+    const resultsWithSlots = assignTentativeSlots(results);
+
+    setMatchesMatrix(resultsWithSlots);
     setUseLocalLlama(false);
-    const totalMatches = results.reduce((sum, r) => sum + r.matches.length, 0);
+    const totalMatches = resultsWithSlots.reduce((sum, r) => sum + r.matches.length, 0);
     const matchesMsg = totalMatches > 0 
-      ? `Matches generados localmente. Total: ${totalMatches} matches`
+      ? `Matches generados localmente. Total: ${totalMatches} matches (máx ${maxMeetingsPerUser} por asistente)`
       : "⚠️ No se generaron matches. Verifica que haya suficientes asistentes con descripción y necesidad.";
     setGlobalMessage(matchesMsg);
   };
@@ -338,8 +464,23 @@ const EventMatchPage = () => {
     setGlobalMessage("");
     setPreviewModalOpened(false);
 
-    const maxMeetings = eventConfig?.maxMeetingsPerUser ?? 24;
-    const minMeetingsVendedor = 3;
+    // Obtener configuración del evento
+    const maxMeetingsPerUser = eventConfig?.maxMeetingsPerUser ?? 10;
+    const meetingDuration = eventConfig?.meetingDuration ?? 15;
+    const numTables = eventConfig?.numTables ?? 9;
+    const tableNames = eventConfig?.tableNames || [];
+    const startTime = eventConfig?.startTime || "16:30";
+    const endTime = eventConfig?.endTime || "17:30";
+
+    console.log("Configuración del evento:", {
+      maxMeetingsPerUser,
+      meetingDuration,
+      numTables,
+      tableNames,
+      startTime,
+      endTime,
+    });
+
     let scheduled = [];
     let pendientes = [];
 
@@ -355,6 +496,8 @@ const EventMatchPage = () => {
         mesas[slot.tableNumber].push(slot);
       }
     });
+
+    console.log("Mesas disponibles:", mesas);
 
     // Set para control global de comprador-vendedor únicos
     const reunionesAgendadas = new Set();
@@ -394,29 +537,23 @@ const EventMatchPage = () => {
       const meetingsComprador = [...reunionesAgendadas].filter(
         (r) => r.startsWith(`${cmp.id}_`)
       ).length;
-      if (meetingsComprador >= maxMeetings) {
+      if (meetingsComprador >= maxMeetingsPerUser) {
         pendientes.push({
           compradorId: cmp.id,
           vendedorId: vendedor.id,
-          motivo: "Comprador alcanzó máximo de reuniones",
+          motivo: `Comprador alcanzó máximo de ${maxMeetingsPerUser} reuniones`,
         });
         continue;
       }
 
-      // Buscar slot disponible
-      let slotDisponible = null;
-      for (let mesa in mesas) {
-        if (mesas[mesa].length > 0) {
-          slotDisponible = mesas[mesa].shift();
-          break;
-        }
-      }
+      // Usar el slot tentativo asignado
+      const slotDisponible = item.match.tentativeSlot;
 
       if (!slotDisponible) {
         pendientes.push({
           compradorId: cmp.id,
           vendedorId: vendedor.id,
-          motivo: "No hay slots disponibles",
+          motivo: "No hay slot tentativo asignado",
         });
         continue;
       }
@@ -449,6 +586,7 @@ const EventMatchPage = () => {
           vendedorId: vendedor.id,
         });
       } catch (e) {
+        console.error("Error agendando:", e);
         pendientes.push({
           compradorId: cmp.id,
           vendedorId: vendedor.id,
@@ -508,6 +646,15 @@ const EventMatchPage = () => {
           >
             Vista Previa y Agendar
           </Button>
+          <Button
+            onClick={exportToExcel}
+            loading={loading}
+            color="green"
+            variant="light"
+            disabled={matchesMatrix.length === 0}
+          >
+            📥 Descargar Excel
+          </Button>
         </Group>
 
         {error && (
@@ -529,92 +676,145 @@ const EventMatchPage = () => {
 
         {loading && <Loader />}
 
+        {/* Buscador por correo */}
+        {matchesMatrix.length > 0 && (
+          <TextInput
+            placeholder="Buscar por correo o nombre del asistente..."
+            value={searchEmail}
+            onChange={(e) => setSearchEmail(e.currentTarget.value.toLowerCase())}
+            rightSection={searchEmail && <Badge variant="light">{matchesMatrix.filter((m) => 
+              m.compradorEmail?.toLowerCase().includes(searchEmail) || 
+              m.compradorNombre?.toLowerCase().includes(searchEmail)
+            ).length} resultados</Badge>}
+          />
+        )}
+
         {/* Preview de matches por comprador */}
         {matchesMatrix.length > 0 && (
           <>
             <Title order={4}>
-              Matches Generados ({matchesMatrix.reduce((sum, m) => sum + m.matches.length, 0)} total)
+              Matches Generados ({
+                searchEmail 
+                  ? matchesMatrix
+                      .filter((m) => 
+                        m.compradorEmail?.toLowerCase().includes(searchEmail) ||
+                        m.compradorNombre?.toLowerCase().includes(searchEmail)
+                      )
+                      .reduce((sum, m) => sum + m.matches.length, 0)
+                  : matchesMatrix.reduce((sum, m) => sum + m.matches.length, 0)
+              } total)
             </Title>
             <ScrollArea h={600} type="auto" scrollbars="y">
-              {matchesMatrix.map((m, idx) => {
-                const cmp = compradores.find((c) => c.id === m.compradorId);
-                return (
-                  <Card key={idx} shadow="xs" my="sm" p="md" withBorder>
-                    <Group justify="space-between" mb="sm">
-                      <div>
-                        <Text fw={700}>
-                          {cmp?.nombre || m.compradorNombre || m.compradorId}
-                        </Text>
-                        <Text c="dimmed" size="sm">
-                          {cmp?.empresa} | Necesidad: {cmp?.necesidad}
-                        </Text>
-                      </div>
-                      <Badge variant="light">
-                        {m.matches.length} match{m.matches.length !== 1 ? "es" : ""}
-                      </Badge>
-                    </Group>
+              {matchesMatrix
+                .filter((m) => !searchEmail || m.compradorEmail?.toLowerCase().includes(searchEmail) || m.compradorNombre?.toLowerCase().includes(searchEmail))
+                .map((m, idx) => {
+                  const cmp = compradores.find((c) => c.id === m.compradorId);
+                  return (
+                    <Card key={idx} shadow="xs" my="sm" p="md" withBorder>
+                      <Group justify="space-between" mb="sm">
+                        <div>
+                          <Text fw={700}>
+                            {cmp?.nombre || m.compradorNombre || m.compradorId}
+                          </Text>
+                          <Group gap="xs">
+                            <Text c="dimmed" size="sm">
+                              {cmp?.empresa} | Necesidad: {cmp?.necesidad}
+                            </Text>
+                            {m.compradorEmail && (
+                              <Badge size="sm" variant="dot" color="blue">
+                                {m.compradorEmail}
+                              </Badge>
+                            )}
+                          </Group>
+                        </div>
+                        <Badge variant="light">
+                          {m.matches.length} match{m.matches.length !== 1 ? "es" : ""}
+                        </Badge>
+                      </Group>
 
-                    {m.matches.length === 0 ? (
-                      <Text c="dimmed" size="sm">
-                        Sin matches compatibles
-                      </Text>
-                    ) : (
-                      <ScrollArea h={250} type="auto" scrollbars="y">
-                        {m.matches
-                          .sort((a, b) => (b.score || 0) - (a.score || 0))
-                          .map((match, ix) => {
-                            const vendedor = vendedores.find(
-                              (v) =>
-                                v.id === match.vendedorId ||
-                                v.nombre?.trim().toLowerCase() ===
-                                  match.vendedor?.trim().toLowerCase()
-                            );
-                            return (
-                              <Card
-                                key={ix}
-                                shadow="xs"
-                                my="xs"
-                                p="sm"
-                                withBorder
-                                style={{ backgroundColor: "#fafafa" }}
-                              >
-                                <Group position="apart" mb="xs">
-                                  <div>
-                                    <Text fw={600}>
-                                      {vendedor?.nombre || match.vendedor || "-"}
-                                    </Text>
-                                    <Text c="dimmed" size="sm">
-                                      {vendedor?.empresa}
-                                    </Text>
-                                  </div>
-                                  {typeof match.score === "number" && (
-                                    <Badge
-                                      color={
-                                        match.score > 0.8
-                                          ? "green"
-                                          : match.score > 0.5
-                                          ? "yellow"
-                                          : "red"
-                                      }
-                                    >
-                                      {(match.score * 100).toFixed(0)}%
-                                    </Badge>
+                      {m.matches.length === 0 ? (
+                        <Text c="dimmed" size="sm">
+                          Sin matches compatibles
+                        </Text>
+                      ) : (
+                        <ScrollArea h={250} type="auto" scrollbars="y">
+                          {m.matches
+                            .sort((a, b) => (b.score || 0) - (a.score || 0))
+                            .map((match, ix) => {
+                              const vendedor = vendedores.find(
+                                (v) =>
+                                  v.id === match.vendedorId ||
+                                  v.nombre?.trim().toLowerCase() ===
+                                    match.vendedor?.trim().toLowerCase()
+                              );
+                              return (
+                                <Card
+                                  key={ix}
+                                  shadow="xs"
+                                  my="xs"
+                                  p="sm"
+                                  withBorder
+                                  style={{ backgroundColor: "#fafafa" }}
+                                >
+                                  <Group position="apart" mb="xs">
+                                    <div>
+                                      <Text fw={600}>
+                                        {vendedor?.nombre || match.vendedor || "-"}
+                                      </Text>
+                                      <Group gap="xs">
+                                        <Text c="dimmed" size="sm">
+                                          {vendedor?.empresa}
+                                        </Text>
+                                        {match.vendedorEmail && (
+                                          <Badge size="xs" variant="light" color="gray">
+                                            {match.vendedorEmail}
+                                          </Badge>
+                                        )}
+                                      </Group>
+                                    </div>
+                                    {typeof match.score === "number" && (
+                                      <Badge
+                                        color={
+                                          match.score > 0.8
+                                            ? "green"
+                                            : match.score > 0.5
+                                            ? "yellow"
+                                            : "red"
+                                        }
+                                      >
+                                        {(match.score * 100).toFixed(0)}%
+                                      </Badge>
+                                    )}
+                                  </Group>
+                                  <Text color="dimmed" size="sm" mb="xs">
+                                    {match.motivo}
+                                  </Text>
+                                  <Text color="dark" size="sm" style={{ fontStyle: "italic" }}>
+                                    {match.razonMatch || "Compatibilidad potencial"}
+                                  </Text>
+                                  {match.tentativeSlot && (
+                                    <Group gap="xs" mt="xs">
+                                      <Badge size="sm" color="cyan" variant="light">
+                                        📅 {match.tentativeSlot.startTime} - {match.tentativeSlot.endTime}
+                                      </Badge>
+                                      <Badge size="sm" color="teal" variant="light">
+                                        🪑 Mesa {match.tentativeSlot.tableNumber}
+                                      </Badge>
+                                    </Group>
                                   )}
-                                </Group>
-                                <Text color="dimmed" size="sm" mb="xs">
-                                  {match.motivo}
-                                </Text>
-                                <Text color="dark" size="sm" style={{ fontStyle: "italic" }}>
-                                  {match.razonMatch || "Compatibilidad potencial"}
-                                </Text>
-                              </Card>
-                            );
-                          })}
-                      </ScrollArea>
-                    )}
-                  </Card>
-                );
-              })}
+                                  {!match.slotAssigned && (
+                                    <Text size="xs" c="red" mt="xs">
+                                      ⚠️ No hay slots disponibles
+                                    </Text>
+                                  )}
+                                </Card>
+                              );
+                            })}
+                        </ScrollArea>
+                      )}
+                    </Card>
+                  );
+                })}
             </ScrollArea>
           </>
         )}
@@ -638,9 +838,18 @@ const EventMatchPage = () => {
               const cmp = compradores.find((c) => c.id === m.compradorId);
               return (
                 <Card key={idx} shadow="xs" my="sm" p="md" withBorder>
-                  <Text fw={700} mb="sm">
-                    {cmp?.nombre || m.compradorNombre}
-                  </Text>
+                  <Group justify="space-between" mb="sm">
+                    <div>
+                      <Text fw={700}>
+                        {cmp?.nombre || m.compradorNombre}
+                      </Text>
+                      {m.compradorEmail && (
+                        <Text c="dimmed" size="sm">
+                          📧 {m.compradorEmail}
+                        </Text>
+                      )}
+                    </div>
+                  </Group>
 
                   {m.matches.map((match, ix) => {
                     const vendedor = vendedores.find(
@@ -669,9 +878,19 @@ const EventMatchPage = () => {
                               <Text size="sm" fw={600} lineClamp={1}>
                                 → {vendedor?.nombre || match.vendedor}
                               </Text>
+                              {match.vendedorEmail && (
+                                <Text size="xs" c="dimmed">
+                                  📧 {match.vendedorEmail}
+                                </Text>
+                              )}
                               <Text size="xs" c="dimmed">
                                 {match.razonMatch || match.motivo}
                               </Text>
+                              {match.tentativeSlot && (
+                                <Text size="xs" c="teal" fw={500}>
+                                  ⏰ {match.tentativeSlot.startTime} - Mesa {match.tentativeSlot.tableNumber}
+                                </Text>
+                              )}
                             </div>
                             <Badge
                               color={

@@ -617,6 +617,7 @@ const Landing = () => {
         backgroundPosition: "center center",
         backgroundSize: "cover",
         backgroundRepeat: "no-repeat",
+        fontFamily: "'Segoe UI', 'Helvetica Neue', -apple-system, BlinkMacSystemFont, sans-serif",
       }}
     >
       <Container fluid style={{ padding: 0, minHeight: "100vh" }}>
@@ -628,8 +629,9 @@ const Landing = () => {
           style={{
             maxWidth: isMobile ? "100%" : 720,
             margin: "40px auto",
-            background: "rgba(255,255,255,0.95)",
-            backdropFilter: "blur(6px)",
+            background: "radial-gradient(circle, rgba(255, 255, 255, 0.98) 0%, rgba(230, 220, 250, 0.96) 100%)",
+            backdropFilter: "blur(10px)",
+            fontFamily: "'Segoe UI', 'Helvetica Neue', -apple-system, BlinkMacSystemFont, sans-serif",
           }}
         >
           {/* Header visual del evento */}
@@ -643,42 +645,42 @@ const Landing = () => {
             />
           </Flex>
 
-          <Title order={isMobile ? 4 : 3} ta="center" my="md">
+          <Title order={isMobile ? 2 : 1} ta="center" my="md" style={{ fontSize: isMobile ? "1.5rem" : "2rem", fontWeight: 700, letterSpacing: "-0.5px", color: "#1a1a1a" }}>
             {event.eventName || "Evento de Networking"}
           </Title>
-          <Group align="flex-start" justify="space-between">
-            <div style={{ flex: 1 }}>
-              <Text ta="justify">
+          <Group align="center" justify="space-between">
+            <div style={{ flex: 1}}>
+              <Text ta="justify" style={{ fontSize: "1.2rem", lineHeight: 1.6, color: "#333" }}>
                 {event?.config?.eventDate && (
                   <>
-                    <Text span fw={700}>Fecha del evento:</Text>{" "}
+                    <Text span fw={600} style={{ color: "#1a1a1a", fontSize: "1rem", }}>Fecha:</Text>{" "}
                     {formatDate(event?.config?.eventDate)}
                   </>
                 )}
               </Text>
 
-              <Text ta="justify">
+              <Text ta="justify" style={{ fontSize: "1.2rem", lineHeight: 1.6, color: "#333" }}>
                 {event?.config?.eventStartTime && (
                   <>
-                    <Text span fw={700}>Hora de inicio:</Text>{" "}
+                    <Text span fw={600} style={{ color: "#1a1a1a", fontSize: "1rem", }}>Hora de inicio:</Text>{" "}
                     {formatTime(event?.config?.eventStartTime)}
                   </>
                 )}
               </Text>
 
-              <Text ta="justify">
+              <Text ta="justify" style={{ fontSize: "1.2rem", lineHeight: 1.6, color: "#333" }}>
                 {event?.config?.eventEndTime && (
                   <>
-                    <Text span fw={700}>Hora de finalización:</Text>{" "}
+                    <Text span fw={600} style={{ color: "#1a1a1a", fontSize: "1rem", }}>Hora de cierre:</Text>{" "}
                     {formatTime(event?.config?.eventEndTime)}
                   </>
                 )}
               </Text>
 
-              <Text ta="justify">
+              <Text ta="justify" style={{ fontSize: "1.2rem", lineHeight: 1.6, color: "#333" }}>
                 {event?.config?.eventLocation && (
                   <>
-                    <Text span fw={700}>Lugar del evento:</Text>{" "}
+                    <Text span fw={600} style={{ color: "#1a1a1a" }}>Ubicación:</Text>{" "}
                     {event.config.eventLocation}
                   </>
                 )}
@@ -694,8 +696,8 @@ const Landing = () => {
               />
             )}
           </Group>
-          <Text ta="justify" mb="lg" mt="lg">
-            <strong>Plataforma de Networking y Reuniones de Negocio.</strong>{" "}
+          <Text ta="justify" mb="lg" mt="lg" style={{ fontSize: "1rem", lineHeight: 1.7, color: "#333" }}>
+            <strong style={{ color: "#1a1a1a" }}>Plataforma de Networking y Reuniones de Negocio.</strong>{" "}
             Conecta con otras empresas y permite que te encuentren para agendar
             reuniones durante el evento. Ingresa con el correo registrado de la
             empresa o regístrate si es tu primera vez.
@@ -707,10 +709,11 @@ const Landing = () => {
             variant="pills"
             radius="md"
             keepMounted={false}
+            style={{ fontFamily: "'Segoe UI', 'Helvetica Neue', -apple-system, BlinkMacSystemFont, sans-serif" }}
           >
             <Tabs.List grow>
-              <Tabs.Tab value="login">Ingresar</Tabs.Tab>
-              <Tabs.Tab value="register" disabled={!registrationEnabled}>
+              <Tabs.Tab value="login" fw={500}>Ingresar</Tabs.Tab>
+              <Tabs.Tab value="register" disabled={!registrationEnabled} fw={500}>
                 {currentUser?.data ? "Actualizar datos" : "Registrarse"}
               </Tabs.Tab>
             </Tabs.List>
@@ -761,7 +764,7 @@ const Landing = () => {
 
               {registrationEnabled && (
                 <Stack>
-                  <Text ta="justify" my="sm" size="lg">
+                  <Text ta="justify" my="sm" style={{ fontSize: "1rem", lineHeight: 1.6, color: "#333" }}>
                     {currentUser?.data
                       ? "Actualiza tu información antes de continuar."
                       : "Completa el formulario para crear tu registro."}
@@ -817,7 +820,7 @@ const Landing = () => {
 
           {/* Nota informativa opcional */}
           <Divider my="lg" />
-          <Text ta="center" c="dimmed" fz="sm">
+          <Text ta="center" c="dimmed" style={{ fontSize: "0.9rem", lineHeight: 1.5 }}>
             ¿Problemas para ingresar? Verifica que tu correo esté registrado por
             la organización del evento.
           </Text>
