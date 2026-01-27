@@ -18,16 +18,32 @@ import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
 import { AgendaSlot, Assistant, Meeting, Notification } from "./types";
 import { showNotification } from "@mantine/notifications";
-import { group } from "console";
+import { serverTimestamp } from "firebase/firestore";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { storage } from "../../firebase/firebaseConfig";
 
 const API_WP_URL = "https://apiwhatsapp.geniality.com.co/api/send";
 const CLIENT_ID = "genialitybussinesstest";
+
+type Product = {
+  id: string;
+  eventId: string;
+  ownerUserId: string;
+  ownerName?: string;
+  ownerCompany?: string;
+  ownerPhone?: string | null;
+  title: string;
+  description: string;
+  imageUrl?: string | null;
+  createdAt?: any;
+  updatedAt?: any;
+};
 
 // Helpers (puedes moverlos a helpers.ts si prefieres)
 function slotOverlapsBreakBlock(
   slotStart: string,
   meetingDuration: number,
-  breakBlocks: { start: string; end: string }[] = []
+  breakBlocks: { start: string; end: string }[] = [],
 ) {
   const [h, m] = slotStart.split(":").map(Number);
   const slotStartMin = h * 60 + m;
@@ -109,7 +125,7 @@ function sendWhatsAppMessage(participant: Assistant) {
   }
   const phone = participant.telefono.replace(/[^\d]/g, "");
   const message = encodeURIComponent(
-    "Hola, me gustaría contactarte sobre la reunión."
+    "Hola, me gustaría contactarte sobre la reunión.",
   );
   window.open(`https://wa.me/57${phone}?text=${message}`, "_blank");
 }
@@ -117,7 +133,7 @@ function sendWhatsAppMessage(participant: Assistant) {
 async function sendMeetingAcceptedWhatsapp(
   toPhone: string,
   otherParticipant: Assistant,
-  meetingInfo: { timeSlot?: string; tableAssigned?: string }
+  meetingInfo: { timeSlot?: string; tableAssigned?: string },
 ) {
   if (!toPhone) return;
   const phone = toPhone.replace(/[^\d]/g, "");
@@ -143,7 +159,7 @@ async function sendMeetingAcceptedWhatsapp(
 async function sendMeetingCancelledWhatsapp(
   toPhone: string,
   otherParticipant: Assistant,
-  meetingInfo: { timeSlot?: string; tableAssigned?: string }
+  meetingInfo: { timeSlot?: string; tableAssigned?: string },
 ) {
   if (!toPhone) return;
   const phone = (toPhone || "").toString().replace(/[^\d]/g, "");
@@ -163,6 +179,20 @@ async function sendMeetingCancelledWhatsapp(
       message,
     }),
   }).catch(() => {});
+}
+
+async function uploadProductImage(
+  eventId: string,
+  ownerUserId: string,
+  productId: string,
+  file: File,
+) {
+  const storageRef = ref(
+    storage,
+    `eventProducts/${eventId}/${ownerUserId}/${productId}/${file.name}`,
+  );
+  await uploadBytes(storageRef, file);
+  return await getDownloadURL(storageRef);
 }
 
 export function useDashboardData(eventId?: string) {
@@ -196,7 +226,7 @@ export function useDashboardData(eventId?: string) {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [pendingVisible, setPendingVisible] = useState(true);
   const [expandedMeetingId, setExpandedMeetingId] = useState<string | null>(
-    null
+    null,
   );
   const [showOnlyToday, setShowOnlyToday] = useState(true);
   const [slotModalOpened, setSlotModalOpened] = useState(false);
@@ -211,6 +241,7 @@ export function useDashboardData(eventId?: string) {
   const [confirmModalOpened, setConfirmModalOpened] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [interestFilter, setInterestFilter] = useState<string | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
 
   // ---------------------- EFECTOS PRINCIPALES ----------------------
 
@@ -234,11 +265,11 @@ export function useDashboardData(eventId?: string) {
     const q = query(
       collection(db, "notifications"),
       where("userId", "==", uid),
-      orderBy("timestamp", "desc")
+      orderBy("timestamp", "desc"),
     );
     return onSnapshot(q, (snap) => {
       const nots = snap.docs.map(
-        (d) => ({ id: d.id, ...d.data() } as Notification)
+        (d) => ({ id: d.id, ...d.data() }) as Notification,
       );
 
       // Mostrar notificaciones tipo toast solo las no leídas
@@ -267,7 +298,7 @@ export function useDashboardData(eventId?: string) {
       const cfgSnap = await getDoc(cfgRef);
       if (cfgSnap.exists()) {
         setSolicitarReunionHabilitado(
-          cfgSnap.data().solicitarReunionHabilitado
+          cfgSnap.data().solicitarReunionHabilitado,
         );
       }
     })();
@@ -338,14 +369,14 @@ export function useDashboardData(eventId?: string) {
       formFields.some((f) => {
         const value = (a[f.name] ?? "").toString().toLowerCase();
         return value.includes(term);
-      })
+      }),
     );
     // (puedes mantener el filtro por interés si quieres)
     if (interestFilter) {
       filtered = filtered.filter(
         (a) =>
           a[formFields.find((f) => f.name === "interesPrincipal")?.name] ===
-          interestFilter
+          interestFilter,
       );
     }
 
@@ -354,7 +385,7 @@ export function useDashboardData(eventId?: string) {
       filtered = filtered.filter(
         (a) =>
           a[formFields.find((f) => f.name === "tipoAsistente")?.name] !==
-          currentUser?.data?.tipoAsistente
+          currentUser?.data?.tipoAsistente,
       );
     }
 
@@ -367,11 +398,11 @@ export function useDashboardData(eventId?: string) {
     const q = query(
       collection(db, "events", eventId, "meetings"),
       where("requesterId", "==", uid),
-      where("status", "==", "pending")
+      where("status", "==", "pending"),
     );
     return onSnapshot(q, (snap) => {
       setSentRequests(
-        snap.docs.map((d) => ({ id: d.id, ...d.data() } as Meeting))
+        snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Meeting),
       );
     });
   }, [uid, eventId]);
@@ -383,7 +414,7 @@ export function useDashboardData(eventId?: string) {
     const q = query(
       collection(db, "events", eventId, "meetings"),
       where("status", "==", "accepted"),
-      where("participants", "array-contains", uid)
+      where("participants", "array-contains", uid),
     );
     return onSnapshot(q, async (snap) => {
       const mts: Meeting[] = [];
@@ -411,7 +442,7 @@ export function useDashboardData(eventId?: string) {
     if (!uid || !eventId) return;
     const q = query(
       collection(db, "events", eventId, "meetings"),
-      where("receiverId", "==", uid)
+      where("receiverId", "==", uid),
     );
     return onSnapshot(q, (snap) => {
       const pend: Meeting[] = [],
@@ -432,11 +463,27 @@ export function useDashboardData(eventId?: string) {
     });
   }, [uid, eventId]);
 
+  useEffect(() => {
+    if (!eventId) return;
+    const q = query(
+      collection(db, "events", eventId, "products"),
+      orderBy("createdAt", "desc"),
+    );
+
+    return onSnapshot(q, (snap) => {
+      const list = snap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as any),
+      })) as Product[];
+      setProducts(list);
+    });
+  }, [eventId]);
+
   // ---------------------- ACCIONES PRINCIPALES ----------------------
 
   const cancelSentMeeting = async (
     meetingId: string,
-    mode: "cancel" | "delete" = "cancel"
+    mode: "cancel" | "delete" = "cancel",
   ) => {
     if (!eventId) {
       showNotification({
@@ -476,7 +523,7 @@ export function useDashboardData(eventId?: string) {
   const sendMeetingRequest = async (
     assistantId: string,
     assistantPhone: string,
-    groupId: string | null = null
+    groupId: string | null = null,
   ) => {
     if (!uid || !eventId) return Promise.reject();
     try {
@@ -493,7 +540,7 @@ export function useDashboardData(eventId?: string) {
       }
       const meetingDoc = await addDoc(
         collection(db, "events", eventId, "meetings"),
-        data
+        data,
       );
       const requester = currentUser?.data;
       const meetingId = meetingDoc.id;
@@ -549,7 +596,7 @@ export function useDashboardData(eventId?: string) {
       // 1. Cancela la reunión en Firestore
       await updateDoc(
         doc(db, "events", meeting.eventId, "meetings", meeting.id),
-        { status: "cancelled" }
+        { status: "cancelled" },
       );
 
       // 2. Libera el slot (si existe)
@@ -629,22 +676,22 @@ export function useDashboardData(eventId?: string) {
             data.requesterId,
             data.receiverId,
           ]),
-          where("status", "==", "accepted")
+          where("status", "==", "accepted"),
         );
         const accSn = await getDocs(accQ);
         const occupied = new Set(accSn.docs.map((d) => d.data().timeSlot));
 
         const limit = eventConfig.maxMeetingsPerUser ?? Infinity;
         const requesterCount = accSn.docs.filter((d) =>
-          d.data().participants.includes(data.requesterId)
+          d.data().participants.includes(data.requesterId),
         ).length;
         const receiverCount = accSn.docs.filter((d) =>
-          d.data().participants.includes(data.receiverId)
+          d.data().participants.includes(data.receiverId),
         ).length;
 
         if (requesterCount >= limit) {
           return alert(
-            `El solicitante ya alcanzó el límite de ${limit} citas.`
+            `El solicitante ya alcanzó el límite de ${limit} citas.`,
           );
         }
         if (receiverCount >= limit) {
@@ -656,7 +703,7 @@ export function useDashboardData(eventId?: string) {
           collection(db, "agenda"),
           where("eventId", "==", eventId),
           where("available", "==", true),
-          orderBy("startTime")
+          orderBy("startTime"),
         );
         const agSn = await getDocs(agQ);
 
@@ -678,7 +725,7 @@ export function useDashboardData(eventId?: string) {
             slotOverlapsBreakBlock(
               slot.startTime,
               eventConfig.meetingDuration,
-              eventConfig.breakBlocks
+              eventConfig.breakBlocks,
             )
           ) {
             continue;
@@ -691,7 +738,7 @@ export function useDashboardData(eventId?: string) {
 
         if (!chosen) {
           return alert(
-            "No hay slots libres fuera de descansos y horarios pasados."
+            "No hay slots libres fuera de descansos y horarios pasados.",
           );
         }
 
@@ -755,7 +802,7 @@ export function useDashboardData(eventId?: string) {
             {
               timeSlot: `${chosen.startTime} - ${chosen.endTime}`,
               tableAssigned: chosen.tableNumber,
-            }
+            },
           );
           await sendMeetingAcceptedWhatsapp(
             receiver.telefono || "",
@@ -763,7 +810,7 @@ export function useDashboardData(eventId?: string) {
             {
               timeSlot: `${chosen.startTime} - ${chosen.endTime}`,
               tableAssigned: chosen.tableNumber,
-            }
+            },
           );
         }
       } else {
@@ -784,7 +831,7 @@ export function useDashboardData(eventId?: string) {
 
   const changeMeetingAssistantId = async (
     newAssistantId: string,
-    meetingId: string
+    meetingId: string,
   ) => {
     try {
       if (!uid || !eventId || !eventConfig) return;
@@ -801,7 +848,7 @@ export function useDashboardData(eventId?: string) {
 
       // 2️⃣ Actualizar el array participants (reemplazar el anterior por el nuevo)
       const updatedParticipants = meetingData.participants.map((p: string) =>
-        p === oldReceiverId ? newAssistantId : p
+        p === oldReceiverId ? newAssistantId : p,
       );
 
       // 3️⃣ Actualizar en Firestore
@@ -818,7 +865,7 @@ export function useDashboardData(eventId?: string) {
   const changeAssistant = async (
     requester: Assistant,
     timeSlot: string,
-    tableAssigned: string
+    tableAssigned: string,
   ) => {
     try {
       // 1️⃣ Obtener los IDs de todos los asistentes del grupo
@@ -826,7 +873,7 @@ export function useDashboardData(eventId?: string) {
         .filter(
           (e) =>
             e.empresa?.trim().toLowerCase() ===
-            currentUser?.data?.empresa?.trim().toLowerCase()
+            currentUser?.data?.empresa?.trim().toLowerCase(),
         )
         .flatMap((e) => e.asistentes);
 
@@ -838,10 +885,10 @@ export function useDashboardData(eventId?: string) {
           where(
             "participants",
             "array-contains-any",
-            employees.map((e) => e.id)
+            employees.map((e) => e.id),
           ),
-          where("timeSlot", "==", timeSlot)
-        )
+          where("timeSlot", "==", timeSlot),
+        ),
       );
 
       // 3️⃣ Extraer los IDs de los asistentes que ya están ocupados
@@ -908,8 +955,8 @@ export function useDashboardData(eventId?: string) {
               requesterId,
               receiverId,
             ]),
-            where("meetingDate", "==", eventDayISO)
-          )
+            where("meetingDate", "==", eventDayISO),
+          ),
         );
       } catch {
         accSn = await getDocs(
@@ -919,8 +966,8 @@ export function useDashboardData(eventId?: string) {
             where("participants", "array-contains-any", [
               requesterId,
               receiverId,
-            ])
-          )
+            ]),
+          ),
         );
       }
 
@@ -940,8 +987,8 @@ export function useDashboardData(eventId?: string) {
           collection(db, "agenda"),
           where("eventId", "==", eventId),
           where("available", "==", true),
-          orderBy("startTime")
-        )
+          orderBy("startTime"),
+        ),
       );
 
       const filtered = agSn.docs
@@ -962,7 +1009,7 @@ export function useDashboardData(eventId?: string) {
             slotOverlapsBreakBlock(
               slot.startTime,
               eventConfig.meetingDuration,
-              eventConfig.breakBlocks
+              eventConfig.breakBlocks,
             )
           )
             return false;
@@ -991,7 +1038,7 @@ export function useDashboardData(eventId?: string) {
   }
 
   // Confirmar la selección de slot para la reunión
- const confirmAcceptWithSlot = async (meetingId: string, slot: any) => {
+  const confirmAcceptWithSlot = async (meetingId: string, slot: any) => {
     // Helpers locales (evitas duplicados en el archivo)
     const hmToMinutes = (hm: string) => {
       const [h, m] = hm.split(":").map(Number);
@@ -1002,7 +1049,7 @@ export function useDashboardData(eventId?: string) {
       userId: string,
       dateISO: string,
       start: string,
-      end: string
+      end: string,
     ) => {
       const d = String(dateISO || "").replace(/-/g, ""); // "2025-10-16" -> "20251016"
       return `${eventId}_${userId}_${d}_${start}-${end}`;
@@ -1074,18 +1121,18 @@ export function useDashboardData(eventId?: string) {
         const reqLockRef = doc(
           db,
           "locks",
-          lockId(eventId, requesterId, eventDateISO, start, end)
+          lockId(eventId, requesterId, eventDateISO, start, end),
         );
         const recLockRef = doc(
           db,
           "locks",
-          lockId(eventId, receiverId, eventDateISO, start, end)
+          lockId(eventId, receiverId, eventDateISO, start, end),
         );
 
         // Check if locks already exist, then create them
         const reqLockSnap = await tx.get(reqLockRef);
         const recLockSnap = await tx.get(recLockRef);
-        
+
         if (reqLockSnap.exists()) {
           throw new Error("Requester already has a meeting in this time slot");
         }
@@ -1143,8 +1190,8 @@ export function useDashboardData(eventId?: string) {
         const groupMeetingsSnap = await getDocs(
           query(
             collection(db, "events", eventId, "meetings"),
-            where("groupId", "==", groupId)
-          )
+            where("groupId", "==", groupId),
+          ),
         );
         const batch = writeBatch(db);
         groupMeetingsSnap.docs.forEach((d) => {
@@ -1247,7 +1294,7 @@ export function useDashboardData(eventId?: string) {
       console.error("❌ confirmAcceptWithSlot:", e?.message || e);
       // Mensaje amigable para colisión por locks/slot
       const msg = /already exists|Slot already taken|ya está ocupado/i.test(
-        String(e?.message)
+        String(e?.message),
       )
         ? "El horario escogido ya no está disponible o la persona ya tiene reunión en esa franja."
         : "No se pudo confirmar la reunión. Intenta de nuevo.";
@@ -1284,7 +1331,7 @@ export function useDashboardData(eventId?: string) {
         (s: any) => ({
           value: s.id,
           label: `Mesa ${s.tableNumber}`,
-        })
+        }),
       )
     : [];
 
@@ -1298,23 +1345,92 @@ export function useDashboardData(eventId?: string) {
   const currentRequesterName = meetingToAccept
     ? assistants.find((a) => a.id === meetingToAccept.requesterId)?.nombre
     : meetingToEdit
-    ? (() => {
-        const meeting = acceptedMeetings.find((m) => m.id === meetingToEdit);
-        if (!meeting) return "";
-        const otherId =
-          meeting.requesterId === uid
-            ? meeting.receiverId
-            : meeting.requesterId;
-        return assistants.find((a) => a.id === otherId)?.nombre || "";
-      })()
-    : "";
+      ? (() => {
+          const meeting = acceptedMeetings.find((m) => m.id === meetingToEdit);
+          if (!meeting) return "";
+          const otherId =
+            meeting.requesterId === uid
+              ? meeting.receiverId
+              : meeting.requesterId;
+          return assistants.find((a) => a.id === otherId)?.nombre || "";
+        })()
+      : "";
 
   const interestOptions = Array.from(
-    new Set(assistants.map((a) => a.interesPrincipal).filter(Boolean))
+    new Set(assistants.map((a) => a.interesPrincipal).filter(Boolean)),
   ).map((i) => ({
     value: i,
     label: i,
   }));
+
+  const createProduct = async (payload: {
+    title: string;
+    description: string;
+    imageFile?: File | null;
+  }) => {
+    if (!uid || !eventId) throw new Error("Missing uid/eventId");
+
+    const owner = currentUser?.data || {};
+    const base = {
+      eventId,
+      ownerUserId: uid,
+      ownerName: owner.nombre || owner.name || "",
+      ownerCompany: owner.empresa || owner.company || "",
+      ownerPhone: owner.telefono || owner.contacto?.telefono || null,
+      title: payload.title.trim(),
+      description: payload.description.trim(),
+      imageUrl: null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    const docRef = await addDoc(
+      collection(db, "events", eventId, "products"),
+      base,
+    );
+
+    if (payload.imageFile) {
+      const url = await uploadProductImage(
+        eventId,
+        uid,
+        docRef.id,
+        payload.imageFile,
+      );
+      await updateDoc(docRef, { imageUrl: url, updatedAt: serverTimestamp() });
+    }
+
+    return docRef.id;
+  };
+
+  const updateProduct = async (
+    productId: string,
+    payload: { title: string; description: string; imageFile?: File | null },
+  ) => {
+    if (!uid || !eventId) throw new Error("Missing uid/eventId");
+
+    const pRef = doc(db, "events", eventId, "products", productId);
+    const patch: any = {
+      title: payload.title.trim(),
+      description: payload.description.trim(),
+      updatedAt: serverTimestamp(),
+    };
+
+    if (payload.imageFile) {
+      patch.imageUrl = await uploadProductImage(
+        eventId,
+        uid,
+        productId,
+        payload.imageFile,
+      );
+    }
+
+    await updateDoc(pRef, patch);
+  };
+
+  const deleteProduct = async (productId: string) => {
+    if (!eventId) throw new Error("Missing eventId");
+    await deleteDoc(doc(db, "events", eventId, "products", productId));
+  };
 
   // ---------------------- RETORNO ----------------------
 
@@ -1393,5 +1509,9 @@ export function useDashboardData(eventId?: string) {
     setConfirmModalOpened,
     currentRequesterName,
     formFields,
+    products,
+    createProduct,
+    updateProduct,
+    deleteProduct,
   };
 }
