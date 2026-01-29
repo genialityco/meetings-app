@@ -22,6 +22,10 @@ export interface Assistant {
   necesidad?: string;
   lastConnectionDateTime?: string;
   connectedToday?: boolean;
+  companyId?: string | null;
+  company_nit?: string;
+  company_razonSocial?: string;
+  tipoAsistente?: string;
   [key: string]: any;
 }
 
@@ -32,7 +36,16 @@ export interface Meeting {
   timeSlot?: string;
   tableAssigned?: string;
   status?: string;
+  productId?: string | null;
+  companyId?: string | null;
+  contextNote?: string;
   [key: string]: any; // Permite campos adicionales de Firestore
+}
+
+export interface MeetingContext {
+  productId?: string | null;
+  companyId?: string | null;
+  contextNote?: string;
 }
 
 export interface ParticipantInfo extends Assistant {}
@@ -54,3 +67,51 @@ export interface AgendaSlot {
   eventId?: string;
   meetingId?: string;
 }
+
+/** Políticas de evento configurables por admin */
+export interface EventPolicies {
+  roleMode: "buyer_seller" | "open";
+  tableMode: "pool" | "fixed";
+  discoveryMode: "all" | "by_role";
+  schedulingMode: "manual" | "auto";
+  uiViewsEnabled: {
+    attendees: boolean;
+    companies: boolean;
+    products: boolean;
+  };
+}
+
+/** Empresa (events/{eventId}/companies/{nitNorm}) */
+export interface Company {
+  nitNorm: string;
+  razonSocial: string;
+  descripcion?: string;
+  logoUrl?: string | null;
+  fixedTable?: string | null;
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+/** Producto (events/{eventId}/products/{productId}) */
+export interface Product {
+  id: string;
+  eventId: string;
+  ownerUserId: string;
+  ownerName?: string;
+  ownerCompany?: string;
+  ownerPhone?: string | null;
+  companyId?: string | null;
+  title: string;
+  description: string;
+  imageUrl?: string | null;
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+export const DEFAULT_POLICIES: EventPolicies = {
+  roleMode: "open",
+  tableMode: "pool",
+  discoveryMode: "all",
+  schedulingMode: "manual",
+  uiViewsEnabled: { attendees: true, companies: true, products: true },
+};

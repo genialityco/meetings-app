@@ -1,9 +1,6 @@
-import { useContext } from "react";
 import { Routes, Route } from "react-router-dom";
 import Landing from "./pages/Landing";
 import AdminPanel from "./pages/admin/AdminPanel";
-import { UserContext } from "./context/UserContext";
-import UserProfile from "./components/UserProfile";
 import PhonesAdminPage from "./pages/PhonesAdminPage.tsx";
 import MeetingAutoResponse from "./pages/MeetingAutoResponse";
 import EventAdmin from "./pages/admin/EventAdmin";
@@ -16,11 +13,8 @@ import AgendaAdminPanel from "./pages/admin/AgendaAdminPanel.jsx";
 import MeetingSurveys from "./pages/admin/MeetingSurveys.jsx";
 
 const App = () => {
-  const { currentUser } = useContext(UserContext);
-
   return (
     <>
-      {currentUser?.data && <UserProfile />}
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/event/:eventId" element={<Landing />} />
