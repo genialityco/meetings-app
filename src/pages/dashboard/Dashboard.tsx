@@ -1,21 +1,40 @@
 // Dashboard/Dashboard.tsx
 
-import { Container, Title, Flex } from "@mantine/core";
+import { Container, Title, Flex, MantineProvider, createTheme } from "@mantine/core";
 import { useParams } from "react-router-dom";
 import { useDashboardData } from "./useDashboardData";
+import { generateColors } from "@mantine/colors-generator";
+
 import NotificationsMenu from "./NotificationsMenu";
 import PendingRequestsSection from "./PendingRequestsSection";
 import TabsPanel from "./TabsPanel";
 import AvatarModal from "./AvatarModal";
 import SlotModal from "./SlotModal";
 import ConfirmModal from "./ConfirmModal";
+import { useContext, useMemo } from "react";
+import { UserContext } from "../../context/UserContext";
+import UserProfile from "../../components/UserProfile";
 
 export default function Dashboard() {
   const { eventId } = useParams();
   const dashboard = useDashboardData(eventId);
+    const { currentUser } = useContext(UserContext);
+
+    console.log("Current User in Dashboard:", currentUser);
+
+  const eventTheme = useMemo(() => {
+    const hex = dashboard.eventConfig?.primaryColor;
+    if (!hex) return createTheme({});
+    return createTheme({
+      colors: { eventPrimary: generateColors(hex) },
+      primaryColor: "eventPrimary",
+    });
+  }, [dashboard.eventConfig?.primaryColor]);
 
   return (
+    <MantineProvider theme={eventTheme} inherit>
     <Container fluid>
+      {currentUser?.data && <UserProfile />}
       <Flex gap="md" pt="sm">
         <Title order={2}>Dashboard</Title>
         <NotificationsMenu notifications={dashboard.notifications} />
@@ -70,5 +89,6 @@ export default function Dashboard() {
         }}
       />
     </Container>
+    </MantineProvider>
   );
 }

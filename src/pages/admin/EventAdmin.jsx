@@ -31,6 +31,7 @@ import AttendeesList from "./AttendeesList";
 import { useParams, Link } from "react-router-dom";
 import * as XLSX from "xlsx";
 import ConfigureFieldsModal from "./ConfigureFieldsModal";
+import EventPoliciesModal from "./EventPoliciesModal";
 
 const EventAdmin = () => {
   const { eventId } = useParams();
@@ -45,6 +46,7 @@ const EventAdmin = () => {
   const [attendeesLoading, setAttendeesLoading] = useState(false);
   const [configureFieldsModalOpened, setConfigureFieldsModalOpened] =
     useState(false);
+  const [policiesModalOpened, setPoliciesModalOpened] = useState(false);
 
   const [meetingsCounts, setMeetingsCounts] = useState({
     aceptadas: 0,
@@ -548,6 +550,14 @@ const EventAdmin = () => {
               Configurar campos
             </Button>
             <Button
+              onClick={() => setPoliciesModalOpened(true)}
+              loading={actionLoading}
+              disabled={actionLoading}
+              color="grape"
+            >
+              Configurar políticas
+            </Button>
+            <Button
               component={Link}
               to={`/admin/event/${event.id}/import-meetings`}
               loading={actionLoading}
@@ -626,6 +636,13 @@ const EventAdmin = () => {
       <ConfigureFieldsModal
         opened={configureFieldsModalOpened}
         onClose={() => setConfigureFieldsModalOpened(false)}
+        event={event}
+        refreshEvents={fetchEvent}
+        setGlobalMessage={setGlobalMessage}
+      />
+      <EventPoliciesModal
+        opened={policiesModalOpened}
+        onClose={() => setPoliciesModalOpened(false)}
         event={event}
         refreshEvents={fetchEvent}
         setGlobalMessage={setGlobalMessage}

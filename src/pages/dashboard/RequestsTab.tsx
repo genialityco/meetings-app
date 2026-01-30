@@ -1,7 +1,7 @@
 // Dashboard/RequestsTab.tsx
 "use client";
 
-import { Tabs, Stack, Card, Text, Button, Group, Select } from "@mantine/core";
+import { Tabs, Stack, Card, Text, Button, Group, Select, Badge } from "@mantine/core";
 import { Assistant, Meeting } from "./types";
 import { useState } from "react";
 
@@ -97,6 +97,11 @@ console.log("acceptedRequests", acceptedRequests);
                     </>
                   ) : (
                     <Text>Cargando información del solicitante...</Text>
+                  )}
+                  {request.contextNote && (
+                    <Badge variant="light" color="grape" mt="xs" size="sm">
+                      {request.contextNote}
+                    </Badge>
                   )}
                   <Group mt="sm">
                     <Button

@@ -10,6 +10,7 @@ import {
   Alert,
   Group,
   Divider,
+  ColorInput,
 } from "@mantine/core";
 import { doc, setDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -66,6 +67,9 @@ const EditEventConfigModal = ({
   const [maxMeetingsPerUser, setMaxMeetingsPerUser] = useState(
     event.config?.maxMeetingsPerUser ?? 1
   );
+
+  // Color primario (hex)
+  const [primaryColor, setPrimaryColor] = useState(event.config?.primaryColor || "#228be6");
 
   // Archivos de imagen
   const handleFileChange = (e) => {
@@ -195,6 +199,7 @@ const EditEventConfigModal = ({
       eventStartTime,
       eventEndTime,
       eventLocation,
+      primaryColor,
     };
 
     try {
@@ -271,6 +276,16 @@ const EditEventConfigModal = ({
           </Alert>
         )}
         
+        <Divider label="Color principal" my="sm" />
+        <ColorInput
+          label="Color primario"
+          description="Define el color primario de la interfaz para Landing y Dashboard"
+          value={primaryColor}
+          onChange={setPrimaryColor}
+          format="hex"
+          swatches={['#228be6','#e64980','#be4bdb','#7950f2','#4c6ef5','#15aabf','#12b886','#40c057','#fab005','#fd7e14','#fa5252']}
+        />
+
         <Divider label="Imágenes del evento" my="sm" />
         <TextInput
           label="URL de la imagen del Evento (opcional)"
