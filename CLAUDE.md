@@ -13,7 +13,7 @@ npm run preview  # Preview production build
 
 ## Architecture
 
-This is a React + Vite meetings/networking app for events, using **Firebase** as backend (Firestore, Auth, Storage, FCM) and **Mantine** for UI components.
+This is a React 19 + Vite 6 meetings/networking app for events, using **Firebase 11** as backend (Firestore, Auth, Storage, FCM) and **Mantine v7** for UI components. React Router v7 handles routing. No test framework is configured.
 
 ### Core Entities (Firestore Collections)
 
@@ -74,12 +74,42 @@ Meeting requests from CompaniesView/ProductsView pass context (productId, compan
 - Optional company logo upload to Firebase Storage (`companies/{eventId}/{nitNorm}/logo.{ext}`)
 - On submit: creates/updates company doc + creates user + associates user↔company via companyId
 
+### Routing (App.jsx)
+
+| Route | Component | Purpose |
+|-------|-----------|---------|
+| `/` | Landing | Default registration page |
+| `/event/:eventId` | Landing | Event-specific registration |
+| `/dashboard` | Dashboard | Attendee dashboard (no event filter) |
+| `/dashboard/:eventId` | Dashboard | Event-specific dashboard |
+| `/admin` | AdminPanel | List all events |
+| `/admin/event/:eventId` | EventAdmin | Event management |
+| `/admin/event/:eventId/agenda` | AgendaAdminPanel | Schedule management |
+| `/admin/event/:eventId/match` | EventMatchPage | Event matching |
+| `/admin/event/:eventId/import-meetings` | ImportMeetingsFromExcelPage | Bulk meeting import |
+| `/admin/surveys` | MeetingSurveys | Survey responses |
+| `/matrix/:eventId` | MatrixPage | Matrix view |
+| `/phonesadmin` | PhonesAdminPage | Phone management |
+| `/meeting-response/:eventId/:meetingId/:action` | MeetingAutoResponse | Auto-response handler |
+
+### Cloud Functions (`functions/`)
+
+- `notifyMeetingsScheduled`: Runs every 5 minutes (America/Bogota timezone), sends SMS notifications for meetings starting within 5 minutes via Onurix API.
+- Deploy: `firebase deploy --only functions`
+
+### External API Integrations
+
+- **WhatsApp API**: `apiwhatsapp.geniality.com.co` — meeting request/acceptance notifications
+- **SMS API**: Onurix — meeting reminders from Cloud Functions
+
 ### UI Stack
 
 - Mantine v7 (core, dates, modals, notifications, tiptap)
 - @dnd-kit for drag-and-drop (admin field config)
 - dayjs for date handling
 - xlsx for Excel import/export
+- @tabler/icons-react for icons
+- Tiptap for rich text editing
 
 ## Environment Variables
 
@@ -87,12 +117,17 @@ Firebase config via Vite env vars (prefix `VITE_`):
 - `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`
 - `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`
 
+## npm Configuration
+
+`.npmrc` has `legacy-peer-deps=true` to handle peer dependency conflicts.
+
 ## Code Conventions
 
 - Mixed JSX (JavaScript) and TSX (TypeScript) — new files should be .tsx
 - Spanish used in variable names, comments, and UI text
 - ESLint configured for React with hooks rules
 - Types defined centrally in `src/pages/dashboard/types.ts`
+- Entry point: `src/index.jsx` wraps App with MantineProvider, BrowserRouter, and UserContextProvider
 
 ## Extending the System
 

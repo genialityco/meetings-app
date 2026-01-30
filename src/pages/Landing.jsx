@@ -23,7 +23,10 @@ import {
   Tabs,
   Badge,
   Stepper,
+  MantineProvider,
+  createTheme,
 } from "@mantine/core";
+import { generateColors } from "@mantine/colors-generator";
 import { RichTextEditor, Link } from "@mantine/tiptap";
 import { useEditor } from "@tiptap/react";
 import Highlight from "@tiptap/extension-highlight";
@@ -238,6 +241,11 @@ const Landing = () => {
 
   const getValueForField = useCallback(
     (fieldName) => {
+      // tu código original usa startsWith("contacto") (sin punto),
+      // pero el resto del componente usa "contacto." → dejamos soportados ambos
+      if (fieldName.startsWith("contacto.")) {
+        return formValues.contacto?.[fieldName.split(".")[1]] || "";
+      }
       if (fieldName.startsWith("contacto")) {
         return formValues.contacto?.[fieldName.split(".")[1]] || "";
       }
@@ -345,7 +353,14 @@ const Landing = () => {
       setFormErrors((prev) => ({ ...prev, ...errors }));
       return Object.keys(errors).length === 0;
     },
-    [fieldsByName, getValueForField, isFieldVisible, steps, activeStep, formValues],
+    [
+      fieldsByName,
+      getValueForField,
+      isFieldVisible,
+      steps,
+      activeStep,
+      formValues,
+    ],
   );
 
   // Actualizar el editor cuando formValues.descripcion cambia
@@ -368,8 +383,6 @@ const Landing = () => {
           const eventData = eventDoc.data();
           setEvent(eventData);
           setRegistrationEnabled(eventData.config?.registrationEnabled ?? true);
-
-          // reset stepper cuando cambia evento/config
           setActiveStep(0);
         }
       },
@@ -440,10 +453,14 @@ const Landing = () => {
       if (snap.exists()) {
         const data = snap.data();
         setFormValues((prev) => {
-          const updated = { ...prev, company_nit: nitNorm, companyId: companyRef.id };
-          // Autocompletar todos los campos del paso empresa desde el doc
+          const updated = {
+            ...prev,
+            company_nit: nitNorm,
+            companyId: companyRef.id,
+          };
+          // Autocompletar campos del paso empresa desde el doc
           companyStepFields.forEach((fieldName) => {
-            if (fieldName === "company_nit") return; // ya seteado
+            if (fieldName === "company_nit") return;
             if (data[fieldName] !== undefined && data[fieldName] !== null) {
               updated[fieldName] = data[fieldName];
             }
@@ -454,12 +471,11 @@ const Landing = () => {
           }
           return updated;
         });
-        // Mostrar logo existente si la empresa ya tiene uno
+
         if (data.logoUrl) {
           setCompanyLogoPreview(data.logoUrl);
         }
       } else {
-        // no existe: dejar nit normalizado y limpiar companyId
         setFormValues((prev) => ({
           ...prev,
           company_nit: nitNorm,
@@ -521,9 +537,7 @@ const Landing = () => {
 
       let dataToUpdate = {
         ...formValues,
-        correo: String(formValues["correo"] || "")
-          .toLowerCase()
-          .trim(),
+        correo: String(formValues["correo"] || "").toLowerCase().trim(),
         eventId,
         updatedAt: new Date().toISOString(),
       };
@@ -566,8 +580,6 @@ const Landing = () => {
           setPhotoUploadError(
             "No se pudo subir la foto. Intenta de nuevo o continúa sin foto.",
           );
-          // Puedes decidir: o bloqueas el submit con return; o permites seguir sin foto.
-          // Yo recomiendo permitir seguir sin foto:
           delete dataToUpdate._photoFile;
         }
       }
@@ -583,7 +595,7 @@ const Landing = () => {
         // Recopilar valores de los campos del paso empresa
         const companyFieldData = {};
         companyStepFields.forEach((fieldName) => {
-          if (fieldName === "company_nit") return; // se guarda como nitNorm
+          if (fieldName === "company_nit") return;
           const val = formValues[fieldName];
           if (val !== undefined && val !== null) {
             companyFieldData[fieldName] = val;
@@ -602,17 +614,26 @@ const Landing = () => {
             updatedAt: serverTimestamp(),
           });
         } else {
-          await setDoc(companyRef, {
-            ...companyFieldData,
-            updatedAt: serverTimestamp(),
-          }, { merge: true });
+          await setDoc(
+            companyRef,
+            { ...companyFieldData, updatedAt: serverTimestamp() },
+            { merge: true },
+          );
         }
 
         // Subir logo de empresa si se seleccionó uno
         if (companyLogoFile && eventId && nitNorm) {
           try {
-            const logoUrl = await uploadCompanyLogo(eventId, nitNorm, companyLogoFile);
-            await setDoc(companyRef, { logoUrl, updatedAt: serverTimestamp() }, { merge: true });
+            const logoUrl = await uploadCompanyLogo(
+              eventId,
+              nitNorm,
+              companyLogoFile,
+            );
+            await setDoc(
+              companyRef,
+              { logoUrl, updatedAt: serverTimestamp() },
+              { merge: true },
+            );
           } catch (e) {
             console.error("Error subiendo logo de empresa:", e);
           }
@@ -633,7 +654,16 @@ const Landing = () => {
     } finally {
       setSaving(false);
     }
-  }, [currentUser, formValues, navigate, updateUser, eventId, validateForm]);
+  }, [
+    currentUser,
+    formValues,
+    navigate,
+    updateUser,
+    eventId,
+    validateForm,
+    companyStepFields,
+    companyLogoFile,
+  ]);
 
   const handleGoToDashboard = useCallback(() => {
     navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
@@ -654,9 +684,8 @@ const Landing = () => {
         // Photo
         if (field.name === "photoURL" || field.type === "photo") {
           return (
-            <>
+            <Box key={field.name}>
               <FileInput
-                key={field.name}
                 label={field.label || "Foto de perfil"}
                 placeholder="Selecciona o toma una foto"
                 accept="image/png,image/jpeg"
@@ -668,7 +697,7 @@ const Landing = () => {
 
                   if (file) {
                     setProfilePicPreview(URL.createObjectURL(file));
-                    setPhotoUploadStatus("ready"); // archivo listo
+                    setPhotoUploadStatus("ready");
                   } else {
                     setProfilePicPreview(null);
                     setPhotoUploadStatus("idle");
@@ -677,6 +706,7 @@ const Landing = () => {
                   setFormErrors((prev) => ({ ...prev, [field.name]: null }));
                 }}
                 error={fieldError}
+                radius="md"
               />
 
               {profilePicPreview ? (
@@ -685,7 +715,7 @@ const Landing = () => {
                   alt="Vista previa"
                   width={120}
                   height={120}
-                  style={{ borderRadius: "8px", marginTop: "8px" }}
+                  style={{ borderRadius: "10px", marginTop: "10px" }}
                 />
               ) : null}
 
@@ -701,24 +731,22 @@ const Landing = () => {
                     "No se pudo subir la imagen ❌"}
                 </Text>
 
-                {photoUploadStatus === "uploading" ? (
-                  <Loader size="xs" />
-                ) : null}
+                {photoUploadStatus === "uploading" ? <Loader size="xs" /> : null}
               </Group>
 
               {photoUploadError ? (
-                <Alert color="red" variant="light" mt="xs">
+                <Alert color="red" variant="light" mt="xs" radius="md">
                   {photoUploadError}
                 </Alert>
               ) : null}
-            </>
+            </Box>
           );
         }
 
         // Richtext
         if (field.type === "richtext") {
           return (
-            <div key={field.name}>
+            <Box key={field.name}>
               <Title order={6}>{field.label}</Title>
               <RichTextEditor editor={editor}>
                 <RichTextEditor.Content />
@@ -728,7 +756,7 @@ const Landing = () => {
                   {fieldError}
                 </Text>
               )}
-            </div>
+            </Box>
           );
         }
 
@@ -747,9 +775,9 @@ const Landing = () => {
                 setFormErrors((prev) => ({ ...prev, [field.name]: error }));
               }}
               required={field.required}
-              mb="sm"
               searchable
               error={fieldError}
+              radius="md"
             />
           );
         }
@@ -761,10 +789,13 @@ const Landing = () => {
             ? [...baseOptions, { value: "__otro__", label: "Otro, ¿Cuál?" }]
             : baseOptions;
           const msValue = getValueForField(field.name) || [];
-          const hasOtro = field.includeOtro && Array.isArray(msValue) && msValue.includes("__otro__");
+          const hasOtro =
+            field.includeOtro &&
+            Array.isArray(msValue) &&
+            msValue.includes("__otro__");
 
           return (
-            <div key={field.name}>
+            <Box key={field.name}>
               <MultiSelect
                 label={field.label}
                 placeholder="Selecciona una o más opciones"
@@ -772,17 +803,20 @@ const Landing = () => {
                 value={msValue}
                 onChange={(value) => {
                   handleDynamicChange(field.name, value);
-                  const error = validateField(field, value?.length ? value : "");
+                  const error = validateField(
+                    field,
+                    value?.length ? value : "",
+                  );
                   setFormErrors((prev) => ({ ...prev, [field.name]: error }));
                   if (!value.includes("__otro__")) {
                     handleDynamicChange(field.name + "_otro", "");
                   }
                 }}
                 required={field.required}
-                mb="sm"
                 searchable
                 clearable
                 error={fieldError}
+                radius="md"
               />
               {hasOtro && (
                 <TextInput
@@ -790,13 +824,16 @@ const Landing = () => {
                   placeholder="Escribe tu respuesta"
                   value={getValueForField(field.name + "_otro") || ""}
                   onChange={(e) => {
-                    handleDynamicChange(field.name + "_otro", e.target.value);
+                    handleDynamicChange(
+                      field.name + "_otro",
+                      e.currentTarget.value,
+                    );
                   }}
                   required
-                  mb="sm"
+                  radius="md"
                 />
               )}
-            </div>
+            </Box>
           );
         }
 
@@ -816,7 +853,6 @@ const Landing = () => {
                 setFormErrors((prev) => ({ ...prev, [field.name]: error }));
               }}
               required={field.required}
-              mb="sm"
               error={fieldError}
             />
           );
@@ -840,6 +876,7 @@ const Landing = () => {
               rightSection={companyLookupLoading ? <Loader size="xs" /> : null}
               required={field.required}
               error={fieldError}
+              radius="md"
             />
           );
         }
@@ -847,7 +884,7 @@ const Landing = () => {
         // Special: company_razonSocial — append logo upload after it
         if (field.name === "company_razonSocial") {
           return (
-            <div key={field.name}>
+            <Box key={field.name}>
               <TextInput
                 label={field.label}
                 placeholder={field.label}
@@ -859,7 +896,9 @@ const Landing = () => {
                 }}
                 required={field.required}
                 error={fieldError}
+                radius="md"
               />
+
               <FileInput
                 label="Logo de empresa (opcional)"
                 placeholder="Subir logo"
@@ -869,15 +908,27 @@ const Landing = () => {
                   setCompanyLogoFile(file);
                   setCompanyLogoPreview(file ? URL.createObjectURL(file) : null);
                 }}
+                radius="md"
+                mt="xs"
               />
+
               {companyLogoPreview && (
                 <img
                   src={companyLogoPreview}
                   alt="Logo preview"
-                  style={{ width: 100, height: 100, objectFit: "contain", borderRadius: 8, marginTop: 4 }}
+                  style={{
+                    width: 110,
+                    height: 110,
+                    objectFit: "contain",
+                    borderRadius: 12,
+                    marginTop: 8,
+                    border: "1px solid rgba(0,0,0,0.08)",
+                    background: "rgba(255,255,255,0.8)",
+                    padding: 8,
+                  }}
                 />
               )}
-            </div>
+            </Box>
           );
         }
 
@@ -895,6 +946,7 @@ const Landing = () => {
             }}
             required={field.required}
             error={fieldError}
+            radius="md"
           />
         );
       });
@@ -902,7 +954,6 @@ const Landing = () => {
     [
       fieldsByName,
       formErrors,
-      formValues,
       getValueForField,
       handleDynamicChange,
       editor,
@@ -911,6 +962,9 @@ const Landing = () => {
       companyLogoFile,
       companyLogoPreview,
       isFieldVisible,
+      profilePicPreview,
+      photoUploadStatus,
+      photoUploadError,
     ],
   );
 
@@ -927,7 +981,7 @@ const Landing = () => {
     const avatarSrc = data?.photoURL || profilePicPreview || null;
 
     return (
-      <Paper withBorder shadow="sm" radius="md" p="md">
+      <Paper withBorder shadow="sm" radius="lg" p="md">
         <Group align="flex-start" wrap="nowrap">
           <Avatar src={avatarSrc} size={64} radius="xl">
             {String(data?.name || data?.nombres || "U")
@@ -943,9 +997,7 @@ const Landing = () => {
             </Group>
             <InfoLine
               label="Empresa"
-              value={
-                data?.company_razonSocial || data?.empresa || data?.company
-              }
+              value={data?.company_razonSocial || data?.empresa || data?.company}
             />
             <InfoLine
               label="Teléfono"
@@ -960,7 +1012,9 @@ const Landing = () => {
         </Group>
 
         <Group mt="md" grow={isMobile}>
-          <Button onClick={handleGoToDashboard}>Entrar al directorio</Button>
+          <Button onClick={handleGoToDashboard} radius="md">
+            Entrar al directorio
+          </Button>
         </Group>
       </Paper>
     );
@@ -973,16 +1027,56 @@ const Landing = () => {
     handleGoToDashboard,
   ]);
 
+  const eventTheme = useMemo(() => {
+    const hex = event.config?.primaryColor;
+    if (!hex) return createTheme({});
+    return createTheme({
+      colors: { eventPrimary: generateColors(hex) },
+      primaryColor: "eventPrimary",
+    });
+  }, [event.config?.primaryColor]);
+
+  // 🎨 estilos del layout (como la imagen)
+  const bgStyle = useMemo(() => {
+    const img =
+      event.backgroundImage && String(event.backgroundImage).startsWith("http")
+        ? !isMobile
+          ? event.backgroundImage
+          : event.backgroundMobileImage || event.backgroundImage
+        : null;
+
+    return {
+      minHeight: "100vh",
+      width: "100%",
+      backgroundImage: img
+        ? `url('${img}')`
+        : `linear-gradient(180deg, rgba(15,71,32,1) 0%, rgba(7,36,18,1) 100%)`,
+      backgroundPosition: "center center",
+      backgroundSize: "cover",
+      backgroundRepeat: "no-repeat",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: isMobile ? 18 : 28,
+    };
+  }, [event.backgroundImage, event.backgroundMobileImage, isMobile]);
+
+  const headerBg = useMemo(
+    () => ({
+      padding: isMobile ? 14 : 18,
+      background:
+        "radial-gradient(900px 280px at 18% 0%, rgba(34,197,94,0.25), transparent 60%), radial-gradient(900px 280px at 82% 0%, rgba(16,185,129,0.18), transparent 60%), rgba(16, 185, 129, 0.10)",
+      borderBottom: "1px solid rgba(0,0,0,0.06)",
+    }),
+    [isMobile],
+  );
+
   if (userLoading) return <Loader />;
 
   if (!eventId) {
     return (
       <Container>
-        <Paper
-          shadow="md"
-          p="xl"
-          style={{ maxWidth: 520, margin: "40px auto" }}
-        >
+        <Paper shadow="md" p="xl" style={{ maxWidth: 520, margin: "40px auto" }}>
           <Text ta="center">
             Esta es una plataforma de networking desarrollada por Geniality SAS.
             <br />
@@ -1001,315 +1095,431 @@ const Landing = () => {
   }
 
   return (
-    <Box
-      style={{
-        minHeight: "100vh",
-        width: "100vw",
-        backgroundImage:
-          event.backgroundImage && event.backgroundImage.startsWith("http")
-            ? !isMobile
-              ? `url('${event.backgroundImage}')`
-              : `url('${event.backgroundMobileImage}')`
-            : `url('/FONDO-DESKTOP.png')`,
-        backgroundPosition: "center center",
-        backgroundSize: "cover",
-        backgroundRepeat: "no-repeat",
-      }}
-    >
-      <Container fluid style={{ padding: 0, minHeight: "100vh" }}>
-        <Paper
-          shadow="xl"
-          withBorder
-          radius="lg"
-          p={isMobile ? "lg" : "xl"}
-          style={{
-            maxWidth: isMobile ? "100%" : 720,
-            margin: "40px auto",
-            background: "rgba(255,255,255,0.95)",
-            backdropFilter: "blur(6px)",
-          }}
-        >
-          <Flex justify="center" align="center" w={"100%"}>
-            <Image
-              src={event.eventImage}
-              alt="Networking Event"
-              w={"100vh"}
-              fit="contain"
-              style={{
-                boxShadow: "10px 30px 40px rgba(0, 0, 0, 0.1)",
-                borderRadius: 8,
-                maxWidth: "100%",
-              }}
-            />
-          </Flex>
-
-          <Title order={isMobile ? 4 : 3} ta="center" my="md">
-            {event.eventName || "Evento de Networking"}
-          </Title>
-
-          <Group align="flex-start" justify="space-between">
-            <div style={{ flex: 1 }}>
-              <Text ta="justify">
-                {event?.config?.eventDate && (
-                  <>
-                    <Text span fw={700}>
-                      Fecha del evento:
-                    </Text>{" "}
-                    {formatDate(event?.config?.eventDate)}
-                  </>
-                )}
-              </Text>
-
-              <Text ta="justify">
-                {event?.config?.eventStartTime && (
-                  <>
-                    <Text span fw={700}>
-                      Hora de inicio:
-                    </Text>{" "}
-                    {formatTime(event?.config?.eventStartTime)}
-                  </>
-                )}
-              </Text>
-
-              <Text ta="justify">
-                {event?.config?.eventEndTime && (
-                  <>
-                    <Text span fw={700}>
-                      Hora de finalización:
-                    </Text>{" "}
-                    {formatTime(event?.config?.eventEndTime)}
-                  </>
-                )}
-              </Text>
-
-              <Text ta="justify">
-                {event?.config?.eventLocation && (
-                  <>
-                    <Text span fw={700}>
-                      Lugar del evento:
-                    </Text>{" "}
-                    {event.config.eventLocation}
-                  </>
-                )}
-              </Text>
-            </div>
-
-            {event?.landingQR && (
-              <Image
-                src={event.landingQR}
-                alt="Código QR del evento"
-                w={120}
-                fit="contain"
-              />
-            )}
-          </Group>
-
-          <Text ta="justify" mb="lg" mt="lg">
-            <strong>Plataforma de Networking y Reuniones de Negocio.</strong>{" "}
-            Conecta con otras empresas y permite que te encuentren para agendar
-            reuniones durante el evento. Ingresa con el correo registrado de la
-            empresa o regístrate si es tu primera vez.
-          </Text>
-
-          <Tabs
-            value={activeTab}
-            onChange={setActiveTab}
-            variant="pills"
-            radius="md"
-            keepMounted={false}
+    <MantineProvider theme={eventTheme} inherit>
+      <Box style={bgStyle}>
+        <Container size={isMobile ? "xs" : "sm"} px={0} w="100%">
+          <Paper
+            radius="xl"
+            shadow="xl"
+            withBorder
+            style={{
+              overflow: "hidden",
+              background: "rgba(255,255,255,0.92)",
+              backdropFilter: "blur(10px)",
+              borderColor: "rgba(255,255,255,0.55)",
+            }}
           >
-            <Tabs.List grow>
-              <Tabs.Tab value="login">Ingresar</Tabs.Tab>
-              <Tabs.Tab value="register" disabled={!registrationEnabled}>
-                {currentUser?.data ? "Actualizar datos" : "Registrarse"}
-              </Tabs.Tab>
-            </Tabs.List>
+            {/* Header banner (como la imagen) */}
+            <Box style={headerBg}>
+              <Paper
+                radius="xl"
+                withBorder
+                style={{
+                  overflow: "hidden",
+                  background: "rgba(255,255,255,0.72)",
+                  borderColor: "rgba(255,255,255,0.7)",
+                }}
+              >
+                <Flex
+                  align="center"
+                  justify="center"
+                  style={{
+                    padding: isMobile ? 10 : 12,
+                  }}
+                >
+                  <img
+                    src={event.eventImage}
+                    alt="Encuentro"
+                    style={{
+                      width: "100%",
+                      maxHeight: isMobile ? 130 : 150,
+                      borderRadius: 14,
+                    }}
+                  />
+                </Flex>
+              </Paper>
+            </Box>
 
-            {/* LOGIN */}
-            <Tabs.Panel value="login" pt="md">
-              <Stack>
-                <TextInput
-                  label="Correo electrónico"
-                  placeholder="tu@empresa.com"
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-                  required
-                />
-                {loginError && (
-                  <Alert color="red" variant="light">
-                    {loginError}
-                  </Alert>
-                )}
+            {/* Body */}
+            <Box px={isMobile ? 18 : 22} py={isMobile ? 18 : 20}>
+              <Stack gap="md">
+                <Stack gap={4} ta="center">
+                  <Title order={2} style={{ lineHeight: 1.05 }}>
+                    {event.eventName || "Encuentro de afiliados"}
+                  </Title>
 
-                <Group justify="flex-end">
-                  <Button loading={loginLoading} onClick={handleLogin}>
-                    Ingresar
-                  </Button>
-                </Group>
+                  {event?.config?.eventDate ? (
+                    <Text c="dimmed" size="sm">
+                      <Text span fw={700} c="dark">
+                        Fecha del evento:
+                      </Text>{" "}
+                      {formatDate(event?.config?.eventDate)}
+                    </Text>
+                  ) : null}
 
-                {showProfileSummary && ProfileSummary}
-              </Stack>
-            </Tabs.Panel>
+                  <Group justify="center" gap="xs">
+                    {event?.config?.eventStartTime ? (
+                      <Badge variant="light" radius="md">
+                        Inicio: {formatTime(event?.config?.eventStartTime)}
+                      </Badge>
+                    ) : null}
+                    {event?.config?.eventEndTime ? (
+                      <Badge variant="light" radius="md">
+                        Fin: {formatTime(event?.config?.eventEndTime)}
+                      </Badge>
+                    ) : null}
+                  </Group>
 
-            {/* REGISTER */}
-            <Tabs.Panel value="register" pt="md">
-              {!registrationEnabled && (
-                <Text ta="center" c="gray" mt="md">
-                  Los nuevos registros están inhabilitados para este evento.
-                </Text>
-              )}
-
-              {registrationEnabled && (
-                <Stack>
-                  <Text ta="justify" my="sm" size="lg">
-                    {currentUser?.data
-                      ? "Actualiza tu información antes de continuar."
-                      : "Completa el formulario para crear tu registro."}
-                  </Text>
-
-                  {/* ✅ STEPper si está configurado */}
-                  {steps ? (
-                    <>
-                      <Stepper
-                        active={activeStep}
-                        onStepClick={setActiveStep}
-                        breakpoint="sm"
-                        mb="md"
-                      >
-                        {steps.map((s) => (
-                          <Stepper.Step key={s.id} label={s.title} />
-                        ))}
-                      </Stepper>
-
-                      {/* Campos del step actual */}
-                      {renderFieldsForNames(steps[activeStep]?.fields || [])}
-
-                      {/* Consentimiento solo en el último paso */}
-                      {activeStep === steps.length - 1 && (
-                        <>
-                          <Checkbox
-                            label={
-                              event.config?.tratamientoDatosText ||
-                              "Al utilizar este aplicativo, autorizo a GEN.IALITY SAS identificada con NIT 901555490, ..."
-                            }
-                            checked={!!formValues[CONSENTIMIENTO_FIELD_NAME]}
-                            onChange={(e) =>
-                              handleDynamicChange(
-                                CONSENTIMIENTO_FIELD_NAME,
-                                e.currentTarget.checked,
-                              )
-                            }
-                            required
-                            mt="md"
-                          />
-                          {formErrors[CONSENTIMIENTO_FIELD_NAME] && (
-                            <Text c="red" size="sm">
-                              {formErrors[CONSENTIMIENTO_FIELD_NAME]}
-                            </Text>
-                          )}
-                        </>
-                      )}
-
-                      {/* Botonera stepper */}
-                      <Group justify="space-between" grow={isMobile} mt="md">
-                        <Button
-                          variant="default"
-                          onClick={() =>
-                            setActiveStep((s) => Math.max(0, s - 1))
-                          }
-                          disabled={activeStep === 0}
-                        >
-                          Atrás
-                        </Button>
-
-                        {activeStep < steps.length - 1 ? (
-                          <Button
-                            onClick={() => {
-                              const ok = validateStep(
-                                steps[activeStep]?.fields || [],
-                              );
-                              if (!ok) return;
-                              setActiveStep((s) =>
-                                Math.min(steps.length - 1, s + 1),
-                              );
-                            }}
-                          >
-                            Siguiente
-                          </Button>
-                        ) : (
-                          <Button
-                            onClick={handleSubmit}
-                            loading={
-                              saving || photoUploadStatus === "uploading"
-                            }
-                            disabled={
-                              saving || photoUploadStatus === "uploading"
-                            }
-                          >
-                            {currentUser?.data
-                              ? "Guardar cambios"
-                              : "Registrarme"}
-                          </Button>
-                        )}
-                      </Group>
-                    </>
-                  ) : (
-                    <>
-                      {/* fallback: formulario plano como antes */}
-                      {renderDynamicFormFields()}
-
-                      <Checkbox
-                        label={
-                          event.config?.tratamientoDatosText ||
-                          "Al utilizar este aplicativo, autorizo a GEN.IALITY SAS identificada con NIT 901555490, ..."
-                        }
-                        checked={!!formValues[CONSENTIMIENTO_FIELD_NAME]}
-                        onChange={(e) =>
-                          handleDynamicChange(
-                            CONSENTIMIENTO_FIELD_NAME,
-                            e.currentTarget.checked,
-                          )
-                        }
-                        required
-                        mt="md"
-                      />
-                      {formErrors[CONSENTIMIENTO_FIELD_NAME] && (
-                        <Text c="red" size="sm">
-                          {formErrors[CONSENTIMIENTO_FIELD_NAME]}
-                        </Text>
-                      )}
-
-                      <Group justify="space-between" grow={isMobile}>
-                        {currentUser?.data && (
-                          <Button
-                            variant="default"
-                            onClick={handleGoToDashboard}
-                          >
-                            Entrar al directorio
-                          </Button>
-                        )}
-                        <Button onClick={handleSubmit} loading={saving}>
-                          {currentUser?.data
-                            ? "Guardar cambios"
-                            : "Registrarme"}
-                        </Button>
-                      </Group>
-                    </>
-                  )}
+                  {event?.config?.eventLocation ? (
+                    <Text size="sm" c="dimmed">
+                      <Text span fw={700} c="dark">
+                        Lugar:
+                      </Text>{" "}
+                      {event.config.eventLocation}
+                    </Text>
+                  ) : null}
                 </Stack>
-              )}
-            </Tabs.Panel>
-          </Tabs>
 
-          <Divider my="lg" />
-          <Text ta="center" c="dimmed" fz="sm">
-            ¿Problemas para ingresar? Verifica que tu correo esté registrado por
-            la organización del evento.
+                {event?.landingQR ? (
+                  <Paper
+                    radius="lg"
+                    withBorder
+                    p="sm"
+                    style={{
+                      maxWidth: 220,
+                      margin: "0 auto",
+                      background: "rgba(255,255,255,0.8)",
+                    }}
+                  >
+                    <Image
+                      src={event.landingQR}
+                      alt="QR del evento"
+                      fit="contain"
+                      style={{ width: "100%" }}
+                    />
+                  </Paper>
+                ) : null}
+
+                <Text
+                  ta="center"
+                  size={isMobile ? "sm" : "md"}
+                  style={{ maxWidth: 560, margin: "0 auto" }}
+                >
+                  <strong>Plataforma de Networking y Reuniones de Negocio.</strong>{" "}
+                  Conecta con otras empresas y permite que te encuentren para
+                  agendar reuniones durante el evento. Ingresa con el correo
+                  registrado de la empresa o regístrate si es tu primera vez.
+                </Text>
+
+                {/* Tabs tipo botones grandes */}
+                <Tabs
+                  value={activeTab}
+                  onChange={setActiveTab}
+                  keepMounted={false}
+                  variant="unstyled"
+                >
+                  <Tabs.List grow style={{ gap: 12 }}>
+                    <Tabs.Tab
+                      value="login"
+                      style={{
+                        borderRadius: 14,
+                        height: 44,
+                        fontWeight: 800,
+                        letterSpacing: 0.2,
+                        border: "1px solid rgba(0,0,0,0.12)",
+                        background:
+                          activeTab === "login"
+                            ? "linear-gradient(180deg, rgba(16,185,129,1), rgba(5,150,105,1))"
+                            : "rgba(255,255,255,0.85)",
+                        color:
+                          activeTab === "login"
+                            ? "white"
+                            : "rgba(0,0,0,0.78)",
+                        boxShadow:
+                          activeTab === "login"
+                            ? "0 12px 22px rgba(5,150,105,0.25)"
+                            : "none",
+                      }}
+                    >
+                      INGRESAR
+                    </Tabs.Tab>
+
+                    <Tabs.Tab
+                      value="register"
+                      disabled={!registrationEnabled}
+                      style={{
+                        borderRadius: 14,
+                        height: 44,
+                        fontWeight: 800,
+                        letterSpacing: 0.2,
+                        border: "1px solid rgba(0,0,0,0.12)",
+                        background:
+                          activeTab === "register"
+                            ? "linear-gradient(180deg, rgba(16,185,129,1), rgba(5,150,105,1))"
+                            : "rgba(255,255,255,0.85)",
+                        color:
+                          activeTab === "register"
+                            ? "white"
+                            : "rgba(0,0,0,0.78)",
+                        boxShadow:
+                          activeTab === "register"
+                            ? "0 12px 22px rgba(5,150,105,0.25)"
+                            : "none",
+                        opacity: !registrationEnabled ? 0.5 : 1,
+                      }}
+                    >
+                      {currentUser?.data ? "ACTUALIZAR" : "REGISTRARSE"}
+                    </Tabs.Tab>
+                  </Tabs.List>
+
+                  {/* LOGIN */}
+                  <Tabs.Panel value="login" pt="md">
+                    <Stack gap="sm">
+                      <TextInput
+                        label="Correo electrónico"
+                        placeholder="tu@empresa.com"
+                        value={loginEmail}
+                        onChange={(e) => setLoginEmail(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                        required
+                        radius="md"
+                        size="md"
+                      />
+
+                      {loginError ? (
+                        <Alert color="red" variant="light" radius="md">
+                          {loginError}
+                        </Alert>
+                      ) : null}
+
+                      <Button
+                        radius="md"
+                        size="md"
+                        loading={loginLoading}
+                        onClick={handleLogin}
+                        style={{ height: 44, fontWeight: 800 }}
+                      >
+                        INGRESAR
+                      </Button>
+
+                      {showProfileSummary && ProfileSummary}
+                    </Stack>
+                  </Tabs.Panel>
+
+                  {/* REGISTER */}
+                  <Tabs.Panel value="register" pt="md">
+                    {!registrationEnabled ? (
+                      <Text ta="center" c="dimmed" mt="md">
+                        Los nuevos registros están inhabilitados para este
+                        evento.
+                      </Text>
+                    ) : (
+                      <Stack>
+                        <Text ta="center" c="dimmed">
+                          {currentUser?.data
+                            ? "Actualiza tu información antes de continuar."
+                            : "Completa el formulario para crear tu registro."}
+                        </Text>
+
+                        {steps ? (
+                          <>
+                            <Paper
+                              radius="lg"
+                              withBorder
+                              p="md"
+                              style={{ background: "rgba(255,255,255,0.75)" }}
+                            >
+                              <Stepper
+                                active={activeStep}
+                                onStepClick={setActiveStep}
+                                breakpoint="sm"
+                              >
+                                {steps.map((s) => (
+                                  <Stepper.Step key={s.id} label={s.title} />
+                                ))}
+                              </Stepper>
+                            </Paper>
+
+                            <Paper
+                              radius="lg"
+                              withBorder
+                              p="md"
+                              style={{ background: "rgba(255,255,255,0.75)" }}
+                            >
+                              <Stack>
+                                {renderFieldsForNames(
+                                  steps[activeStep]?.fields || [],
+                                )}
+
+                                {activeStep === steps.length - 1 && (
+                                  <>
+                                    <Checkbox
+                                      label={
+                                        event.config?.tratamientoDatosText ||
+                                        "Al utilizar este aplicativo, autorizo a GEN.IALITY SAS identificada con NIT 901555490, ..."
+                                      }
+                                      checked={
+                                        !!formValues[CONSENTIMIENTO_FIELD_NAME]
+                                      }
+                                      onChange={(e) =>
+                                        handleDynamicChange(
+                                          CONSENTIMIENTO_FIELD_NAME,
+                                          e.currentTarget.checked,
+                                        )
+                                      }
+                                      required
+                                      mt="sm"
+                                    />
+                                    {formErrors[CONSENTIMIENTO_FIELD_NAME] ? (
+                                      <Text c="red" size="sm">
+                                        {formErrors[CONSENTIMIENTO_FIELD_NAME]}
+                                      </Text>
+                                    ) : null}
+                                  </>
+                                )}
+                              </Stack>
+                            </Paper>
+
+                            <Group
+                              justify="space-between"
+                              grow={isMobile}
+                              mt="sm"
+                            >
+                              <Button
+                                variant="default"
+                                radius="md"
+                                size="md"
+                                onClick={() =>
+                                  setActiveStep((s) => Math.max(0, s - 1))
+                                }
+                                disabled={activeStep === 0}
+                              >
+                                Atrás
+                              </Button>
+
+                              {activeStep < steps.length - 1 ? (
+                                <Button
+                                  radius="md"
+                                  size="md"
+                                  onClick={() => {
+                                    const ok = validateStep(
+                                      steps[activeStep]?.fields || [],
+                                    );
+                                    if (!ok) return;
+                                    setActiveStep((s) =>
+                                      Math.min(steps.length - 1, s + 1),
+                                    );
+                                  }}
+                                >
+                                  Siguiente
+                                </Button>
+                              ) : (
+                                <Button
+                                  radius="md"
+                                  size="md"
+                                  onClick={handleSubmit}
+                                  loading={
+                                    saving || photoUploadStatus === "uploading"
+                                  }
+                                  disabled={
+                                    saving || photoUploadStatus === "uploading"
+                                  }
+                                  style={{ fontWeight: 800, height: 44 }}
+                                >
+                                  {currentUser?.data
+                                    ? "Guardar cambios"
+                                    : "Registrarme"}
+                                </Button>
+                              )}
+                            </Group>
+                          </>
+                        ) : (
+                          <>
+                            <Paper
+                              radius="lg"
+                              withBorder
+                              p="md"
+                              style={{ background: "rgba(255,255,255,0.75)" }}
+                            >
+                              <Stack>
+                                {renderDynamicFormFields()}
+
+                                <Checkbox
+                                  label={
+                                    event.config?.tratamientoDatosText ||
+                                    "Al utilizar este aplicativo, autorizo a GEN.IALITY SAS identificada con NIT 901555490, ..."
+                                  }
+                                  checked={
+                                    !!formValues[CONSENTIMIENTO_FIELD_NAME]
+                                  }
+                                  onChange={(e) =>
+                                    handleDynamicChange(
+                                      CONSENTIMIENTO_FIELD_NAME,
+                                      e.currentTarget.checked,
+                                    )
+                                  }
+                                  required
+                                  mt="sm"
+                                />
+                                {formErrors[CONSENTIMIENTO_FIELD_NAME] ? (
+                                  <Text c="red" size="sm">
+                                    {formErrors[CONSENTIMIENTO_FIELD_NAME]}
+                                  </Text>
+                                ) : null}
+                              </Stack>
+                            </Paper>
+
+                            <Group
+                              justify="space-between"
+                              grow={isMobile}
+                              mt="sm"
+                            >
+                              {currentUser?.data ? (
+                                <Button
+                                  variant="default"
+                                  radius="md"
+                                  size="md"
+                                  onClick={handleGoToDashboard}
+                                >
+                                  Entrar al directorio
+                                </Button>
+                              ) : null}
+
+                              <Button
+                                radius="md"
+                                size="md"
+                                onClick={handleSubmit}
+                                loading={saving}
+                                style={{ fontWeight: 800, height: 44 }}
+                              >
+                                {currentUser?.data
+                                  ? "Guardar cambios"
+                                  : "Registrarme"}
+                              </Button>
+                            </Group>
+                          </>
+                        )}
+                      </Stack>
+                    )}
+                  </Tabs.Panel>
+                </Tabs>
+
+                <Divider my={6} />
+
+                <Text ta="center" c="dimmed" fz="sm">
+                  ¿Problemas para ingresar? Verifica que tu correo esté
+                  registrado por la organización del evento.
+                </Text>
+              </Stack>
+            </Box>
+          </Paper>
+
+          <Text ta="center" mt="md" c="rgba(255,255,255,0.85)" size="sm">
+            Powered by Geniality
           </Text>
-        </Paper>
-      </Container>
-    </Box>
+        </Container>
+      </Box>
+    </MantineProvider>
   );
 };
 
