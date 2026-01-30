@@ -15,6 +15,8 @@ import {
   Modal,
   Checkbox,
   TextInput,
+  Radio,
+  Select,
 } from "@mantine/core";
 import {
   collection,
@@ -28,6 +30,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import * as XLSX from "xlsx";
+import ManualMeetingModal from "./ManualMeetingModal";
 
 const LLAMA_API = "http://localhost:8080/api/match";
 
@@ -45,6 +48,14 @@ const EventMatchPage = () => {
   const [useLocalLlama, setUseLocalLlama] = useState(false);
   const [searchEmail, setSearchEmail] = useState("");
   const [matchesWithSlots, setMatchesWithSlots] = useState([]);
+  const [assignmentMode, setAssignmentMode] = useState("auto"); // 'auto' | 'manual'
+  const [availableSlots, setAvailableSlots] = useState([]);
+  const [manualAssignments, setManualAssignments] = useState({}); // key -> slotId
+  const [slotPickerOpened, setSlotPickerOpened] = useState(false);
+  const [slotPickerKey, setSlotPickerKey] = useState(null);
+  const [slotPickerSelectedId, setSlotPickerSelectedId] = useState(null);
+  const [manualModalOpened, setManualModalOpened] = useState(false);
+  const [manualModalParticipants, setManualModalParticipants] = useState({ p1: null, p2: null });
 
   // 1. Cargar asistentes, agenda y config
   useEffect(() => {
@@ -233,35 +244,121 @@ const EventMatchPage = () => {
     XLSX.writeFile(workbook, fileName);
   };
   const assignTentativeSlots = (results) => {
-    const availableSlots = agenda
+    // Default behavior: simple sequential assignment
+    const slots = agenda
       .filter((slot) => slot.available)
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
-    let slotIndex = 0;
-    const resultsWithSlots = results.map((comprador) => ({
-      ...comprador,
-      matches: comprador.matches.map((match) => {
-        const tentativeSlot =
-          slotIndex < availableSlots.length
-            ? availableSlots[slotIndex]
-            : null;
-        slotIndex++;
-        return {
-          ...match,
-          tentativeSlot: tentativeSlot
+    // If manual mode, apply manualAssignments mapping
+    if (assignmentMode === "manual") {
+      const usedSlotIds = new Set();
+      const resultsWithSlots = results.map((comprador) => ({
+        ...comprador,
+        matches: comprador.matches.map((match, idx) => {
+          const key = `${comprador.compradorId}_${match.vendedorId}_${idx}`;
+          const slotId = manualAssignments[key];
+          const slot = slots.find((s) => s.id === slotId && !usedSlotIds.has(s.id));
+          if (slot) usedSlotIds.add(slot.id);
+          return {
+            ...match,
+            tentativeSlot: slot
+              ? {
+                  id: slot.id,
+                  startTime: slot.startTime,
+                  endTime: slot.endTime,
+                  tableNumber: slot.tableNumber,
+                }
+              : null,
+            slotAssigned: slot ? true : false,
+          };
+        }),
+      }));
+      return resultsWithSlots;
+    }
+
+    // AUTOMATIC MODE: assign by score and distribute equitably if slots < total matches
+    const flatMatches = [];
+    results.forEach((r, ri) => {
+      r.matches.forEach((m, mi) => {
+        flatMatches.push({ compradorId: r.compradorId, rIndex: ri, mIndex: mi, match: m });
+      });
+    });
+
+    // Sort by score desc
+    flatMatches.sort((a, b) => (b.match.score || 0) - (a.match.score || 0));
+
+    // If enough slots for all matches, assign top matches by score sequentially
+    if (slots.length >= flatMatches.length) {
+      let slotIdx = 0;
+      const resultsCopy = results.map((r) => ({ ...r, matches: [...r.matches] }));
+      for (let f of flatMatches) {
+        const slot = slots[slotIdx++];
+        resultsCopy[f.rIndex].matches[f.mIndex] = {
+          ...f.match,
+          tentativeSlot: slot
             ? {
-                id: tentativeSlot.id,
-                startTime: tentativeSlot.startTime,
-                endTime: tentativeSlot.endTime,
-                tableNumber: tentativeSlot.tableNumber,
+                id: slot.id,
+                startTime: slot.startTime,
+                endTime: slot.endTime,
+                tableNumber: slot.tableNumber,
               }
             : null,
-          slotAssigned: tentativeSlot ? true : false,
+          slotAssigned: !!slot,
         };
-      }),
-    }));
+      }
+      return resultsCopy;
+    }
 
-    return resultsWithSlots;
+    // Not enough slots: distribute equitably among compradores
+    const numBuyers = results.length || 1;
+    const maxPerUser = eventConfig?.maxMeetingsPerUser ?? 10;
+    const baseQuota = Math.floor(slots.length / numBuyers);
+    let remainder = slots.length % numBuyers;
+
+    // Determine order of buyers by their top match score
+    const buyersOrder = results
+      .map((r, idx) => ({ idx, maxScore: (r.matches[0]?.score || 0) }))
+      .sort((a, b) => b.maxScore - a.maxScore)
+      .map((b) => b.idx);
+
+    const buyerAllowed = {};
+    buyersOrder.forEach((buyerIdx) => {
+      buyerAllowed[buyerIdx] = Math.min(baseQuota + (remainder > 0 ? 1 : 0), maxPerUser);
+      if (remainder > 0) remainder--;
+    });
+
+    // Now assign slots to each buyer up to their allowed, taking their top matches
+    const resultsAssigned = results.map((r) => ({ ...r, matches: [...r.matches] }));
+    let slotPointer = 0;
+    for (let bi = 0; bi < results.length; bi++) {
+      const buyerIdx = bi; // iterate in original order
+      const allowed = buyerAllowed[buyerIdx] ?? baseQuota;
+      if (allowed <= 0) continue;
+      // sort buyer's matches by score desc
+      const sortedMatchIdxs = results[buyerIdx].matches
+        .map((m, i) => ({ i, score: m.score || 0 }))
+        .sort((a, b) => b.score - a.score)
+        .map((x) => x.i);
+
+      for (let mi = 0; mi < sortedMatchIdxs.length && slotPointer < slots.length && mi < allowed; mi++) {
+        const matchIdx = sortedMatchIdxs[mi];
+        const slot = slots[slotPointer++];
+        resultsAssigned[buyerIdx].matches[matchIdx] = {
+          ...resultsAssigned[buyerIdx].matches[matchIdx],
+          tentativeSlot: slot
+            ? {
+                id: slot.id,
+                startTime: slot.startTime,
+                endTime: slot.endTime,
+                tableNumber: slot.tableNumber,
+              }
+            : null,
+          slotAssigned: !!slot,
+        };
+      }
+    }
+
+    return resultsAssigned;
   };
   const calculateLocalMatch = (comprador, vendedor) => {
     // No crear match con la misma empresa (si el campo existe)
@@ -440,13 +537,20 @@ const EventMatchPage = () => {
       setError("No hay matches para agendar.");
       return;
     }
-    // Inicializar todas las selecciones
+    // Inicializar selecciones solo para matches que tienen slot asignado
     const allMatches = new Set();
     matchesMatrix.forEach((m) => {
       m.matches.forEach((match, idx) => {
-        allMatches.add(`${m.compradorId}_${match.vendedorId}_${idx}`);
+        if (match.slotAssigned || match.tentativeSlot) {
+          allMatches.add(`${m.compradorId}_${match.vendedorId}_${idx}`);
+        }
       });
     });
+
+    if (allMatches.size === 0) {
+      setError("No hay matches con slot asignado para previsualizar.");
+      return;
+    }
     setSelectedMatches(allMatches);
     setPreviewModalOpened(true);
   };
@@ -511,6 +615,7 @@ const EventMatchPage = () => {
           matchesToProcess.push({
             compradorId: m.compradorId,
             match,
+            idx,
           });
         }
       });
@@ -546,8 +651,20 @@ const EventMatchPage = () => {
         continue;
       }
 
-      // Usar el slot tentativo asignado
-      const slotDisponible = item.match.tentativeSlot;
+      // Preferir asignación manual si está activa
+      let slotDisponible = null;
+      if (assignmentMode === "manual") {
+        const key = `${cmp.id}_${vendedor.id}_${item.idx}`;
+        const slotId = manualAssignments[key];
+        if (slotId) {
+          slotDisponible = agenda.find((s) => s.id === slotId);
+        }
+      }
+
+      // Si no hay asignación manual, usar el slot tentativo
+      if (!slotDisponible) {
+        slotDisponible = item.match.tentativeSlot;
+      }
 
       if (!slotDisponible) {
         pendientes.push({
@@ -602,6 +719,8 @@ const EventMatchPage = () => {
   };
 
   return (
+    <>
+    
     <Container>
       <Group mb="md">
         <Button component={Link} to={`/admin/event/${eventId}`}>
@@ -630,6 +749,13 @@ const EventMatchPage = () => {
         </Text>
 
         <Group grow>
+          <Group align="center" spacing="sm">
+            <Text size="sm">Modo de asignación:</Text>
+            <Radio.Group value={assignmentMode} onChange={(val) => setAssignmentMode(val)}>
+              <Radio value="auto" label="Automático" />
+              <Radio value="manual" label="Manual" />
+            </Radio.Group>
+          </Group>
           <Button
             onClick={handleMatchAll}
             loading={loading}
@@ -802,7 +928,23 @@ const EventMatchPage = () => {
                                       </Badge>
                                     </Group>
                                   )}
-                                  {!match.slotAssigned && (
+                                      {assignmentMode === "manual" && (
+                                <div style={{ marginTop: 6 }}>
+                                 
+                                    <Button
+                                      size="xs"
+                                      onClick={() => {
+                                        // Open manual meeting modal, prefill participants
+                                        setManualModalParticipants({ p1: m.compradorId, p2: match.vendedorId });
+                                        setManualModalOpened(true);
+                                      }}
+                                    >
+                                      Buscar slots
+                                    </Button>
+                                
+                                </div>
+                              )}
+                                  {!match.slotAssigned &&  (
                                     <Text size="xs" c="red" mt="xs">
                                       ⚠️ No hay slots disponibles
                                     </Text>
@@ -891,6 +1033,7 @@ const EventMatchPage = () => {
                                   ⏰ {match.tentativeSlot.startTime} - Mesa {match.tentativeSlot.tableNumber}
                                 </Text>
                               )}
+                          
                             </div>
                             <Badge
                               color={
@@ -931,7 +1074,18 @@ const EventMatchPage = () => {
           </Group>
         </Stack>
       </Modal>
+      {/* Modal: Selector local de slots para asignación manual */}
+     
     </Container>
+      <ManualMeetingModal
+        opened={manualModalOpened}
+        onClose={() => setManualModalOpened(false)}
+        event={{ id: eventId, config: eventConfig || {} }}
+        setGlobalMessage={setGlobalMessage}
+        initialParticipant1={manualModalParticipants.p1}
+        initialParticipant2={manualModalParticipants.p2}
+      />
+      </>
   );
 };
 

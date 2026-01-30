@@ -11,7 +11,14 @@ import { useEffect, useState } from "react";
      Se generan los horarios disponibles a partir de la
      configuración del evento y se listan los asistentes.
 =================================================== */
-const ManualMeetingModal = ({ opened, onClose, event, setGlobalMessage }) => {
+const ManualMeetingModal = ({
+  opened,
+  onClose,
+  event,
+  setGlobalMessage,
+  initialParticipant1 = null,
+  initialParticipant2 = null,
+}) => {
   const [assistants, setAssistants] = useState([]);
   const [selectedTable, setSelectedTable] = useState("");
   const [selectedTimeSlot, setSelectedTimeSlot] = useState("");
@@ -22,12 +29,12 @@ const ManualMeetingModal = ({ opened, onClose, event, setGlobalMessage }) => {
   useEffect(() => {
     fetchAssistants();
     generateTimeSlots();
-    // Reiniciamos los campos al abrir el modal
+    // Reiniciamos los campos al abrir el modal y prellenamos si vienen props
     setSelectedTable("");
     setSelectedTimeSlot("");
-    setParticipant1("");
-    setParticipant2("");
-  }, [event]);
+    setParticipant1(initialParticipant1 || "");
+    setParticipant2(initialParticipant2 || "");
+  }, [event, initialParticipant1, initialParticipant2]);
 
   const fetchAssistants = async () => {
     try {
