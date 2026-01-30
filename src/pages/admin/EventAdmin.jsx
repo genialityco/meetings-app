@@ -30,8 +30,8 @@ import MeetingsListModal from "./MeetingsListModal";
 import AttendeesList from "./AttendeesList";
 import { useParams, Link } from "react-router-dom";
 import * as XLSX from "xlsx";
-import ConfigureFieldsModal from "./ConfigureFieldsModal.tsx";
-import EventPoliciesModal from "./EventPoliciesModal.tsx";
+import ConfigureFieldsModal from "./ConfigureFieldsModal";
+import EventPoliciesModal from "./EventPoliciesModal";
 
 const EventAdmin = () => {
   const { eventId } = useParams();
