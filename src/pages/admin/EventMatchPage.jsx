@@ -33,6 +33,10 @@ import * as XLSX from "xlsx";
 import ManualMeetingModal from "./ManualMeetingModal";
 
 const LLAMA_API = "http://localhost:8080/api/match";
+const GEMINI_API = import.meta.env.VITE_GEMINI_API;
+const GEMINI_BASE_URL = import.meta.env.VITE_GEMINI_BASE_URL;
+const GEMINI_MODEL_NAME = import.meta.env.VITE_GEMINI_MODEL_NAME;
+const GEMINI_MAX_TOKENS = parseInt(import.meta.env.VITE_GEMINI_MAX_TOKENS || "32768", 10);
 
 const EventMatchPage = () => {
   const { eventId } = useParams();
@@ -46,6 +50,7 @@ const EventMatchPage = () => {
   const [previewModalOpened, setPreviewModalOpened] = useState(false);
   const [selectedMatches, setSelectedMatches] = useState(new Set());
   const [useLocalLlama, setUseLocalLlama] = useState(false);
+  const [aiService, setAiService] = useState("llama"); // 'llama' | 'gemini'
   const [searchEmail, setSearchEmail] = useState("");
   const [matchesWithSlots, setMatchesWithSlots] = useState([]);
   const [assignmentMode, setAssignmentMode] = useState("auto"); // 'auto' | 'manual'
@@ -454,22 +459,207 @@ const EventMatchPage = () => {
     };
   };
 
-  // 2. Intentar hacer match con Llama Server local, fallback a cálculo local
+  // Helper robusto para parsear JSON potencialmente malformado en texto
+  const safeParseJSON = (text) => {
+    if (!text || typeof text !== "string") return null;
+
+    const tryParse = (t) => {
+      try {
+        return JSON.parse(t);
+      } catch (e) {
+        return null;
+      }
+    };
+
+    // 1) intento directo
+    let parsed = tryParse(text);
+    if (parsed) return parsed;
+
+    // 2) quitar fences de markdown y trim
+    let cleaned = text.replace(/```(?:json)?\n?/gi, "").replace(/```/g, "").trim();
+
+    // 3) intentar extraer objeto o array JSON dentro del texto
+    const objMatch = cleaned.match(/\{[\s\S]*\}/);
+    const arrMatch = cleaned.match(/\[[\s\S]*\]/);
+    if (objMatch) {
+      parsed = tryParse(objMatch[0]);
+      if (parsed) return parsed;
+    }
+    if (arrMatch) {
+      parsed = tryParse(arrMatch[0]);
+      if (parsed) return parsed;
+    }
+
+    // 4) eliminar comas finales problemáticas en objetos/arrays
+    const noTrailingCommas = cleaned.replace(/,\s*([}\]])/g, "$1");
+    parsed = tryParse(noTrailingCommas);
+    if (parsed) return parsed;
+
+    // 5) intentar convertir comillas simples simples en valores (no perfecto, tentativa)
+    const singleToDouble = noTrailingCommas.replace(/([\{,\[]\s*)'([^']*)'(?=\s*:)/g, '$1"$2"');
+    parsed = tryParse(singleToDouble);
+    if (parsed) return parsed;
+
+    // 6) dar por perdido
+    throw new Error("No se pudo parsear JSON tras varios intentos");
+  };
+
+  // 2. Intentar hacer match con Gemini o Llama Server local, fallback a cálculo local
   const handleMatchAll = async () => {
     setError("");
     setLoading(true);
     setMatchesMatrix([]);
 
-    // Intentar usar Llama Server
+    // Intentar usar el servicio AI seleccionado (Gemini o Llama local), con fallback a matching local
     try {
+      if (aiService === "gemini") {
+        try {
+          // Simplificar datos para evitar problemas de escape en JSON
+          const compradoresSimplificados = compradores.map(c => ({
+            id: c.id,
+            nombre: c.nombre,
+            correo: c.correo,
+            empresa: c.empresa,
+            necesidad: (c.necesidad || "").substring(0, 100), // Limitar longitud para reducir tokens
+            descripcion: (c.descripcion || "").substring(0, 100),
+            interesPrincipal: c.interesPrincipal
+          }));
+
+          const vendedoresSimplificados = vendedores.map(v => ({
+            id: v.id,
+            nombre: v.nombre,
+            correo: v.correo,
+            empresa: v.empresa,
+            necesidad: (v.necesidad || "").substring(0, 100),
+            descripcion: (v.descripcion || "").substring(0, 100),
+            interesPrincipal: v.interesPrincipal
+          }));
+
+          // Construir el prompt para Gemini
+          const prompt = `Eres un experto en matchmaking B2B. Genera matches entre compradores y vendedores.
+
+DATOS:
+Compradores: ${JSON.stringify(compradoresSimplificados)}
+Vendedores: ${JSON.stringify(vendedoresSimplificados)}
+
+REGLAS:
+1. NO matches de la misma empresa
+2. Analizar necesidad vs descripcion
+3. Score 0-1 (1=perfecto)
+4. Max ${eventConfig?.maxMeetingsPerUser ?? 10} matches por comprador
+5. En razonMatch usa SOLO texto simple, sin comillas dobles ni saltos de linea
+
+RESPONDE SOLO CON ESTE JSON (sin markdown, sin texto extra):
+{
+  "results": [
+    {
+      "compradorId": "id",
+      "compradorNombre": "nombre",
+      "compradorEmail": "email",
+      "matches": [
+        {
+          "vendedor": "nombre",
+          "vendedorId": "id",
+          "vendedorEmail": "email",
+          "score": 0.85,
+          "motivo": "Match por afinidad",
+          "razonMatch": "Texto simple sin comillas"
+        }
+      ]
+    }
+  ],
+  "message": "Total de matches generados"
+}`;
+
+          const resG = await fetch(`${GEMINI_BASE_URL}/models/${GEMINI_MODEL_NAME}:generateContent?key=${GEMINI_API}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{
+                parts: [{
+                  text: prompt
+                }]
+              }],
+              generationConfig: {
+                temperature: 0.4,
+                maxOutputTokens: GEMINI_MAX_TOKENS,
+                responseMimeType: "application/json"
+              }
+            }),
+          });
+
+          if (resG.ok) {
+            const rawData = await resG.json();
+            console.log("Respuesta raw de Gemini:", rawData);
+            
+            // Extraer el texto de la respuesta de Gemini
+            const responseText = rawData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+            console.log("Texto de respuesta (primeros 500 chars):", responseText.substring(0, 500));
+            
+            // Intentar parsear el JSON de la respuesta usando helper robusto
+            let data;
+            try {
+              data = safeParseJSON(responseText);
+            } catch (parseError) {
+              console.error("Error parseando respuesta de Gemini:", parseError);
+              console.log("Texto completo recibido (primeros 1000 chars):", responseText.substring(0, 1000));
+              console.log("Guardando respuesta cruda para depuración y usando fallback");
+              try {
+                await addDoc(collection(db, "debug_gemini_responses"), {
+                  eventId: eventId || null,
+                  timestamp: new Date(),
+                  stage: "parse_error",
+                  parseError: parseError?.message || String(parseError),
+                  responseText: responseText?.substring ? responseText.substring(0, 20000) : responseText,
+                  rawData: rawData || null,
+                });
+              } catch (saveErr) {
+                console.error("Error guardando debug en Firestore:", saveErr);
+              }
+              // No lanzar para permitir fallback a Llama/local
+              data = null;
+            }
+
+            if (!data) {
+              // No se pudo parsear, proceder a fallback (Llama/local)
+            } else {
+              if (!data.results || !Array.isArray(data.results)) {
+                console.warn("Respuesta de Gemini sin formato esperado:", data);
+                try {
+                  await addDoc(collection(db, "debug_gemini_responses"), {
+                    eventId: eventId || null,
+                    timestamp: new Date(),
+                    stage: "unexpected_format",
+                    payload: data,
+                  });
+                } catch (saveErr) {
+                  console.error("Error guardando debug en Firestore:", saveErr);
+                }
+              } else {
+                const resultsWithSlots = assignTentativeSlots(data.results || []);
+                setMatchesMatrix(resultsWithSlots);
+                setUseLocalLlama(false);
+                const totalMatches = resultsWithSlots.reduce((sum, r) => sum + r.matches.length, 0);
+                setGlobalMessage(data.message || `✅ Matches generados con Gemini. Total: ${totalMatches}`);
+                setLoading(false);
+                return;
+              }
+            }
+          } else {
+            const errorData = await resG.json();
+            console.warn("Gemini API error:", errorData);
+            console.warn("Gemini proxy returned non-ok, falling back to Llama/local");
+          }
+        } catch (eg) {
+          console.warn("Error calling Gemini API, falling back to Llama/local", eg);
+        }
+      }
+
+      // Intentar Llama Server (si aiService es 'llama' o si Gemini falló)
       const res = await fetch(LLAMA_API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          compradores,
-          vendedores,
-          empresaIgnore: true,
-        }),
+        body: JSON.stringify({ compradores, vendedores, empresaIgnore: true }),
       });
 
       if (res.ok) {
@@ -483,7 +673,7 @@ const EventMatchPage = () => {
         generateLocalMatches();
       }
     } catch (e) {
-      console.log("Llama Server no disponible, usando matching local");
+      console.log("AI services not available, using local matching", e);
       generateLocalMatches();
     }
 
@@ -731,7 +921,9 @@ const EventMatchPage = () => {
 
       <Stack gap="md">
         <Alert title="ℹ️ Información" color="blue">
-          {useLocalLlama ? (
+          {aiService === "gemini" ? (
+            <>Usando <strong>Google Gemini</strong> para análisis de compatibilidad</>
+          ) : useLocalLlama ? (
             <>Usando <strong>Llama Server</strong> (localhost:8080) para análisis de compatibilidad</>
           ) : (
             <>Usando <strong>Análisis Local</strong> considerando campos: 
@@ -754,6 +946,13 @@ const EventMatchPage = () => {
             <Radio.Group value={assignmentMode} onChange={(val) => setAssignmentMode(val)}>
               <Radio value="auto" label="Automático" />
               <Radio value="manual" label="Manual" />
+            </Radio.Group>
+          </Group>
+          <Group align="center" spacing="sm">
+            <Text size="sm">Servicio AI:</Text>
+            <Radio.Group value={aiService} onChange={(val) => setAiService(val)}>
+              <Radio value="llama" label="Llama (localhost)" />
+              <Radio value="gemini" label="Google Gemini" />
             </Radio.Group>
           </Group>
           <Button
