@@ -33,6 +33,10 @@ import * as XLSX from "xlsx";
 import ManualMeetingModal from "./ManualMeetingModal";
 
 const LLAMA_API = "http://localhost:8080/api/match";
+const LLAMA_CANDIDATES = [
+  "http://localhost:8080/completion",
+  "http://127.0.0.1:8080/completion",
+];
 const GEMINI_API = import.meta.env.VITE_GEMINI_API;
 const GEMINI_BASE_URL = import.meta.env.VITE_GEMINI_BASE_URL;
 const GEMINI_MODEL_NAME = import.meta.env.VITE_GEMINI_MODEL_NAME;
@@ -50,17 +54,14 @@ const EventMatchPage = () => {
   const [previewModalOpened, setPreviewModalOpened] = useState(false);
   const [selectedMatches, setSelectedMatches] = useState(new Set());
   const [useLocalLlama, setUseLocalLlama] = useState(false);
-  const [aiService, setAiService] = useState("llama"); // 'llama' | 'gemini'
+  const [aiService, setAiService] = useState("gemini"); // 'llama' | 'gemini'
+  const [llamaRawResponse, setLlamaRawResponse] = useState(null);
   const [searchEmail, setSearchEmail] = useState("");
-  const [matchesWithSlots, setMatchesWithSlots] = useState([]);
   const [assignmentMode, setAssignmentMode] = useState("auto"); // 'auto' | 'manual'
-  const [availableSlots, setAvailableSlots] = useState([]);
   const [manualAssignments, setManualAssignments] = useState({}); // key -> slotId
-  const [slotPickerOpened, setSlotPickerOpened] = useState(false);
-  const [slotPickerKey, setSlotPickerKey] = useState(null);
-  const [slotPickerSelectedId, setSlotPickerSelectedId] = useState(null);
   const [manualModalOpened, setManualModalOpened] = useState(false);
   const [manualModalParticipants, setManualModalParticipants] = useState({ p1: null, p2: null });
+  
 
   // 1. Cargar asistentes, agenda y config
   useEffect(() => {
@@ -504,106 +505,234 @@ const EventMatchPage = () => {
     throw new Error("No se pudo parsear JSON tras varios intentos");
   };
 
+  // Try Llama endpoints sequentially and log failures to Firestore for debugging
+  const tryLlama = async (payload) => {
+    const RETRIES_PER_ENDPOINT = 2;
+    const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+    const N_PREDICT = Math.min(6000, GEMINI_MAX_TOKENS || 6000);
+
+    // helper to attempt parse from text using safeParseJSON or fallback
+    const parsePossibleJSON = (text) => {
+      try {
+        return safeParseJSON(text);
+      } catch (_) {
+        try {
+          return JSON.parse(text);
+        } catch (e) {
+          return null;
+        }
+      }
+    };
+
+    for (const endpoint of LLAMA_CANDIDATES) {
+      for (let attempt = 1; attempt <= RETRIES_PER_ENDPOINT; attempt++) {
+        try {
+          let res;
+
+          // If endpoint supports /completion, send a prompt-based payload
+          if (endpoint.includes("/completion")) {
+            const compradoresSimplificados = (payload.compradores || []).map((c) => ({
+              id: c.id,
+              nombre: c.nombre,
+              correo: c.correo,
+              empresa: c.empresa,
+              necesidad: (c.necesidad || "").substring(0, 100),
+              descripcion: (c.descripcion || "").substring(0, 100),
+              interesPrincipal: c.interesPrincipal,
+            }));
+            const vendedoresSimplificados = (payload.vendedores || []).map((v) => ({
+              id: v.id,
+              nombre: v.nombre,
+              correo: v.correo,
+              empresa: v.empresa,
+              necesidad: (v.necesidad || "").substring(0, 100),
+              descripcion: (v.descripcion || "").substring(0, 100),
+              interesPrincipal: v.interesPrincipal,
+            }));
+
+            const prompt = `Eres un experto en matchmaking B2B. Devuelve SOLO el JSON con resultados como: {"results":[...], "message":"..."}.
+Compradores: ${JSON.stringify(compradoresSimplificados)}
+Vendedores: ${JSON.stringify(vendedoresSimplificados)}
+Reglas: 1) No matches de misma empresa. 2) Score 0-1. 3) Max ${payload.maxPerUser || eventConfig?.maxMeetingsPerUser || 10} por comprador.`;
+
+            res = await fetch(endpoint, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ prompt, n_predict: N_PREDICT, "n_ctx": 8000 }),
+            });
+          } else {
+            // legacy endpoints that may accept structured JSON
+            res = await fetch(endpoint, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+          }
+
+          if (res.ok) {
+            // Try JSON first
+            let parsed = null;
+            const ctype = res.headers.get("content-type") || "";
+            if (ctype.includes("application/json")) {
+              try {
+                parsed = await res.json();
+              } catch (jerr) {
+                // fall through to text
+              }
+            }
+
+            if (!parsed) {
+              const text = await res.text();
+              parsed = parsePossibleJSON(text);
+            }
+
+            if (parsed) {
+              return { data: parsed, endpoint };
+            } else {
+              // store raw response for debugging
+              try {
+                const text = await res.text();
+                await addDoc(collection(db, "debug_llama_responses"), {
+                  eventId: eventId || null,
+                  timestamp: new Date(),
+                  endpoint,
+                  stage: "ok_but_unparsable",
+                  attempt,
+                  text: text?.substring ? text.substring(0, 20000) : text,
+                });
+              } catch (w) {
+                console.error("Error saving llama ok_unparsable debug:", w);
+              }
+              break; // try next endpoint
+            }
+          } else {
+            // non-ok: record and decide retry
+            let text = "";
+            try {
+              text = await res.text();
+            } catch (_) {}
+            try {
+              await addDoc(collection(db, "debug_llama_responses"), {
+                eventId: eventId || null,
+                timestamp: new Date(),
+                endpoint,
+                stage: `http_${res.status}`,
+                status: res.status,
+                attempt,
+                text: text?.substring ? text.substring(0, 20000) : text,
+              });
+            } catch (w) {
+              console.error("Error saving llama http debug:", w);
+            }
+
+            if (res.status >= 500 && attempt < RETRIES_PER_ENDPOINT) {
+              await sleep(300 * attempt);
+              continue; // retry same endpoint
+            }
+            break; // try next endpoint
+          }
+        } catch (e) {
+          try {
+            await addDoc(collection(db, "debug_llama_responses"), {
+              eventId: eventId || null,
+              timestamp: new Date(),
+              endpoint,
+              stage: "network_error",
+              error: e?.message || String(e),
+              attempt,
+            });
+          } catch (w) {
+            console.error("Error saving llama network debug:", w);
+          }
+
+          if (attempt < RETRIES_PER_ENDPOINT) {
+            await sleep(250 * attempt);
+            continue;
+          }
+          break;
+        }
+      }
+    }
+
+    return null;
+  };
+
   // 2. Intentar hacer match con Gemini o Llama Server local, fallback a cálculo local
   const handleMatchAll = async () => {
     setError("");
     setLoading(true);
     setMatchesMatrix([]);
 
-    // Intentar usar el servicio AI seleccionado (Gemini o Llama local), con fallback a matching local
+    // Intentar usar el servicio AI seleccionado con una secuencia clara:
+    // - si aiService === 'local' -> usar matching local determinístico
+    // - si aiService === 'llama' -> intentar Llama local y si falla -> matching local
+    // - si aiService === 'gemini' -> intentar Gemini, luego Llama, luego local
+    let triedLlama = false;
     try {
+      // If user selected local algorithm, run it and return
+      if (aiService === "local") {
+        generateLocalMatches();
+        setUseLocalLlama(false);
+        setLoading(false);
+        return;
+      }
       if (aiService === "gemini") {
         try {
           // Simplificar datos para evitar problemas de escape en JSON
-          const compradoresSimplificados = compradores.map(c => ({
+          const compradoresSimplificados = compradores.map((c) => ({
             id: c.id,
             nombre: c.nombre,
             correo: c.correo,
             empresa: c.empresa,
-            necesidad: (c.necesidad || "").substring(0, 100), // Limitar longitud para reducir tokens
+            necesidad: (c.necesidad || "").substring(0, 100),
             descripcion: (c.descripcion || "").substring(0, 100),
-            interesPrincipal: c.interesPrincipal
+            interesPrincipal: c.interesPrincipal,
           }));
 
-          const vendedoresSimplificados = vendedores.map(v => ({
+          const vendedoresSimplificados = vendedores.map((v) => ({
             id: v.id,
             nombre: v.nombre,
             correo: v.correo,
             empresa: v.empresa,
             necesidad: (v.necesidad || "").substring(0, 100),
             descripcion: (v.descripcion || "").substring(0, 100),
-            interesPrincipal: v.interesPrincipal
+            interesPrincipal: v.interesPrincipal,
           }));
 
           // Construir el prompt para Gemini
-          const prompt = `Eres un experto en matchmaking B2B. Genera matches entre compradores y vendedores.
-
-DATOS:
-Compradores: ${JSON.stringify(compradoresSimplificados)}
-Vendedores: ${JSON.stringify(vendedoresSimplificados)}
-
-REGLAS:
-1. NO matches de la misma empresa
-2. Analizar necesidad vs descripcion
-3. Score 0-1 (1=perfecto)
-4. Max ${eventConfig?.maxMeetingsPerUser ?? 10} matches por comprador
-5. En razonMatch usa SOLO texto simple, sin comillas dobles ni saltos de linea
-
-RESPONDE SOLO CON ESTE JSON (sin markdown, sin texto extra):
-{
-  "results": [
-    {
-      "compradorId": "id",
-      "compradorNombre": "nombre",
-      "compradorEmail": "email",
-      "matches": [
-        {
-          "vendedor": "nombre",
-          "vendedorId": "id",
-          "vendedorEmail": "email",
-          "score": 0.85,
-          "motivo": "Match por afinidad",
-          "razonMatch": "Texto simple sin comillas"
-        }
-      ]
-    }
-  ],
-  "message": "Total de matches generados"
-}`;
+          const prompt = `Eres un experto en matchmaking B2B. Genera matches entre compradores y vendedores.\n\nDATOS:\nCompradores: ${JSON.stringify(
+            compradoresSimplificados
+          )}\nVendedores: ${JSON.stringify(vendedoresSimplificados)}\n\nREGLAS:\n1. NO matches de la misma empresa\n2. Analizar necesidad vs descripcion\n3. Score 0-1 (1=perfecto)\n4. Max ${eventConfig?.maxMeetingsPerUser ?? 10} matches por comprador\n5. En razonMatch usa SOLO texto simple, sin comillas dobles ni saltos de linea\n\nRESPONDE SOLO CON ESTE JSON (sin markdown, sin texto extra):\n{\n  "results": [ { "compradorId": "id", "compradorNombre": "nombre", "compradorEmail": "email", "matches": [ { "vendedor": "nombre", "vendedorId": "id", "vendedorEmail": "email", "score": 0.85, "motivo": "Match por afinidad", "razonMatch": "Texto simple sin comillas" } ] } ],\n  "message": "Total de matches generados"\n}`;
 
           const resG = await fetch(`${GEMINI_BASE_URL}/models/${GEMINI_MODEL_NAME}:generateContent?key=${GEMINI_API}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              contents: [{
-                parts: [{
-                  text: prompt
-                }]
-              }],
+              contents: [
+                {
+                  parts: [
+                    {
+                      text: prompt,
+                    },
+                  ],
+                },
+              ],
               generationConfig: {
                 temperature: 0.4,
                 maxOutputTokens: GEMINI_MAX_TOKENS,
-                responseMimeType: "application/json"
-              }
+                responseMimeType: "application/json",
+              },
             }),
           });
 
           if (resG.ok) {
             const rawData = await resG.json();
-            console.log("Respuesta raw de Gemini:", rawData);
-            
-            // Extraer el texto de la respuesta de Gemini
             const responseText = rawData.candidates?.[0]?.content?.parts?.[0]?.text || "";
-            console.log("Texto de respuesta (primeros 500 chars):", responseText.substring(0, 500));
-            
-            // Intentar parsear el JSON de la respuesta usando helper robusto
-            let data;
+            let data = null;
             try {
               data = safeParseJSON(responseText);
             } catch (parseError) {
               console.error("Error parseando respuesta de Gemini:", parseError);
-              console.log("Texto completo recibido (primeros 1000 chars):", responseText.substring(0, 1000));
-              console.log("Guardando respuesta cruda para depuración y usando fallback");
               try {
                 await addDoc(collection(db, "debug_gemini_responses"), {
                   eventId: eventId || null,
@@ -616,62 +745,87 @@ RESPONDE SOLO CON ESTE JSON (sin markdown, sin texto extra):
               } catch (saveErr) {
                 console.error("Error guardando debug en Firestore:", saveErr);
               }
-              // No lanzar para permitir fallback a Llama/local
               data = null;
             }
 
-            if (!data) {
-              // No se pudo parsear, proceder a fallback (Llama/local)
-            } else {
-              if (!data.results || !Array.isArray(data.results)) {
-                console.warn("Respuesta de Gemini sin formato esperado:", data);
-                try {
-                  await addDoc(collection(db, "debug_gemini_responses"), {
-                    eventId: eventId || null,
-                    timestamp: new Date(),
-                    stage: "unexpected_format",
-                    payload: data,
-                  });
-                } catch (saveErr) {
-                  console.error("Error guardando debug en Firestore:", saveErr);
-                }
-              } else {
-                const resultsWithSlots = assignTentativeSlots(data.results || []);
-                setMatchesMatrix(resultsWithSlots);
-                setUseLocalLlama(false);
-                const totalMatches = resultsWithSlots.reduce((sum, r) => sum + r.matches.length, 0);
-                setGlobalMessage(data.message || `✅ Matches generados con Gemini. Total: ${totalMatches}`);
-                setLoading(false);
-                return;
-              }
+            if (data && data.results && Array.isArray(data.results)) {
+              const resultsWithSlots = assignTentativeSlots(data.results || []);
+              setMatchesMatrix(resultsWithSlots);
+              setUseLocalLlama(false);
+              const totalMatches = resultsWithSlots.reduce((sum, r) => sum + r.matches.length, 0);
+              setGlobalMessage(data.message || `✅ Matches generados con Gemini. Total: ${totalMatches}`);
+              setLoading(false);
+              return;
             }
-          } else {
-            const errorData = await resG.json();
-            console.warn("Gemini API error:", errorData);
-            console.warn("Gemini proxy returned non-ok, falling back to Llama/local");
           }
         } catch (eg) {
-          console.warn("Error calling Gemini API, falling back to Llama/local", eg);
+          console.warn("Error calling Gemini API, will try Llama/local", eg);
+        }
+        // after Gemini attempt, fallthrough to Llama attempt
+      }
+
+      // Try Llama local if requested or as fallback
+      if (aiService === "llama" || aiService === "gemini") {
+        triedLlama = true;
+        try {
+          const llamaResult = await tryLlama({ compradores, vendedores, empresaIgnore: true });
+          if (llamaResult && llamaResult.data) {
+            let data = llamaResult.data;
+            let rawContent = null;
+
+            // If Llama returns a 'content' field, prefer parsing it (string or object)
+            if (data.content) {
+              try {
+                if (typeof data.content === "string") {
+                  rawContent = data.content;
+                  data = safeParseJSON(rawContent) || data;
+                } else if (typeof data.content === "object") {
+                  // common formats: { content: { text: '...' } } or similar
+                  if (data.content.text) {
+                    rawContent = data.content.text;
+                    data = safeParseJSON(rawContent) || data;
+                  } else {
+                    rawContent = JSON.stringify(data.content).substring(0, 20000);
+                    const tryObj = tryParseObjectForResults(data.content);
+                    if (tryObj) data = tryObj;
+                  }
+                }
+              } catch (e) {
+                rawContent = String(data.content).substring(0, 20000);
+              }
+            }
+
+            // If still no results, maybe the top-level already has results
+            if (!data.results && llamaResult.data.results) data = llamaResult.data;
+
+            // Save raw content for UI debugging (short preview)
+            if (!rawContent) {
+              try {
+                rawContent = JSON.stringify(llamaResult.data).substring(0, 20000);
+              } catch (e) {
+                rawContent = String(llamaResult.data).substring(0, 20000);
+              }
+            }
+
+            setLlamaRawResponse(rawContent);
+
+            const resultsWithSlots = assignTentativeSlots(data.results || []);
+            setMatchesMatrix(resultsWithSlots);
+            setUseLocalLlama(true);
+            if (data.message) setGlobalMessage(`${data.message} (via ${llamaResult.endpoint})`);
+            else setGlobalMessage(`✅ Matches generados con Llama local via ${llamaResult.endpoint}`);
+            setLoading(false);
+            return;
+          } else {
+            console.warn("Llama local did not return usable data, falling back to local calculation");
+          }
+        } catch (eLlama) {
+          console.warn("Error calling Llama local, falling back to local calculation", eLlama);
         }
       }
 
-      // Intentar Llama Server (si aiService es 'llama' o si Gemini falló)
-      const res = await fetch(LLAMA_API, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ compradores, vendedores, empresaIgnore: true }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const resultsWithSlots = assignTentativeSlots(data.results || []);
-        setMatchesMatrix(resultsWithSlots);
-        setUseLocalLlama(true);
-        if (data.message) setGlobalMessage(data.message);
-      } else {
-        // Fallback a cálculo local
-        generateLocalMatches();
-      }
+      // If we reach here, either Llama was not requested or it failed -> use local calculation
+      generateLocalMatches();
     } catch (e) {
       console.log("AI services not available, using local matching", e);
       generateLocalMatches();
@@ -951,8 +1105,9 @@ RESPONDE SOLO CON ESTE JSON (sin markdown, sin texto extra):
           <Group align="center" spacing="sm">
             <Text size="sm">Servicio AI:</Text>
             <Radio.Group value={aiService} onChange={(val) => setAiService(val)}>
-              <Radio value="llama" label="Llama (localhost)" />
               <Radio value="gemini" label="Google Gemini" />
+              <Radio value="local" label="Local (algoritmo)" />
+              <Radio value="llama" label="Llama (localhost)" />
             </Radio.Group>
           </Group>
           <Button
