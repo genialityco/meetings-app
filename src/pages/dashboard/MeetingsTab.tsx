@@ -10,6 +10,7 @@ import {
   TextInput,
   Textarea,
   Loader,
+  Badge,
 } from "@mantine/core";
 import {
   collection,
@@ -195,6 +196,11 @@ export default function MeetingsTab({
                     <strong>Mesa:</strong>{" "}
                     {meeting.tableAssigned || "Por asignar"}
                   </Text>
+                  {meeting.contextNote && (
+                    <Badge variant="light" color="grape" size="sm" mt={4}>
+                      {meeting.contextNote}
+                    </Badge>
+                  )}
                   <Collapse in={expandedMeetingId === meeting.id} mt="sm">
                     {participant && (
                       <>

@@ -16,7 +16,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
-import { AgendaSlot, Assistant, Meeting, Notification } from "./types";
+import { AgendaSlot, Assistant, Meeting, Notification, Company, EventPolicies, DEFAULT_POLICIES, MeetingContext } from "./types";
 import { showNotification } from "@mantine/notifications";
 import { serverTimestamp } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
@@ -32,6 +32,7 @@ type Product = {
   ownerName?: string;
   ownerCompany?: string;
   ownerPhone?: string | null;
+  companyId?: string | null;
   title: string;
   description: string;
   imageUrl?: string | null;
@@ -217,6 +218,9 @@ export function useDashboardData(eventId?: string) {
   const [solicitarReunionHabilitado, setSolicitarReunionHabilitado] =
     useState<boolean>(true);
   const [eventConfig, setEventConfig] = useState<any>(null);
+  const [eventImage, setEventImage] = useState<string>("");
+  const [dashboardLogo, setDashboardLogo] = useState<string>("");
+  const [eventName, setEventName] = useState<string>("");
   const [formFields, setFormFields] = useState([]);
   const [companyGroups, setCompanyGroups] = useState<any[]>([]);
   const [availableAsistents, setAvailableAsistents] = useState<Assistant[]>([]);
@@ -242,21 +246,43 @@ export function useDashboardData(eventId?: string) {
   const [searchTerm, setSearchTerm] = useState("");
   const [interestFilter, setInterestFilter] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [policies, setPolicies] = useState<EventPolicies>(DEFAULT_POLICIES);
 
   // ---------------------- EFECTOS PRINCIPALES ----------------------
 
-  // 1. Configuración del evento (eventConfig)
+  // 1. Configuración del evento (eventConfig + policies)
   useEffect(() => {
     if (!eventId) return;
     (async () => {
       const ref = doc(db, "events", eventId);
       const snap = await getDoc(ref);
       if (snap.exists()) {
-        const config = snap.data().config || {};
+        const data = snap.data();
+        const config = data.config || {};
         setEventConfig(config);
+        setEventImage(data.eventImage || "");
+        setDashboardLogo(data.dashboardLogo || "");
+        setEventName(data.eventName || "");
         setFormFields(config.formFields || []);
+        setPolicies({ ...DEFAULT_POLICIES, ...(config.policies || {}) });
       }
     })();
+  }, [eventId]);
+
+  // 1b. Suscripción real-time a empresas del evento
+  useEffect(() => {
+    if (!eventId) return;
+    return onSnapshot(
+      collection(db, "events", eventId, "companies"),
+      (snap) => {
+        const list = snap.docs.map((d) => ({
+          nitNorm: d.id,
+          ...d.data(),
+        })) as Company[];
+        setCompanies(list);
+      }
+    );
   }, [eventId]);
 
   // 2. Notificaciones del usuario
@@ -380,17 +406,18 @@ export function useDashboardData(eventId?: string) {
       );
     }
 
-    //Filtro tipo de tipoAsistente para ver los tipos de asistentes diferentes a mi
-    if (currentUser?.data?.tipoAsistente) {
-      filtered = filtered.filter(
-        (a) =>
-          a[formFields.find((f) => f.name === "tipoAsistente")?.name] !==
-          currentUser?.data?.tipoAsistente,
-      );
+    // Filtro por discoveryMode: "by_role" muestra solo roles opuestos, "all" muestra todos
+    if (policies.discoveryMode === "by_role" && currentUser?.data?.tipoAsistente) {
+      const tipoField = formFields.find((f) => f.name === "tipoAsistente")?.name;
+      if (tipoField) {
+        filtered = filtered.filter(
+          (a) => a[tipoField] !== currentUser?.data?.tipoAsistente,
+        );
+      }
     }
 
     setFilteredAssistants(filtered);
-  }, [assistants, searchTerm, interestFilter, formFields]);
+  }, [assistants, searchTerm, interestFilter, formFields, policies.discoveryMode]);
 
   // 6. Solicitudes enviadas por usuario actual (pendientes)
   useEffect(() => {
@@ -524,10 +551,11 @@ export function useDashboardData(eventId?: string) {
     assistantId: string,
     assistantPhone: string,
     groupId: string | null = null,
+    context?: MeetingContext,
   ) => {
     if (!uid || !eventId) return Promise.reject();
     try {
-      const data = {
+      const data: any = {
         eventId,
         requesterId: uid,
         receiverId: assistantId,
@@ -536,8 +564,11 @@ export function useDashboardData(eventId?: string) {
         participants: [uid, assistantId],
       };
       if (groupId) {
-        data["groupId"] = groupId;
+        data.groupId = groupId;
       }
+      if (context?.productId) data.productId = context.productId;
+      if (context?.companyId) data.companyId = context.companyId;
+      if (context?.contextNote) data.contextNote = context.contextNote;
       const meetingDoc = await addDoc(
         collection(db, "events", eventId, "meetings"),
         data,
@@ -550,14 +581,19 @@ export function useDashboardData(eventId?: string) {
       const rejectUrl = `${baseUrl}/meeting-response/${eventId}/${meetingId}/reject`;
       const landingUrl = `${baseUrl}/event/${eventId}`;
 
+      const contextLine = context?.contextNote
+        ? `\nContexto: ${context.contextNote}\n`
+        : "";
+
       const message =
         `Has recibido una solicitud de reunión de:\n` +
         `Nombre: ${requester?.nombre || ""}\n` +
         `Empresa: ${requester?.empresa || ""}\n` +
         `Cargo: ${requester?.cargo || ""}\n` +
         `Correo: ${requester?.correo || ""}\n` +
-        `Teléfono: ${requester?.telefono || ""}\n\n` +
-        `Opciones:\n` +
+        `Teléfono: ${requester?.telefono || ""}\n` +
+        contextLine +
+        `\nOpciones:\n` +
         `*1. Aceptar:* \n${acceptUrl}\n` +
         `*2. Rechazar:* \n${rejectUrl}\n` +
         `3. Ir a la landing: \n${landingUrl}`;
@@ -1025,7 +1061,22 @@ export function useDashboardData(eventId?: string) {
           return true;
         });
 
-      setAvailableSlots(filtered);
+      // Filtro adicional: si tableMode es "fixed", solo mostrar slots de la mesa fija del receiver
+      let finalSlots = filtered;
+      if (policies?.tableMode === "fixed") {
+        const receiver = assistants.find((a: Assistant) => a.id === receiverId);
+        const receiverCompanyId = receiver?.companyId || receiver?.company_nit;
+        const receiverCompany = companies.find((c: Company) => c.nitNorm === receiverCompanyId);
+        const fixedTable = receiverCompany?.fixedTable;
+
+        if (fixedTable) {
+          finalSlots = filtered.filter(
+            (slot) => String(slot.tableNumber) === fixedTable,
+          );
+        }
+      }
+
+      setAvailableSlots(finalSlots);
       setSlotModalOpened(true);
     } finally {
       setPrepareSlotSelectionLoading(false);
@@ -1377,6 +1428,7 @@ export function useDashboardData(eventId?: string) {
       ownerName: owner.nombre || owner.name || "",
       ownerCompany: owner.empresa || owner.company || "",
       ownerPhone: owner.telefono || owner.contacto?.telefono || null,
+      companyId: owner.companyId || owner.company_nit || null,
       title: payload.title.trim(),
       description: payload.description.trim(),
       imageUrl: null,
@@ -1450,6 +1502,9 @@ export function useDashboardData(eventId?: string) {
     notifications,
     solicitarReunionHabilitado,
     eventConfig,
+    eventImage,
+    dashboardLogo,
+    eventName,
 
     searchTerm,
     setSearchTerm,
@@ -1513,5 +1568,7 @@ export function useDashboardData(eventId?: string) {
     createProduct,
     updateProduct,
     deleteProduct,
+    companies,
+    policies,
   };
 }

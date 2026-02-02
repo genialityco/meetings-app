@@ -1,34 +1,49 @@
 // Dashboard/Dashboard.tsx
 
-import { Container, Title, Flex } from "@mantine/core";
+import { Container, MantineProvider, createTheme } from "@mantine/core";
 import { useParams } from "react-router-dom";
 import { useDashboardData } from "./useDashboardData";
-import NotificationsMenu from "./NotificationsMenu";
-import PendingRequestsSection from "./PendingRequestsSection";
+import { generateColors } from "@mantine/colors-generator";
+
 import TabsPanel from "./TabsPanel";
 import AvatarModal from "./AvatarModal";
 import SlotModal from "./SlotModal";
 import ConfirmModal from "./ConfirmModal";
+import { useContext, useMemo } from "react";
+import { UserContext } from "../../context/UserContext";
+import DashboardHeader from "../../components/DashboardHeader";
 
 export default function Dashboard() {
   const { eventId } = useParams();
   const dashboard = useDashboardData(eventId);
+    const { currentUser } = useContext(UserContext);
+
+    console.log("Current User in Dashboard:", currentUser);
+
+  const eventTheme = useMemo(() => {
+    const hex = dashboard.eventConfig?.primaryColor;
+    if (!hex) return createTheme({});
+    return createTheme({
+      colors: { eventPrimary: generateColors(hex) },
+      primaryColor: "eventPrimary",
+    });
+  }, [dashboard.eventConfig?.primaryColor]);
 
   return (
-    <Container fluid>
-      <Flex gap="md" pt="sm">
-        <Title order={2}>Dashboard</Title>
-        <NotificationsMenu notifications={dashboard.notifications} />
-      </Flex>
-      {/* <PendingRequestsSection
-        pendingRequests={dashboard.pendingRequests}
-        assistants={dashboard.assistants}
-        onAccept={dashboard.prepareSlotSelection}
-        onReject={dashboard.updateMeetingStatus}
-        prepareSlotSelectionLoading={dashboard.prepareSlotSelectionLoading}
-        sendWhatsAppMessage={dashboard.sendWhatsAppMessage}
-      /> */}
-      <TabsPanel dashboard={dashboard} />
+    <MantineProvider theme={eventTheme} inherit>
+    <Container fluid p={0}>
+      {currentUser?.data && (
+        <DashboardHeader
+          eventImage={dashboard.eventImage}
+          dashboardLogo={dashboard.dashboardLogo}
+          eventName={dashboard.eventName}
+          notifications={dashboard.notifications}
+          formFields={dashboard.formFields}
+        />
+      )}
+      <Container fluid pt="sm">
+        <TabsPanel dashboard={dashboard} />
+      </Container>
       <AvatarModal
         opened={dashboard.avatarModalOpened}
         image={dashboard.selectedImage}
@@ -57,7 +72,6 @@ export default function Dashboard() {
           dashboard.setConfirmModalOpened(false);
           dashboard.setSlotModalOpened(false);
 
-          // 👇 Selecciona el id correcto dependiendo del modo
           const idToUse =
             dashboard.meetingToEdit ?? dashboard.meetingToAccept?.id;
 
@@ -70,5 +84,6 @@ export default function Dashboard() {
         }}
       />
     </Container>
+    </MantineProvider>
   );
 }

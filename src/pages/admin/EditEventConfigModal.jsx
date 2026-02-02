@@ -10,6 +10,7 @@ import {
   Alert,
   Group,
   Divider,
+  ColorInput,
 } from "@mantine/core";
 import { doc, setDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -43,6 +44,10 @@ const EditEventConfigModal = ({
   const [backgroundMobileImageUrl, setBackgroundMobileImageUrl] = useState(event.backgroundMobileImage || "");
   const [backgroundImageFile, setBackgroundImageFile] = useState(null);
   const [backgroundMobileImageFile, setBackgroundMobileImageFile] = useState(null);
+
+  // Logo para el header del dashboard
+  const [dashboardLogoUrl, setDashboardLogoUrl] = useState(event.dashboardLogo || "");
+  const [dashboardLogoFile, setDashboardLogoFile] = useState(null);
   
   // Nuevo campo para Landing URL y QR
   const [landingUrl, setLandingUrl] = useState(event.landingUrl || "");
@@ -67,6 +72,9 @@ const EditEventConfigModal = ({
     event.config?.maxMeetingsPerUser ?? 1
   );
 
+  // Color primario (hex)
+  const [primaryColor, setPrimaryColor] = useState(event.config?.primaryColor || "#228be6");
+
   // Archivos de imagen
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) setEventImageFile(e.target.files[0]);
@@ -77,6 +85,9 @@ const EditEventConfigModal = ({
   const handleBackgroundMobileFileChange = (e) => {
     if (e.target.files && e.target.files[0]) setBackgroundMobileImageFile(e.target.files[0]);
   }
+  const handleDashboardLogoFileChange = (e) => {
+    if (e.target.files && e.target.files[0]) setDashboardLogoFile(e.target.files[0]);
+  };
 
   // Subida a Storage
   const uploadImage = async (file) => {
@@ -149,12 +160,14 @@ const EditEventConfigModal = ({
     let finalEventImage = eventImageUrl;
     let finalBackgroundImage = backgroundImageUrl;
     let finalBackgroundMobileImage = backgroundMobileImageUrl;
+    let finalDashboardLogo = dashboardLogoUrl;
     let finalLandingQR = landingQR;
 
     try {
       if (eventImageFile) finalEventImage = await uploadImage(eventImageFile);
       if (backgroundImageFile) finalBackgroundImage = await uploadImage(backgroundImageFile);
       if (backgroundMobileImageFile) finalBackgroundMobileImage = await uploadImage(backgroundMobileImageFile);
+      if (dashboardLogoFile) finalDashboardLogo = await uploadImage(dashboardLogoFile);
       
       // Generar y subir QR si hay una URL de landing
       if (landingUrl && landingUrl.trim() !== "") {
@@ -195,6 +208,7 @@ const EditEventConfigModal = ({
       eventStartTime,
       eventEndTime,
       eventLocation,
+      primaryColor,
     };
 
     try {
@@ -205,6 +219,7 @@ const EditEventConfigModal = ({
           eventImage: finalEventImage,
           backgroundImage: finalBackgroundImage,
           backgroundMobileImage: finalBackgroundMobileImage,
+          dashboardLogo: finalDashboardLogo,
           landingUrl,
           landingQR: finalLandingQR,
           config: newConfig,
@@ -271,6 +286,16 @@ const EditEventConfigModal = ({
           </Alert>
         )}
         
+        <Divider label="Color principal" my="sm" />
+        <ColorInput
+          label="Color primario"
+          description="Define el color primario de la interfaz para Landing y Dashboard"
+          value={primaryColor}
+          onChange={setPrimaryColor}
+          format="hex"
+          swatches={['#228be6','#e64980','#be4bdb','#7950f2','#4c6ef5','#15aabf','#12b886','#40c057','#fab005','#fd7e14','#fa5252']}
+        />
+
         <Divider label="Imágenes del evento" my="sm" />
         <TextInput
           label="URL de la imagen del Evento (opcional)"
@@ -290,7 +315,18 @@ const EditEventConfigModal = ({
           onChange={(e) => setBackgroundMobileImageUrl(e.target.value)}
         />
         <input type="file" accept="image/*" onChange={handleBackgroundMobileFileChange} style={{ marginBottom: 12 }} />
-        
+
+        <TextInput
+          label="Logo del Dashboard (opcional)"
+          description="Imagen o logo que se muestra en el header del dashboard del evento"
+          value={dashboardLogoUrl}
+          onChange={(e) => setDashboardLogoUrl(e.target.value)}
+        />
+        <input type="file" accept="image/*" onChange={handleDashboardLogoFileChange} style={{ marginBottom: 12 }} />
+        {dashboardLogoUrl && (
+          <img src={dashboardLogoUrl} alt="Logo dashboard" style={{ height: 40, objectFit: "contain", marginBottom: 8 }} />
+        )}
+
         <Divider label="Configuración de agendamiento" my="sm" />
         <NumberInput
           label="Cantidad máxima de personas"

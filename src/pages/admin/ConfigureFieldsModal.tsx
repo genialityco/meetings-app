@@ -14,6 +14,7 @@ import {
   Textarea,
   Select,
   SegmentedControl,
+  MultiSelect,
 } from "@mantine/core";
 import { updateDoc, doc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
@@ -45,6 +46,12 @@ import { CSS } from "@dnd-kit/utilities";
 
 const AVAILABLE_FIELDS = [
   {
+    name: "photoURL",
+    label: "Foto de perfil",
+    type: "photo",
+    required: false,
+  },
+  {
     name: "nombre",
     label: "Nombre completo",
     type: "text",
@@ -65,18 +72,7 @@ const AVAILABLE_FIELDS = [
     },
   },
 
-  // ⚠️ "empresa" se mantiene por compatibilidad, pero ahora tendrás también empresa paso a paso
-  {
-    name: "empresa",
-    label: "Empresa",
-    type: "text",
-    validation: {
-      minLength: 2,
-      maxLength: 100,
-    },
-  },
-
-  // ✅ NUEVOS CAMPOS EMPRESA (para autocompletar por NIT en la landing)
+  // CAMPOS EMPRESA (para autocompletar por NIT en la landing)
   {
     name: "company_nit",
     label: "NIT (solo números)",
@@ -94,6 +90,12 @@ const AVAILABLE_FIELDS = [
       minLength: 2,
       maxLength: 120,
     },
+  },
+  {
+    name: "company_logo",
+    label: "Logo de empresa",
+    type: "file",
+    required: false,
   },
 
   {
@@ -119,7 +121,6 @@ const AVAILABLE_FIELDS = [
     options: [
       { value: "comprador", label: "Comprador" },
       { value: "vendedor", label: "Vendedor" },
-      { value: "otro", label: "Otro" },
     ],
   },
   {
@@ -195,7 +196,7 @@ const DEFAULT_REGISTRATION_FORM = {
     {
       id: "company",
       title: "Empresa",
-      fields: ["company_nit", "company_razonSocial"],
+      fields: ["company_nit", "company_razonSocial", "company_logo"],
     },
     {
       id: "networking",
@@ -213,14 +214,18 @@ const DEFAULT_REGISTRATION_FORM = {
 // --------- DND-kit item -------------
 function SortableFieldItem({
   field,
+  allFields,
   handleDeleteCustomField,
   handleLabelChange,
   handleToggleRequired,
+  onUpdateShowWhen,
 }: {
   field: any;
+  allFields: any[];
   handleDeleteCustomField: (name: string) => void;
   handleLabelChange: (name: string, value: string) => void;
   handleToggleRequired: (name: string, value: boolean) => void;
+  onUpdateShowWhen: (name: string, showWhen: any) => void;
 }) {
   const {
     attributes,
@@ -242,54 +247,114 @@ function SortableFieldItem({
     zIndex: isDragging ? 2 : 1,
   };
 
+  // Campos tipo select/multiselect disponibles como "padre" (excluyendo el propio)
+  const selectFields = allFields.filter(
+    (f: any) =>
+      (f.type === "select" || f.type === "multiselect") &&
+      f.name !== field.name,
+  );
+
+  const hasShowWhen = !!field.showWhen;
+  const parentField = hasShowWhen
+    ? allFields.find((f: any) => f.name === field.showWhen?.field)
+    : null;
+
   return (
-    <Group
-      ref={setNodeRef}
-      {...attributes}
-      {...listeners}
-      gap={4}
-      p={4}
-      style={style}
-    >
-      <IconGripVertical size={16} style={{ cursor: "grab" }} />
-      <TextInput
-        value={field.label}
-        onChange={(e) => handleLabelChange(field.name, e.currentTarget.value)}
-        size="xs"
-        style={{ width: 150 }}
-        placeholder="Etiqueta"
-      />
-      <Switch
-        size="sm"
-        label="Obligatorio"
-        checked={!!field.required}
-        onChange={(e) => handleToggleRequired(field.name, e.currentTarget.checked)}
-      />
-      <Text size="xs" c="dimmed">
-        {field.type === "checkbox"
-          ? "Checkbox"
-          : field.type === "select"
-          ? `Opciones: ${(field.options || []).map((op: any) => op.label).join(", ")}`
-          : field.type === "richtext"
-          ? "RichText"
-          : "Texto"}
-      </Text>
-      {isCustomField(field) && (
-        <ActionIcon
-          color="red"
-          onClick={() => handleDeleteCustomField(field.name)}
-          title="Eliminar campo"
-          variant="light"
-        >
-          <IconTrash size={18} />
-        </ActionIcon>
-      )}
-      {field.required && (
-        <Text size="xs" c="red">
-          (Obligatorio)
+    <div ref={setNodeRef} style={style} {...attributes}>
+      <Group gap={4} p={4} wrap="wrap">
+        <div {...listeners} style={{ cursor: "grab", display: "flex", alignItems: "center" }}>
+          <IconGripVertical size={16} />
+        </div>
+        <TextInput
+          value={field.label}
+          onChange={(e) => handleLabelChange(field.name, e.currentTarget.value)}
+          size="xs"
+          style={{ width: 150 }}
+          placeholder="Etiqueta"
+        />
+        <Switch
+          size="sm"
+          label="Obligatorio"
+          checked={!!field.required}
+          onChange={(e) =>
+            handleToggleRequired(field.name, e.currentTarget.checked)
+          }
+        />
+        <Text size="xs" c="dimmed">
+          {field.type === "checkbox"
+            ? "Checkbox"
+            : field.type === "select"
+              ? `Select: ${(field.options || []).map((op: any) => op.label).join(", ")}`
+              : field.type === "multiselect"
+                ? `Multi-select: ${(field.options || []).map((op: any) => op.label).join(", ")}`
+                : field.type === "richtext"
+                  ? "RichText"
+                  : "Texto"}
         </Text>
-      )}
-    </Group>
+        {isCustomField(field) && (
+          <ActionIcon
+            color="red"
+            onClick={() => handleDeleteCustomField(field.name)}
+            title="Eliminar campo"
+            variant="light"
+          >
+            <IconTrash size={18} />
+          </ActionIcon>
+        )}
+        {field.required && (
+          <Text size="xs" c="red">
+            (Obligatorio)
+          </Text>
+        )}
+        {selectFields.length > 0 && (
+          <Switch
+            size="xs"
+            label="Cond."
+            checked={hasShowWhen}
+            onChange={(e) => {
+              if (e.currentTarget.checked) {
+                onUpdateShowWhen(field.name, {
+                  field: selectFields[0].name,
+                  value: [],
+                });
+              } else {
+                onUpdateShowWhen(field.name, null);
+              }
+            }}
+          />
+        )}
+        {hasShowWhen && (
+          <>
+            <Select
+              size="xs"
+              label="Mostrar cuando"
+              data={selectFields.map((f: any) => ({
+                value: f.name,
+                label: f.label || f.name,
+              }))}
+              value={field.showWhen?.field || ""}
+              onChange={(v) => {
+                if (!v) return;
+                onUpdateShowWhen(field.name, { field: v, value: [] });
+              }}
+              style={{ width: 160 }}
+            />
+            <MultiSelect
+              size="xs"
+              label="tenga el valor"
+              data={parentField?.options || []}
+              value={field.showWhen?.value || []}
+              onChange={(v) =>
+                onUpdateShowWhen(field.name, { ...field.showWhen, value: v })
+              }
+              style={{ width: 220 }}
+              placeholder="Selecciona valores"
+              searchable
+            />
+          </>
+        )}
+      </Group>
+    </div>
   );
 }
 
@@ -307,26 +372,28 @@ export default function ConfigureFieldsModal({
   setGlobalMessage: (msg: string) => void;
 }) {
   const [fields, setFields] = useState<any[]>(
-    event?.config?.formFields || getDefaultFields([])
+    event?.config?.formFields || getDefaultFields([]),
   );
   const [tratamientoText, setTratamientoText] = useState(
-    event?.config?.tratamientoDatosText || CONSENTIMIENTO_FIELD.legalText
+    event?.config?.tratamientoDatosText || CONSENTIMIENTO_FIELD.legalText,
   );
   const [consentimientoLabel, setConsentimientoLabel] = useState(
-    event?.config?.tratamientoDatosLabel || CONSENTIMIENTO_FIELD.label
+    event?.config?.tratamientoDatosLabel || CONSENTIMIENTO_FIELD.label,
   );
 
   // ✅ Nuevo: config para modo "plano" o "stepper"
   const [registrationForm, setRegistrationForm] = useState<any>(
-    event?.config?.registrationForm || DEFAULT_REGISTRATION_FORM
+    event?.config?.registrationForm || DEFAULT_REGISTRATION_FORM,
   );
 
   // Custom field UI
   const [newFieldLabel, setNewFieldLabel] = useState("");
-  const [newFieldType, setNewFieldType] = useState<"text" | "select" | "checkbox">(
-    "text"
-  );
-  const [newSelectOptions, setNewSelectOptions] = useState("Opción 1, Opción 2");
+  const [newFieldType, setNewFieldType] = useState<
+    "text" | "select" | "multiselect" | "checkbox"
+  >("text");
+  const [newSelectOptions, setNewSelectOptions] =
+    useState("Opción 1, Opción 2");
+  const [newIncludeOtro, setNewIncludeOtro] = useState(false);
 
   // Stepper editor UI (simple)
   const [selectedStepId, setSelectedStepId] = useState<string>("personal");
@@ -336,16 +403,18 @@ export default function ConfigureFieldsModal({
 
     setFields(event?.config?.formFields || getDefaultFields([]));
     setTratamientoText(
-      event?.config?.tratamientoDatosText || CONSENTIMIENTO_FIELD.legalText
+      event?.config?.tratamientoDatosText || CONSENTIMIENTO_FIELD.legalText,
     );
     setConsentimientoLabel(
-      event?.config?.tratamientoDatosLabel || CONSENTIMIENTO_FIELD.label
+      event?.config?.tratamientoDatosLabel || CONSENTIMIENTO_FIELD.label,
     );
-    setRegistrationForm(event?.config?.registrationForm || DEFAULT_REGISTRATION_FORM);
+    setRegistrationForm(
+      event?.config?.registrationForm || DEFAULT_REGISTRATION_FORM,
+    );
 
     const firstStepId =
-      (event?.config?.registrationForm?.steps || DEFAULT_REGISTRATION_FORM.steps)?.[0]
-        ?.id || "personal";
+      (event?.config?.registrationForm?.steps ||
+        DEFAULT_REGISTRATION_FORM.steps)?.[0]?.id || "personal";
     setSelectedStepId(firstStepId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened]);
@@ -378,7 +447,7 @@ export default function ConfigureFieldsModal({
           required: checked,
           validation: f.validation || base?.validation,
         };
-      })
+      }),
     );
   };
 
@@ -392,7 +461,7 @@ export default function ConfigureFieldsModal({
           label: value,
           validation: f.validation || base?.validation,
         };
-      })
+      }),
     );
   };
 
@@ -417,25 +486,56 @@ export default function ConfigureFieldsModal({
       isCustom: true,
     };
 
-    if (newFieldType === "select") {
+    if (newFieldType === "select" || newFieldType === "multiselect") {
       newField.options = newSelectOptions
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean)
-        .map((s, i) => ({
-          value: "op" + i,
+        .map((s) => ({
+          value: s,
           label: s,
         }));
+    }
+
+    if (newFieldType === "multiselect") {
+      newField.includeOtro = newIncludeOtro;
     }
 
     setFields([...fields, newField]);
     setNewFieldLabel("");
     setNewFieldType("text");
     setNewSelectOptions("Opción 1, Opción 2");
+    setNewIncludeOtro(false);
+  };
+
+  const handleUpdateShowWhen = (fieldName: string, showWhen: any) => {
+    setFields(
+      fields.map((f) => {
+        if (f.name !== fieldName) return f;
+        if (showWhen === null) {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { showWhen: _removed, ...rest } = f;
+          return rest;
+        }
+        return { ...f, showWhen };
+      }),
+    );
   };
 
   const handleDeleteCustomField = (fieldName: string) => {
-    setFields(fields.filter((f) => f.name !== fieldName));
+    setFields(
+      fields
+        .filter((f) => f.name !== fieldName)
+        .map((f) => {
+          // limpiar showWhen que referencie al campo eliminado
+          if (f.showWhen?.field === fieldName) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { showWhen: _removed, ...rest } = f;
+            return rest;
+          }
+          return f;
+        }),
+    );
 
     // si estaba en algún step, también quitarlo
     setRegistrationForm((prev: any) => ({
@@ -464,7 +564,7 @@ export default function ConfigureFieldsModal({
         value: s.id,
         label: s.title,
       })),
-    [registrationForm?.steps]
+    [registrationForm?.steps],
   );
 
   const selectedStep = useMemo(() => {
@@ -475,7 +575,9 @@ export default function ConfigureFieldsModal({
   const updateStepTitle = (id: string, title: string) => {
     setRegistrationForm((prev: any) => ({
       ...prev,
-      steps: (prev.steps || []).map((s: any) => (s.id === id ? { ...s, title } : s)),
+      steps: (prev.steps || []).map((s: any) =>
+        s.id === id ? { ...s, title } : s,
+      ),
     }));
   };
 
@@ -492,7 +594,10 @@ export default function ConfigureFieldsModal({
   const deleteStep = (id: string) => {
     setRegistrationForm((prev: any) => {
       const nextSteps = (prev.steps || []).filter((s: any) => s.id !== id);
-      return { ...prev, steps: nextSteps.length ? nextSteps : DEFAULT_REGISTRATION_FORM.steps };
+      return {
+        ...prev,
+        steps: nextSteps.length ? nextSteps : DEFAULT_REGISTRATION_FORM.steps,
+      };
     });
     setSelectedStepId("personal");
   };
@@ -501,13 +606,22 @@ export default function ConfigureFieldsModal({
     setRegistrationForm((prev: any) => ({
       ...prev,
       steps: (prev.steps || []).map((s: any) =>
-        s.id === id ? { ...s, fields: fieldNames } : s
+        s.id === id ? { ...s, fields: fieldNames } : s,
       ),
     }));
   };
 
   const handleSave = async () => {
     try {
+      // Elimina propiedades con valor undefined (Firestore no las acepta)
+      const stripUndefined = (obj: any): any =>
+        Object.fromEntries(
+          Object.entries(obj).filter(([, v]) => v !== undefined),
+        );
+
+      // Mapa de normalización: value viejo → label (para corregir showWhen references)
+      const optionValueMap = new Map<string, string>();
+
       const sanitizedFields = fields.map((f) => {
         const base = AVAILABLE_FIELDS.find((a) => a.name === f.name);
         let validation = f.validation || base?.validation;
@@ -520,17 +634,41 @@ export default function ConfigureFieldsModal({
           };
         }
 
-        return base && base.validation ? { ...f, validation } : f;
+        const field: any = base && base.validation ? { ...f, validation } : { ...f };
+
+        // Normalizar opciones: value debe ser igual a label
+        if (field.options && Array.isArray(field.options)) {
+          field.options = field.options.map((op: any) => {
+            if (op.value !== op.label) {
+              optionValueMap.set(`${field.name}::${op.value}`, op.label);
+            }
+            return { value: op.label || op.value, label: op.label || op.value };
+          });
+        }
+
+        return stripUndefined(field);
+      });
+
+      // Corregir showWhen.value que referencien valores viejos (ej. "op0" → "Grande")
+      sanitizedFields.forEach((f: any) => {
+        if (f.showWhen?.value && Array.isArray(f.showWhen.value)) {
+          f.showWhen.value = f.showWhen.value.map((v: string) => {
+            const mapped = optionValueMap.get(`${f.showWhen.field}::${v}`);
+            return mapped || v;
+          });
+        }
       });
 
       // Limpieza: steps solo pueden referenciar campos existentes (evita campos borrados)
       const allowedNames = new Set(sanitizedFields.map((f) => f.name));
       const sanitizedRegistrationForm = {
         ...(registrationForm || DEFAULT_REGISTRATION_FORM),
-        steps: (registrationForm?.steps || DEFAULT_REGISTRATION_FORM.steps).map((s: any) => ({
-          ...s,
-          fields: (s.fields || []).filter((n: string) => allowedNames.has(n)),
-        })),
+        steps: (registrationForm?.steps || DEFAULT_REGISTRATION_FORM.steps).map(
+          (s: any) => ({
+            ...s,
+            fields: (s.fields || []).filter((n: string) => allowedNames.has(n)),
+          }),
+        ),
         companyLookup: {
           enabled: true,
           nitField: "company_nit",
@@ -546,7 +684,9 @@ export default function ConfigureFieldsModal({
         "config.registrationForm": sanitizedRegistrationForm, // ✅ nuevo
       });
 
-      setGlobalMessage("Configuración del formulario actualizada correctamente.");
+      setGlobalMessage(
+        "Configuración del formulario actualizada correctamente.",
+      );
       refreshEvents();
       onClose();
     } catch (error) {
@@ -593,19 +733,28 @@ export default function ConfigureFieldsModal({
               <Checkbox
                 label={field.label}
                 checked={fields.some((f) => f.name === field.name)}
-                onChange={(e) => handleToggleField(field.name, e.currentTarget.checked)}
+                onChange={(e) =>
+                  handleToggleField(field.name, e.currentTarget.checked)
+                }
               />
               <Switch
                 size="sm"
                 label="Obligatorio"
                 checked={!!fields.find((f) => f.name === field.name)?.required}
                 disabled={!fields.some((f) => f.name === field.name)}
-                onChange={(e) => handleToggleRequired(field.name, e.currentTarget.checked)}
+                onChange={(e) =>
+                  handleToggleRequired(field.name, e.currentTarget.checked)
+                }
               />
               <TextInput
-                value={fields.find((f) => f.name === field.name)?.label || field.label}
+                value={
+                  fields.find((f) => f.name === field.name)?.label ||
+                  field.label
+                }
                 disabled={!fields.some((f) => f.name === field.name)}
-                onChange={(e) => handleLabelChange(field.name, e.currentTarget.value)}
+                onChange={(e) =>
+                  handleLabelChange(field.name, e.currentTarget.value)
+                }
                 size="xs"
                 style={{ width: 180 }}
                 placeholder="Etiqueta"
@@ -622,7 +771,12 @@ export default function ConfigureFieldsModal({
           <Paper shadow="xs" p="md" mb="md">
             <Group justify="space-between" align="center" mb="xs">
               <Text fw={600}>Pasos</Text>
-              <Button size="xs" variant="light" onClick={addStep} leftSection={<IconPlus size={16} />}>
+              <Button
+                size="xs"
+                variant="light"
+                onClick={addStep}
+                leftSection={<IconPlus size={16} />}
+              >
                 Agregar paso
               </Button>
             </Group>
@@ -639,7 +793,10 @@ export default function ConfigureFieldsModal({
               <TextInput
                 label="Título del paso"
                 value={selectedStep?.title || ""}
-                onChange={(e) => selectedStep && updateStepTitle(selectedStep.id, e.currentTarget.value)}
+                onChange={(e) =>
+                  selectedStep &&
+                  updateStepTitle(selectedStep.id, e.currentTarget.value)
+                }
               />
 
               <ActionIcon
@@ -654,7 +811,7 @@ export default function ConfigureFieldsModal({
               </ActionIcon>
             </Group>
 
-            <Select
+            <MultiSelect
               mt="md"
               label="Campos de este paso"
               placeholder="Selecciona campos"
@@ -663,10 +820,13 @@ export default function ConfigureFieldsModal({
                 label: f.label || f.name,
               }))}
               value={(selectedStep?.fields || []) as string[]}
-              onChange={(vals) => selectedStep && assignFieldsToStep(selectedStep.id, vals as any)}
+              onChange={(vals) =>
+                selectedStep &&
+                assignFieldsToStep(selectedStep.id, vals as string[])
+              }
               searchable
               clearable
-              multiple
+              nothingFoundMessage="No hay campos disponibles"
               description="Recomendado: Paso Empresa incluya company_nit y company_razonSocial."
             />
 
@@ -691,8 +851,11 @@ export default function ConfigureFieldsModal({
             </Group>
 
             <Text size="xs" c="dimmed" mt="xs">
-              La landing buscará en <b>events/{`{eventId}`}/companies/{`{nitNorm}`}</b> y
-              autocompletará la razón social.
+              La landing buscará en{" "}
+              <b>
+                events/{`{eventId}`}/companies/{`{nitNorm}`}
+              </b>{" "}
+              y autocompletará la razón social.
             </Text>
           </Paper>
         </>
@@ -715,18 +878,27 @@ export default function ConfigureFieldsModal({
             data={[
               { value: "text", label: "Texto" },
               { value: "select", label: "Select" },
+              { value: "multiselect", label: "Multi-select" },
               { value: "checkbox", label: "Checkbox" },
             ]}
-            style={{ width: 120 }}
+            style={{ width: 140 }}
             size="xs"
           />
-          {newFieldType === "select" && (
+          {(newFieldType === "select" || newFieldType === "multiselect") && (
             <TextInput
               placeholder="Opciones separadas por coma"
               value={newSelectOptions}
               onChange={(e) => setNewSelectOptions(e.currentTarget.value)}
               size="xs"
               style={{ width: 240 }}
+            />
+          )}
+          {newFieldType === "multiselect" && (
+            <Checkbox
+              label='Incluir "Otro, ¿Cuál?"'
+              checked={newIncludeOtro}
+              onChange={(e) => setNewIncludeOtro(e.currentTarget.checked)}
+              size="xs"
             />
           )}
           <ActionIcon
@@ -739,7 +911,8 @@ export default function ConfigureFieldsModal({
           </ActionIcon>
         </Group>
         <Text size="xs" c="dimmed">
-          Los campos personalizados se pueden agregar al paso deseado (si usas modo paso a paso).
+          Los campos personalizados se pueden agregar al paso deseado (si usas
+          modo paso a paso).
         </Text>
       </Paper>
 
@@ -784,9 +957,11 @@ export default function ConfigureFieldsModal({
                 <SortableFieldItem
                   key={field.name}
                   field={field}
+                  allFields={fields}
                   handleDeleteCustomField={handleDeleteCustomField}
                   handleLabelChange={handleLabelChange}
                   handleToggleRequired={handleToggleRequired}
+                  onUpdateShowWhen={handleUpdateShowWhen}
                 />
               ))}
 
