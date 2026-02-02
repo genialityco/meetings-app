@@ -5,6 +5,7 @@ import PhonesAdminPage from "./pages/PhonesAdminPage.tsx";
 import MeetingAutoResponse from "./pages/MeetingAutoResponse";
 import EventAdmin from "./pages/admin/EventAdmin";
 import Dashboard from "./pages/dashboard/Dashboard.tsx";
+import CompanyLanding from "./pages/dashboard/CompanyLanding.tsx";
 // import { Container } from "@mantine/core";
 import MatrixPage from "./pages/admin/MatrixPage.jsx";
 import EventMatchPage from "./pages/admin/EventMatchPage.jsx";
@@ -22,6 +23,8 @@ const App = () => {
         <Route path="/dashboard" element={<Dashboard />} />
         {/* Ruta dashboard filtrada por evento */}
         <Route path="/dashboard/:eventId" element={<Dashboard />} />
+        {/* Landing de empresa */}
+        <Route path="/dashboard/:eventId/company/:companyNit" element={<CompanyLanding />} />
         <Route path="/admin" element={<AdminPanel />} />
         <Route path="/matrix/:eventId" element={<MatrixPage />} />
         <Route
