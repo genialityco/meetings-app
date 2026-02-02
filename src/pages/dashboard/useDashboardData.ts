@@ -218,6 +218,9 @@ export function useDashboardData(eventId?: string) {
   const [solicitarReunionHabilitado, setSolicitarReunionHabilitado] =
     useState<boolean>(true);
   const [eventConfig, setEventConfig] = useState<any>(null);
+  const [eventImage, setEventImage] = useState<string>("");
+  const [dashboardLogo, setDashboardLogo] = useState<string>("");
+  const [eventName, setEventName] = useState<string>("");
   const [formFields, setFormFields] = useState([]);
   const [companyGroups, setCompanyGroups] = useState<any[]>([]);
   const [availableAsistents, setAvailableAsistents] = useState<Assistant[]>([]);
@@ -255,8 +258,12 @@ export function useDashboardData(eventId?: string) {
       const ref = doc(db, "events", eventId);
       const snap = await getDoc(ref);
       if (snap.exists()) {
-        const config = snap.data().config || {};
+        const data = snap.data();
+        const config = data.config || {};
         setEventConfig(config);
+        setEventImage(data.eventImage || "");
+        setDashboardLogo(data.dashboardLogo || "");
+        setEventName(data.eventName || "");
         setFormFields(config.formFields || []);
         setPolicies({ ...DEFAULT_POLICIES, ...(config.policies || {}) });
       }
@@ -1495,6 +1502,9 @@ export function useDashboardData(eventId?: string) {
     notifications,
     solicitarReunionHabilitado,
     eventConfig,
+    eventImage,
+    dashboardLogo,
+    eventName,
 
     searchTerm,
     setSearchTerm,

@@ -91,6 +91,12 @@ const AVAILABLE_FIELDS = [
       maxLength: 120,
     },
   },
+  {
+    name: "company_logo",
+    label: "Logo de empresa",
+    type: "file",
+    required: false,
+  },
 
   {
     name: "cargo",
@@ -190,7 +196,7 @@ const DEFAULT_REGISTRATION_FORM = {
     {
       id: "company",
       title: "Empresa",
-      fields: ["company_nit", "company_razonSocial"],
+      fields: ["company_nit", "company_razonSocial", "company_logo"],
     },
     {
       id: "networking",

@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(npm run build:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(ls -la \"d:\\\\gen.iality\\\\Proyectos\\\\my-meetings-app\\\\src\\\\components\"\" 2>/dev/null || find \"d:gen.ialityProyectosmy-meetings-appsrccomponents\" -type f -name \"*.tsx\" -o -name \"*.jsx \")"
     ]
   }
 }

@@ -881,26 +881,12 @@ const Landing = () => {
           );
         }
 
-        // Special: company_razonSocial — append logo upload after it
-        if (field.name === "company_razonSocial") {
+        // Special: company_logo — file upload for company logo
+        if (field.name === "company_logo" || field.type === "file") {
           return (
             <Box key={field.name}>
-              <TextInput
-                label={field.label}
-                placeholder={field.label}
-                value={getValueForField(field.name)}
-                onChange={(e) => {
-                  handleDynamicChange(field.name, e.target.value);
-                  const error = validateField(field, e.target.value);
-                  setFormErrors((prev) => ({ ...prev, [field.name]: error }));
-                }}
-                required={field.required}
-                error={fieldError}
-                radius="md"
-              />
-
               <FileInput
-                label="Logo de empresa (opcional)"
+                label={field.label || "Logo de empresa (opcional)"}
                 placeholder="Subir logo"
                 accept="image/png,image/jpeg,image/webp"
                 value={companyLogoFile}
@@ -909,7 +895,6 @@ const Landing = () => {
                   setCompanyLogoPreview(file ? URL.createObjectURL(file) : null);
                 }}
                 radius="md"
-                mt="xs"
               />
 
               {companyLogoPreview && (
