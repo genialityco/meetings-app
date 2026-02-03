@@ -12,13 +12,13 @@ import {
   ScrollArea,
   Loader,
   Center,
+  Grid,
   Accordion,
   Badge,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 
 export default function ChatbotTab({
-  filteredAssistants = [],
   products = [],
   sendMeetingRequest,
   solicitarReunionHabilitado,
@@ -26,7 +26,7 @@ export default function ChatbotTab({
   setSelectedImage,
   currentUser,
   eventId,
-}) {
+}: any) {
   const [input, setInput] = useState("");
   // Mensaje de saludo inicial
   const initialGreeting = { from: "ai", text: "¡Hola! Soy tu asistente virtual. Puedes preguntarme por empresas, asistentes o productos del evento." };
@@ -34,7 +34,7 @@ export default function ChatbotTab({
   const [results, setResults] = useState({ assistants: [], products: [], companies: [] });
   const [loading, setLoading] = useState(false);
 
-  const proxyUrl = import.meta.env.VITE_AI_PROXY_URL || "/api/ai/proxy";
+  const proxyUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_AI_PROXY_URL) ? import.meta.env.VITE_AI_PROXY_URL : "/api/ai/proxy";
 
   const send = async () => {
     if (!input.trim()) return;
@@ -73,17 +73,21 @@ export default function ChatbotTab({
     }
   };
 
-  const handleRequestMeeting = async (assistant) => {
+  const handleRequestMeeting = async (assistant: any) => {
     try {
       await sendMeetingRequest(assistant.id, assistant.telefono);
-      showNotification({ title: "Solicitud enviada", message: `Solicitud enviada a ${assistant.nombre}`, color: "teal" });
+      if (typeof showNotification === 'function') {
+        showNotification({ title: "Solicitud enviada", message: `Solicitud enviada a ${assistant.nombre}`, color: "teal" });
+      }
     } catch (e) {
-      showNotification({ title: "Error", message: "No se pudo enviar la solicitud.", color: "red" });
+      if (typeof showNotification === 'function') {
+        showNotification({ title: "Error", message: "No se pudo enviar la solicitud.", color: "red" });
+      }
     }
   };
 
   return (
-    <Stack spacing="md">
+    <Stack>
       <Card p="md" shadow="sm" radius="md" style={{ height: 420, display: 'flex', flexDirection: 'column' }}>
         <Title order={5} mb="sm">Chat</Title>
         <Divider mb="sm" />
@@ -121,7 +125,7 @@ export default function ChatbotTab({
               )}
             </Stack>
           </ScrollArea>
-          <Group align="flex-end" noWrap mt={4} style={{ borderTop: '1px solid #eee', paddingTop: 8 }}>
+          <Group align="flex-end" mt={4} style={{ borderTop: '1px solid #eee', paddingTop: 8 }}>
             <Textarea
               placeholder="Escribe tu mensaje..."
               value={input}
@@ -136,7 +140,7 @@ export default function ChatbotTab({
                 }
               }}
             />
-            <Button onClick={send} loading={loading} color="blue" radius="md" style={{ minWidth: 80 }}>
+            <Button onClick={send} loading={loading} radius="md" style={{ minWidth: 80, background: 'rgb(68, 199, 142)', color: '#fff' }}>
               Enviar
             </Button>
           </Group>
@@ -169,32 +173,26 @@ export default function ChatbotTab({
           <>
             <Title order={6}>Asistentes</Title>
             <Stack>
-              {results.assistants.map((a) => (
-                <Card key={a.id} withBorder shadow="xs" radius="md" p="sm">
-                  <Group position="apart" align="flex-start">
-                    <Group align="flex-start" spacing="xs">
-                      <Avatar src={a.photoURL} alt={a.nombre} radius="xl" size="md" />
-                      <div>
-                        <Text fw={600}>{a.nombre}</Text>
-                        <Text size="xs" c="dimmed">{a.empresa}{a.cargo ? ` — ${a.cargo}` : ''}</Text>
-                        {a.tipoAsistente && <Text size="xs" c="dimmed">Tipo: {a.tipoAsistente}</Text>}
-                        {a.correo && <Text size="xs" c="dimmed">Email: <a href={`mailto:${a.correo}`}>{a.correo}</a></Text>}
-                        {a.telefono && <Text size="xs" c="dimmed">Tel: <a href={`tel:${a.telefono}`}>{a.telefono}</a></Text>}
-                        {a.necesidad && <Text size="xs" c="dimmed">Necesidad: {a.necesidad}</Text>}
-                        {a.interesPrincipal && <Text size="xs" c="dimmed">Interés: {a.interesPrincipal}</Text>}
-                      </div>
-                    </Group>
-                    <Button
-                      size="xs"
-                      onClick={() => handleRequestMeeting(a)}
-                      disabled={!solicitarReunionHabilitado}
-                      variant="light"
-                      color="green"
-                      radius="md"
-                    >
-                      {solicitarReunionHabilitado ? "Solicitar reunión" : "Solicitudes deshabilitadas"}
-                    </Button>
+              {(results.assistants as any[]).map((a: any, idx: number) => (
+                <Card key={a.id || idx} shadow="sm" p="lg" withBorder radius="md" style={{ display: 'flex', flexDirection: 'column', minHeight: 220 }}>
+                  <Group justify="center" mb="md">
+                    <Avatar src={a.fotoUrl || a.photoURL} alt={a.nombre} radius="xl" size={56} style={{ cursor: 'pointer' }}>
+                      {!a.fotoUrl && !a.photoURL && a.nombre && a.nombre[0]}
+                    </Avatar>
                   </Group>
+                  <Title order={5} mb={4} style={{ textAlign: 'center' }}>{a.nombre}</Title>
+                  <Stack gap={2} style={{ flex: 1, minHeight: 0, marginBottom: 8 }}>
+                    {a.cargo && <Text size="sm">🏷 <b>Cargo:</b> {a.cargo}</Text>}
+                    {a.empresa && <Text size="sm">🏢 <b>Empresa:</b> {a.empresa}</Text>}
+                    {a.email && <Text size="sm">📧 <b>Email:</b> {a.email}</Text>}
+                    {a.telefono && <Text size="sm">📞 <b>Tel:</b> {a.telefono}</Text>}
+                    {a.descripcion && <Text size="sm">📝 <b>Descripción:</b> {a.descripcion}</Text>}
+                    {a.necesidad && <Text size="sm">🎯 <b>Necesidad:</b> {a.necesidad}</Text>}
+                    {a.interesPrincipal && <Text size="sm">🔍 <b>Interés:</b> {a.interesPrincipal}</Text>}
+                  </Stack>
+                  <Button size="xs" fullWidth mt={8} radius="md" disabled={!solicitarReunionHabilitado} onClick={() => handleRequestMeeting(a)} style={{ background: 'rgb(68, 199, 142)', color: '#fff' }}>
+                    Solicitar reunión
+                  </Button>
                 </Card>
               ))}
             </Stack>
@@ -204,91 +202,94 @@ export default function ChatbotTab({
         {results.products.length > 0 && (
           <>
             <Title order={6} mt="sm">Productos</Title>
-            <Stack>
-              {results.products.map((p) => (
-                <Card key={p.id} withBorder shadow="xs" radius="md" p="sm">
-                  <Group position="apart" align="flex-start">
-                    <Group align="flex-start" spacing="xs" noWrap>
-                      {p.imageUrl && (
-                        <img src={p.imageUrl} alt={p.title || p.name} style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8 }} />
+            <Grid gutter={16}>
+              {(results.products as any[]).map((p: any, idx: number) => (
+                <Grid.Col key={p.id || idx} span={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
+                  <Card shadow="sm" p="lg" withBorder radius="md" style={{ display: 'flex', flexDirection: 'column', minHeight: 220 }}>
+                    <Group justify="center" mb="md">
+                      {p.imageUrl ? (
+                        <Avatar src={p.imageUrl} alt={p.title || p.name} size={56} radius="md" />
+                      ) : (
+                        <Avatar size={56} radius="md" color="blue">{(p.title || p.name || 'P')[0]}</Avatar>
                       )}
-                      <div>
-                        <Text fw={600}>{p.title || p.name}</Text>
-                        {p.category && <Text size="xs" c="dimmed">Categoría: {p.category}</Text>}
-                        {p.description && <Text size="xs" c="dimmed">{p.description}</Text>}
-                        {p.ownerCompany && <Text size="xs" c="dimmed">Empresa: {p.ownerCompany}</Text>}
-                        {p.ownerName && <Text size="xs" c="dimmed">Responsable: {p.ownerName}</Text>}
-                        {p.ownerPhone && <Text size="xs" c="dimmed">Tel: <a href={`tel:${p.ownerPhone}`}>{p.ownerPhone}</a></Text>}
-                      </div>
                     </Group>
-                    <Button size="xs" onClick={async () => {
+                    <Title order={5} mb={4} style={{ textAlign: 'center' }}>{p.title || p.name}</Title>
+                    <Stack gap={2} style={{ flex: 1, minHeight: 0, marginBottom: 8 }}>
+                      {p.category && <Text size="sm">🏷 <b>Categoría:</b> {p.category}</Text>}
+                      {p.description && <Text size="sm">📝 <b>Descripción:</b> {p.description}</Text>}
+                      {p.ownerCompany && <Text size="sm">🏢 <b>Empresa:</b> {p.ownerCompany}</Text>}
+                      {p.ownerName && <Text size="sm">👤 <b>Responsable:</b> {p.ownerName}</Text>}
+                      {p.ownerPhone && <Text size="sm">📞 <b>Tel:</b> <a href={`tel:${p.ownerPhone}`}>{p.ownerPhone}</a></Text>}
+                    </Stack>
+                    <Button size="xs" fullWidth mt={8} radius="md" onClick={async () => {
                       try {
                         await sendMeetingRequest(p.ownerUserId, p.ownerPhone || "");
                         showNotification({ title: "Solicitud enviada", message: `Solicitud enviada al responsable`, color: "teal" });
                       } catch (e) {
                         showNotification({ title: "Error", message: "No se pudo enviar la solicitud.", color: "red" });
                       }
-                    }} disabled={!solicitarReunionHabilitado || !p.ownerUserId} variant="light" color="green" radius="md">Solicitar reunión</Button>
-                  </Group>
-                </Card>
+                    }} disabled={!solicitarReunionHabilitado || !p.ownerUserId} style={{ background: 'rgb(68, 199, 142)', color: '#fff' }}>Solicitar reunión</Button>
+                  </Card>
+                </Grid.Col>
               ))}
-            </Stack>
+            </Grid>
           </>
         )}
 
         {results.companies.length > 0 && (
           <>
             <Title order={6} mt="sm">Empresas</Title>
-            <Stack>
-              {results.companies.map((c, idx) => (
-                <Card key={idx} withBorder shadow="xs" radius="md" p="sm">
-                  <Group position="apart" align="flex-start">
-                    <Group align="flex-start" spacing="xs" noWrap>
-                      {c.logoUrl && (
-                        <img src={c.logoUrl} alt={c.empresa || c.razonSocial || c.company_razonSocial} style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8 }} />
-                      )}
-                      <div>
-                        <Text fw={600}>{c.empresa || c.razonSocial || c.company_razonSocial}</Text>
-                        {c.nitNorm && <Text size="xs" c="dimmed">NIT: {c.nitNorm}</Text>}
-                        {c.descripcion && <Text size="xs" c="dimmed">{c.descripcion}</Text>}
-                        {c.custom_por_favor_indique_el_tama_2641 && <Text size="xs" c="dimmed">Tamaño: {c.custom_por_favor_indique_el_tama_2641}</Text>}
-                        {c.custom_nmero_de_empleados_6775 && <Text size="xs" c="dimmed">Empleados: {c.custom_nmero_de_empleados_6775}</Text>}
-                      </div>
+            <Grid gutter={16}>
+              {(results.companies as any[]).map((c: any, idx: number) => (
+                <Grid.Col key={idx} span={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
+                  <Card shadow="sm" p="lg" withBorder radius="md" style={{ display: 'flex', flexDirection: 'column', minHeight: 220 }}>
+                    <Group justify="space-between" mb="md">
+                      <Group gap="sm">
+                        {c.logoUrl ? (
+                          <Avatar src={c.logoUrl} alt={c.empresa || c.razonSocial || c.company_razonSocial} size={48} radius="md" />
+                        ) : (
+                          <Avatar size={48} radius="md" color="blue">{(c.empresa || c.razonSocial || c.company_razonSocial || 'E')[0]}</Avatar>
+                        )}
+                        <div style={{ flex: 1 }}>
+                          <Title order={6} mb={4} style={{ textAlign: 'left' }}>{c.empresa || c.razonSocial || c.company_razonSocial}</Title>
+                          {c.custom_nmero_de_empleados_6775 && <Text size="xs" c="dimmed">Empleados: {c.custom_nmero_de_empleados_6775}</Text>}
+                        </div>
+                      </Group>
                     </Group>
-                  </Group>
-                  {Array.isArray(c.assistants) && c.assistants.length > 0 && (
-                    <Accordion variant="contained" mt="sm">
-                      {c.assistants.map((a, aidx) => (
-                        <Accordion.Item value={`asistente-${a.id || aidx}`} key={a.id || aidx}>
-                          <Accordion.Control>
-                            <Group>
-                              <Avatar size={32} src={a.fotoUrl || undefined} radius="xl" />
-                              <Text fw={500}>{a.nombre}</Text>
-                              {a.cargo && <Badge color="blue" size="xs">{a.cargo}</Badge>}
-                            </Group>
-                          </Accordion.Control>
-                          <Accordion.Panel>
-                            <Stack gap={2}>
-                              {a.email && <Text size="sm"><b>Email:</b> {a.email}</Text>}
-                              {a.telefono && <Text size="sm"><b>Teléfono:</b> {a.telefono}</Text>}
-                              {a.cargo && <Text size="sm"><b>Cargo:</b> {a.cargo}</Text>}
-                              {a.descripcion && <Text size="sm"><b>Descripción:</b> {a.descripcion}</Text>}
-                              {a.necesidad && <Text size="sm"><b>Necesidad:</b> {a.necesidad}</Text>}
-                              {a.interesPrincipal && <Text size="sm"><b>Interés principal:</b> {a.interesPrincipal}</Text>}
-                              {a.tipoAsistente && <Text size="sm"><b>Tipo:</b> {a.tipoAsistente}</Text>}
-                              {a.empresa && <Text size="sm"><b>Empresa:</b> {a.empresa}</Text>}
-                              <Button size="xs" mt={4} color="green" radius="md" disabled={!solicitarReunionHabilitado} onClick={() => handleRequestMeeting(a)}>
-                                Solicitar reunión
-                              </Button>
-                            </Stack>
-                          </Accordion.Panel>
-                        </Accordion.Item>
-                      ))}
-                    </Accordion>
-                  )}
-                </Card>
+                    {Array.isArray(c.assistants) && c.assistants.length > 0 && (
+                      <Accordion variant="contained" mt="sm">
+                        {(c.assistants as any[]).map((a: any, aidx: number) => (
+                          <Accordion.Item value={`asistente-${a.id || aidx}`} key={a.id || aidx}>
+                            <Accordion.Control>
+                              <Group>
+                                <Avatar size={32} src={a.fotoUrl || undefined} radius="xl" />
+                                <Text fw={500}>{a.nombre}</Text>
+                                {a.cargo && <Badge color="blue" size="xs">{a.cargo}</Badge>}
+                              </Group>
+                            </Accordion.Control>
+                            <Accordion.Panel>
+                              <Stack gap={2}>
+                                {a.email && <Text size="sm"><b>Email:</b> {a.email}</Text>}
+                                {a.telefono && <Text size="sm"><b>Teléfono:</b> {a.telefono}</Text>}
+                                {a.cargo && <Text size="sm"><b>Cargo:</b> {a.cargo}</Text>}
+                                {a.descripcion && <Text size="sm"><b>Descripción:</b> {a.descripcion}</Text>}
+                                {a.necesidad && <Text size="sm"><b>Necesidad:</b> {a.necesidad}</Text>}
+                                {a.interesPrincipal && <Text size="sm"><b>Interés principal:</b> {a.interesPrincipal}</Text>}
+                                {a.tipoAsistente && <Text size="sm"><b>Tipo:</b> {a.tipoAsistente}</Text>}
+                                {a.empresa && <Text size="sm"><b>Empresa:</b> {a.empresa}</Text>}
+                                <Button size="xs" mt={8} fullWidth radius="md" disabled={!solicitarReunionHabilitado} onClick={() => handleRequestMeeting(a)} style={{ background: 'rgb(68, 199, 142)', color: '#fff' }}>
+                                  Solicitar reunión
+                                </Button>
+                              </Stack>
+                            </Accordion.Panel>
+                          </Accordion.Item>
+                        ))}
+                      </Accordion>
+                    )}
+                  </Card>
+                </Grid.Col>
               ))}
-            </Stack>
+            </Grid>
           </>
         )}
 
