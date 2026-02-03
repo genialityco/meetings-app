@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable react/prop-types */
 import { Button, Modal, Select, Stack } from "@mantine/core";
-import { addDoc, collection, getDocs, query, where } from "firebase/firestore";
+import { addDoc, collection, getDocs, query, where, updateDoc, doc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { useEffect, useState } from "react";
 
@@ -11,7 +11,14 @@ import { useEffect, useState } from "react";
      Se generan los horarios disponibles a partir de la
      configuración del evento y se listan los asistentes.
 =================================================== */
-const ManualMeetingModal = ({ opened, onClose, event, setGlobalMessage }) => {
+const ManualMeetingModal = ({
+  opened,
+  onClose,
+  event,
+  setGlobalMessage,
+  initialParticipant1 = null,
+  initialParticipant2 = null,
+}) => {
   const [assistants, setAssistants] = useState([]);
   const [selectedTable, setSelectedTable] = useState("");
   const [selectedTimeSlot, setSelectedTimeSlot] = useState("");
@@ -22,12 +29,12 @@ const ManualMeetingModal = ({ opened, onClose, event, setGlobalMessage }) => {
   useEffect(() => {
     fetchAssistants();
     generateTimeSlots();
-    // Reiniciamos los campos al abrir el modal
+    // Reiniciamos los campos al abrir el modal y prellenamos si vienen props
     setSelectedTable("");
     setSelectedTimeSlot("");
-    setParticipant1("");
-    setParticipant2("");
-  }, [event]);
+    setParticipant1(initialParticipant1 || "");
+    setParticipant2(initialParticipant2 || "");
+  }, [event, initialParticipant1, initialParticipant2]);
 
   const fetchAssistants = async () => {
     try {
@@ -73,14 +80,45 @@ const ManualMeetingModal = ({ opened, onClose, event, setGlobalMessage }) => {
       return;
     }
     const meetingData = {
-      tableAssigned: selectedTable,
-      timeSlot: selectedTimeSlot,
+      eventId: event.id,
+      requesterId: participant1,
+      receiverId: participant2,
       status: "accepted",
+      createdAt: new Date(),
+      timeSlot: selectedTimeSlot,
+      tableAssigned: selectedTable.toString(),
       participants: [participant1, participant2],
+      motivoMatch: "Manual",
+      razonMatch: "Agendada manualmente por admin",
+      scoreMatch: null,
+      agendadoAutomatico: false,
     };
+
     try {
       // Se agrega la reunión en un subdocumento de "meetings" dentro del evento
-      await addDoc(collection(db, "events", event.id, "meetings"), meetingData);
+      const docRef = await addDoc(collection(db, "events", event.id, "meetings"), meetingData);
+
+      // Buscar el slot en 'agenda' que coincida con el time y la mesa para marcarlo como no disponible
+      try {
+        const q = query(
+          collection(db, "agenda"),
+          where("eventId", "==", event.id),
+          where("tableNumber", "==", parseInt(selectedTable, 10)),
+          where("startTime", "==", selectedTimeSlot)
+        );
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          // marcar el primer slot encontrado como asignado
+          const slotDoc = snap.docs[0];
+          await updateDoc(doc(db, "agenda", slotDoc.id), {
+            available: false,
+            meetingId: docRef.id,
+          });
+        }
+      } catch (slotErr) {
+        console.warn("No se pudo actualizar el slot en agenda:", slotErr);
+      }
+
       setGlobalMessage("Reunión asignada manualmente.");
       onClose();
     } catch (error) {

@@ -3,6 +3,7 @@ import { useState } from "react";
 import AttendeesView from "./AttendeesView";
 import CompaniesView from "./CompaniesView";
 import ProductsView from "./ProductsView";
+import ChatbotTab from "./ChatbotTab";
 import MeetingsTab from "./MeetingsTab";
 import RequestsTab from "./RequestsTab";
 import MyProductsTab from "./MyProductsTab";
@@ -17,6 +18,8 @@ export default function TabsPanel({ dashboard }: { dashboard: any }) {
   if (uiViews.attendees) viewOptions.push({ value: "attendees", label: "Directorio" });
   if (uiViews.companies) viewOptions.push({ value: "companies", label: "Empresas" });
   if (uiViews.products) viewOptions.push({ value: "products", label: "Productos" });
+  // Añadir Chatbot siempre visible; puedes condicionar con uiViews.chatbot si prefieres
+  viewOptions.push({ value: "chatbot", label: "Chatbot" });
   viewOptions.push({ value: "activity", label: "Mi actividad" });
 
   const [topView, setTopView] = useState(viewOptions[0]?.value || "attendees");
@@ -62,6 +65,18 @@ export default function TabsPanel({ dashboard }: { dashboard: any }) {
           policies={policies}
           solicitarReunionHabilitado={dashboard.solicitarReunionHabilitado}
           sendMeetingRequest={dashboard.sendMeetingRequest}
+          setAvatarModalOpened={dashboard.setAvatarModalOpened}
+          setSelectedImage={dashboard.setSelectedImage}
+          currentUser={dashboard.currentUser}
+        />
+      )}
+
+      {topView === "chatbot" && (
+        <ChatbotTab
+          filteredAssistants={dashboard.filteredAssistants}
+          products={dashboard.products}
+          sendMeetingRequest={dashboard.sendMeetingRequest}
+          solicitarReunionHabilitado={dashboard.solicitarReunionHabilitado}
           setAvatarModalOpened={dashboard.setAvatarModalOpened}
           setSelectedImage={dashboard.setSelectedImage}
           currentUser={dashboard.currentUser}
