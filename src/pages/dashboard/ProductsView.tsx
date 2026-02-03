@@ -9,20 +9,25 @@ import {
   TextInput,
   Select,
   Badge,
-  Divider,
   Image,
   Stack,
-  SegmentedControl,
+  Box,
+  ActionIcon,
+  Divider,
   Paper,
+  ThemeIcon,
+  useMantineTheme,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import { useState, useMemo } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { IconSearch, IconX, IconFilterOff, IconBuildingStore } from "@tabler/icons-react";
 import type { Product, Company, Assistant, MeetingContext } from "./types";
 
 interface ProductsViewProps {
   products: Product[];
   companies: Company[];
-  filteredAssistants: Assistant[];
+  filteredAssistants: Assistant[]; // (se mantiene por compatibilidad aunque no se use aquí)
   solicitarReunionHabilitado: boolean;
   sendMeetingRequest: (
     id: string,
@@ -41,70 +46,49 @@ export default function ProductsView({
   sendMeetingRequest,
   currentUser,
 }: ProductsViewProps) {
+  const theme = useMantineTheme();
+  const navigate = useNavigate();
+  const { eventId } = useParams();
+
   const [searchTerm, setSearchTerm] = useState("");
-  const [companyFilter, setCompanyFilter] = useState<string | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<string>("individual");
 
   const myUid = currentUser?.uid;
 
-  // Options de empresas para filtro
-  const companyOptions = useMemo(() => {
+  // Mapa para evitar companies.find() por cada card
+  const companiesByNit = useMemo(() => {
+    const map = new Map<string, Company>();
+    (companies || []).forEach((c) => {
+      if (c?.nitNorm) map.set(c.nitNorm, c);
+    });
+    return map;
+  }, [companies]);
+
+  const categoryOptions = useMemo(() => {
     const set = new Set<string>();
     (products || []).forEach((p) => {
-      if (p.ownerCompany) set.add(p.ownerCompany);
+      if (p.category) set.add(p.category);
     });
     return Array.from(set)
-      .sort()
+      .sort((a, b) => a.localeCompare(b))
       .map((c) => ({ value: c, label: c }));
   }, [products]);
 
-  // Filtrar productos
   const filteredProducts = useMemo(() => {
+    const t = searchTerm.toLowerCase().trim();
     return (products || []).filter((p) => {
-      // Filtro por empresa
-      if (companyFilter && p.ownerCompany !== companyFilter) return false;
-      // Filtro por texto
-      const t = searchTerm.toLowerCase().trim();
+      if (categoryFilter && p.category !== categoryFilter) return false;
       if (!t) return true;
+
       return (
         (p.title || "").toLowerCase().includes(t) ||
         (p.description || "").toLowerCase().includes(t) ||
-        (p.ownerCompany || "").toLowerCase().includes(t) ||
-        (p.ownerName || "").toLowerCase().includes(t)
+        (p.category || "").toLowerCase().includes(t) ||
+        (p.ownerCompany || "").toLowerCase().includes(t)
       );
     });
-  }, [products, searchTerm, companyFilter]);
-
-  // Agrupar productos por empresa
-  const groupedByCompany = useMemo(() => {
-    const groups = new Map<string, { company: Company | undefined; companyName: string; products: Product[] }>();
-    filteredProducts.forEach((p) => {
-      const key = p.companyId || p.ownerCompany || "__sin_empresa__";
-      if (!groups.has(key)) {
-        const companyDoc = companies.find((c) => c.nitNorm === p.companyId);
-        groups.set(key, {
-          company: companyDoc,
-          companyName: p.ownerCompany || "Sin empresa",
-          products: [],
-        });
-      }
-      groups.get(key)!.products.push(p);
-    });
-    // Ordenar por nombre de empresa
-    return Array.from(groups.values()).sort((a, b) =>
-      a.companyName.localeCompare(b.companyName),
-    );
-  }, [filteredProducts, companies]);
-
-  // Encontrar representantes de la empresa de un producto
-  const getCompanyReps = (product: Product) => {
-    if (!product.companyId) return [];
-    return filteredAssistants.filter(
-      (a) =>
-        (a.companyId || a.company_nit) === product.companyId && a.id !== myUid,
-    );
-  };
+  }, [products, searchTerm, categoryFilter]);
 
   const handleSendMeeting = async (
     assistantId: string,
@@ -118,6 +102,7 @@ export default function ProductsView({
         companyId: product.companyId || null,
         contextNote: `Interesado en: ${product.title}`,
       });
+
       showNotification({
         title: "Solicitud enviada",
         message: `Solicitud enviada por el producto "${product.title}".`,
@@ -134,198 +119,257 @@ export default function ProductsView({
     }
   };
 
-  const renderProductCard = (p: Product, showCompanyBadge: boolean) => {
-    const companyDoc = companies.find((c) => c.nitNorm === p.companyId);
-    const reps = getCompanyReps(p);
+  const clearFilters = () => {
+    setSearchTerm("");
+    setCategoryFilter(null);
+  };
+
+  const renderProductCard = (p: Product) => {
+    const companyDoc = p.companyId ? companiesByNit.get(p.companyId) : undefined;
+
+    const isMine = !!myUid && p.ownerUserId === myUid;
+    const isDisabled =
+      !solicitarReunionHabilitado ||
+      !p.ownerUserId ||
+      isMine ||
+      loadingId === `${p.id}-${p.ownerUserId}`;
+
+    const ctaLabel = !solicitarReunionHabilitado
+      ? "Deshabilitado"
+      : isMine
+        ? "Tu producto"
+        : "Solicitar reunión";
 
     return (
-      <Grid.Col key={p.id} span={{ xs: 12, sm: 6, md: 4 }}>
-        <Card shadow="sm" p="lg" withBorder style={{ height: "100%" }}>
-          {/* Header: título + empresa */}
-          <Group justify="space-between" mb="xs" wrap="nowrap">
-            <Title order={5} lineClamp={1} style={{ minWidth: 0 }}>
-              {p.title}
-            </Title>
-            {showCompanyBadge && (
-              <Badge variant="light">{p.ownerCompany || "Empresa"}</Badge>
+      <Grid.Col
+        key={p.id}
+        // ✅ 2 columnas en mobile: base=6 (12-grid => 2 columnas)
+        span={{ base: 6, sm: 4, md: 3, lg: 3 }}
+      >
+        <Card
+          withBorder
+          radius="lg"
+          padding="sm"
+          shadow="sm"
+          style={{
+            height: "100%",
+            overflow: "hidden",
+          }}
+        >
+          {/* Imagen */}
+          <Card.Section>
+            {p.imageUrl ? (
+              <Box style={{ position: "relative" }}>
+                <Image
+                  src={p.imageUrl}
+                  alt={p.title}
+                  height={140}
+                  fit="cover"
+                />
+                {/* Overlay sutil para que se vea más “card premium” */}
+                <Box
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    background:
+                      "linear-gradient(180deg, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.35) 100%)",
+                    pointerEvents: "none",
+                  }}
+                />
+                {/* Badge de categoría arriba */}
+                {p.category && (
+                  <Badge
+                    variant="filled"
+                    radius="md"
+                    size="sm"
+                    style={{
+                      position: "absolute",
+                      top: 10,
+                      left: 10,
+                      background: "rgba(0,0,0,0.55)",
+                      border: "1px solid rgba(255,255,255,0.18)",
+                    }}
+                  >
+                    {p.category}
+                  </Badge>
+                )}
+              </Box>
+            ) : (
+              <Box
+                style={{
+                  height: 140,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center"}}
+              >
+                <Avatar size={64} radius="md" color="gray">
+                  {(p.title || "P")[0]?.toUpperCase()}
+                </Avatar>
+              </Box>
             )}
-          </Group>
+          </Card.Section>
 
-          {/* Imagen del producto */}
-          {p.imageUrl && (
-            <Image
-              src={p.imageUrl}
-              alt={p.title}
-              height={160}
-              radius="md"
-              fit="cover"
-              mb="sm"
-            />
-          )}
+          <Stack gap={8} mt="sm" style={{ height: "calc(100% - 140px)" }}>
+            {/* Título */}
+            <Title order={6} lineClamp={2} style={{ minWidth: 0 }}>
+              {p.title || "Producto"}
+            </Title>
 
-          {/* Descripción */}
-          <Text size="sm" c="dimmed" lineClamp={4} style={{ whiteSpace: "pre-wrap" }}>
-            {p.description}
-          </Text>
-
-          <Divider my="md" />
-
-          {/* Empresa con logo (solo en vista individual) */}
-          {showCompanyBadge && (
-            <Group gap="sm" mb="sm">
+            {/* Empresa */}
+            <Group
+              gap={8}
+              wrap="nowrap"
+              style={{ cursor: p.companyId ? "pointer" : undefined }}
+              onClick={
+                p.companyId && eventId
+                  ? () => navigate(`/dashboard/${eventId}/company/${p.companyId}`)
+                  : undefined
+              }
+            >
               {companyDoc?.logoUrl ? (
                 <Image
                   src={companyDoc.logoUrl}
                   alt={p.ownerCompany || ""}
-                  w={28}
-                  h={28}
+                  w={22}
+                  h={22}
                   radius="sm"
                   fit="contain"
                 />
               ) : (
-                <Avatar size="sm" radius="sm" color="blue">
-                  {(p.ownerCompany || "E")[0]?.toUpperCase()}
-                </Avatar>
+                <ThemeIcon variant="light" radius="md" size={22}>
+                  <IconBuildingStore size={14} />
+                </ThemeIcon>
               )}
-              <Text size="sm" fw={500}>
+              <Text
+                size="xs"
+                fw={600}
+                lineClamp={1}
+                style={{ minWidth: 0 }}
+                td={p.companyId ? "underline" : undefined}
+              >
                 {p.ownerCompany || "Sin empresa"}
               </Text>
             </Group>
-          )}
 
-          {/* Publicado por */}
-          <Text size="sm" mb="sm">
-            <strong>Publicado por:</strong> {p.ownerName || "—"}
-          </Text>
+            {/* Descripción */}
+            <Text
+              size="xs"
+              c="dimmed"
+              lineClamp={3}
+              style={{ whiteSpace: "pre-wrap" }}
+            >
+              {p.description || "Sin descripción."}
+            </Text>
 
-          {/* Representantes */}
-          {reps.length > 0 && (
-            <Stack gap="xs" mb="sm">
-              <Text size="xs" fw={600} c="dimmed">
-                Representantes disponibles:
-              </Text>
-              {reps.slice(0, 3).map((rep) => (
-                <Group key={rep.id} justify="space-between" gap="xs">
-                  <Group gap="xs">
-                    <Avatar src={rep.photoURL} size="xs" radius="xl">
-                      {rep.nombre?.[0]}
-                    </Avatar>
-                    <Text size="xs">{rep.nombre}</Text>
-                  </Group>
-                  <Button
-                    size="compact-xs"
-                    variant="light"
-                    onClick={() => handleSendMeeting(rep.id, rep.telefono || "", p)}
-                    disabled={!solicitarReunionHabilitado || loadingId === `${p.id}-${rep.id}`}
-                    loading={loadingId === `${p.id}-${rep.id}`}
-                  >
-                    Reunión
-                  </Button>
-                </Group>
-              ))}
-            </Stack>
-          )}
+            <Divider my={2} />
 
-          {/* CTA principal: solicitar reunión al owner */}
-          <Button
-            mt="auto"
-            fullWidth
-            onClick={() => handleSendMeeting(p.ownerUserId, p.ownerPhone || "", p)}
-            disabled={
-              !solicitarReunionHabilitado ||
-              !p.ownerUserId ||
-              p.ownerUserId === myUid ||
-              loadingId === `${p.id}-${p.ownerUserId}`
-            }
-            loading={loadingId === `${p.id}-${p.ownerUserId}`}
-          >
-            {!solicitarReunionHabilitado
-              ? "Solicitudes deshabilitadas"
-              : p.ownerUserId === myUid
-                ? "Este producto es tuyo"
-                : "Solicitar reunión"}
-          </Button>
+            {/* CTA */}
+            <Button
+              mt="auto"
+              size="compact-sm"
+              radius="md"
+              fullWidth
+              variant={isDisabled ? "light" : "filled"}
+              onClick={() =>
+                handleSendMeeting(p.ownerUserId, p.ownerPhone || "", p)
+              }
+              disabled={isDisabled}
+              loading={loadingId === `${p.id}-${p.ownerUserId}`}
+            >
+              {ctaLabel}
+            </Button>
+          </Stack>
         </Card>
       </Grid.Col>
     );
   };
 
+  const hasFilters = !!searchTerm.trim() || !!categoryFilter;
+
   return (
-    <>
-      <Group grow mb="md">
-        <TextInput
-          placeholder="Buscar producto, empresa o vendedor..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
-        <Select
-          data={companyOptions}
-          placeholder="Filtrar por empresa"
-          value={companyFilter}
-          onChange={setCompanyFilter}
-          clearable
-          searchable
-        />
-      </Group>
+    <Stack gap="md">
+      {/* Filtros (responsive) */}
+      <Paper withBorder radius="lg" p="sm">
+        <Grid gutter="sm" align="center">
+          <Grid.Col span={{ base: 12, sm: 7 }}>
+            <TextInput
+              placeholder="Buscar producto, categoría, empresa..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              leftSection={<IconSearch size={16} />}
+              rightSection={
+                searchTerm ? (
+                  <ActionIcon
+                    variant="subtle"
+                    onClick={() => setSearchTerm("")}
+                    aria-label="Limpiar búsqueda"
+                  >
+                    <IconX size={16} />
+                  </ActionIcon>
+                ) : null
+              }
+              radius="md"
+            />
+          </Grid.Col>
 
-      <Group mb="md">
-        <SegmentedControl
-          size="xs"
-          value={viewMode}
-          onChange={setViewMode}
-          data={[
-            { value: "individual", label: "Productos" },
-            { value: "byCompany", label: "Por empresa" },
-          ]}
-        />
-      </Group>
+          <Grid.Col span={{ base: 12, sm: 5 }}>
+            <Select
+              data={categoryOptions}
+              placeholder="Filtrar por categoría"
+              value={categoryFilter}
+              onChange={setCategoryFilter}
+              clearable
+              searchable
+              radius="md"
+            />
+          </Grid.Col>
 
-      {filteredProducts.length === 0 ? (
-        <Text c="dimmed">
-          {searchTerm || companyFilter
-            ? "No se encontraron productos con los filtros aplicados."
-            : "Aún no hay productos publicados para este evento."}
-        </Text>
-      ) : viewMode === "individual" ? (
-        <Grid>
-          {filteredProducts.map((p) => renderProductCard(p, true))}
-        </Grid>
-      ) : (
-        <Stack gap="lg">
-          {groupedByCompany.map((group) => (
-            <Paper key={group.companyName} shadow="xs" p="md" withBorder>
-              {/* Header de empresa */}
-              <Group gap="sm" mb="md">
-                {group.company?.logoUrl ? (
-                  <Image
-                    src={group.company.logoUrl}
-                    alt={group.companyName}
-                    w={36}
-                    h={36}
-                    radius="sm"
-                    fit="contain"
-                  />
-                ) : (
-                  <Avatar size="md" radius="sm" color="blue">
-                    {group.companyName[0]?.toUpperCase()}
-                  </Avatar>
-                )}
-                <div>
-                  <Title order={5}>{group.companyName}</Title>
-                  <Text size="xs" c="dimmed">
-                    {group.products.length}{" "}
-                    {group.products.length === 1 ? "producto" : "productos"}
-                  </Text>
-                </div>
+          {hasFilters && (
+            <Grid.Col span={{ base: 12, sm: 12 }}>
+              <Group justify="space-between" wrap="wrap">
+                <Text size="xs" c="dimmed">
+                  Mostrando {filteredProducts.length} resultado(s)
+                </Text>
+                <Button
+                  size="xs"
+                  variant="subtle"
+                  leftSection={<IconFilterOff size={14} />}
+                  onClick={clearFilters}
+                >
+                  Limpiar filtros
+                </Button>
               </Group>
+            </Grid.Col>
+          )}
+        </Grid>
+      </Paper>
 
-              <Grid>
-                {group.products.map((p) => renderProductCard(p, false))}
-              </Grid>
-            </Paper>
-          ))}
-        </Stack>
+      {/* Resultados */}
+      {filteredProducts.length === 0 ? (
+        <Paper withBorder radius="lg" p="lg">
+          <Stack gap={6}>
+            <Title order={5}>No hay resultados</Title>
+            <Text c="dimmed" size="sm">
+              {hasFilters
+                ? "No se encontraron productos con los filtros aplicados."
+                : "Aún no hay productos publicados para este evento."}
+            </Text>
+            {hasFilters && (
+              <Button
+                mt="sm"
+                variant="light"
+                radius="md"
+                onClick={clearFilters}
+                style={{ alignSelf: "flex-start" }}
+              >
+                Quitar filtros
+              </Button>
+            )}
+          </Stack>
+        </Paper>
+      ) : (
+        <Grid gutter="sm">{filteredProducts.map(renderProductCard)}</Grid>
       )}
-    </>
+    </Stack>
   );
 }

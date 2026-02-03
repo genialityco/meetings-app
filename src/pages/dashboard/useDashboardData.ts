@@ -22,7 +22,7 @@ import { serverTimestamp } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { storage } from "../../firebase/firebaseConfig";
 
-const API_WP_URL = "https://apiwhatsapp.geniality.com.co/api/send";
+const API_WP_URL = "https://cooperation-launched-frontpage-throws.trycloudflare.com/api/send";
 const CLIENT_ID = "genialitybussinesstest";
 
 type Product = {
@@ -1417,12 +1417,13 @@ export function useDashboardData(eventId?: string) {
   const createProduct = async (payload: {
     title: string;
     description: string;
+    category?: string;
     imageFile?: File | null;
   }) => {
     if (!uid || !eventId) throw new Error("Missing uid/eventId");
 
     const owner = currentUser?.data || {};
-    const base = {
+    const base: any = {
       eventId,
       ownerUserId: uid,
       ownerName: owner.nombre || owner.name || "",
@@ -1431,6 +1432,7 @@ export function useDashboardData(eventId?: string) {
       companyId: owner.companyId || owner.company_nit || null,
       title: payload.title.trim(),
       description: payload.description.trim(),
+      category: payload.category?.trim() || "",
       imageUrl: null,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -1456,7 +1458,7 @@ export function useDashboardData(eventId?: string) {
 
   const updateProduct = async (
     productId: string,
-    payload: { title: string; description: string; imageFile?: File | null },
+    payload: { title: string; description: string; category?: string; imageFile?: File | null },
   ) => {
     if (!uid || !eventId) throw new Error("Missing uid/eventId");
 
@@ -1464,6 +1466,7 @@ export function useDashboardData(eventId?: string) {
     const patch: any = {
       title: payload.title.trim(),
       description: payload.description.trim(),
+      category: payload.category?.trim() || "",
       updatedAt: serverTimestamp(),
     };
 

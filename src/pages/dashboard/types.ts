@@ -103,6 +103,7 @@ export interface Product {
   companyId?: string | null;
   title: string;
   description: string;
+  category?: string;
   imageUrl?: string | null;
   createdAt?: any;
   updatedAt?: any;

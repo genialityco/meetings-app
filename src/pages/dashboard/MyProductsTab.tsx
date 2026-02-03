@@ -23,6 +23,7 @@ export default function MyProductsTab({
   const [editing, setEditing] = useState<any>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [category, setCategory] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -30,6 +31,7 @@ export default function MyProductsTab({
     setEditing(null);
     setTitle("");
     setDescription("");
+    setCategory("");
     setImageFile(null);
     setOpen(true);
   };
@@ -38,6 +40,7 @@ export default function MyProductsTab({
     setEditing(p);
     setTitle(p.title || "");
     setDescription(p.description || "");
+    setCategory(p.category || "");
     setImageFile(null);
     setOpen(true);
   };
@@ -49,10 +52,10 @@ export default function MyProductsTab({
     setSaving(true);
     try {
       if (editing) {
-        await updateProduct(editing.id, { title, description, imageFile });
+        await updateProduct(editing.id, { title, description, category, imageFile });
         showNotification({ title: "Actualizado", message: "Producto actualizado.", color: "teal" });
       } else {
-        await createProduct({ title, description, imageFile });
+        await createProduct({ title, description, category, imageFile });
         showNotification({ title: "Creado", message: "Producto creado.", color: "teal" });
       }
       setOpen(false);
@@ -86,7 +89,11 @@ export default function MyProductsTab({
             <Card withBorder shadow="sm" p="lg">
               <Group justify="space-between" mb="xs">
                 <Title order={5} lineClamp={1}>{p.title}</Title>
-                <Badge variant="light">Publicado</Badge>
+                {p.category ? (
+                  <Badge variant="light">{p.category}</Badge>
+                ) : (
+                  <Badge variant="light" color="gray">Sin categoría</Badge>
+                )}
               </Group>
 
               {p.imageUrl ? <Image src={p.imageUrl} height={160} radius="md" mb="sm" /> : null}
@@ -110,6 +117,7 @@ export default function MyProductsTab({
       <Modal opened={open} onClose={() => setOpen(false)} title={editing ? "Editar producto" : "Crear producto"}>
         <Stack>
           <TextInput label="Título" value={title} onChange={(e) => setTitle(e.currentTarget.value)} required />
+          <TextInput label="Categoría" placeholder="Ej: Tecnología, Alimentos, Servicios..." value={category} onChange={(e) => setCategory(e.currentTarget.value)} />
           <Textarea label="Descripción" value={description} onChange={(e) => setDescription(e.currentTarget.value)} minRows={4} required />
           <FileInput
             label="Imagen (opcional)"
