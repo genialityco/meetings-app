@@ -22,6 +22,11 @@ import {
   Stack,
   Select,
   Group,
+  Card,
+  Badge,
+  Divider,
+  Center,
+  Box,
 } from "@mantine/core";
 
 // Reutilizamos esta función
@@ -60,6 +65,14 @@ export default function MeetingAutoResponse() {
   const [showConfirmation, setShowConfirmation] = useState(false);
 
   const [requesterName, setRequesterName] = useState("");
+  
+  // Estados para validación
+  const [isValidating, setIsValidating] = useState(true);
+  const [validationError, setValidationError] = useState(null);
+  
+  // Estados para rechazo
+  const [showRejectConfirmation, setShowRejectConfirmation] = useState(false);
+  const [rejectLoading, setRejectLoading] = useState(false);
 
   // 1) Agrupo slots por rango
   const groupedSlots = useMemo(() => {
@@ -90,9 +103,91 @@ export default function MeetingAutoResponse() {
     }
   }, [groupedSlots]);
 
+  // --------------------------------------------------------
+  // Función de validación de sesión y propiedad de reunión
+  // --------------------------------------------------------
+  async function validateUserAndMeeting() {
+    try {
+      setIsValidating(true);
+      
+      // 1. Validar que el usuario tiene sesión activa
+      if (!currentUser?.uid && !auth.currentUser?.uid) {
+        setValidationError(
+          "No tienes una sesión activa. Por favor inicia sesión para continuar."
+        );
+        setTimeout(() => navigate(`/event/${eventId}`), 3000);
+        return false;
+      }
+
+      const userId = currentUser?.uid || auth.currentUser?.uid;
+
+      // 2. Obtener datos de la reunión
+      const mtgRef = doc(db, "events", eventId, "meetings", meetingId);
+      const mtgSnap = await getDoc(mtgRef);
+
+      if (!mtgSnap.exists()) {
+        setValidationError("La reunión no existe.");
+        setTimeout(() => navigate(`/event/${eventId}`), 3000);
+        return false;
+      }
+
+      const meetingData = mtgSnap.data();
+      const { receiverId, requesterId, status: meetingStatus } = meetingData;
+
+      // 3. Validar que la reunión pertenece al usuario actual
+      if (receiverId !== userId) {
+        setValidationError(
+          "No tienes permiso para acceder a esta reunión. Esta reunión no te fue solicitada."
+        );
+        setTimeout(() => navigate(`/event/${eventId}`), 3000);
+        return false;
+      }
+
+      // 4. Validar que la reunión no ha sido procesada aún
+      if (meetingStatus && meetingStatus !== "pending") {
+        setValidationError(
+          `Esta reunión ya fue ${
+            meetingStatus === "accepted"
+              ? "aceptada"
+              : meetingStatus === "rejected"
+              ? "rechazada"
+              : "procesada"
+          }.`
+        );
+        setTimeout(() => navigate(`/event/${eventId}`), 3000);
+        return false;
+      }
+
+      // 5. Cargar el nombre del solicitante
+      const userSnap = await getDoc(doc(db, "users", requesterId));
+      if (userSnap.exists()) {
+        setRequesterName(userSnap.data().nombre);
+      }
+
+      setValidationError(null);
+      setIsValidating(false);
+      return true;
+    } catch (e) {
+      console.error("Error en validación:", e);
+      setValidationError("Error al validar. Por favor intenta de nuevo.");
+      setTimeout(() => navigate(`/event/${eventId}`), 3000);
+      return false;
+    }
+  }
+
   useEffect(() => {
-    if (action === "accept") loadSlots();
-    else processReject();
+    // Validar sesión y propiedad antes de procesar
+    validateUserAndMeeting().then((isValid) => {
+      if (isValid) {
+        if (action === "accept") {
+          loadSlots();
+        } else {
+          // Para rechazo, mostrar confirmación en lugar de procesar automáticamente
+          setShowRejectConfirmation(true);
+          setStatus("");
+        }
+      }
+    });
     // eslint-disable-next-line
   }, []);
 
@@ -165,7 +260,7 @@ export default function MeetingAutoResponse() {
     } catch (e) {
       console.error(e);
       setStatus("Error cargando horarios.");
-      setTimeout(() => navigate("/"), 2000);
+      setTimeout(() => navigate(`/event/${eventId}`), 2000);
     } finally {
       setLoadingSlots(false);
     }
@@ -173,20 +268,27 @@ export default function MeetingAutoResponse() {
 
   async function processReject() {
     try {
+      setRejectLoading(true);
       const mtgRef = doc(db, "events", eventId, "meetings", meetingId);
-      await updateDoc(mtgRef, { status: "rejected" });
+      await updateDoc(mtgRef, { 
+        status: "rejected",
+      });
+      
+      const mtgData = (await getDoc(mtgRef)).data();
       await addDoc(collection(db, "notifications"), {
-        userId: (await getDoc(mtgRef)).data().requesterId,
+        userId: mtgData.requesterId,
         title: "Reunión rechazada",
-        message: "Tu reunión fue rechazada automáticamente.",
+        message: "Tu reunión fue rechazada.",
         timestamp: new Date(),
         read: false,
       });
       setStatus("Reunión rechazada.");
-    } catch {
+    } catch (e) {
+      console.error(e);
       setStatus("Error al rechazar.");
     } finally {
-      setTimeout(() => navigate("/"), 2000);
+      setRejectLoading(false);
+      setTimeout(() => navigate(`/event/${eventId}`), 2000);
     }
   }
 
@@ -255,78 +357,190 @@ export default function MeetingAutoResponse() {
   // Renderizado
   // -------------------------------------------------------------------
   return (
-    <Container>
-      <Paper shadow="md" p="xl" style={{ maxWidth: 500, margin: "40px auto" }}>
-        {loadingSlots || status ? (
-          <>
-            <Text align="center" mb="md">
-              {status}
+    <Container size="sm" py="xl">
+      <Paper radius="lg" shadow="md" p={0} style={{ overflow: "hidden" }}>
+        {validationError ? (
+          <Box p="xl" style={{ backgroundColor: "#ffe0e0" }}>
+            <Center mb="lg">
+              <Text size="xl" weight={700} color="red">
+                ⚠️ Error de validación
+              </Text>
+            </Center>
+            <Text align="center" mb="md" size="sm">
+              {validationError}
             </Text>
-            {loadingSlots && <Loader />}
-          </>
+            <Text align="center" size="xs" color="dimmed">
+              Serás redirigido en breve...
+            </Text>
+          </Box>
+        ) : showRejectConfirmation && !isValidating ? (
+          <Stack spacing={0}>
+            <Box p="xl" style={{ backgroundColor: "#fff5f5", borderBottom: "1px solid #ffe0e0" }}>
+              <Text size="lg" weight={700} align="center" mb="xs">
+                ¿Deseas rechazar esta reunión?
+              </Text>
+              <Divider my="md" />
+              <Card shadow="none" p="md" style={{ backgroundColor: "white", border: "1px solid #e9ecef" }}>
+                <Group spacing="sm">
+                  <Box style={{ flex: 1 }}>
+                    <Text size="sm" color="dimmed" weight={500}>
+                      Solicitud de:
+                    </Text>
+                    <Text size="md" weight={700} mt={4}>
+                      {requesterName}
+                    </Text>
+                  </Box>
+                  <Badge color="orange" variant="dot" size="lg">
+                    Pendiente
+                  </Badge>
+                </Group>
+              </Card>
+            </Box>
+            <Group p="lg" position="right" spacing="md">
+              <Button
+                variant="light"
+                size="md"
+                onClick={() => {
+                  setShowRejectConfirmation(false);
+                  navigate(`/event/${eventId}`);
+                }}
+                disabled={rejectLoading}
+              >
+                Cancelar
+              </Button>
+              <Button
+                color="red"
+                size="md"
+                loading={rejectLoading}
+                onClick={processReject}
+              >
+                Rechazar reunión
+              </Button>
+            </Group>
+          </Stack>
+        ) : isValidating || loadingSlots || status ? (
+          <Box p="xl">
+            <Center mb="lg">
+              <Loader />
+            </Center>
+            <Text align="center" size="sm" color="dimmed">
+              {status || "Validando acceso..."}
+            </Text>
+          </Box>
         ) : availableSlots.length > 0 && !showConfirmation ? (
-          <>
-            <Text align="center" mb="md">
-              Selecciona un horario disponible:
-            </Text>
-            <Stack>
+          <Stack spacing={0}>
+            <Box p="xl" style={{ backgroundColor: "#f8f9fa", borderBottom: "1px solid #e9ecef" }}>
+              <Text size="lg" weight={700} align="center">
+                Selecciona un horario disponible
+              </Text>
+              <Text size="sm" color="dimmed" align="center" mt={4}>
+                Reunión con <b>{requesterName}</b>
+              </Text>
+            </Box>
+            <Stack p="xl" spacing="lg">
               <Select
-                label="Hora"
+                label="Horario"
+                placeholder="Selecciona un horario"
                 data={rangeOptions}
                 value={selectedRange}
                 onChange={(v) => {
                   setSelectedRange(v);
-                  // preseleccionar mesa al cambiar rango
                   const first = groupedSlots.find((g) => g.id === v)?.slots[0];
                   setSelectedSlotId(first?.id || null);
                 }}
                 disabled={confirmLoading}
                 required
+                searchable
+                clearable={false}
               />
               <Select
                 label="Mesa"
+                placeholder="Selecciona una mesa"
                 data={tableOptions}
                 value={selectedSlotId}
                 onChange={setSelectedSlotId}
                 disabled={!selectedRange || confirmLoading}
                 required
+                searchable
+                clearable={false}
               />
               <Button
                 fullWidth
-                mt="md"
+                size="lg"
                 loading={confirmLoading}
                 onClick={() => setShowConfirmation(true)}
+                mt="md"
               >
                 Confirmar datos
               </Button>
             </Stack>
-          </>
+          </Stack>
         ) : showConfirmation ? (
-          <>
-            <Text align="center" mb="md">
-              Vas a agendar una reunión con <b>{requesterName}</b> a las{" "}
-              <b>
-                {chosenSlot?.startTime} – {chosenSlot?.endTime}
-              </b>{" "}
-              (Mesa {chosenSlot?.tableNumber}).
-            </Text>
-            <Group position="right">
+          <Stack spacing={0}>
+            <Box p="xl" style={{ backgroundColor: "#e7f5ff", borderBottom: "1px solid #a5d8ff" }}>
+              <Text size="lg" weight={700} align="center" mb="xs">
+                ✓ Confirmación de reunión
+              </Text>
+            </Box>
+            <Stack p="xl" spacing="lg">
+              <Card shadow="none" p="md" style={{ backgroundColor: "#f0f9ff", border: "1px solid #bae6fd" }}>
+                <Stack spacing="sm">
+                  <Group position="apart">
+                    <Text size="sm" color="dimmed" weight={500}>
+                      Con:
+                    </Text>
+                    <Text weight={700}>{requesterName}</Text>
+                  </Group>
+                  <Divider />
+                  <Group position="apart">
+                    <Text size="sm" color="dimmed" weight={500}>
+                      Horario:
+                    </Text>
+                    <Badge size="lg">
+                      {chosenSlot?.startTime} – {chosenSlot?.endTime}
+                    </Badge>
+                  </Group>
+                  <Divider />
+                  <Group position="apart">
+                    <Text size="sm" color="dimmed" weight={500}>
+                      Mesa:
+                    </Text>
+                    <Badge color="blue" size="lg">
+                      Mesa {chosenSlot?.tableNumber}
+                    </Badge>
+                  </Group>
+                </Stack>
+              </Card>
+              <Text size="sm" color="dimmed" align="center" style={{ fontStyle: "italic" }}>
+                Por favor verifica los datos antes de confirmar
+              </Text>
+            </Stack>
+            <Group p="lg" position="right" spacing="md">
               <Button
-                variant="default"
+                variant="light"
+                size="md"
                 onClick={() => setShowConfirmation(false)}
               >
                 Volver
               </Button>
               <Button
+                color="green"
+                size="md"
                 loading={confirmLoading}
                 onClick={() => confirmWithSlot(chosenSlot)}
               >
-                Aceptar
+                Confirmar reunión
               </Button>
             </Group>
-          </>
+          </Stack>
         ) : (
-          <Text align="center">No hay horarios disponibles.</Text>
+          <Box p="xl">
+            <Center>
+              <Text size="md" color="dimmed" weight={500}>
+                No hay horarios disponibles en este momento
+              </Text>
+            </Center>
+          </Box>
         )}
       </Paper>
     </Container>
