@@ -22,7 +22,7 @@ import { serverTimestamp } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { storage } from "../../firebase/firebaseConfig";
 
-const API_WP_URL = "https://apiwhatsapp.geniality.com.co/api/send";
+const API_WP_URL = "https://cooperation-launched-frontpage-throws.trycloudflare.com/api/send";
 const CLIENT_ID = "genialitybussinesstest";
 
 type Product = {
