@@ -20,6 +20,9 @@ export default function TabsPanel({ dashboard }: { dashboard: any }) {
   if (uiViews.products) viewOptions.push({ value: "products", label: "Productos" });
   // Añadir Chatbot siempre visible; puedes condicionar con uiViews.chatbot si prefieres
   viewOptions.push({ value: "chatbot", label: "Chatbot" });
+  if (uiViews.attendees) viewOptions.push({ value: "attendees", label: "Directorio de Asistentes" });
+  if (uiViews.companies) viewOptions.push({ value: "companies", label: "Empresas disponibles" });
+  if (uiViews.products) viewOptions.push({ value: "products", label: "Catálogo de productos" });
   viewOptions.push({ value: "activity", label: "Mi actividad" });
 
   const [topView, setTopView] = useState(viewOptions[0]?.value || "attendees");

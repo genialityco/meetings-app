@@ -196,7 +196,6 @@ const Landing = () => {
   const [loginEmail, setLoginEmail] = useState("");
   const [loginError, setLoginError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
-  const [showProfileSummary, setShowProfileSummary] = useState(true);
 
   // Form state
   const [formValues, setFormValues] = useState({});
@@ -395,16 +394,17 @@ const Landing = () => {
     if (currentUser?.data) {
       if (currentUser.data.eventId !== eventId) {
         logout();
-        setShowProfileSummary(false);
         setFormValues({});
         setProfilePicPreview(null);
         setActiveTab("login");
         setActiveStep(0);
         if (editor) editor.commands.setContent("");
+      } else {
+        // Si hay sesión activa y está en el evento correcto, redirigir a dashboard
+        navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
       }
     }
-    setShowProfileSummary(!!currentUser?.data);
-  }, [currentUser, eventId, logout, editor]);
+  }, [currentUser, eventId, logout, editor, navigate]);
 
   // Prefill
   useEffect(() => {
@@ -501,27 +501,20 @@ const Landing = () => {
     try {
       const result = await loginByEmail(loginEmail.trim(), eventId);
       if (result?.success) {
-        setShowProfileSummary(true);
-        if (result?.user?.data) {
-          setFormValues((prev) => ({ ...prev, ...result.user.data }));
-          if (result.user.data.photoURL) {
-            setProfilePicPreview(result.user.data.photoURL);
-          }
-        }
+        // Redirigir automáticamente a dashboard sin mostrar resumen
+        navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
       } else {
         setLoginError(
           "No se encontró un participante con este correo para este evento.",
         );
-        setShowProfileSummary(false);
       }
     } catch (e) {
       console.error(e);
       setLoginError("Ocurrió un error al intentar ingresar.");
-      setShowProfileSummary(false);
     } finally {
       setLoginLoading(false);
     }
-  }, [loginByEmail, loginEmail, eventId]);
+  }, [loginByEmail, loginEmail, eventId, navigate]);
 
   // Submit
   const handleSubmit = useCallback(async () => {
@@ -664,10 +657,6 @@ const Landing = () => {
     companyStepFields,
     companyLogoFile,
   ]);
-
-  const handleGoToDashboard = useCallback(() => {
-    navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
-  }, [navigate, eventId]);
 
   // Render de campos (lista fija)
   const renderFieldsForNames = useCallback(
@@ -959,59 +948,6 @@ const Landing = () => {
     return renderFieldsForNames(event.config.formFields.map((f) => f.name));
   }, [event?.config?.formFields, renderFieldsForNames]);
 
-  // Profile summary
-  const ProfileSummary = useMemo(() => {
-    if (!showProfileSummary) return null;
-    const data = currentUser?.data || formValues || {};
-    const avatarSrc = data?.photoURL || profilePicPreview || null;
-
-    return (
-      <Paper withBorder shadow="sm" radius="lg" p="md">
-        <Group align="flex-start" wrap="nowrap">
-          <Avatar src={avatarSrc} size={64} radius="xl">
-            {String(data?.name || data?.nombres || "U")
-              .slice(0, 1)
-              .toUpperCase()}
-          </Avatar>
-          <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
-            <Group justify="space-between" wrap="nowrap">
-              <Title order={5} lineClamp={1}>
-                {data?.name || data?.nombres || "Participante"}
-              </Title>
-              <Badge variant="light">Registrado</Badge>
-            </Group>
-            <InfoLine
-              label="Empresa"
-              value={data?.company_razonSocial || data?.empresa || data?.company}
-            />
-            <InfoLine
-              label="Teléfono"
-              value={data?.telefono || data?.contacto?.telefono}
-            />
-            {data?.createdAt && (
-              <Text size="xs" c="dimmed">
-                Registrado: {formatDateCO(data.createdAt)}
-              </Text>
-            )}
-          </Stack>
-        </Group>
-
-        <Group mt="md" grow={isMobile}>
-          <Button onClick={handleGoToDashboard} radius="md">
-            Entrar al directorio
-          </Button>
-        </Group>
-      </Paper>
-    );
-  }, [
-    showProfileSummary,
-    currentUser,
-    formValues,
-    profilePicPreview,
-    isMobile,
-    handleGoToDashboard,
-  ]);
-
   const eventTheme = useMemo(() => {
     const hex = event.config?.primaryColor;
     if (!hex) return createTheme({});
@@ -1286,8 +1222,6 @@ const Landing = () => {
                       >
                         INGRESAR
                       </Button>
-
-                      {showProfileSummary && ProfileSummary}
                     </Stack>
                   </Tabs.Panel>
 
@@ -1459,17 +1393,6 @@ const Landing = () => {
                               grow={isMobile}
                               mt="sm"
                             >
-                              {currentUser?.data ? (
-                                <Button
-                                  variant="default"
-                                  radius="md"
-                                  size="md"
-                                  onClick={handleGoToDashboard}
-                                >
-                                  Entrar al directorio
-                                </Button>
-                              ) : null}
-
                               <Button
                                 radius="md"
                                 size="md"

@@ -13,9 +13,9 @@ import { BrowserRouter } from "react-router-dom";
 import { UserProvider } from "./context/UserContext.jsx";
 
 const theme = createTheme({
-  fontFamily: "Playfair Display, serif",
-  fontFamilyMonospace: "Monaco, Courier, monospace",
-  headings: { fontFamily: "Playfair Display, serif" },
+  fontFamily: "Barlow, sans-serif",
+  fontFamilyMonospace: "Barlow Mono, monospace",
+  headings: { fontFamily: "Barlow, sans-serif" },
   fontSizes: {
     xxs: "10px",
     xs: "12px",

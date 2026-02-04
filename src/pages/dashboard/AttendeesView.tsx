@@ -9,9 +9,28 @@ import {
   TextInput,
   Select,
   Alert,
+  Stack,
+  Divider,
+  Paper,
+  ActionIcon,
+  ThemeIcon,
+  Box,
+  useMantineTheme,
+  rem,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import {
+  IconSearch,
+  IconX,
+  IconBuildingStore,
+  IconBriefcase,
+  IconMail,
+  IconFileDescription,
+  IconTargetArrow,
+  IconBulb,
+  IconCalendarCheck,
+} from "@tabler/icons-react";
 import type { Assistant } from "./types";
 
 interface AttendeesViewProps {
@@ -31,6 +50,30 @@ interface AttendeesViewProps {
   currentUser: any;
 }
 
+function InfoRow({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value?: string | null;
+}) {
+  return (
+    <Group gap={8} wrap="nowrap" align="flex-start">
+      <ThemeIcon variant="light" radius="xl" size={26}>
+        {icon}
+      </ThemeIcon>
+      <Text size="sm" style={{ minWidth: 0 }} lineClamp={2}>
+        <Text span fw={700}>
+          {label}:
+        </Text>{" "}
+        {value && String(value).trim().length > 0 ? value : "No disponible"}
+      </Text>
+    </Group>
+  );
+}
+
 export default function AttendeesView({
   filteredAssistants,
   searchTerm,
@@ -47,7 +90,16 @@ export default function AttendeesView({
   setSelectedImage,
   currentUser,
 }: AttendeesViewProps) {
+  const theme = useMantineTheme();
   const [loadingId, setLoadingId] = useState<string | null>(null);
+
+  const myUid = currentUser?.uid;
+
+  const maxMeetingsText = useMemo(() => {
+    const n = eventConfig?.maxMeetingsPerUser;
+    if (n === undefined || n === null) return "∞";
+    return String(n);
+  }, [eventConfig]);
 
   const handleSendMeeting = async (assistant: Assistant) => {
     setLoadingId(assistant.id);
@@ -69,111 +121,205 @@ export default function AttendeesView({
     }
   };
 
+  const hasSearch = !!searchTerm.trim();
+
   return (
-    <>
-      <Group grow mb="md">
-        <TextInput
-          placeholder="Buscar por cualquier campo..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
-        <Select
-          data={interestOptions}
-          placeholder="Filtrar por interés principal"
-          value={interestFilter}
-          onChange={setInterestFilter}
-          clearable
-          searchable
-        />
-      </Group>
+    <Stack gap="md">
+      {/* Filtros (estilo app) */}
+      <Paper withBorder radius="lg" p="sm">
+        <Grid gutter="sm" align="center">
+          <Grid.Col span={{ base: 12, sm: 7 }}>
+            <TextInput
+              placeholder="Buscar por cualquier campo..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              leftSection={<IconSearch size={16} />}
+              rightSection={
+                hasSearch ? (
+                  <ActionIcon
+                    variant="subtle"
+                    onClick={() => setSearchTerm("")}
+                    aria-label="Limpiar búsqueda"
+                  >
+                    <IconX size={16} />
+                  </ActionIcon>
+                ) : null
+              }
+              radius="md"
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 5 }}>
+            <Select
+              data={interestOptions}
+              placeholder="Filtrar por interés principal"
+              value={interestFilter}
+              onChange={setInterestFilter}
+              clearable
+              searchable
+              radius="md"
+            />
+          </Grid.Col>
 
-      <Group mb="md">
-        <Button
-          variant={showOnlyToday ? "filled" : "outline"}
-          color="blue"
-          size="xs"
-          onClick={() => setShowOnlyToday((v: boolean) => !v)}
-        >
-          {showOnlyToday
-            ? "Mostrar todos los asistentes"
-            : "Mostrar solo conectados hoy"}
-        </Button>
-      </Group>
+          <Grid.Col span={{ base: 12 }}>
+            <Group justify="space-between" wrap="wrap">
+              <Button
+                variant={showOnlyToday ? "filled" : "light"}
+                color={theme.primaryColor}
+                size="xs"
+                leftSection={<IconCalendarCheck size={14} />}
+                onClick={() => setShowOnlyToday((v: boolean) => !v)}
+              >
+                {showOnlyToday ? "Solo conectados hoy" : "Todos"}
+              </Button>
 
-      <Text mb="md">
-        Máximo, puedes agendar{" "}
-        <strong>{eventConfig?.maxMeetingsPerUser ?? "\u221E"}</strong>{" "}
-        {eventConfig?.maxMeetingsPerUser === 1 ? "reunión" : "reuniones"}.
-      </Text>
+              <Text size="sm" c="dimmed">
+                Máximo: <Text span fw={800}>{maxMeetingsText}</Text>{" "}
+                {eventConfig?.maxMeetingsPerUser === 1 ? "reunión" : "reuniones"}
+              </Text>
+            </Group>
+          </Grid.Col>
+        </Grid>
+      </Paper>
 
+      {/* Alert oportunista */}
       {filteredAssistants.length > 0 && filteredAssistants.length <= 10 && (
-        <Alert mb="md" color="blue" title="Aún estás entre los primeros"
-          styles={{ message: { lineHeight: 1.6 } }}>
+        <Alert
+          color={theme.primaryColor}
+          title="Aún estás entre los primeros"
+          styles={{ message: { lineHeight: 1.6 } }}
+        >
           Solo hay{" "}
           <strong>
             {filteredAssistants.length} asistente
             {filteredAssistants.length !== 1 ? "s" : ""}
           </strong>{" "}
-          registrado{filteredAssistants.length !== 1 ? "s" : ""}. Aprovecha esta
-          oportunidad para conectar con los pioneros del evento.
+          registrado{filteredAssistants.length !== 1 ? "s" : ""}. Aprovecha para
+          conectar con los pioneros del evento.
         </Alert>
       )}
 
-      <Grid>
+      {/* Grid */}
+      <Grid gutter="sm">
         {filteredAssistants.length > 0 ? (
-          filteredAssistants.map((assistant) => (
-            <Grid.Col span={{ xs: 12, sm: 6, md: 4 }} key={assistant.id} style={{ height: 400 }}>
-              <Card shadow="sm" p="lg" style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-                <Group justify="center" mb="md">
-                  <Avatar
-                    src={assistant.photoURL}
-                    alt={`Avatar de ${assistant.nombre}`}
-                    radius="50%"
-                    size="xl"
-                    style={{ cursor: "pointer" }}
-                    onClick={() => {
-                      setSelectedImage(assistant.photoURL || null);
-                      setAvatarModalOpened(true);
-                    }}
-                  >
-                    {!assistant.photoURL && assistant.nombre && assistant.nombre[0]}
-                  </Avatar>
-                </Group>
-                <Title order={5} mb={4} style={{ textAlign: "center" }}>
-                  {assistant.nombre}
-                </Title>
-                <div style={{ flex: 1, overflowY: "auto", minHeight: 0, marginBottom: 8 }}>
-                  <Text size="sm"><strong>Empresa:</strong> {assistant.empresa}</Text>
-                  {assistant.cargo && (
-                    <Text size="sm"><strong>Cargo:</strong> {assistant.cargo}</Text>
-                  )}
-                  <Text size="sm"><strong>Correo:</strong> {assistant.correo || "No disponible"}</Text>
-                  <Text size="sm"><strong>Descripción:</strong> {assistant.descripcion || "No especificada"}</Text>
-                  <Text size="sm"><strong>Interés:</strong> {assistant.interesPrincipal || "No especificado"}</Text>
-                  <Text size="sm"><strong>Necesidad:</strong> {assistant.necesidad || "No especificada"}</Text>
-                </div>
-                <Group mt="auto">
+          filteredAssistants.map((assistant) => {
+            const isMine = !!myUid && assistant.id === myUid;
+            const disabled =
+              !solicitarReunionHabilitado ||
+              loadingId === assistant.id ||
+              isMine;
+
+            return (
+              <Grid.Col
+                span={{ base: 12, sm: 6, md: 4, lg: 3 }}
+                key={assistant.id}
+              >
+                <Card
+                  withBorder
+                  radius="xl"
+                  padding="md"
+                  shadow="sm"
+                  style={{
+                    height: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  {/* Header */}
+                  <Group wrap="nowrap" align="center" gap="sm">
+                    <Avatar
+                      src={assistant.photoURL}
+                      alt={`Avatar de ${assistant.nombre}`}
+                      radius="xl"
+                      size={52}
+                      style={{ cursor: "pointer" }}
+                      onClick={() => {
+                        setSelectedImage(assistant.photoURL || null);
+                        setAvatarModalOpened(true);
+                      }}
+                    >
+                      {(assistant.nombre || "A")[0]?.toUpperCase()}
+                    </Avatar>
+
+                    <Box style={{ minWidth: 0, flex: 1 }}>
+                      <Title order={6} lineClamp={1}>
+                        {assistant.nombre || "Sin nombre"}
+                      </Title>
+                      <Text size="sm" c="dimmed" lineClamp={1}>
+                        {assistant.cargo || "Asistente"}
+                        {assistant.empresa ? ` • ${assistant.empresa}` : ""}
+                      </Text>
+                    </Box>
+                  </Group>
+
+                  <Divider my="sm" />
+
+                  {/* Body */}
+                  <Stack gap={8} style={{ flex: 1, minHeight: 0 }}>
+                    <InfoRow
+                      icon={<IconBuildingStore size={14} />}
+                      label="Empresa"
+                      value={assistant.empresa || "No especificada"}
+                    />
+                    {assistant.cargo && (
+                      <InfoRow
+                        icon={<IconBriefcase size={14} />}
+                        label="Cargo"
+                        value={assistant.cargo}
+                      />
+                    )}
+                    <InfoRow
+                      icon={<IconMail size={14} />}
+                      label="Correo"
+                      value={assistant.correo}
+                    />
+                    <InfoRow
+                      icon={<IconFileDescription size={14} />}
+                      label="Descripción"
+                      value={assistant.descripcion || "No especificada"}
+                    />
+                    <InfoRow
+                      icon={<IconTargetArrow size={14} />}
+                      label="Interés"
+                      value={assistant.interesPrincipal || "No especificado"}
+                    />
+                    <InfoRow
+                      icon={<IconBulb size={14} />}
+                      label="Necesidad"
+                      value={assistant.necesidad || "No especificada"}
+                    />
+                  </Stack>
+
+                  {/* CTA */}
                   <Button
-                    mt="sm"
-                    onClick={() => handleSendMeeting(assistant)}
-                    disabled={!solicitarReunionHabilitado || loadingId === assistant.id}
-                    loading={loadingId === assistant.id}
+                    mt="md"
+                    radius="md"
+                    size="sm"
                     fullWidth
+                    color={theme.primaryColor}
+                    onClick={() => handleSendMeeting(assistant)}
+                    disabled={disabled}
+                    loading={loadingId === assistant.id}
                   >
-                    {solicitarReunionHabilitado ? "Solicitar reunión" : "Solicitudes deshabilitadas"}
+                    {!solicitarReunionHabilitado
+                      ? "Solicitudes deshabilitadas"
+                      : isMine
+                        ? "Tu perfil"
+                        : "Solicitar reunión"}
                   </Button>
-                </Group>
-              </Card>
-            </Grid.Col>
-          ))
+                </Card>
+              </Grid.Col>
+            );
+          })
         ) : (
           <Grid.Col span={12}>
-            <Text mt={20} c="dimmed">
-              No se encontraron asistentes. Intenta ajustar los filtros de búsqueda.
-            </Text>
+            <Paper withBorder radius="lg" p="lg">
+              <Text c="dimmed">
+                No se encontraron asistentes. Intenta ajustar los filtros de búsqueda.
+              </Text>
+            </Paper>
           </Grid.Col>
         )}
       </Grid>
-    </>
+    </Stack>
   );
 }
