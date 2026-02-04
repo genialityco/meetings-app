@@ -158,7 +158,7 @@ const ImportMeetingsFromExcelPage = () => {
       );
       setAttendees(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       const snap2 = await getDocs(
-        query(collection(db, "agenda"), where("eventId", "==", eventId))
+        collection(db, "events", eventId, "agenda")
       );
       setAgenda(snap2.docs.map((d) => ({ id: d.id, ...d.data() })));
       setLoading(false);
@@ -292,7 +292,7 @@ const handleFile = (e) => {
             ordenMatchVendedor: match.ordenMatchVendedor,
           }
         );
-        await updateDoc(doc(db, "agenda", slot.id), {
+        await updateDoc(doc(db, "events", eventId, "agenda", slot.id), {
           available: false,
           meetingId: meetingRef.id,
         });

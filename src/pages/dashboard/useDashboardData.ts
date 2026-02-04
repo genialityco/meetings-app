@@ -637,7 +637,7 @@ export function useDashboardData(eventId?: string) {
 
       // 2. Libera el slot (si existe)
       if (meeting.slotId) {
-        await updateDoc(doc(db, "agenda", meeting.slotId), {
+        await updateDoc(doc(db, "events", eventId, "agenda", meeting.slotId), {
           available: true,
           meetingId: null,
         });
@@ -736,8 +736,7 @@ export function useDashboardData(eventId?: string) {
 
         // Buscar slot disponible
         const agQ = query(
-          collection(db, "agenda"),
-          where("eventId", "==", eventId),
+          collection(db, "events", eventId!, "agenda"),
           where("available", "==", true),
           orderBy("startTime"),
         );
@@ -785,7 +784,7 @@ export function useDashboardData(eventId?: string) {
           timeSlot: `${chosen.startTime} - ${chosen.endTime}`,
         });
 
-        await updateDoc(doc(db, "agenda", chosenDoc.id), {
+        await updateDoc(doc(db, "events", eventId, "agenda", chosenDoc.id), {
           available: false,
           meetingId,
         });
@@ -1020,8 +1019,7 @@ export function useDashboardData(eventId?: string) {
       // Agenda de slots disponibles (agenda es por evento)
       const agSn = await getDocs(
         query(
-          collection(db, "agenda"),
-          where("eventId", "==", eventId),
+          collection(db, "events", eventId, "agenda"),
           where("available", "==", true),
           orderBy("startTime"),
         ),
@@ -1121,7 +1119,7 @@ export function useDashboardData(eventId?: string) {
         new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
 
       const mtgRef = doc(db, "events", eventId, "meetings", meetingId);
-      const slotRef = doc(db, "agenda", slot.id);
+      const slotRef = doc(db, "events", eventId, "agenda", slot.id);
 
       // 1) TRANSACCIÓN: valida, crea locks, actualiza meeting y ocupa slot
       await runTransaction(db, async (tx) => {
@@ -1148,7 +1146,7 @@ export function useDashboardData(eventId?: string) {
 
         if (isEdit) {
           if (prevSlotId) {
-            const prevSlotRef = doc(db, "agenda", prevSlotId);
+            const prevSlotRef = doc(db, "events", eventId, "agenda", prevSlotId);
             const prevSlotSnap = await tx.get(prevSlotRef);
             if (prevSlotSnap.exists()) {
               tx.update(prevSlotRef, { available: true, meetingId: null });

@@ -199,8 +199,7 @@ const MatrixPage = () => {
   useEffect(() => {
     if (!config) return;
     const q = query(
-      collection(db, "agenda"),
-      where("eventId", "==", eventId),
+      collection(db, "events", eventId, "agenda"),
       orderBy("startTime")
     );
     return onSnapshot(q, (snap) => {
@@ -403,7 +402,7 @@ const MatrixPage = () => {
           participants: [user1, user2],
         }
       );
-      await updateDoc(doc(db, "agenda", slot.id), {
+      await updateDoc(doc(db, "events", eventId, "agenda", slot.id), {
         available: false,
         meetingId: meetingRef.id,
       });
@@ -504,14 +503,14 @@ const MatrixPage = () => {
 
       // Liberar slot anterior si existe y no es el mismo que el nuevo
       if (slotActual && slotActual.id !== slot.id) {
-        await updateDoc(doc(db, "agenda", slotActual.id), {
+        await updateDoc(doc(db, "events", eventId, "agenda", slotActual.id), {
           available: true,
           meetingId: null,
         });
       }
 
       // Marcar nuevo slot como ocupado
-      await updateDoc(doc(db, "agenda", slot.id), {
+      await updateDoc(doc(db, "events", eventId, "agenda", slot.id), {
         available: false,
         meetingId,
       });
@@ -619,7 +618,7 @@ const MatrixPage = () => {
       // 2. Libera el slot
       if (slotId) {
         console.log("[handleCancelMeeting] Liberando slot en agenda:", slotId);
-        await updateDoc(doc(db, "agenda", slotId), {
+        await updateDoc(doc(db, "events", eventId, "agenda", slotId), {
           available: true,
           meetingId: null,
         });
@@ -673,7 +672,7 @@ const MatrixPage = () => {
                 tableAssigned: slotLiberado.tableNumber.toString(),
               }
             );
-            await updateDoc(doc(db, "agenda", slotLiberado.id), {
+            await updateDoc(doc(db, "events", eventId, "agenda", slotLiberado.id), {
               available: false,
               meetingId: solicitud.id,
             });
@@ -752,10 +751,10 @@ const MatrixPage = () => {
             tableAssigned: meetingA.tableAssigned,
           }
         );
-        transaction.update(doc(db, "agenda", slotA.id), {
+        transaction.update(doc(db, "events", eventId, "agenda", slotA.id), {
           meetingId: meetingB.id,
         });
-        transaction.update(doc(db, "agenda", slotB.id), {
+        transaction.update(doc(db, "events", eventId, "agenda", slotB.id), {
           meetingId: meetingA.id,
         });
       });

@@ -21,8 +21,8 @@ This is a React 19 + Vite 6 meetings/networking app for events, using **Firebase
 - **events/{eventId}/companies/{nitNorm}**: Companies (razonSocial, logoUrl, fixedTable)
 - **events/{eventId}/meetings**: Meeting requests (requesterId, receiverId, status, productId?, companyId?, contextNote?)
 - **events/{eventId}/products**: Products (ownerUserId, companyId, title, description, imageUrl)
+- **events/{eventId}/agenda**: Slots with tableNumber, startTime, endTime, available, meetingId
 - **users**: Global collection, filtered by `eventId`. Attendees with companyId, tipoAsistente, etc.
-- **agenda**: Global collection, filtered by `eventId`. Slots with tableNumber, startTime, endTime, available, meetingId
 - **locks**: Prevents double-booking: lockId = `{eventId}_{userId}_{date}_{start}-{end}`
 - **notifications**, **meetingSurveys**, **config/generalSettings**
 

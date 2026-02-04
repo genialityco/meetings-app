@@ -1,0 +1,13 @@
+{
+  "name": "my-meetings-app-scripts",
+  "version": "1.0.0",
+  "description": "Scripts de migración y utilidades para my-meetings-app",
+  "private": true,
+  "scripts": {
+    "migrate": "node migrate-agenda.js",
+    "cleanup": "node cleanup-old-agenda.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  }
+}

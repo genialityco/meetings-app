@@ -46,10 +46,7 @@ const EventMatchPage = () => {
         const snap1 = await getDocs(q1);
         setAttendees(snap1.docs.map((d) => ({ id: d.id, ...d.data() })));
 
-        const q2 = query(
-          collection(db, "agenda"),
-          where("eventId", "==", eventId)
-        );
+        const q2 = collection(db, "events", eventId, "agenda");
         const snap2 = await getDocs(q2);
         setAgenda(snap2.docs.map((d) => ({ id: d.id, ...d.data() })));
 
@@ -212,7 +209,7 @@ const EventMatchPage = () => {
             scoreMatch: match.score,
             agendadoAutomatico: true,
           });
-          await updateDoc(doc(db, "agenda", slotsMesa[i].id), {
+          await updateDoc(doc(db, "events", eventId, "agenda", slotsMesa[i].id), {
             available: false,
             meetingId: "asignado-ia",
           });
@@ -267,7 +264,7 @@ const EventMatchPage = () => {
             scoreMatch: 0,
             agendadoAutomatico: true,
           });
-          await updateDoc(doc(db, "agenda", slotLibre.id), {
+          await updateDoc(doc(db, "events", eventId, "agenda", slotLibre.id), {
             available: false,
             meetingId: "asignado-ia",
           });
