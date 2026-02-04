@@ -1053,7 +1053,6 @@ const Landing = () => {
                     alt="Encuentro"
                     style={{
                       width: "100%",
-                      maxHeight: isMobile ? 130 : 150,
                       borderRadius: 14,
                     }}
                   />
