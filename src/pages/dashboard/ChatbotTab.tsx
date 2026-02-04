@@ -51,7 +51,7 @@ export default function ChatbotTab({
         body: JSON.stringify({ userId: currentUser?.uid, eventId: currentUser.data.eventId, message: msg, descripcion: currentUser.data.descripcion,
       necesidad: currentUser.data.necesidad
       ,interesPrincipal: currentUser.data.interesPrincipal
-      , tipoAsistente: currentUser.data.tipoAsistente}),
+      , tipoAsistente: currentUser.data.tipoAsistente, companyNit: currentUser.data.company_nit}),
       });
       if (!resp.ok) {
         const t = await resp.text();

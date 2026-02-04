@@ -152,6 +152,7 @@ export const aiProxy = onRequest(
       const necesidad = body.necesidad || null;
       const interesPrincipal = body.interesPrincipal || null;
       const tipoAsistente = body.tipoAsistente || null;
+      const companyNit = body.companyNit || null;
       
       if (!userId || !message) {
         res.status(400).send({ error: "Missing userId or message" });
@@ -471,7 +472,20 @@ Mensaje del usuario: "${message}"`;
         try {
           let companiesSnap = null;
           if (eventId) {
-            companiesSnap = await db.collection("events").doc(eventId).collection("companies").get().catch(() => null);
+             if (companyNit) {
+              companiesSnap = await db.collection("events")
+                .doc(eventId)
+                .collection("companies")
+                .where("nitNorm", "!=", companyNit)
+                .get()
+                .catch(() => null);
+            } else {
+              companiesSnap = await db.collection("events")
+                .doc(eventId)
+                .collection("companies")
+                .get()
+                .catch(() => null);
+            }
           }
           if (companiesSnap) {
             for (const d of companiesSnap.docs) {
