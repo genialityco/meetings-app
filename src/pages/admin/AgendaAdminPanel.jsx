@@ -31,7 +31,7 @@ export default function AgendaAdminPage() {
     setLoading(true);
 
     Promise.all([
-      getDocs(query(collection(db, "agenda"), where("eventId", "==", eventId))),
+      getDocs(collection(db, "events", eventId, "agenda")),
       getDocs(collection(db, "events", eventId, "meetings")),
     ]).then(([agendaSnap, meetingsSnap]) => {
       setAgenda(agendaSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
@@ -42,12 +42,12 @@ export default function AgendaAdminPage() {
 
   // --- ACCIONES ---
   const refreshAgenda = async () => {
-    const agendaSnap = await getDocs(query(collection(db, "agenda"), where("eventId", "==", eventId)));
+    const agendaSnap = await getDocs(collection(db, "events", eventId, "agenda"));
     setAgenda(agendaSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
   };
 
   const handleLiberar = async (slotId) => {
-    await updateDoc(doc(db, "agenda", slotId), {
+    await updateDoc(doc(db, "events", eventId, "agenda", slotId), {
       available: true,
       meetingId: null,
       isBreak: false,
@@ -57,7 +57,7 @@ export default function AgendaAdminPage() {
   };
 
   const handleBloquear = async (slotId) => {
-    await updateDoc(doc(db, "agenda", slotId), {
+    await updateDoc(doc(db, "events", eventId, "agenda", slotId), {
       isBreak: true,
       available: false,
       meetingId: null,
@@ -67,7 +67,7 @@ export default function AgendaAdminPage() {
   };
 
   const handleDesbloquear = async (slotId) => {
-    await updateDoc(doc(db, "agenda", slotId), {
+    await updateDoc(doc(db, "events", eventId, "agenda", slotId), {
       isBreak: false,
       available: true,
     });
@@ -77,7 +77,7 @@ export default function AgendaAdminPage() {
 
   const handleCancelarReunion = async (slot) => {
     if (!slot.meetingId) return;
-    await updateDoc(doc(db, "agenda", slot.id), {
+    await updateDoc(doc(db, "events", eventId, "agenda", slot.id), {
       available: true,
       meetingId: null,
     });

@@ -74,10 +74,7 @@ const EventMatchPage = () => {
         const snap1 = await getDocs(q1);
         setAttendees(snap1.docs.map((d) => ({ id: d.id, ...d.data() })));
 
-        const q2 = query(
-          collection(db, "agenda"),
-          where("eventId", "==", eventId)
-        );
+        const q2 = collection(db, "events", eventId, "agenda");
         const snap2 = await getDocs(q2);
         setAgenda(snap2.docs.map((d) => ({ id: d.id, ...d.data() })));
 
@@ -1017,20 +1014,8 @@ Reglas: 1) No matches de misma empresa. 2) Score 0-1. 3) Max ${payload.maxPerUse
         continue;
       }
 
-      // Preferir asignación manual si está activa
-      let slotDisponible = null;
-      if (assignmentMode === "manual") {
-        const key = `${cmp.id}_${vendedor.id}_${item.idx}`;
-        const slotId = manualAssignments[key];
-        if (slotId) {
-          slotDisponible = agenda.find((s) => s.id === slotId);
-        }
-      }
-
-      // Si no hay asignación manual, usar el slot tentativo
-      if (!slotDisponible) {
-        slotDisponible = item.match.tentativeSlot;
-      }
+      // Buscar slot disponible para esta reunión
+      let slotDisponible = item.match.tentativeSlot;
 
       if (!slotDisponible) {
         pendientes.push({
@@ -1057,7 +1042,7 @@ Reglas: 1) No matches de misma empresa. 2) Score 0-1. 3) Max ${payload.maxPerUse
           agendadoAutomatico: true,
         });
 
-        await updateDoc(doc(db, "agenda", slotDisponible.id), {
+        await updateDoc(doc(db, "events", eventId, "agenda", slotDisponible.id), {
           available: false,
           meetingId: "asignado-ia",
         });

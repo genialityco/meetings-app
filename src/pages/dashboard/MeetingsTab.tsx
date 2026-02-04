@@ -114,8 +114,7 @@ export default function MeetingsTab({
 
   async function findSlotIdForMeeting(eventId, tableAssigned, timeSlot) {
     const q = query(
-      collection(db, "agenda"),
-      where("eventId", "==", eventId),
+      collection(db, "events", eventId, "agenda"),
       where("tableNumber", "==", Number(tableAssigned)),
       where("startTime", "==", timeSlot.split(" - ")[0]),
       where("endTime", "==", timeSlot.split(" - ")[1])

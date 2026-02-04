@@ -233,8 +233,7 @@ export default function MeetingAutoResponse() {
       const now = new Date();
       const agSn = await getDocs(
         query(
-          collection(db, "agenda"),
-          where("eventId", "==", eventId),
+          collection(db, "events", eventId, "agenda"),
           where("available", "==", true),
           orderBy("startTime")
         )
@@ -304,7 +303,7 @@ export default function MeetingAutoResponse() {
         timeSlot: `${slot.startTime} - ${slot.endTime}`,
         tableAssigned: slot.tableNumber.toString(),
       });
-      await updateDoc(doc(db, "agenda", slot.id), {
+      await updateDoc(doc(db, "events", eventId, "agenda", slot.id), {
         available: false,
         meetingId,
       });

@@ -478,8 +478,7 @@ const DashboardOld = () => {
 
         // 2. Buscar slot disponible en agenda
         const agQ = query(
-          collection(db, "agenda"),
-          where("eventId", "==", eventId),
+          collection(db, "events", eventId, "agenda"),
           where("available", "==", true),
           orderBy("startTime")
         );
@@ -726,8 +725,7 @@ END:VCARD`;
     // 5. Cargo agenda y filtro slots libres
     const agSn = await getDocs(
       query(
-        collection(db, "agenda"),
-        where("eventId", "==", eventId),
+        collection(db, "events", eventId, "agenda"),
         where("available", "==", true),
         orderBy("startTime")
       )

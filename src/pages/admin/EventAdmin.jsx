@@ -43,7 +43,7 @@ const EventAdmin = () => {
   const [meetingsModalOpened, setMeetingsModalOpened] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [attendees, setAttendees] = useState([]);
-  const [attendeesLoading, setAttendeesLoading] = useState(false);
+  const [, setAttendeesLoading] = useState(false);
   const [configureFieldsModalOpened, setConfigureFieldsModalOpened] =
     useState(false);
   const [policiesModalOpened, setPoliciesModalOpened] = useState(false);
@@ -160,13 +160,12 @@ const EventAdmin = () => {
 
         for (let tableNumber = 1; tableNumber <= numTables; tableNumber++) {
           const slotData = {
-            eventId: event.id,
             tableNumber,
             startTime: slotStartTime,
             endTime: slotEndTime,
             available: true,
           };
-          await addDoc(collection(db, "agenda"), slotData);
+          await addDoc(collection(db, "events", event.id, "agenda"), slotData);
           createdCount++;
         }
       }
@@ -186,13 +185,11 @@ const EventAdmin = () => {
   const resetAgendaForEvent = async () => {
     try {
       setActionLoading(true);
-      const agendaQuery = query(
-        collection(db, "agenda"),
-        where("eventId", "==", event.id)
+      const agendaSnapshot = await getDocs(
+        collection(db, "events", event.id, "agenda")
       );
-      const agendaSnapshot = await getDocs(agendaQuery);
       agendaSnapshot.forEach(async (docItem) => {
-        await updateDoc(doc(db, "agenda", docItem.id), {
+        await updateDoc(doc(db, "events", event.id, "agenda", docItem.id), {
           available: true,
           meetingId: null,
         });
@@ -213,14 +210,12 @@ const EventAdmin = () => {
   const deleteAgendaForEvent = async () => {
     try {
       setActionLoading(true);
-      const agendaQuery = query(
-        collection(db, "agenda"),
-        where("eventId", "==", event.id)
+      const agendaSnapshot = await getDocs(
+        collection(db, "events", event.id, "agenda")
       );
-      const agendaSnapshot = await getDocs(agendaQuery);
       let deletedCountAgenda = 0;
       for (const docItem of agendaSnapshot.docs) {
-        await deleteDoc(doc(db, "agenda", docItem.id));
+        await deleteDoc(doc(db, "events", event.id, "agenda", docItem.id));
         deletedCountAgenda++;
       }
       const meetingsRef = collection(db, "events", event.id, "meetings");
@@ -275,11 +270,9 @@ const EventAdmin = () => {
       const meetingsSnap = await getDocs(meetingsRef);
 
       // Consulta la agenda para obtener los datos de slot (hora, mesa, etc)
-      const agendaQuery = query(
-        collection(db, "agenda"),
-        where("eventId", "==", event.id)
+      const agendaSnap = await getDocs(
+        collection(db, "events", event.id, "agenda")
       );
-      const agendaSnap = await getDocs(agendaQuery);
       const agendaData = {};
       agendaSnap.forEach((doc) => {
         agendaData[doc.data().meetingId] = doc.data();
@@ -359,6 +352,7 @@ const EventAdmin = () => {
       XLSX.utils.book_append_sheet(wb, ws, "Reuniones");
       XLSX.writeFile(wb, `reuniones_${event?.eventName || event.id}.xlsx`);
     } catch (e) {
+      console.error(e)
       setGlobalMessage("Error al exportar reuniones.");
     } finally {
       setActionLoading(false);
