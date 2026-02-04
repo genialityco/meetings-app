@@ -15,10 +15,6 @@ export default function TabsPanel({ dashboard }: { dashboard: any }) {
 
   // Construir opciones de vista dinámicamente según configuración del evento
   const viewOptions: { value: string; label: string }[] = [];
-  if (uiViews.attendees) viewOptions.push({ value: "attendees", label: "Directorio" });
-  if (uiViews.companies) viewOptions.push({ value: "companies", label: "Empresas" });
-  if (uiViews.products) viewOptions.push({ value: "products", label: "Productos" });
-  // Añadir Chatbot siempre visible; puedes condicionar con uiViews.chatbot si prefieres
   viewOptions.push({ value: "chatbot", label: "Chatbot" });
   if (uiViews.attendees) viewOptions.push({ value: "attendees", label: "Directorio de Asistentes" });
   if (uiViews.companies) viewOptions.push({ value: "companies", label: "Empresas disponibles" });

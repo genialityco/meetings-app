@@ -18,8 +18,6 @@ export default function Dashboard() {
   const dashboard = useDashboardData(eventId);
     const { currentUser } = useContext(UserContext);
 
-    console.log("Current User in Dashboard:", currentUser);
-
   const eventTheme = useMemo(() => {
     const hex = dashboard.eventConfig?.primaryColor;
     if (!hex) return createTheme({});
@@ -30,7 +28,7 @@ export default function Dashboard() {
   }, [dashboard.eventConfig?.primaryColor]);
 
   return (
-    <MantineProvider theme={eventTheme} inherit>
+    <MantineProvider theme={eventTheme}>
     <Container fluid p={0}>
       {currentUser?.data && (
         <DashboardHeader
