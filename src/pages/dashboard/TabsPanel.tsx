@@ -12,7 +12,7 @@ import { DEFAULT_POLICIES } from "./types";
 export default function TabsPanel({ dashboard }: { dashboard: any }) {
   const policies = dashboard.policies || DEFAULT_POLICIES;
   const uiViews = policies.uiViewsEnabled || DEFAULT_POLICIES.uiViewsEnabled;
-
+  const enableChatbot = import.meta.env.VITE_ENABLE_CHATBOT === "true"
   // Construir opciones de vista dinámicamente según configuración del evento
   const viewOptions: { value: string; label: string }[] = [];
   viewOptions.push({ value: "chatbot", label: "Chatbot" });
