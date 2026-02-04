@@ -11,6 +11,10 @@ import {
   Center,
   Image,
   Alert,
+  Stack,
+  Badge,
+  Tabs,
+  SimpleGrid,
 } from "@mantine/core";
 import {
   doc,
@@ -81,14 +85,14 @@ const EventAdmin = () => {
       try {
         const q = query(
           collection(db, "users"),
-          where("eventId", "==", eventId)
+          where("eventId", "==", eventId),
         );
         const snap = await getDocs(q);
         setAttendees(
           snap.docs.map((d) => ({
             id: d.id,
             ...d.data(),
-          }))
+          })),
         );
       } catch (e) {
         console.log(e);
@@ -171,7 +175,7 @@ const EventAdmin = () => {
       }
 
       setGlobalMessage(
-        `Agenda generada: ${createdCount} slots creados para el evento ${event.eventName}.`
+        `Agenda generada: ${createdCount} slots creados para el evento ${event.eventName}.`,
       );
     } catch (error) {
       console.log(error);
@@ -186,7 +190,7 @@ const EventAdmin = () => {
     try {
       setActionLoading(true);
       const agendaSnapshot = await getDocs(
-        collection(db, "events", event.id, "agenda")
+        collection(db, "events", event.id, "agenda"),
       );
       agendaSnapshot.forEach(async (docItem) => {
         await updateDoc(doc(db, "events", event.id, "agenda", docItem.id), {
@@ -195,7 +199,7 @@ const EventAdmin = () => {
         });
       });
       setGlobalMessage(
-        `Agenda restablecida para el evento ${event.eventName}.`
+        `Agenda restablecida para el evento ${event.eventName}.`,
       );
     } catch (error) {
       console.log(error);
@@ -211,7 +215,7 @@ const EventAdmin = () => {
     try {
       setActionLoading(true);
       const agendaSnapshot = await getDocs(
-        collection(db, "events", event.id, "agenda")
+        collection(db, "events", event.id, "agenda"),
       );
       let deletedCountAgenda = 0;
       for (const docItem of agendaSnapshot.docs) {
@@ -226,7 +230,7 @@ const EventAdmin = () => {
         deletedCountMeetings++;
       }
       setGlobalMessage(
-        `Agenda borrada: ${deletedCountAgenda} slots y ${deletedCountMeetings} reuniones eliminados para el evento ${event.eventName}.`
+        `Agenda borrada: ${deletedCountAgenda} slots y ${deletedCountMeetings} reuniones eliminados para el evento ${event.eventName}.`,
       );
     } catch (error) {
       console.log(error);
@@ -248,7 +252,7 @@ const EventAdmin = () => {
       setGlobalMessage(
         `Registros ${
           !currentStatus ? "habilitados" : "inhabilitados"
-        } correctamente.`
+        } correctamente.`,
       );
       fetchEvent();
     } catch (error) {
@@ -271,7 +275,7 @@ const EventAdmin = () => {
 
       // Consulta la agenda para obtener los datos de slot (hora, mesa, etc)
       const agendaSnap = await getDocs(
-        collection(db, "events", event.id, "agenda")
+        collection(db, "events", event.id, "agenda"),
       );
       const agendaData = {};
       agendaSnap.forEach((doc) => {
@@ -280,7 +284,7 @@ const EventAdmin = () => {
 
       // Si tienes usuarios, para poner los nombres de participantes
       const usersSnap = await getDocs(
-        query(collection(db, "users"), where("eventId", "==", event.id))
+        query(collection(db, "users"), where("eventId", "==", event.id)),
       );
       const usersMap = {};
       usersSnap.forEach((d) => {
@@ -305,7 +309,7 @@ const EventAdmin = () => {
           const meeting = doc.data();
           // Busca el slot de agenda para la hora y mesa
           const agendaSlot = Object.values(agendaData).find(
-            (a) => a.meetingId === doc.id
+            (a) => a.meetingId === doc.id,
           );
 
           // Obtener datos de cada participante
@@ -352,7 +356,7 @@ const EventAdmin = () => {
       XLSX.utils.book_append_sheet(wb, ws, "Reuniones");
       XLSX.writeFile(wb, `reuniones_${event?.eventName || event.id}.xlsx`);
     } catch (e) {
-      console.error(e)
+      console.error(e);
       setGlobalMessage("Error al exportar reuniones.");
     } finally {
       setActionLoading(false);
@@ -424,11 +428,44 @@ const EventAdmin = () => {
   }
 
   return (
-    <Container>
-      <Title mt="md">Administrar Evento</Title>
-      <Button component={Link} to="/admin" mt="md">
-        Volver al Panel de Eventos
-      </Button>
+    <Container fluid>
+      {/* Header */}
+      <Group justify="space-between" mt="md" mb="sm" wrap="wrap">
+        <Stack gap={2}>
+          <Group gap="xs" align="center">
+            <Title order={2}>Administrar Evento</Title>
+            <Badge variant="light" color="gray">
+              ID: {event.id}
+            </Badge>
+            <Badge
+              variant="filled"
+              color={event.config?.registrationEnabled ? "teal" : "red"}
+            >
+              {event.config?.registrationEnabled
+                ? "Registros ON"
+                : "Registros OFF"}
+            </Badge>
+          </Group>
+
+          <Text size="sm" c="dimmed">
+            Gestiona agenda, reuniones, asistentes, configuración y
+            exportaciones desde un solo lugar.
+          </Text>
+        </Stack>
+
+        <Group gap="xs">
+          <Button component={Link} to="/admin" variant="light">
+            Volver al Panel
+          </Button>
+          <Button component={Link} to={`/event/${event.id}`} variant="default">
+            Ir a la landing
+          </Button>
+          <Button component={Link} to={`/matrix/${event.id}`} variant="default">
+            Ver Matriz
+          </Button>
+        </Group>
+      </Group>
+
       {globalMessage && (
         <Alert
           mt="md"
@@ -440,25 +477,44 @@ const EventAdmin = () => {
           {globalMessage}
         </Alert>
       )}
-      <Card shadow="sm" p="lg" withBorder mt="md">
-        <Card.Section>
-          {event.eventImage && (
-            <Image
-              src={event.eventImage}
-              alt={event.eventName}
-              height={160}
-              fit="cover"
-            />
-          )}
-        </Card.Section>
-        <Group position="apart" mt="md">
-          <div>
-            <Title order={4}>{event.eventName}</Title>
-            <Text size="sm" color="dimmed">
-              ID: {event.id}
-            </Text>
-          </div>
-          <Group spacing="xs" align="flex-start">
+
+      {/* Evento + acciones principales */}
+      <Card withBorder shadow="sm" radius="md" p="lg" mt="md">
+        <Group align="flex-start" justify="space-between" wrap="wrap">
+          <Group align="flex-start" wrap="nowrap">
+            {event.eventImage ? (
+              <Image
+                src={event.eventImage}
+                alt={event.eventName}
+                w={220}
+                h={130}
+                radius="md"
+                fit="cover"
+              />
+            ) : (
+              <Card withBorder radius="md" w={220} h={130} p="md">
+                <Text c="dimmed" size="sm">
+                  Sin imagen
+                </Text>
+              </Card>
+            )}
+
+            <Stack gap={6}>
+              <Title order={3}>{event.eventName}</Title>
+              <Text size="sm" c="dimmed">
+                Administra configuración, agenda, reuniones y asistentes.
+              </Text>
+
+              <Group gap="xs" mt={4}>
+                <Badge variant="light">Asistentes</Badge>
+                <Badge variant="light">Empresas</Badge>
+                <Badge variant="light">Matches IA</Badge>
+              </Group>
+            </Stack>
+          </Group>
+
+          {/* Acciones principales (las más usadas) */}
+          <Group gap="xs" justify="flex-end">
             <Button
               onClick={() => setEditConfigModalOpened(true)}
               loading={actionLoading}
@@ -466,141 +522,261 @@ const EventAdmin = () => {
             >
               Editar Configuración
             </Button>
+
             <Button
-              onClick={() => setManualMeetingModalOpened(true)}
+              onClick={() => setMeetingsModalOpened(true)}
               loading={actionLoading}
               disabled={actionLoading}
+              variant="light"
             >
-              Agendar Reunión Manual
+              Ver Reuniones
             </Button>
-            <Button
-              component={Link}
-              to={`/event/${event.id}`}
-              loading={actionLoading}
-              disabled={actionLoading}
-            >
-              Ir a la landing
-            </Button>
-            <Button
-              component={Link}
-              to={`/matrix/${event.id}`}
-              loading={actionLoading}
-              disabled={actionLoading}
-            >
-              Ver Matriz
-            </Button>
+
             <Button
               onClick={toggleRegistration}
               loading={actionLoading}
               disabled={actionLoading}
+              color={event.config?.registrationEnabled ? "red" : "teal"}
+              variant="light"
             >
               {event.config?.registrationEnabled
                 ? "Inhabilitar Registros"
                 : "Habilitar Registros"}
             </Button>
-            <Button
-              onClick={generateAgendaForEvent}
-              loading={actionLoading}
-              disabled={actionLoading}
-            >
-              Generar Agenda
-            </Button>
-            <Button
-              color="orange"
-              onClick={resetAgendaForEvent}
-              loading={actionLoading}
-              disabled={actionLoading}
-            >
-              Restablecer Agenda
-            </Button>
-            <Button
-              color="red"
-              onClick={deleteAgendaForEvent}
-              loading={actionLoading}
-              disabled={actionLoading}
-            >
-              Borrar Agenda
-            </Button>
-            <Button
-              onClick={() => setMeetingsModalOpened(true)}
-              loading={actionLoading}
-              disabled={actionLoading}
-            >
-              Ver Reuniones
-            </Button>
-            <Button
-              component={Link}
-              to={`/admin/event/${event.id}/match`}
-              loading={actionLoading}
-              disabled={actionLoading}
-            >
-              Generar Matches IA
-            </Button>
-            <Button
-              onClick={() => setConfigureFieldsModalOpened(true)}
-              loading={actionLoading}
-              disabled={actionLoading}
-            >
-              Configurar campos
-            </Button>
-            <Button
-              onClick={() => setPoliciesModalOpened(true)}
-              loading={actionLoading}
-              disabled={actionLoading}
-              color="grape"
-            >
-              Configurar políticas
-            </Button>
-            <Button
-              component={Link}
-              to={`/admin/event/${event.id}/import-meetings`}
-              loading={actionLoading}
-              disabled={actionLoading}
-              color="violet"
-            >
-              Importar reuniones desde Excel
-            </Button>
-            <Button
-              color="teal"
-              onClick={exportMeetingsToExcel}
-              loading={actionLoading}
-              disabled={actionLoading}
-            >
-              Exportar reuniones a Excel
-            </Button>
-            <Button
-              component={Link}
-              to={`/admin/event/${event.id}/agenda`}
-              loading={actionLoading}
-              disabled={actionLoading}
-              color="blue"
-            >
-              Ver Agenda
-            </Button>
           </Group>
         </Group>
       </Card>
 
-      <Card shadow="sm" p="lg" withBorder mt="md">
-        <Title order={5} mb="xs">
-          Resumen de Reuniones
-        </Title>
+      {/* Resumen */}
+      <Card withBorder shadow="sm" radius="md" p="lg" mt="md">
+        <Group justify="space-between" mb="xs" wrap="wrap">
+          <Title order={5}>Resumen de Reuniones</Title>
+          <Button
+            size="xs"
+            variant="subtle"
+            onClick={() => setMeetingsModalOpened(true)}
+            loading={actionLoading}
+            disabled={actionLoading}
+          >
+            Ver detalle
+          </Button>
+        </Group>
+
         {meetingsCountLoading ? (
           <Loader size="sm" />
         ) : (
-          <Group spacing="md">
-            <Text>
-              <b>Aceptadas:</b> {meetingsCounts.aceptadas}
-            </Text>
-            <Text>
-              <b>Pendientes:</b> {meetingsCounts.pendientes}
-            </Text>
-            <Text>
-              <b>Rechazadas:</b> {meetingsCounts.rechazadas}
-            </Text>
-          </Group>
+          <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+            <Card withBorder radius="md" p="md">
+              <Text c="dimmed" size="sm">
+                Aceptadas
+              </Text>
+              <Title order={3}>{meetingsCounts.aceptadas}</Title>
+            </Card>
+
+            <Card withBorder radius="md" p="md">
+              <Text c="dimmed" size="sm">
+                Pendientes
+              </Text>
+              <Title order={3}>{meetingsCounts.pendientes}</Title>
+            </Card>
+
+            <Card withBorder radius="md" p="md">
+              <Text c="dimmed" size="sm">
+                Rechazadas
+              </Text>
+              <Title order={3}>{meetingsCounts.rechazadas}</Title>
+            </Card>
+          </SimpleGrid>
         )}
       </Card>
+
+      {/* Centro de acciones */}
+      <Card withBorder shadow="sm" radius="md" p="lg" mt="md">
+        <Tabs defaultValue="operacion" keepMounted={false}>
+          <Tabs.List>
+            <Tabs.Tab value="operacion">Operación</Tabs.Tab>
+            <Tabs.Tab value="agenda">Agenda</Tabs.Tab>
+            <Tabs.Tab value="config">Configuración</Tabs.Tab>
+            <Tabs.Tab value="ia">IA</Tabs.Tab>
+            <Tabs.Tab value="importexport">Import / Export</Tabs.Tab>
+            <Tabs.Tab value="peligro" color="red">
+              Peligro
+            </Tabs.Tab>
+          </Tabs.List>
+
+          <Tabs.Panel value="operacion" pt="md">
+            <Group gap="xs" wrap="wrap">
+              <Button
+                onClick={() => setManualMeetingModalOpened(true)}
+                loading={actionLoading}
+                disabled={actionLoading}
+                variant="default"
+              >
+                Agendar Reunión Manual
+              </Button>
+
+              <Button
+                onClick={() => setConfigureFieldsModalOpened(true)}
+                loading={actionLoading}
+                disabled={actionLoading}
+                variant="default"
+              >
+                Configurar campos
+              </Button>
+
+              <Button
+                onClick={() => setPoliciesModalOpened(true)}
+                loading={actionLoading}
+                disabled={actionLoading}
+                color="grape"
+                variant="light"
+              >
+                Configurar políticas
+              </Button>
+            </Group>
+          </Tabs.Panel>
+
+          <Tabs.Panel value="agenda" pt="md">
+            <Group gap="xs" wrap="wrap">
+              <Button
+                onClick={generateAgendaForEvent}
+                loading={actionLoading}
+                disabled={actionLoading}
+              >
+                Generar Agenda
+              </Button>
+
+              <Button
+                component={Link}
+                to={`/admin/event/${event.id}/agenda`}
+                loading={actionLoading}
+                disabled={actionLoading}
+                variant="light"
+              >
+                Ver Agenda
+              </Button>
+            </Group>
+          </Tabs.Panel>
+
+          <Tabs.Panel value="config" pt="md">
+            <Group gap="xs" wrap="wrap">
+              <Button
+                onClick={() => setEditConfigModalOpened(true)}
+                loading={actionLoading}
+                disabled={actionLoading}
+              >
+                Editar Configuración
+              </Button>
+
+              <Button
+                onClick={() => setConfigureFieldsModalOpened(true)}
+                loading={actionLoading}
+                disabled={actionLoading}
+                variant="default"
+              >
+                Configurar campos
+              </Button>
+
+              <Button
+                onClick={() => setPoliciesModalOpened(true)}
+                loading={actionLoading}
+                disabled={actionLoading}
+                color="grape"
+                variant="default"
+              >
+                Configurar políticas
+              </Button>
+            </Group>
+          </Tabs.Panel>
+
+          <Tabs.Panel value="ia" pt="md">
+            <Group gap="xs" wrap="wrap">
+              <Button
+                component={Link}
+                to={`/admin/event/${event.id}/match`}
+                loading={actionLoading}
+                disabled={actionLoading}
+              >
+                Generar Matches IA
+              </Button>
+            </Group>
+          </Tabs.Panel>
+
+          <Tabs.Panel value="importexport" pt="md">
+            <Group gap="xs" wrap="wrap">
+              <Button
+                component={Link}
+                to={`/admin/event/${event.id}/import-meetings`}
+                loading={actionLoading}
+                disabled={actionLoading}
+                color="violet"
+                variant="light"
+              >
+                Importar reuniones desde Excel
+              </Button>
+
+              <Button
+                color="teal"
+                onClick={exportMeetingsToExcel}
+                loading={actionLoading}
+                disabled={actionLoading}
+                variant="light"
+              >
+                Exportar reuniones a Excel
+              </Button>
+
+              <Button
+                onClick={exportToExcel}
+                loading={actionLoading}
+                disabled={actionLoading}
+                variant="default"
+              >
+                Exportar asistentes a Excel
+              </Button>
+            </Group>
+          </Tabs.Panel>
+
+          <Tabs.Panel value="peligro" pt="md">
+            <Alert
+              color="red"
+              title="Acciones irreversibles o críticas"
+              mb="md"
+            >
+              Estas acciones pueden eliminar o reiniciar información. Úsalas con
+              cuidado.
+            </Alert>
+
+            <Group gap="xs" wrap="wrap">
+              <Button
+                color="orange"
+                onClick={resetAgendaForEvent}
+                loading={actionLoading}
+                disabled={actionLoading}
+                variant="light"
+              >
+                Restablecer Agenda
+              </Button>
+
+              <Button
+                color="red"
+                onClick={deleteAgendaForEvent}
+                loading={actionLoading}
+                disabled={actionLoading}
+                variant="light"
+              >
+                Borrar Agenda
+              </Button>
+            </Group>
+          </Tabs.Panel>
+        </Tabs>
+      </Card>
+
+      {/* Tu lista de asistentes queda igual */}
+      <AttendeesList
+        event={event}
+        setGlobalMessage={setGlobalMessage}
+        exportToExcel={exportToExcel}
+      />
 
       {/* Modales */}
       <EditEventConfigModal
@@ -622,11 +798,6 @@ const EventAdmin = () => {
         event={event}
         setGlobalMessage={setGlobalMessage}
       />
-      <AttendeesList
-        event={event}
-        setGlobalMessage={setGlobalMessage}
-        exportToExcel={exportToExcel}
-      />
       <ConfigureFieldsModal
         opened={configureFieldsModalOpened}
         onClose={() => setConfigureFieldsModalOpened(false)}
@@ -644,5 +815,4 @@ const EventAdmin = () => {
     </Container>
   );
 };
-
 export default EventAdmin;

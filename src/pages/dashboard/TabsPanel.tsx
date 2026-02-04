@@ -15,11 +15,7 @@ export default function TabsPanel({ dashboard }: { dashboard: any }) {
   const enableChatbot = import.meta.env.VITE_ENABLE_CHATBOT === "true"
   // Construir opciones de vista dinámicamente según configuración del evento
   const viewOptions: { value: string; label: string }[] = [];
-  if (uiViews.attendees) viewOptions.push({ value: "attendees", label: "Directorio" });
-  if (uiViews.companies) viewOptions.push({ value: "companies", label: "Empresas" });
-  if (uiViews.products) viewOptions.push({ value: "products", label: "Productos" });
-  // Añadir Chatbot siempre visible; puedes condicionar con uiViews.chatbot si prefieres
-  if (enableChatbot) viewOptions.push({ value: "chatbot", label: "Chatbot" });
+  viewOptions.push({ value: "chatbot", label: "Chatbot" });
   if (uiViews.attendees) viewOptions.push({ value: "attendees", label: "Directorio de Asistentes" });
   if (uiViews.companies) viewOptions.push({ value: "companies", label: "Empresas disponibles" });
   if (uiViews.products) viewOptions.push({ value: "products", label: "Catálogo de productos" });
