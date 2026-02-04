@@ -152,11 +152,14 @@ export const aiProxy = onRequest(
       const necesidad = body.necesidad || null;
       const interesPrincipal = body.interesPrincipal || null;
       const tipoAsistente = body.tipoAsistente || null;
+      
       if (!userId || !message) {
         res.status(400).send({ error: "Missing userId or message" });
         return;
       }
+      
       console.log(`AI Proxy request from user ${userId} (event: ${eventId || "N/A"}), message length: ${String(message).length}`);
+      
       // If eventId not provided, try to derive it from the user's document
       const db = getFirestore();
       if (!eventId) {
@@ -172,96 +175,106 @@ export const aiProxy = onRequest(
       }
 
       // 1) Ask Gemini to extract keywords and target scopes (assistants/products/companies)
-        // Include user's profile fields to improve keyword extraction and intent
-        const profileParts = [];
-        if (descripcion) profileParts.push(`descripcion: ${descripcion}`);
-        if (necesidad) profileParts.push(`necesidad: ${necesidad}`);
-        if (interesPrincipal) profileParts.push(`interesPrincipal: ${interesPrincipal}`);
-        if (tipoAsistente) profileParts.push(`tipoAsistente: ${tipoAsistente}`);
+      // Include user's profile fields to improve keyword extraction and intent
+      const profileParts = [];
+      if (descripcion) profileParts.push(`descripcion: ${descripcion}`);
+      if (necesidad) profileParts.push(`necesidad: ${necesidad}`);
+      if (interesPrincipal) profileParts.push(`interesPrincipal: ${interesPrincipal}`);
+      if (tipoAsistente) profileParts.push(`tipoAsistente: ${tipoAsistente}`);
 
-        const profileText = profileParts.length ? `\nUser profile: ${profileParts.join(' | ')}` : "";
-        console.log("Profile text for AI:", profileText);
-        const instruct = `You are an assistant that extracts search keywords and intent scopes from a user's free text query.` +
-          `\nReturn a strict JSON object with two fields: keywords (array of short terms) and scopes (array with any of: assistants, products, companies).` +
-          `\nUser query: "${message.replace(/"/g, '\\"')}"` + profileText;
+      const profileText = profileParts.length ? `\nUser profile: ${profileParts.join(' | ')}` : "";
+      console.log("Profile text for AI:", profileText);
+      
+      const instruct = `You are an assistant that extracts search keywords and intent scopes from a user's free text query for a networking event platform.
 
-        // Build request body matching Gemini `generateContent` shape
-        const primaryBody = {
-          contents: [
-            {
-              parts: [
-                {
-                  text: instruct,
-                },
-              ],
-            },
-          ],
-          generationConfig: {
-            temperature: 0.4,
-            maxOutputTokens: 512,
-            responseMimeType: "application/json",
+**IMPORTANT INSTRUCTIONS:**
+- If the user message is ONLY a greeting (e.g., "hola", "buenos días", "hey", "saludos") or is completely irrelevant to searching for assistants/products/companies, return EMPTY arrays for both keywords and scopes: {"keywords": [], "scopes": []}
+- If the message contains ANY search intent or request (even combined with a greeting), extract the relevant keywords and scopes normally
+- Do NOT return empty arrays if there's actual content to search for
+
+Return a strict JSON object with two fields:
+- keywords: array of short search terms (max 12 words, filter out stopwords and irrelevant terms)
+- scopes: array with any of: "assistants", "products", "companies" (based on what the user is looking for)
+
+User query: "${message.replace(/"/g, '\\"')}"${profileText}`;
+
+      // Build request body matching Gemini `generateContent` shape
+      const primaryBody = {
+        contents: [
+          {
+            parts: [
+              {
+                text: instruct,
+              },
+            ],
           },
-        };
+        ],
+        generationConfig: {
+          temperature: 0.4,
+          maxOutputTokens: 512,
+          responseMimeType: "application/json",
+        },
+      };
 
-        let aiJson = null;
-        let aiText = "";
-        try {
-          const primaryResp = await fetch(`${GEMINI_API_URL.value()}/models/${DEFAULT_AI_MODEL.value()}:generateContent?key=${GEMINI_API_KEY.value()}`, {
+      let aiJson = null;
+      let aiText = "";
+      try {
+        const primaryResp = await fetch(`${GEMINI_API_URL.value()}/models/${DEFAULT_AI_MODEL.value()}:generateContent?key=${GEMINI_API_KEY.value()}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(primaryBody),
+        });
+
+        if (primaryResp.ok) {
+          aiJson = await primaryResp.json();
+        } else {
+          const t = await primaryResp.text();
+          console.error("AI primary error:", t);
+          // If primary fails, try alternative instances/parameters shape as fallback
+          const altBody = {
+            instances: [{ content: instruct }],
+            parameters: { maxOutputTokens: 512 },
+          };
+          const altResp = await fetch(GEMINI_API_URL.value(), {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
+              Authorization: `Bearer ${GEMINI_API_KEY.value()}`,
             },
-            body: JSON.stringify(primaryBody),
+            body: JSON.stringify(altBody),
           });
-
-          if (primaryResp.ok) {
-            aiJson = await primaryResp.json();
-          } else {
-            const t = await primaryResp.text();
-            console.error("AI primary error:", t);
-            // If primary fails, try alternative instances/parameters shape as fallback
-            const altBody = {
-              instances: [{ content: instruct }],
-              parameters: { maxOutputTokens: 512 },
-            };
-            const altResp = await fetch(GEMINI_API_URL.value(), {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${GEMINI_API_KEY.value()}`,
-              },
-              body: JSON.stringify(altBody),
-            });
-            if (!altResp.ok) {
-              const t2 = await altResp.text();
-              console.error("AI fallback error:", t2);
-              res.status(502).send({ error: "AI provider error", details: t2 });
-              return;
-            }
-            aiJson = await altResp.json();
+          if (!altResp.ok) {
+            const t2 = await altResp.text();
+            console.error("AI fallback error:", t2);
+            res.status(502).send({ error: "AI provider error", details: t2 });
+            return;
           }
-        } catch (e) {
-          console.error("AI request failed:", e);
-          res.status(502).send({ error: "AI provider error" });
-          return;
+          aiJson = await altResp.json();
         }
+      } catch (e) {
+        console.error("AI request failed:", e);
+        res.status(502).send({ error: "AI provider error" });
+        return;
+      }
 
-        // Extract text from known Gemini/Vertex response shapes
-        if (aiJson) {
-          if (aiJson.candidates && aiJson.candidates[0] && aiJson.candidates[0].content && aiJson.candidates[0].content.parts && aiJson.candidates[0].content.parts[0] && aiJson.candidates[0].content.parts[0].text) {
-            aiText = aiJson.candidates[0].content.parts[0].text;
-          } else if (aiJson.choices && aiJson.choices[0] && aiJson.choices[0].text) {
-            aiText = aiJson.choices[0].text;
-          } else if (aiJson.output && typeof aiJson.output === "string") {
-            aiText = aiJson.output;
-          } else if (aiJson.output && Array.isArray(aiJson.output) && aiJson.output[0] && aiJson.output[0].content) {
-            aiText = aiJson.output[0].content;
-          } else if (aiJson.result) {
-            aiText = JSON.stringify(aiJson.result);
-          } else {
-            aiText = JSON.stringify(aiJson);
-          }
+      // Extract text from known Gemini/Vertex response shapes
+      if (aiJson) {
+        if (aiJson.candidates && aiJson.candidates[0] && aiJson.candidates[0].content && aiJson.candidates[0].content.parts && aiJson.candidates[0].content.parts[0] && aiJson.candidates[0].content.parts[0].text) {
+          aiText = aiJson.candidates[0].content.parts[0].text;
+        } else if (aiJson.choices && aiJson.choices[0] && aiJson.choices[0].text) {
+          aiText = aiJson.choices[0].text;
+        } else if (aiJson.output && typeof aiJson.output === "string") {
+          aiText = aiJson.output;
+        } else if (aiJson.output && Array.isArray(aiJson.output) && aiJson.output[0] && aiJson.output[0].content) {
+          aiText = aiJson.output[0].content;
+        } else if (aiJson.result) {
+          aiText = JSON.stringify(aiJson.result);
+        } else {
+          aiText = JSON.stringify(aiJson);
         }
+      }
 
       // Attempt to parse JSON from AI response
       let parsed = { keywords: [], scopes: [] };
@@ -278,16 +291,76 @@ export const aiProxy = onRequest(
         parsed.scopes = ["assistants", "products", "companies"];
       }
 
-      // Detectar saludos o mensajes irrelevantes
-      const greetings = [
-        'hola', 'buenas', 'buenos dias', 'buenas tardes', 'buenas noches', 'saludos', 'hello', 'hi', 'hey', 'que tal', 'cómo estás', 'como estas', 'saludo'
-      ];
-      const msgNorm = String(message || '').trim().toLowerCase();
-      const isGreeting = greetings.some(g => msgNorm === g || msgNorm.startsWith(g + ' ') || msgNorm.endsWith(' ' + g));
+      // Si la IA retornó arrays vacíos, es un saludo o mensaje irrelevante
+      if (!Array.isArray(parsed.keywords) || parsed.keywords.length === 0 || 
+          !Array.isArray(parsed.scopes) || parsed.scopes.length === 0) {
+        
+        // Generar respuesta amable con la IA
+        const greetingPrompt = `Eres un asistente virtual para networking en eventos. El usuario ha enviado un saludo o mensaje sin consulta específica. Responde de forma breve, amable y profesional (máximo 2 líneas), saludando cordialmente y animando al usuario a consultar sobre asistentes, empresas o productos del evento. No uses emojis excesivos, mantén un tono profesional.
 
-      // db already obtained above when deriving eventId
+Mensaje del usuario: "${message}"`;
 
-      const scopes = Array.isArray(parsed.scopes) && parsed.scopes.length ? parsed.scopes : ["assistants", "products", "companies"];
+        let aiGreetingMessage = "¡Hola! Estoy aquí para ayudarte. ¿En qué te puedo asistir? Puedes consultar sobre asistentes, empresas o productos del evento.";
+        
+        try {
+          const greetingResp = await fetch(`${GEMINI_API_URL.value()}/models/${DEFAULT_AI_MODEL.value()}:generateContent?key=${GEMINI_API_KEY.value()}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: greetingPrompt }] }],
+              generationConfig: { 
+                temperature: 0.7, 
+                maxOutputTokens: 100, 
+                responseMimeType: "text/plain" 
+              },
+            }),
+          });
+          
+          if (greetingResp.ok) {
+            const greetingJson = await greetingResp.json();
+            if (greetingJson.candidates && greetingJson.candidates[0] && greetingJson.candidates[0].content && greetingJson.candidates[0].content.parts && greetingJson.candidates[0].content.parts[0] && greetingJson.candidates[0].content.parts[0].text) {
+              aiGreetingMessage = greetingJson.candidates[0].content.parts[0].text.trim();
+            }
+          }
+        } catch (e) {
+          console.warn("AI greeting generation failed, using default", e);
+        }
+
+        // Guardar el chat con el saludo
+        const chatRef = db.collection("aiChats").doc();
+        await chatRef.set({
+          userId,
+          eventId: eventId || null,
+          message,
+          profile: {
+            descripcion: descripcion || null,
+            necesidad: necesidad || null,
+            interesPrincipal: interesPrincipal || null,
+            tipoAsistente: tipoAsistente || null,
+          },
+          keywords: [],
+          scopes: [],
+          aiMessage: aiGreetingMessage,
+          summary: null,
+          resultsSummary: {
+            assistants: 0,
+            products: 0,
+            companies: 0,
+          },
+          isGreeting: true,
+          createdAt: new Date().toISOString(),
+          aiRaw: aiJson,
+        });
+
+        res.status(200).send({
+          chatId: chatRef.id,
+          results: { assistants: [], products: [], companies: [] },
+          message: aiGreetingMessage,
+          summary: null,
+          isGreeting: true
+        });
+        return;
+      }
 
       // Normalize and clean keywords: keep unicode letters, remove diacritics, filter stopwords and short fragments
       const normalizeText = (s) =>
@@ -316,43 +389,10 @@ export const aiProxy = onRequest(
 
       // Limit to a concise set
       keywords = keywords.slice(0, 12);
+      
+      const scopes = Array.isArray(parsed.scopes) && parsed.scopes.length ? parsed.scopes : ["assistants", "products", "companies"];
+      
       console.log("extracted scopes:", scopes, "keywords:", keywords);
-
-      // Si el mensaje es un saludo o irrelevante, pedir a la IA que anime a consultar
-      if (isGreeting || keywords.length === 0) {
-        // Prompt especial para IA
-        const promptSaludo = `Eres un asistente virtual para networking en eventos. El usuario ha enviado un saludo o un mensaje irrelevante. Responde de forma amable y breve animando al usuario a hacer una consulta sobre asistentes, empresas o productos del evento.`;
-        let aiSaludo = "¡Hola! ¿En qué puedo ayudarte? Haz una consulta sobre asistentes, empresas o productos para obtener resultados.";
-        try {
-          const respSaludo = await fetch(`${GEMINI_API_URL.value()}/models/${DEFAULT_AI_MODEL.value()}:generateContent?key=${GEMINI_API_KEY.value()}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: promptSaludo }] }],
-              generationConfig: { temperature: 0.5, maxOutputTokens: 60, responseMimeType: "text/plain" },
-            }),
-          });
-          if (respSaludo.ok) {
-            const j = await respSaludo.json();
-            if (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts && j.candidates[0].content.parts[0] && j.candidates[0].content.parts[0].text) {
-              aiSaludo = j.candidates[0].content.parts[0].text.trim();
-            } else if (j.choices && j.choices[0] && j.choices[0].text) {
-              aiSaludo = j.choices[0].text.trim();
-            } else if (j.output && typeof j.output === "string") {
-              aiSaludo = j.output.trim();
-            }
-          }
-        } catch (e) {
-          console.warn("AI saludo fallback", e);
-        }
-        res.status(200).send({
-          chatId: null,
-          results: { assistants: [], products: [], companies: [] },
-          message: aiSaludo,
-          summary: null
-        });
-        return;
-      }
 
       // If frontend provided tipoAsistente, try to invert intent: vendedor -> buscar compradores, comprador -> buscar vendedores
       const userTipo = tipoAsistente ? String(tipoAsistente).toLowerCase() : null;
@@ -371,7 +411,7 @@ export const aiProxy = onRequest(
         return keywords.some((kw) => text.includes(kw));
       };
 
-      // Search assistants: users collection filtered by eventId (no events/{eventId}/assistants subcollection)
+      // Search assistants: users collection filtered by eventId
       if (scopes.includes("assistants")) {
         try {
           const usersQuery = eventId ? db.collection("users").where("eventId", "==", eventId) : db.collection("users");
@@ -401,7 +441,7 @@ export const aiProxy = onRequest(
         }
       }
 
-      // Search products: try event subcollection 'products' first, fallback to global 'products'
+      // Search products: event subcollection 'products'
       if (scopes.includes("products")) {
         try {
           let productsSnap = null;
@@ -409,23 +449,24 @@ export const aiProxy = onRequest(
             productsSnap = await db.collection("events").doc(eventId).collection("products").get();
           }
         
-          productsSnap.forEach((d) => {
-            const o = d.data();
-            if (matchesAny(o, [
-              "title",
-              "description",
-              "category",
-            
-            ])) {
-              results.products.push({ id: d.id, ...o });
-            }
-          });
+          if (productsSnap) {
+            productsSnap.forEach((d) => {
+              const o = d.data();
+              if (matchesAny(o, [
+                "title",
+                "description",
+                "category",
+              ])) {
+                results.products.push({ id: d.id, ...o });
+              }
+            });
+          }
         } catch (err) {
           console.warn("Products query failed", err);
         }
       }
 
-      // Companies: prefer event companies collection, else derive from users filtered by eventId
+      // Companies: event companies collection
       if (scopes.includes("companies")) {
         try {
           let companiesSnap = null;
@@ -482,6 +523,7 @@ export const aiProxy = onRequest(
           products: results.products.length,
           companies: results.companies.length,
         },
+        isGreeting: false,
         createdAt: new Date().toISOString(),
         aiRaw: aiJson,
       });
