@@ -8,6 +8,7 @@ import ChatbotTab from "./ChatbotTab";
 import MeetingsTab from "./MeetingsTab";
 import RequestsTab from "./RequestsTab";
 import MyProductsTab from "./MyProductsTab";
+import MyCompanyTab from "./MyCompanyTab";
 import { DEFAULT_POLICIES } from "./types";
 
 export default function TabsPanel({ dashboard }: { dashboard: any }) {
@@ -41,9 +42,9 @@ export default function TabsPanel({ dashboard }: { dashboard: any }) {
   // Construir opciones de vista dinámicamente según configuración del evento
   const viewOptions: { value: string; label: string }[] = [];
   viewOptions.push({ value: "chatbot", label: "Chatbot" });
-  if (uiViews.attendees) viewOptions.push({ value: "attendees", label: "Directorio de Asistentes" });
-  if (uiViews.companies) viewOptions.push({ value: "companies", label: "Empresas disponibles" });
-  if (uiViews.products) viewOptions.push({ value: "products", label: "Catálogo de productos" });
+  if (uiViews.attendees) viewOptions.push({ value: "attendees", label: "Asistentes" });
+  if (uiViews.companies) viewOptions.push({ value: "companies", label: "Disponibles" });
+  if (uiViews.products) viewOptions.push({ value: "products", label: "Productos" });
   viewOptions.push({ value: "activity", label: "Mi actividad" });
 
   const [topView, setTopView] = useState(viewOptions[0]?.value || "attendees");
@@ -156,6 +157,7 @@ export default function TabsPanel({ dashboard }: { dashboard: any }) {
             {!isComprador && (
               <Tabs.Tab value="mis-productos">Mis productos</Tabs.Tab>
             )}
+            <Tabs.Tab value="mi-empresa">Mi empresa</Tabs.Tab>
           </Tabs.List>
 
           <Tabs.Panel value="reuniones" pt="md">
@@ -169,6 +171,9 @@ export default function TabsPanel({ dashboard }: { dashboard: any }) {
               <MyProductsTab {...dashboard} />
             </Tabs.Panel>
           )}
+          <Tabs.Panel value="mi-empresa" pt="md">
+            <MyCompanyTab {...dashboard} />
+          </Tabs.Panel>
         </Tabs>
       )}
     </Stack>
