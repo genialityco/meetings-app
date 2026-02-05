@@ -244,6 +244,13 @@ export default function EventPoliciesModal({
         </Text>
 
         <Switch
+          label="Chatbot"
+          checked={uiViews.chatbot}
+          onChange={(e) =>
+            setUiViews((prev) => ({ ...prev, chatbot: e.currentTarget.checked }))
+          }
+        />
+        <Switch
           label="Vista de asistentes (directorio)"
           checked={uiViews.attendees}
           onChange={(e) =>

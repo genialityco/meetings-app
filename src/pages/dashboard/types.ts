@@ -77,6 +77,7 @@ export interface EventPolicies {
   /** Redirige vendedores a "Mis productos" en su primer ingreso y oculta ese tab a compradores */
   sellerRedirectToProducts?: boolean;
   uiViewsEnabled: {
+    chatbot: boolean;
     attendees: boolean;
     companies: boolean;
     products: boolean;
@@ -117,5 +118,5 @@ export const DEFAULT_POLICIES: EventPolicies = {
   discoveryMode: "all",
   schedulingMode: "manual",
   sellerRedirectToProducts: false,
-  uiViewsEnabled: { attendees: true, companies: true, products: true },
+  uiViewsEnabled: { chatbot: true, attendees: true, companies: true, products: true },
 };
