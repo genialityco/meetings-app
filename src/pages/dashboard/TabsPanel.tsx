@@ -43,11 +43,19 @@ export default function TabsPanel({ dashboard }: { dashboard: any }) {
   const viewOptions: { value: string; label: string }[] = [];
   if (uiViews.chatbot) viewOptions.push({ value: "chatbot", label: "Chatbot" });
   if (uiViews.attendees) viewOptions.push({ value: "attendees", label: "Asistentes" });
-  if (uiViews.companies) viewOptions.push({ value: "companies", label: "Disponibles" });
+  if (uiViews.companies) viewOptions.push({ value: "companies", label: "Empresas" });
   if (uiViews.products) viewOptions.push({ value: "products", label: "Productos" });
   viewOptions.push({ value: "activity", label: "Mi actividad" });
 
-  const [topView, setTopView] = useState(viewOptions[0]?.value || "attendees");
+  const [topView, setTopView] = useState(viewOptions[0]?.value || "companies");
+
+  // Si la vista activa ya no existe en las opciones (ej: chatbot deshabilitado), ir a la primera disponible
+  const validValues = viewOptions.map((o) => o.value);
+  useEffect(() => {
+    if (!validValues.includes(topView)) {
+      setTopView(validValues[0] || "companies");
+    }
+  }, [validValues.join(",")]);
 
   // Redirigir al vendedor a "Mi actividad > Mis productos" solo la primera vez
   const redirectKey = eventId && uid ? `seller_redirect_${eventId}_${uid}` : null;
