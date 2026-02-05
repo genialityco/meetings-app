@@ -36,6 +36,7 @@ export default function EventPoliciesModal({
   const [tableMode, setTableMode] = useState<EventPolicies["tableMode"]>("pool");
   const [discoveryMode, setDiscoveryMode] = useState<EventPolicies["discoveryMode"]>("all");
   const [schedulingMode, setSchedulingMode] = useState<EventPolicies["schedulingMode"]>("manual");
+  const [sellerRedirectToProducts, setSellerRedirectToProducts] = useState(false);
   const [uiViews, setUiViews] = useState(DEFAULT_POLICIES.uiViewsEnabled);
 
   // Empresas y asignación de mesas fijas
@@ -50,6 +51,7 @@ export default function EventPoliciesModal({
     setTableMode(p.tableMode ?? "pool");
     setDiscoveryMode(p.discoveryMode ?? "all");
     setSchedulingMode(p.schedulingMode ?? "manual");
+    setSellerRedirectToProducts(p.sellerRedirectToProducts ?? false);
     setUiViews(p.uiViewsEnabled ?? DEFAULT_POLICIES.uiViewsEnabled);
   }, [event]);
 
@@ -105,6 +107,7 @@ export default function EventPoliciesModal({
               tableMode,
               discoveryMode,
               schedulingMode,
+              sellerRedirectToProducts,
               uiViewsEnabled: uiViews,
             },
           },
@@ -152,6 +155,15 @@ export default function EventPoliciesModal({
           value={roleMode}
           onChange={(v) => setRoleMode((v as EventPolicies["roleMode"]) ?? "open")}
         />
+
+        {roleMode === "buyer_seller" && (
+          <Switch
+            label="Redirigir vendedores a 'Mis productos' en su primer ingreso"
+            description="Vendedores inician en 'Mi actividad → Mis productos'. Compradores no ven el tab de productos propios."
+            checked={sellerRedirectToProducts}
+            onChange={(e) => setSellerRedirectToProducts(e.currentTarget.checked)}
+          />
+        )}
 
         <Select
           label="Modo de mesas"
