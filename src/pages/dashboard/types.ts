@@ -74,6 +74,8 @@ export interface EventPolicies {
   tableMode: "pool" | "fixed";
   discoveryMode: "all" | "by_role";
   schedulingMode: "manual" | "auto";
+  /** Redirige vendedores a "Mis productos" en su primer ingreso y oculta ese tab a compradores */
+  sellerRedirectToProducts?: boolean;
   uiViewsEnabled: {
     attendees: boolean;
     companies: boolean;
@@ -114,5 +116,6 @@ export const DEFAULT_POLICIES: EventPolicies = {
   tableMode: "pool",
   discoveryMode: "all",
   schedulingMode: "manual",
+  sellerRedirectToProducts: false,
   uiViewsEnabled: { attendees: true, companies: true, products: true },
 };

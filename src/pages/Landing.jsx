@@ -530,7 +530,9 @@ const Landing = () => {
 
       let dataToUpdate = {
         ...formValues,
-        correo: String(formValues["correo"] || "").toLowerCase().trim(),
+        correo: String(formValues["correo"] || "")
+          .toLowerCase()
+          .trim(),
         eventId,
         updatedAt: new Date().toISOString(),
       };
@@ -720,7 +722,9 @@ const Landing = () => {
                     "No se pudo subir la imagen ❌"}
                 </Text>
 
-                {photoUploadStatus === "uploading" ? <Loader size="xs" /> : null}
+                {photoUploadStatus === "uploading" ? (
+                  <Loader size="xs" />
+                ) : null}
               </Group>
 
               {photoUploadError ? (
@@ -881,7 +885,9 @@ const Landing = () => {
                 value={companyLogoFile}
                 onChange={(file) => {
                   setCompanyLogoFile(file);
-                  setCompanyLogoPreview(file ? URL.createObjectURL(file) : null);
+                  setCompanyLogoPreview(
+                    file ? URL.createObjectURL(file) : null,
+                  );
                 }}
                 radius="md"
               />
@@ -997,7 +1003,11 @@ const Landing = () => {
   if (!eventId) {
     return (
       <Container>
-        <Paper shadow="md" p="xl" style={{ maxWidth: 520, margin: "40px auto" }}>
+        <Paper
+          shadow="md"
+          p="xl"
+          style={{ maxWidth: 520, margin: "40px auto" }}
+        >
           <Text ta="center">
             Esta es una plataforma de networking desarrollada por Geniality SAS.
             <br />
@@ -1030,36 +1040,6 @@ const Landing = () => {
               borderColor: "rgba(255,255,255,0.55)",
             }}
           >
-            {/* Header banner (como la imagen) */}
-            <Box style={headerBg}>
-              <Paper
-                radius="xl"
-                withBorder
-                style={{
-                  overflow: "hidden",
-                  background: "rgba(255,255,255,0.72)",
-                  borderColor: "rgba(255,255,255,0.7)",
-                }}
-              >
-                <Flex
-                  align="center"
-                  justify="center"
-                  style={{
-                    padding: isMobile ? 10 : 12,
-                  }}
-                >
-                  <img
-                    src={event.eventImage}
-                    alt="Encuentro"
-                    style={{
-                      width: "100%",
-                      borderRadius: 14,
-                    }}
-                  />
-                </Flex>
-              </Paper>
-            </Box>
-
             {/* Body */}
             <Box px={isMobile ? 18 : 22} py={isMobile ? 18 : 20}>
               <Stack gap="md">
@@ -1100,7 +1080,7 @@ const Landing = () => {
                   ) : null}
                 </Stack>
 
-                {event?.landingQR ? (
+                {/* {event?.landingQR ? (
                   <Paper
                     radius="lg"
                     withBorder
@@ -1118,14 +1098,16 @@ const Landing = () => {
                       style={{ width: "100%" }}
                     />
                   </Paper>
-                ) : null}
+                ) : null} */}
 
                 <Text
                   ta="center"
                   size={isMobile ? "sm" : "md"}
                   style={{ maxWidth: 560, margin: "0 auto" }}
                 >
-                  <strong>Plataforma de Networking y Reuniones de Negocio.</strong>{" "}
+                  <strong>
+                    Plataforma de Networking y Reuniones de Negocio.
+                  </strong>{" "}
                   Conecta con otras empresas y permite que te encuentren para
                   agendar reuniones durante el evento. Ingresa con el correo
                   registrado de la empresa o regístrate si es tu primera vez.
@@ -1152,9 +1134,7 @@ const Landing = () => {
                             ? "linear-gradient(180deg, rgba(16,185,129,1), rgba(5,150,105,1))"
                             : "rgba(255,255,255,0.85)",
                         color:
-                          activeTab === "login"
-                            ? "white"
-                            : "rgba(0,0,0,0.78)",
+                          activeTab === "login" ? "white" : "rgba(0,0,0,0.78)",
                         boxShadow:
                           activeTab === "login"
                             ? "0 12px 22px rgba(5,150,105,0.25)"
@@ -1412,12 +1392,77 @@ const Landing = () => {
                 </Tabs>
 
                 <Divider my={6} />
-
-                <Text ta="center" c="dimmed" fz="sm">
-                  ¿Problemas para ingresar? Verifica que tu correo esté
-                  registrado por la organización del evento.
-                </Text>
               </Stack>
+            </Box>
+
+            {/* Header banner (responsive) */}
+            <Box style={headerBg}>
+              <Flex
+                direction={isMobile ? "column" : "row"}
+                align={isMobile ? "stretch" : "center"}
+                justify="center"
+                gap={isMobile ? "sm" : "md"}
+              >
+                {/* QR */}
+                {/* {event?.landingQR ? (
+                  <Paper
+                    radius="lg"
+                    withBorder
+                    p="sm"
+                    style={{
+                      background: "rgba(255,255,255,0.8)",
+                      width: isMobile ? "100%" : 220,
+                      maxWidth: isMobile ? 240 : 220,
+                      margin: isMobile ? "0 auto" : 0,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Stack gap={6} align="center">
+                      <Badge variant="light" radius="md">
+                        QR para acceder al evento
+                      </Badge>
+
+                      <Image
+                        src={event.landingQR}
+                        alt="QR del evento"
+                        fit="contain"
+                        style={{ width: "100%" }}
+                      />
+
+                      <Text size="xs" c="dimmed" ta="center">
+                        Escanéalo con tu cámara.
+                      </Text>
+                    </Stack>
+                  </Paper>
+                ) : null} */}
+
+                {/* Banner / imagen del evento */}
+                <Paper
+                  radius="xl"
+                  withBorder
+                  style={{
+                    overflow: "hidden",
+                    background: "rgba(255,255,255,0.72)",
+                    borderColor: "rgba(255,255,255,0.7)",
+                    flex: 1,
+                    minWidth: 0,
+                  }}
+                >
+                  <Box style={{ padding: isMobile ? 10 : 12 }}>
+                    <img
+                      src={event.eventImage}
+                      alt="Encuentro"
+                      style={{
+                        width: "100%",
+                        maxHeight: isMobile ? 180 : 220,
+                        objectFit: "cover",
+                        borderRadius: 14,
+                        display: "block",
+                      }}
+                    />
+                  </Box>
+                </Paper>
+              </Flex>
             </Box>
           </Paper>
 
