@@ -37,6 +37,7 @@ export default function Dashboard() {
           eventName={dashboard.eventName}
           notifications={dashboard.notifications}
           formFields={dashboard.formFields}
+          eventConfig={dashboard.eventConfig}
         />
       )}
       <Container fluid pt="sm">

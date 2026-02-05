@@ -195,7 +195,7 @@ const UserProfile = () => {
 
             <Group mt="md" justify="space-between">
               <Button onClick={() => setEditModalOpened(true)} color="blue">
-                Editar Perfil
+                Editar Perfilddd
               </Button>
 
               <Button

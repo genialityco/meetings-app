@@ -18,12 +18,17 @@ import {
   Loader,
   Alert,
   Box,
+  Paper,
+  Divider,
+  Grid,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { IconEdit, IconLogout, IconChevronDown } from "@tabler/icons-react";
 import { UserContext } from "../context/UserContext";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { storage } from "../firebase/firebaseConfig";
+import { doc, setDoc } from "firebase/firestore";
+import { storage, db } from "../firebase/firebaseConfig";
+import { showNotification } from "@mantine/notifications";
 import NotificationsMenu from "../pages/dashboard/NotificationsMenu";
 
 interface DashboardHeaderProps {
@@ -32,6 +37,7 @@ interface DashboardHeaderProps {
   eventName: string;
   notifications: any[];
   formFields: any[];
+  eventConfig?: any;
 }
 
 const uploadProfilePicture = async (file: File, uid: string) => {
@@ -50,6 +56,7 @@ const DashboardHeader = ({
   eventName,
   notifications,
   formFields,
+  eventConfig,
 }: DashboardHeaderProps) => {
   const { currentUser, updateUser, logout } = useContext(UserContext);
   const uid = currentUser?.uid;
@@ -98,6 +105,20 @@ const DashboardHeader = ({
     [editData],
   );
 
+  // Conditional field visibility (showWhen support)
+  const isFieldVisible = useCallback(
+    (field: any) => {
+      if (!field?.showWhen) return true;
+      const parentValue = getFieldValue(field.showWhen.field);
+      const allowed = field.showWhen.value || [];
+      if (Array.isArray(parentValue)) {
+        return parentValue.some((v: string) => allowed.includes(v));
+      }
+      return allowed.includes(parentValue);
+    },
+    [getFieldValue],
+  );
+
   const handleSave = useCallback(async () => {
     if (!uid) return;
     setSaving(true);
@@ -122,9 +143,11 @@ const DashboardHeader = ({
         }
       }
 
-      // Normalize NIT
-      if (dataToUpdate.company_nit) {
-        dataToUpdate.company_nit = normalizeNit(dataToUpdate.company_nit);
+      // Normalize NIT and sync companyId
+      const nitNorm = normalizeNit(dataToUpdate.company_nit);
+      if (nitNorm) {
+        dataToUpdate.company_nit = nitNorm;
+        dataToUpdate.companyId = nitNorm;
       }
       // Compat: empresa = razon social
       if (dataToUpdate.company_razonSocial) {
@@ -135,9 +158,52 @@ const DashboardHeader = ({
 
       dataToUpdate.updatedAt = new Date().toISOString();
       await updateUser(uid, dataToUpdate);
+
+      // Sync company doc in events/{eventId}/companies/{nitNorm}
+      // Include all fields from the company step dynamically
+      const eventId = dataToUpdate.eventId || currentUser?.data?.eventId;
+      if (eventId && nitNorm) {
+        const steps = eventConfig?.registrationForm?.steps || [];
+        const companyStep = steps.find((s: any) =>
+          (s.fields || []).includes("company_nit")
+        );
+        const companyFieldNames: string[] = companyStep?.fields || ["company_nit", "company_razonSocial"];
+
+        const companyDoc: any = { nitNorm, updatedAt: new Date() };
+        for (const fieldName of companyFieldNames) {
+          if (fieldName === "company_nit") continue; // already as nitNorm
+          if (fieldName === "company_logo") continue; // logo handled separately
+          const val = dataToUpdate[fieldName];
+          if (val !== undefined && val !== null) {
+            // Map company_razonSocial -> razonSocial for the company doc
+            if (fieldName === "company_razonSocial") {
+              companyDoc.razonSocial = String(val).trim();
+            } else {
+              companyDoc[fieldName] = val;
+            }
+          }
+        }
+
+        await setDoc(
+          doc(db, "events", eventId, "companies", nitNorm),
+          companyDoc,
+          { merge: true }
+        );
+      }
+
+      showNotification({
+        title: "Perfil actualizado",
+        message: "Tus datos fueron guardados correctamente.",
+        color: "teal",
+      });
       setEditModalOpened(false);
     } catch (error) {
       console.error("Error al actualizar el perfil:", error);
+      showNotification({
+        title: "Error",
+        message: "No se pudo guardar los cambios.",
+        color: "red",
+      });
     } finally {
       setSaving(false);
     }
@@ -360,36 +426,184 @@ const DashboardHeader = ({
       <Modal
         opened={editModalOpened}
         onClose={() => setEditModalOpened(false)}
-        title="Editar Perfil"
+        title={
+          <Group gap="xs">
+            <IconEdit size={20} />
+            <Text fw={600}>Editar Perfil</Text>
+          </Group>
+        }
         size="lg"
         centered
       >
-        <Stack>
+        <Stack gap="md">
           {formFields.length > 0
-            ? formFields.map((field: any) => renderField(field))
+            ? (() => {
+                // Separar campo de foto
+                const photoFields = formFields.filter(
+                  (f: any) => f.name === "photoURL" || f.type === "photo"
+                );
+
+                // Detectar campos de empresa dinámicamente desde los steps del registrationForm
+                const steps = eventConfig?.registrationForm?.steps || [];
+                const companyStep = steps.find((s: any) =>
+                  (s.fields || []).includes("company_nit")
+                );
+                const companyFieldNames: Set<string> = new Set(
+                  companyStep?.fields || ["company_nit", "company_razonSocial", "company_logo", "empresa"]
+                );
+                const companyStepTitle = companyStep?.title || "Datos de empresa";
+
+                const companyFields = formFields.filter(
+                  (f: any) => companyFieldNames.has(f.name) && !photoFields.includes(f)
+                );
+
+                // El resto son campos personales/networking (agrupados por step si hay steps)
+                const nonPhotoNonCompanyFields = formFields.filter(
+                  (f: any) =>
+                    !photoFields.includes(f) &&
+                    !companyFields.includes(f) &&
+                    f.name !== CONSENTIMIENTO_FIELD_NAME
+                );
+
+                // Agrupar campos restantes por step
+                const otherSteps = steps.filter(
+                  (s: any) => s !== companyStep
+                );
+                const fieldsByStep: { title: string; fields: any[] }[] = [];
+
+                if (otherSteps.length > 0) {
+                  for (const step of otherSteps) {
+                    const stepFieldNames = new Set(step.fields || []);
+                    const stepFields = nonPhotoNonCompanyFields.filter(
+                      (f: any) => stepFieldNames.has(f.name)
+                    );
+                    if (stepFields.length > 0) {
+                      fieldsByStep.push({ title: step.title || "Otros datos", fields: stepFields });
+                    }
+                  }
+                  // Campos no asignados a ningún step
+                  const allAssigned = new Set(fieldsByStep.flatMap((g) => g.fields.map((f: any) => f.name)));
+                  const unassigned = nonPhotoNonCompanyFields.filter((f: any) => !allAssigned.has(f.name));
+                  if (unassigned.length > 0) {
+                    fieldsByStep.push({ title: "Otros datos", fields: unassigned });
+                  }
+                } else {
+                  // Sin steps, todo en una sección
+                  if (nonPhotoNonCompanyFields.length > 0) {
+                    fieldsByStep.push({ title: "Datos personales", fields: nonPhotoNonCompanyFields });
+                  }
+                }
+
+                return (
+                  <>
+                    {/* Foto */}
+                    {photoFields.filter(isFieldVisible).length > 0 && (
+                      <Paper withBorder radius="md" p="md">
+                        {photoFields.filter(isFieldVisible).map((field: any) => renderField(field))}
+                      </Paper>
+                    )}
+
+                    {/* Secciones por step */}
+                    {fieldsByStep.map((group) => {
+                      const visibleFields = group.fields.filter(isFieldVisible);
+                      if (visibleFields.length === 0) return null;
+                      return (
+                        <Paper key={group.title} withBorder radius="md" p="md">
+                          <Divider
+                            label={<Text fw={600} size="sm">{group.title}</Text>}
+                            labelPosition="left"
+                            mb="sm"
+                          />
+                          <Grid gutter="sm">
+                            {visibleFields.map((field: any) => (
+                              <Grid.Col
+                                key={field.name}
+                                span={
+                                  field.type === "textarea" ||
+                                  field.type === "richtext" ||
+                                  field.name === "descripcion" ||
+                                  field.type === "multiselect"
+                                    ? 12
+                                    : 6
+                                }
+                              >
+                                {renderField(field)}
+                              </Grid.Col>
+                            ))}
+                          </Grid>
+                        </Paper>
+                      );
+                    })}
+
+                    {/* Datos de empresa */}
+                    {(() => {
+                      const visibleCompanyFields = companyFields.filter(isFieldVisible);
+                      if (visibleCompanyFields.length === 0) return null;
+                      return (
+                        <Paper withBorder radius="md" p="md">
+                          <Divider
+                            label={<Text fw={600} size="sm">{companyStepTitle}</Text>}
+                            labelPosition="left"
+                            mb="sm"
+                          />
+                          <Grid gutter="sm">
+                            {visibleCompanyFields.map((field: any) => (
+                              <Grid.Col
+                                key={field.name}
+                                span={
+                                  field.type === "textarea" ||
+                                  field.type === "richtext" ||
+                                  field.type === "multiselect"
+                                    ? 12
+                                    : 6
+                                }
+                              >
+                                {renderField(field)}
+                              </Grid.Col>
+                            ))}
+                          </Grid>
+                          <Text size="xs" c="dimmed" mt="xs">
+                            Al guardar, la información de la empresa se actualiza para todos los representantes.
+                          </Text>
+                        </Paper>
+                      );
+                    })()}
+                  </>
+                );
+              })()
             : (
-              <>
-                <TextInput
-                  label="Nombre"
-                  value={editData.nombre || ""}
-                  onChange={(e) => handleChange("nombre", e.target.value)}
-                />
-                <TextInput
-                  label="Correo"
-                  value={editData.correo || ""}
-                  onChange={(e) => handleChange("correo", e.target.value)}
-                />
-                <TextInput
-                  label="Teléfono"
-                  value={editData.telefono || ""}
-                  onChange={(e) => handleChange("telefono", e.target.value)}
-                />
-              </>
+              <Paper withBorder radius="md" p="md">
+                <Grid gutter="sm">
+                  <Grid.Col span={12}>
+                    <TextInput
+                      label="Nombre"
+                      value={editData.nombre || ""}
+                      onChange={(e) => handleChange("nombre", e.target.value)}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="Correo"
+                      value={editData.correo || ""}
+                      onChange={(e) => handleChange("correo", e.target.value)}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="Teléfono"
+                      value={editData.telefono || ""}
+                      onChange={(e) => handleChange("telefono", e.target.value)}
+                    />
+                  </Grid.Col>
+                </Grid>
+              </Paper>
             )}
 
           <Button
             onClick={handleSave}
             loading={saving || photoUploadStatus === "uploading"}
+            fullWidth
+            size="md"
           >
             Guardar cambios
           </Button>
