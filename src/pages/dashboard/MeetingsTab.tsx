@@ -11,7 +11,34 @@ import {
   Textarea,
   Loader,
   Badge,
+  Avatar,
+  Title,
+  Divider,
+  ThemeIcon,
+  Box,
+  Paper,
+  Grid,
+  useMantineTheme,
 } from "@mantine/core";
+import {
+  IconClock,
+  IconTable,
+  IconBuildingStore,
+  IconUser,
+  IconBriefcase,
+  IconMail,
+  IconPhone,
+  IconFileDescription,
+  IconTargetArrow,
+  IconBulb,
+  IconAddressBook,
+  IconBrandWhatsapp,
+  IconChevronDown,
+  IconChevronUp,
+  IconClipboardCheck,
+  IconX,
+  IconNote,
+} from "@tabler/icons-react";
 import {
   collection,
   doc,
@@ -21,9 +48,33 @@ import {
   setDoc,
   where,
 } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig"; // Ajusta el path
+import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
 import { showNotification } from "@mantine/notifications";
+
+function InfoRow({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value?: string | null;
+}) {
+  return (
+    <Group gap={8} wrap="nowrap" align="flex-start">
+      <ThemeIcon variant="light" radius="xl" size={26}>
+        {icon}
+      </ThemeIcon>
+      <Text size="sm" style={{ minWidth: 0 }} lineClamp={2}>
+        <Text span fw={700}>
+          {label}:
+        </Text>{" "}
+        {value && String(value).trim().length > 0 ? value : "No disponible"}
+      </Text>
+    </Group>
+  );
+}
 
 export default function MeetingsTab({
   acceptedMeetings,
@@ -38,8 +89,8 @@ export default function MeetingsTab({
   cancelMeeting,
 }) {
   const { currentUser } = useContext(UserContext);
+  const theme = useMantineTheme();
 
-  // Modal y encuesta
   const [surveyModal, setSurveyModal] = useState({
     open: false,
     meeting: null,
@@ -47,11 +98,10 @@ export default function MeetingsTab({
   const [surveyValue, setSurveyValue] = useState("");
   const [surveyComments, setSurveyComments] = useState("");
   const [savingSurvey, setSavingSurvey] = useState(false);
-  const [userSurveys, setUserSurveys] = useState({}); // meetingId: {value, comments}
+  const [userSurveys, setUserSurveys] = useState({});
   const [loadingSurvey, setLoadingSurvey] = useState(false);
   const [cancellingId, setCancellingId] = useState(null);
 
-  // Abrir modal, carga datos o limpia
   const handleOpenSurvey = async (meeting) => {
     setSurveyModal({ open: true, meeting });
     setLoadingSurvey(true);
@@ -75,7 +125,6 @@ export default function MeetingsTab({
     setLoadingSurvey(false);
   };
 
-  // Guardar solo si no existe respuesta previa
   const handleSaveSurvey = async () => {
     setSavingSurvey(true);
     try {
@@ -88,7 +137,7 @@ export default function MeetingsTab({
 
       await setDoc(doc(db, "meetingSurveys", `${meeting.id}_${myId}`), {
         meetingId: meeting.id,
-        userId: myId, // quien responde
+        userId: myId,
         userName: myInfo?.nombre || "",
         userEmpresa: myInfo?.empresa || "",
         otherUserId: otherId,
@@ -130,7 +179,6 @@ export default function MeetingsTab({
     if (!window.confirm("¿Seguro que deseas cancelar esta reunión?")) return;
     setCancellingId(meeting.id);
     try {
-      // Buscar slotId usando tableAssigned y timeSlot
       const slotId = await findSlotIdForMeeting(
         meeting.eventId,
         meeting.tableAssigned,
@@ -151,20 +199,22 @@ export default function MeetingsTab({
   };
 
   if (loadingMeetings) {
-    return <Text>Cargando reuniones...</Text>;
+    return (
+      <Group justify="center" py="xl">
+        <Loader />
+      </Group>
+    );
   }
 
-  // ¿Ya respondió el usuario esta encuesta?
   const surveyExists = (meetingId) => !!userSurveys[meetingId];
 
   return (
     <>
-      <Stack>
+      <Grid gutter="sm">
         {acceptedMeetings.length > 0 ? (
           acceptedMeetings
             .slice()
             .sort((a, b) => {
-              // Ordena por hora de inicio
               const [aStart] = (a.timeSlot || "").split(" - ");
               const [bStart] = (b.timeSlot || "").split(" - ");
               const [aH, aM] = aStart ? aStart.split(":").map(Number) : [0, 0];
@@ -177,164 +227,261 @@ export default function MeetingsTab({
                   ? meeting.receiverId
                   : meeting.requesterId;
               const participant = participantsInfo[otherUserId];
+              const isExpanded = expandedMeetingId === meeting.id;
+
               return (
-                <Card key={meeting.id} shadow="sm" p="lg" mb="sm">
-                  <Text>
-                    <strong>Reunión con:</strong>{" "}
-                    {participant ? participant.empresa : "Cargando..."}
-                  </Text>
-                  <Text>
-                    <strong>Asistente:</strong>{" "}
-                    {participant ? participant.nombre : "Cargando..."}
-                  </Text>
-                  <Text>
-                    <strong>Horario:</strong>{" "}
-                    {meeting.timeSlot || "Por asignar"}
-                  </Text>
-                  <Text>
-                    <strong>Mesa:</strong>{" "}
-                    {meeting.tableAssigned || "Por asignar"}
-                  </Text>
-                  {meeting.contextNote && (
-                    <Badge variant="light" color="grape" size="sm" mt={4}>
-                      {meeting.contextNote}
-                    </Badge>
-                  )}
-                  <Collapse in={expandedMeetingId === meeting.id} mt="sm">
-                    {participant && (
-                      <>
-                        <Text size="sm">
-                          🏢 <strong>Empresa:</strong> {participant.empresa}
-                        </Text>
-                        <Text size="sm">
-                          🏢 <strong>Asistente:</strong> {participant.nombre}
-                        </Text>
-                        <Text size="sm">
-                          🏷 <strong>Cargo:</strong> {participant.cargo}
-                        </Text>
-                        <Text size="sm">
-                          📧 <strong>Correo:</strong>{" "}
-                          {participant.correo || "No disponible"}
-                        </Text>
-                        <Text size="sm">
-                          📞 <strong>Teléfono:</strong>{" "}
-                          {participant.telefono || "No disponible"}
-                        </Text>
-                        <Text size="sm">
-                          📝 <strong>Descripción:</strong>{" "}
-                          {participant.descripcion || "No especificada"}
-                        </Text>
-                        <Text size="sm">
-                          🎯 <strong>Interés Principal:</strong>{" "}
-                          {participant.interesPrincipal || "No especificado"}
-                        </Text>
-                        <Text size="sm">
-                          🔍 <strong>Necesidad:</strong>{" "}
-                          {participant.necesidad || "No especificada"}
-                        </Text>
-                      </>
-                    )}
-                  </Collapse>
-                  {participant && (
-                    <Group mt="sm">
-                      <Button
-                        variant="outline"
-                        onClick={() => downloadVCard(participant)}
+                <Grid.Col span={{ base: 12, sm: 6, lg: 4 }} key={meeting.id}>
+                  <Card
+                    withBorder
+                    radius="xl"
+                    padding="md"
+                    shadow="sm"
+                    style={{
+                      height: "100%",
+                      display: "flex",
+                      flexDirection: "column",
+                    }}
+                  >
+                    {/* Header */}
+                    <Group wrap="nowrap" align="center" gap="sm">
+                      <Avatar
+                        src={participant?.photoURL}
+                        radius="xl"
+                        size={52}
+                        color={theme.primaryColor}
                       >
-                        Agregar a Contactos
-                      </Button>
-                      <Button
-                        variant="outline"
-                        color="green"
-                        onClick={() => sendWhatsAppMessage(participant)}
-                      >
-                        Enviar WhatsApp
-                      </Button>
-                      <Button
-                        variant="subtle"
-                        onClick={() =>
-                          setExpandedMeetingId(
-                            expandedMeetingId === meeting.id ? null : meeting.id
-                          )
-                        }
-                      >
-                        {expandedMeetingId === meeting.id
-                          ? "Ocultar info"
-                          : "Ver más info"}
-                      </Button>
-                      {/* Encuesta: solo botón para abrir modal */}
-                      <Button
-                        color={surveyExists(meeting.id) ? "gray" : "violet"}
-                        variant={
-                          surveyExists(meeting.id) ? "outline" : "filled"
-                        }
-                        onClick={() => handleOpenSurvey(meeting)}
-                      >
-                        {surveyExists(meeting.id)
-                          ? "Ver encuesta"
-                          : "Llenar encuesta"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        color="red"
-                        loading={cancellingId === meeting.id}
-                        onClick={() => handleCancelMeeting(meeting)}
-                        disabled={cancellingId === meeting.id}
-                      >
-                        Cancelar reunión
-                      </Button>
+                        {(participant?.nombre || "R")[0]?.toUpperCase()}
+                      </Avatar>
+
+                      <Box style={{ minWidth: 0, flex: 1 }}>
+                        <Title order={6} lineClamp={1}>
+                          {participant?.empresa || "Cargando..."}
+                        </Title>
+                        <Text size="sm" c="dimmed" lineClamp={1}>
+                          {participant?.nombre || "Cargando..."}
+                          {participant?.cargo ? ` • ${participant.cargo}` : ""}
+                        </Text>
+                      </Box>
                     </Group>
-                  )}
-                </Card>
+
+                    <Divider my="sm" />
+
+                    {/* Slot info */}
+                    <Stack gap={8}>
+                      <InfoRow
+                        icon={<IconClock size={14} />}
+                        label="Horario"
+                        value={meeting.timeSlot || "Por asignar"}
+                      />
+                      <InfoRow
+                        icon={<IconTable size={14} />}
+                        label="Mesa"
+                        value={
+                          meeting.tableAssigned
+                            ? String(meeting.tableAssigned)
+                            : "Por asignar"
+                        }
+                      />
+                    </Stack>
+
+                    {meeting.contextNote && (
+                      <Badge
+                        variant="light"
+                        color="grape"
+                        size="sm"
+                        mt="xs"
+                        radius="md"
+                      >
+                        <Group gap={4} wrap="nowrap">
+                          <IconNote size={12} />
+                          {meeting.contextNote}
+                        </Group>
+                      </Badge>
+                    )}
+
+                    {/* Expandable details */}
+                    <Collapse in={isExpanded} mt="sm">
+                      {participant && (
+                        <Paper withBorder radius="lg" p="sm" bg="gray.0">
+                          <Stack gap={8}>
+                            <InfoRow
+                              icon={<IconBuildingStore size={14} />}
+                              label="Empresa"
+                              value={participant.empresa}
+                            />
+                            <InfoRow
+                              icon={<IconBriefcase size={14} />}
+                              label="Cargo"
+                              value={participant.cargo}
+                            />
+                            <InfoRow
+                              icon={<IconMail size={14} />}
+                              label="Correo"
+                              value={participant.correo}
+                            />
+                            <InfoRow
+                              icon={<IconPhone size={14} />}
+                              label="Teléfono"
+                              value={participant.telefono}
+                            />
+                            <InfoRow
+                              icon={<IconFileDescription size={14} />}
+                              label="Descripción"
+                              value={participant.descripcion}
+                            />
+                            <InfoRow
+                              icon={<IconTargetArrow size={14} />}
+                              label="Interés"
+                              value={participant.interesPrincipal}
+                            />
+                            <InfoRow
+                              icon={<IconBulb size={14} />}
+                              label="Necesidad"
+                              value={participant.necesidad}
+                            />
+                          </Stack>
+                        </Paper>
+                      )}
+                    </Collapse>
+
+                    {/* Actions */}
+                    {participant && (
+                      <Stack gap="xs" mt="auto" pt="sm">
+                        <Button
+                          variant="subtle"
+                          size="compact-sm"
+                          fullWidth
+                          rightSection={
+                            isExpanded ? (
+                              <IconChevronUp size={14} />
+                            ) : (
+                              <IconChevronDown size={14} />
+                            )
+                          }
+                          onClick={() =>
+                            setExpandedMeetingId(isExpanded ? null : meeting.id)
+                          }
+                        >
+                          {isExpanded ? "Ocultar info" : "Ver más info"}
+                        </Button>
+
+                        <Divider />
+
+                        <Group grow gap="xs">
+                          <Button
+                            variant="light"
+                            size="compact-sm"
+                            radius="md"
+                            leftSection={<IconAddressBook size={14} />}
+                            onClick={() => downloadVCard(participant)}
+                          >
+                            Contacto
+                          </Button>
+                          <Button
+                            variant="light"
+                            size="compact-sm"
+                            radius="md"
+                            color="green"
+                            leftSection={<IconBrandWhatsapp size={14} />}
+                            onClick={() => sendWhatsAppMessage(participant)}
+                          >
+                            WhatsApp
+                          </Button>
+                        </Group>
+
+                        <Group grow gap="xs">
+                          <Button
+                            size="compact-sm"
+                            radius="md"
+                            color={surveyExists(meeting.id) ? "gray" : "violet"}
+                            variant={
+                              surveyExists(meeting.id) ? "light" : "filled"
+                            }
+                            leftSection={<IconClipboardCheck size={14} />}
+                            onClick={() => handleOpenSurvey(meeting)}
+                          >
+                            {surveyExists(meeting.id)
+                              ? "Ver encuesta"
+                              : "Encuesta"}
+                          </Button>
+                          <Button
+                            size="compact-sm"
+                            radius="md"
+                            variant="light"
+                            color="red"
+                            leftSection={<IconX size={14} />}
+                            loading={cancellingId === meeting.id}
+                            onClick={() => handleCancelMeeting(meeting)}
+                            disabled={cancellingId === meeting.id}
+                          >
+                            Cancelar
+                          </Button>
+                        </Group>
+                      </Stack>
+                    )}
+                  </Card>
+                </Grid.Col>
               );
             })
         ) : (
-          <Text>No tienes reuniones aceptadas.</Text>
+          <Grid.Col span={12}>
+            <Paper withBorder radius="lg" p="lg">
+              <Text c="dimmed" ta="center">
+                No tienes reuniones aceptadas.
+              </Text>
+            </Paper>
+          </Grid.Col>
         )}
-      </Stack>
+      </Grid>
 
       {/* Modal de encuesta */}
       <Modal
         opened={surveyModal.open}
         onClose={() => setSurveyModal({ open: false, meeting: null })}
         title="Encuesta de reunión"
+        radius="lg"
       >
         {loadingSurvey ? (
-          <Loader />
+          <Group justify="center" py="md">
+            <Loader />
+          </Group>
         ) : surveyExists(surveyModal.meeting?.id) ? (
-          <>
-            <Text fw={700} mb="md">
-              Tus respuestas de encuesta
-            </Text>
-            <Text mb="xs">
-              <b>Valor estimado:</b>{" "}
-              {userSurveys[surveyModal.meeting.id]?.value}
-            </Text>
-            <Text>
-              <b>Comentarios:</b>{" "}
-              {userSurveys[surveyModal.meeting.id]?.comments}
-            </Text>
-          </>
+          <Stack gap="md">
+            <Text fw={700}>Tus respuestas de encuesta</Text>
+            <Paper withBorder radius="md" p="sm">
+              <Text size="sm">
+                <Text span fw={600}>Valor estimado:</Text>{" "}
+                {userSurveys[surveyModal.meeting.id]?.value}
+              </Text>
+            </Paper>
+            <Paper withBorder radius="md" p="sm">
+              <Text size="sm">
+                <Text span fw={600}>Comentarios:</Text>{" "}
+                {userSurveys[surveyModal.meeting.id]?.comments}
+              </Text>
+            </Paper>
+          </Stack>
         ) : (
-          <>
+          <Stack gap="md">
             <TextInput
               label="Estimado valor del negocio"
               value={surveyValue}
               onChange={(e) => setSurveyValue(e.currentTarget.value)}
-              mb="md"
               required
+              radius="md"
             />
             <Textarea
               label="Comentarios"
               value={surveyComments}
               onChange={(e) => setSurveyComments(e.currentTarget.value)}
-              mb="md"
               minRows={3}
               required
+              radius="md"
             />
-            <Group mt="md" grow>
+            <Group mt="xs" grow>
               <Button
-                variant="outline"
+                variant="default"
+                radius="md"
                 onClick={() => setSurveyModal({ open: false, meeting: null })}
               >
                 Cancelar
@@ -343,11 +490,12 @@ export default function MeetingsTab({
                 loading={savingSurvey}
                 onClick={handleSaveSurvey}
                 disabled={!surveyValue}
+                radius="md"
               >
                 Guardar
               </Button>
             </Group>
-          </>
+          </Stack>
         )}
       </Modal>
     </>

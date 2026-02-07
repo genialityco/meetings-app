@@ -1,9 +1,16 @@
 import { useMemo, useState } from "react";
 import {
   Card, Group, Title, Text, Button, Stack, Modal,
-  TextInput, Textarea, FileInput, Grid, Image, Badge
+  TextInput, Textarea, FileInput, Grid, Image, Badge,
+  Avatar, Box, Divider, Paper, useMantineTheme,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
+import {
+  IconPlus,
+  IconEdit,
+  IconTrash,
+  IconPhoto,
+} from "@tabler/icons-react";
 
 export default function MyProductsTab({
   products,
@@ -12,6 +19,7 @@ export default function MyProductsTab({
   updateProduct,
   deleteProduct,
 }: any) {
+  const theme = useMantineTheme();
   const uid = currentUser?.uid;
 
   const myProducts = useMemo(
@@ -79,55 +87,152 @@ export default function MyProductsTab({
   return (
     <>
       <Group justify="space-between" mb="md">
-        <Title order={3}>Mis productos</Title>
-        <Button onClick={openCreate}>Crear producto</Button>
+        <Title order={4}>Mis productos</Title>
+        <Button
+          onClick={openCreate}
+          radius="md"
+          leftSection={<IconPlus size={16} />}
+        >
+          Crear producto
+        </Button>
       </Group>
 
-      <Grid>
+      <Grid gutter="sm">
         {myProducts.map((p: any) => (
-          <Grid.Col key={p.id} span={{ xs: 12, sm: 6, md: 4 }}>
-            <Card withBorder shadow="sm" p="lg">
-              <Group justify="space-between" mb="xs">
-                <Title order={5} lineClamp={1}>{p.title}</Title>
-                {p.category ? (
-                  <Badge variant="light">{p.category}</Badge>
+          <Grid.Col key={p.id} span={{ base: 6, sm: 4, md: 3 }}>
+            <Card
+              withBorder
+              radius="lg"
+              padding="sm"
+              shadow="sm"
+              style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}
+            >
+              <Card.Section>
+                {p.imageUrl ? (
+                  <Box style={{ position: "relative" }}>
+                    <Image
+                      src={p.imageUrl}
+                      height={140}
+                      fit="cover"
+                      alt={p.title}
+                    />
+                    {p.category && (
+                      <Badge
+                        variant="filled"
+                        radius="md"
+                        size="sm"
+                        style={{
+                          position: "absolute",
+                          top: 10,
+                          left: 10,
+                          background: "rgba(0,0,0,0.55)",
+                          border: "1px solid rgba(255,255,255,0.18)",
+                        }}
+                      >
+                        {p.category}
+                      </Badge>
+                    )}
+                  </Box>
                 ) : (
-                  <Badge variant="light" color="gray">Sin categoría</Badge>
+                  <Box
+                    style={{
+                      height: 140,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "var(--mantine-color-gray-1)",
+                    }}
+                  >
+                    <Avatar size={64} radius="md" color="gray">
+                      <IconPhoto size={32} />
+                    </Avatar>
+                    {p.category && (
+                      <Badge
+                        variant="filled"
+                        radius="md"
+                        size="sm"
+                        style={{
+                          position: "absolute",
+                          top: 10,
+                          left: 10,
+                          background: "rgba(0,0,0,0.55)",
+                          border: "1px solid rgba(255,255,255,0.18)",
+                        }}
+                      >
+                        {p.category}
+                      </Badge>
+                    )}
+                  </Box>
                 )}
-              </Group>
+              </Card.Section>
 
-              {p.imageUrl ? <Image src={p.imageUrl} height={160} radius="md" mb="sm" /> : null}
-              <Text size="sm" c="dimmed">{p.description}</Text>
+              <Stack gap={8} mt="sm" style={{ flex: 1 }}>
+                <Title order={6} lineClamp={2}>
+                  {p.title}
+                </Title>
+                <Text size="xs" c="dimmed" lineClamp={3} style={{ whiteSpace: "pre-wrap" }}>
+                  {p.description}
+                </Text>
+              </Stack>
 
-              <Group mt="md" grow>
-                <Button variant="default" onClick={() => openEdit(p)}>Editar</Button>
-                <Button color="red" variant="outline" onClick={() => onDelete(p)}>Eliminar</Button>
+              <Divider my="xs" />
+
+              <Group grow gap="xs">
+                <Button
+                  variant="light"
+                  size="compact-sm"
+                  radius="md"
+                  leftSection={<IconEdit size={14} />}
+                  onClick={() => openEdit(p)}
+                >
+                  Editar
+                </Button>
+                <Button
+                  color="red"
+                  variant="light"
+                  size="compact-sm"
+                  radius="md"
+                  leftSection={<IconTrash size={14} />}
+                  onClick={() => onDelete(p)}
+                >
+                  Eliminar
+                </Button>
               </Group>
             </Card>
           </Grid.Col>
         ))}
 
-        {!myProducts.length ? (
+        {!myProducts.length && (
           <Grid.Col span={12}>
-            <Text c="dimmed">Aún no has creado productos.</Text>
+            <Paper withBorder radius="lg" p="lg">
+              <Text c="dimmed" ta="center">
+                Aún no has creado productos.
+              </Text>
+            </Paper>
           </Grid.Col>
-        ) : null}
+        )}
       </Grid>
 
-      <Modal opened={open} onClose={() => setOpen(false)} title={editing ? "Editar producto" : "Crear producto"}>
+      <Modal
+        opened={open}
+        onClose={() => setOpen(false)}
+        title={editing ? "Editar producto" : "Crear producto"}
+        radius="lg"
+      >
         <Stack>
-          <TextInput label="Título" value={title} onChange={(e) => setTitle(e.currentTarget.value)} required />
-          <TextInput label="Categoría" placeholder="Ej: Tecnología, Alimentos, Servicios..." value={category} onChange={(e) => setCategory(e.currentTarget.value)} />
-          <Textarea label="Descripción" value={description} onChange={(e) => setDescription(e.currentTarget.value)} minRows={4} required />
+          <TextInput label="Título" value={title} onChange={(e) => setTitle(e.currentTarget.value)} required radius="md" />
+          <TextInput label="Categoría" placeholder="Ej: Tecnología, Alimentos, Servicios..." value={category} onChange={(e) => setCategory(e.currentTarget.value)} radius="md" />
+          <Textarea label="Descripción" value={description} onChange={(e) => setDescription(e.currentTarget.value)} minRows={4} required radius="md" />
           <FileInput
             label="Imagen (opcional)"
             value={imageFile}
             onChange={setImageFile}
             accept="image/png,image/jpeg,image/webp"
+            radius="md"
           />
           <Group grow mt="sm">
-            <Button variant="default" onClick={() => setOpen(false)}>Cancelar</Button>
-            <Button loading={saving} onClick={onSave}>{editing ? "Guardar" : "Crear"}</Button>
+            <Button variant="default" radius="md" onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button loading={saving} radius="md" onClick={onSave}>{editing ? "Guardar" : "Crear"}</Button>
           </Group>
         </Stack>
       </Modal>

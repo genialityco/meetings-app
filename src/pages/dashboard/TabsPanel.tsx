@@ -1,6 +1,12 @@
-import { Tabs, SegmentedControl, Stack, Badge, Group } from "@mantine/core";
+import { Tabs, SegmentedControl, Stack, Badge, Group, Paper } from "@mantine/core";
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
+import {
+  IconCalendarEvent,
+  IconInbox,
+  IconPackage,
+  IconBuilding,
+} from "@tabler/icons-react";
 import AttendeesView from "./AttendeesView";
 import CompaniesView from "./CompaniesView";
 import ProductsView from "./ProductsView";
@@ -79,7 +85,8 @@ export default function TabsPanel({ dashboard }: { dashboard: any }) {
     (dashboard.pendingRequests?.length || 0) +
     (dashboard.acceptedRequests?.length || 0) +
     (dashboard.rejectedRequests?.length || 0) +
-    (dashboard.sentRequests?.length || 0);
+    (dashboard.sentRequests?.length || 0) +
+    (dashboard.sentRejectedRequests?.length || 0);
 
   return (
     <Stack mt="md">
@@ -146,13 +153,26 @@ export default function TabsPanel({ dashboard }: { dashboard: any }) {
       )}
 
       {topView === "activity" && (
-        <Tabs defaultValue={activityDefaultTab}>
-          <Tabs.List>
-            <Tabs.Tab value="reuniones">
-              Reuniones ({dashboard.acceptedMeetings?.length || 0})
+        <Tabs defaultValue={activityDefaultTab} radius="md">
+          <Tabs.List grow>
+            <Tabs.Tab
+              value="reuniones"
+              leftSection={<IconCalendarEvent size={16} />}
+            >
+              <Group gap={4} wrap="nowrap">
+                Reuniones
+                {(dashboard.acceptedMeetings?.length || 0) > 0 && (
+                  <Badge size="sm" variant="light" circle>
+                    {dashboard.acceptedMeetings?.length || 0}
+                  </Badge>
+                )}
+              </Group>
             </Tabs.Tab>
-            <Tabs.Tab value="solicitudes">
-              <Group gap={4}>
+            <Tabs.Tab
+              value="solicitudes"
+              leftSection={<IconInbox size={16} />}
+            >
+              <Group gap={4} wrap="nowrap">
                 Solicitudes
                 {requestsCount > 0 && (
                   <Badge size="sm" variant="filled" color="red" circle>
@@ -161,11 +181,20 @@ export default function TabsPanel({ dashboard }: { dashboard: any }) {
                 )}
               </Group>
             </Tabs.Tab>
-            {/* En modo buyer_seller, solo vendedores ven "Mis productos" */}
             {!isComprador && (
-              <Tabs.Tab value="mis-productos">Mis productos</Tabs.Tab>
+              <Tabs.Tab
+                value="mis-productos"
+                leftSection={<IconPackage size={16} />}
+              >
+                Mis productos
+              </Tabs.Tab>
             )}
-            <Tabs.Tab value="mi-empresa">Mi empresa</Tabs.Tab>
+            <Tabs.Tab
+              value="mi-empresa"
+              leftSection={<IconBuilding size={16} />}
+            >
+              Mi empresa
+            </Tabs.Tab>
           </Tabs.List>
 
           <Tabs.Panel value="reuniones" pt="md">

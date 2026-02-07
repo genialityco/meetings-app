@@ -319,49 +319,6 @@ export default function CompaniesView({
                     </Stack>
                   </Group>
 
-                  {/* “Card interna” tipo imagen: representante */}
-                  <Paper
-                    mt="md"
-                    withBorder
-                    radius="lg"
-                    p="sm"
-                  >
-                    <Group wrap="nowrap" gap="sm">
-                      <Avatar
-                        src={selectedAssistant?.photoURL}
-                        radius="xl"
-                        size={48}
-                        style={{ cursor: selectedAssistant?.photoURL ? "pointer" : "default" }}
-                        onClick={() => {
-                          if (!selectedAssistant?.photoURL) return;
-                          setSelectedImage(selectedAssistant.photoURL || null);
-                          setAvatarModalOpened(true);
-                        }}
-                      >
-                        {(selectedAssistant?.nombre || "A")[0]?.toUpperCase()}
-                      </Avatar>
-
-                      <Box style={{ minWidth: 0 }}>
-                        <Text fw={700} lineClamp={1}>
-                          {selectedAssistant?.nombre || "Sin nombre"}
-                        </Text>
-                        <Text size="sm" c="dimmed" lineClamp={1}>
-                          {selectedAssistant?.cargo || "Representante"}
-                        </Text>
-                      </Box>
-
-                      {/* “Chip” a la derecha como en la imagen */}
-                      <Badge
-                        ml="auto"
-                        variant="outline"
-                        color={theme.primaryColor}
-                        radius="xl"
-                      >
-                        ASISTENTE
-                      </Badge>
-                    </Group>
-                  </Paper>
-
                   {/* Descripción corta */}
                   {!!(asistentes?.[0]?.descripcion || "").trim() && (
                     <>
@@ -393,11 +350,22 @@ export default function CompaniesView({
                                   width: "100%",
                                   borderRadius: theme.radius.md,
                                   padding: rem(10),
-                                  transition: "transform 120ms ease, box-shadow 120ms ease",
+                                  transition: "background 120ms ease, box-shadow 120ms ease",
+                                  background: active
+                                    ? `var(--mantine-color-${theme.primaryColor}-0)`
+                                    : "transparent",
+                                  border: active
+                                    ? `1.5px solid var(--mantine-color-${theme.primaryColor}-4)`
+                                    : "1.5px solid transparent",
                                 }}
                               >
                                 <Group gap="sm" wrap="nowrap">
-                                  <Avatar src={a.photoURL} radius="xl" size={32}>
+                                  <Avatar
+                                    src={a.photoURL}
+                                    radius="xl"
+                                    size={32}
+                                    color={active ? theme.primaryColor : "gray"}
+                                  >
                                     {(a.nombre || "A")[0]?.toUpperCase()}
                                   </Avatar>
                                   <Box style={{ minWidth: 0 }}>
@@ -472,7 +440,7 @@ export default function CompaniesView({
                     </Group>
                   </Stack>
 
-                  {/* CTA grande abajo (como imagen) */}
+                  {/* CTA grande abajo */}
                   <Button
                     fullWidth
                     mt="md"
@@ -488,10 +456,10 @@ export default function CompaniesView({
                     loading={loadingId === selectedAssistant?.id}
                   >
                     {!solicitarReunionHabilitado
-                      ? "SOLICITUDES DESHABILITADAS"
+                      ? "Solicitudes deshabilitadas"
                       : selectedAssistant?.id === myUid
-                        ? "TU PERFIL"
-                        : "SOLICITAR REUNIÓN"}
+                        ? "Tu perfil"
+                        : `Solicitar reunión a ${selectedAssistant?.nombre || "..."}`}
                   </Button>
 
                   {/* CTA “a todos” opcional (si hay varios) */}

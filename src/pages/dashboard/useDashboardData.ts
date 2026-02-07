@@ -207,6 +207,7 @@ export function useDashboardData(eventId?: string) {
   const [loadingMeetings, setLoadingMeetings] = useState(true);
   const [pendingRequests, setPendingRequests] = useState<Meeting[]>([]);
   const [sentRequests, setSentRequests] = useState<Meeting[]>([]);
+  const [sentRejectedRequests, setSentRejectedRequests] = useState<Meeting[]>([]);
   const [acceptedRequests, setAcceptedRequests] = useState<Meeting[]>([]);
   const [rejectedRequests, setRejectedRequests] = useState<Meeting[]>([]);
   const [takenRequests, setTakenRequests] = useState<Meeting[]>([]);
@@ -419,19 +420,36 @@ export function useDashboardData(eventId?: string) {
     setFilteredAssistants(filtered);
   }, [assistants, searchTerm, interestFilter, formFields, policies.discoveryMode]);
 
-  // 6. Solicitudes enviadas por usuario actual (pendientes)
+  // 6. Solicitudes enviadas por usuario actual (pendientes + rechazadas)
   useEffect(() => {
     if (!uid || !eventId) return;
-    const q = query(
-      collection(db, "events", eventId, "meetings"),
+    const col = collection(db, "events", eventId, "meetings");
+    const qPending = query(
+      col,
       where("requesterId", "==", uid),
       where("status", "==", "pending"),
     );
-    return onSnapshot(q, (snap) => {
+    const qRejected = query(
+      col,
+      where("requesterId", "==", uid),
+      where("status", "==", "rejected"),
+    );
+
+    const unsub1 = onSnapshot(qPending, (snap) => {
       setSentRequests(
         snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Meeting),
       );
     });
+    const unsub2 = onSnapshot(qRejected, (snap) => {
+      setSentRejectedRequests(
+        snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Meeting),
+      );
+    });
+
+    return () => {
+      unsub1();
+      unsub2();
+    };
   }, [uid, eventId]);
 
   // 7. Reuniones aceptadas
@@ -629,21 +647,34 @@ export function useDashboardData(eventId?: string) {
 
   const cancelMeeting = async (meeting) => {
     try {
-      // 1. Cancela la reunión en Firestore
-      await updateDoc(
-        doc(db, "events", meeting.eventId, "meetings", meeting.id),
-        { status: "cancelled" },
-      );
+      // 1. Leer datos completos de la reunión para obtener lockIds
+      const mtgRef = doc(db, "events", meeting.eventId, "meetings", meeting.id);
+      const mtgSnap = await getDoc(mtgRef);
+      const mtgData = mtgSnap.exists() ? mtgSnap.data() : {};
+      const lockIds: string[] = mtgData.lockIds || [];
 
-      // 2. Libera el slot (si existe)
-      if (meeting.slotId) {
-        await updateDoc(doc(db, "events", eventId, "agenda", meeting.slotId), {
+      // 2. Cancela la reunión en Firestore
+      await updateDoc(mtgRef, { status: "cancelled" });
+
+      // 3. Libera el slot (si existe)
+      const slotId = meeting.slotId || mtgData.slotId;
+      if (slotId) {
+        await updateDoc(doc(db, "events", eventId, "agenda", slotId), {
           available: true,
           meetingId: null,
         });
       }
 
-      // 3. Obtén datos de los participantes (si no los tienes)
+      // 4. Eliminar locks para liberar el horario
+      for (const lid of lockIds) {
+        try {
+          await deleteDoc(doc(db, "locks", lid));
+        } catch (e) {
+          console.warn("No se pudo eliminar lock:", lid, e);
+        }
+      }
+
+      // 5. Obtén datos de los participantes (si no los tienes)
       let requester = meeting.requester || null;
       let receiver = meeting.receiver || null;
 
@@ -654,7 +685,7 @@ export function useDashboardData(eventId?: string) {
         receiver = recSnap.exists() ? recSnap.data() : {};
       }
 
-      // 4. Notifica a ambos por WhatsApp
+      // 6. Notifica a ambos por WhatsApp
       if (requester?.telefono) {
         console.log("Enviando requester");
         await sendMeetingCancelledWhatsapp(requester.telefono, receiver, {
@@ -671,7 +702,7 @@ export function useDashboardData(eventId?: string) {
         });
       }
 
-      // 5. Notifica por la app
+      // 7. Notifica por la app
       await addDoc(collection(db, "notifications"), {
         userId: meeting.requesterId,
         title: "Reunión cancelada",
@@ -1497,6 +1528,7 @@ export function useDashboardData(eventId?: string) {
     pendingRequests,
     cancelSentMeeting,
     sentRequests,
+    sentRejectedRequests,
     acceptedRequests,
     rejectedRequests,
     participantsInfo,
