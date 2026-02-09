@@ -133,21 +133,25 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
       const landingUrl = `${baseUrl}/event/${eventId}`;
 
       const contextLine = context?.contextNote
-        ? `\nContexto: ${context.contextNote}\n`
+        ? `\n📋 *Contexto:* ${context.contextNote}\n`
         : "";
 
+      const eventLine = eventName ? `📌 *Evento:* ${eventName}\n\n` : "";
+
       const message =
-        `Has recibido una solicitud de reunión de:\n` +
-        `Nombre: ${requester?.nombre || ""}\n` +
-        `Empresa: ${requester?.empresa || ""}\n` +
-        `Cargo: ${requester?.cargo || ""}\n` +
-        `Correo: ${requester?.correo || ""}\n` +
-        `Teléfono: ${requester?.telefono || ""}\n` +
+        `📩 *Nueva solicitud de reunión*\n\n` +
+        eventLine +
+        `Has recibido una solicitud de reunión de:\n\n` +
+        `👤 *Nombre:* ${requester?.nombre || ""}\n` +
+        `🏢 *Empresa:* ${requester?.empresa || ""}\n` +
+        `💼 *Cargo:* ${requester?.cargo || ""}\n` +
+        `📧 *Correo:* ${requester?.correo || ""}\n` +
+        `📞 *Teléfono:* ${requester?.telefono || ""}\n` +
         contextLine +
-        `\nOpciones:\n` +
-        `*1. Aceptar:* \n${acceptUrl}\n` +
-        `*2. Rechazar:* \n${rejectUrl}\n` +
-        `3. Ir a la landing: \n${landingUrl}`;
+        `\n*Opciones:*\n` +
+        `✅ *Aceptar:* \n${acceptUrl}\n\n` +
+        `❌ *Rechazar:* \n${rejectUrl}\n\n` +
+        `🔗 Ir al evento: \n${landingUrl}`;
 
       fetch(API_WP_URL, {
         method: "POST",
@@ -167,7 +171,7 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
         read: false,
       });
     },
-    [uid, eventId, currentUser],
+    [uid, eventId, currentUser, eventName],
   );
 
   return {

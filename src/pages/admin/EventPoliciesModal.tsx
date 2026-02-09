@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Modal,
   Stack,
   Select,
+  MultiSelect,
   Switch,
   Button,
   Group,
@@ -38,6 +39,12 @@ export default function EventPoliciesModal({
   const [schedulingMode, setSchedulingMode] = useState<EventPolicies["schedulingMode"]>("manual");
   const [sellerRedirectToProducts, setSellerRedirectToProducts] = useState(false);
   const [uiViews, setUiViews] = useState(DEFAULT_POLICIES.uiViewsEnabled);
+  const [attendeeCardFields, setAttendeeCardFields] = useState<string[]>(
+    DEFAULT_POLICIES.cardFieldsConfig!.attendeeCard
+  );
+  const [companyCardFields, setCompanyCardFields] = useState<string[]>(
+    DEFAULT_POLICIES.cardFieldsConfig!.companyCard
+  );
 
   // Empresas y asignación de mesas fijas
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -53,6 +60,12 @@ export default function EventPoliciesModal({
     setSchedulingMode(p.schedulingMode ?? "manual");
     setSellerRedirectToProducts(p.sellerRedirectToProducts ?? false);
     setUiViews(p.uiViewsEnabled ?? DEFAULT_POLICIES.uiViewsEnabled);
+    setAttendeeCardFields(
+      p.cardFieldsConfig?.attendeeCard ?? DEFAULT_POLICIES.cardFieldsConfig!.attendeeCard
+    );
+    setCompanyCardFields(
+      p.cardFieldsConfig?.companyCard ?? DEFAULT_POLICIES.cardFieldsConfig!.companyCard
+    );
   }, [event]);
 
   // Cargar empresas cuando se abre el modal y tableMode es "fixed"
@@ -81,6 +94,14 @@ export default function EventPoliciesModal({
     load();
   }, [opened, event?.id]);
 
+  // Campos disponibles para configurar tarjetas (derivados del formulario del evento)
+  const availableFieldsForCards = useMemo(() => {
+    const fields = event?.config?.formFields || [];
+    return fields
+      .filter((f: any) => f.name !== "photoURL" && f.name !== "company_logo" && f.name !== "aceptaTratamiento")
+      .map((f: any) => ({ value: f.name, label: f.label || f.name }));
+  }, [event?.config?.formFields]);
+
   // Opciones de mesas
   const tableOptions = (() => {
     const numTables = event?.config?.numTables || 0;
@@ -108,6 +129,10 @@ export default function EventPoliciesModal({
               discoveryMode,
               schedulingMode,
               sellerRedirectToProducts,
+              cardFieldsConfig: {
+                attendeeCard: attendeeCardFields,
+                companyCard: companyCardFields,
+              },
               uiViewsEnabled: uiViews,
             },
           },
@@ -270,6 +295,33 @@ export default function EventPoliciesModal({
           onChange={(e) =>
             setUiViews((prev) => ({ ...prev, products: e.currentTarget.checked }))
           }
+        />
+
+        <Divider label="Campos en tarjetas" labelPosition="left" />
+        <Text size="sm" c="dimmed">
+          Selecciona qué campos del formulario mostrar en cada tipo de tarjeta del dashboard.
+        </Text>
+
+        <MultiSelect
+          label="Campos en tarjetas de asistentes"
+          description="Campos visibles en la vista 'Directorio'"
+          data={availableFieldsForCards}
+          value={attendeeCardFields}
+          onChange={setAttendeeCardFields}
+          placeholder="Selecciona campos"
+          searchable
+          clearable
+        />
+
+        <MultiSelect
+          label="Campos en tarjetas de empresas"
+          description="Campos del representante seleccionado en la vista 'Empresas'"
+          data={availableFieldsForCards}
+          value={companyCardFields}
+          onChange={setCompanyCardFields}
+          placeholder="Selecciona campos"
+          searchable
+          clearable
         />
 
         <Group justify="flex-end" mt="md">

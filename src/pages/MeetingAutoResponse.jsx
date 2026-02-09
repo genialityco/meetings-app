@@ -29,6 +29,9 @@ import {
   Box,
 } from "@mantine/core";
 
+const API_WP_URL = "https://apiwhatsapp.geniality.com.co/api/send";
+const CLIENT_ID = "genialitybussinesstest";
+
 // Reutilizamos esta función
 const slotOverlapsBreakBlock = (
   slotStart,
@@ -269,18 +272,53 @@ export default function MeetingAutoResponse() {
     try {
       setRejectLoading(true);
       const mtgRef = doc(db, "events", eventId, "meetings", meetingId);
-      await updateDoc(mtgRef, { 
+      await updateDoc(mtgRef, {
         status: "rejected",
       });
-      
+
       const mtgData = (await getDoc(mtgRef)).data();
+
+      // Obtener datos del solicitante y del receptor (quien rechaza)
+      const requesterSnap = await getDoc(doc(db, "users", mtgData.requesterId));
+      const receiverSnap = await getDoc(doc(db, "users", mtgData.receiverId));
+      const requester = requesterSnap.exists() ? requesterSnap.data() : {};
+      const receiver = receiverSnap.exists() ? receiverSnap.data() : {};
+
+      // Obtener nombre del evento
+      const eventSnap = await getDoc(doc(db, "events", eventId));
+      const evName = eventSnap.exists() ? eventSnap.data().eventName || "" : "";
+
       await addDoc(collection(db, "notifications"), {
         userId: mtgData.requesterId,
         title: "Reunión rechazada",
-        message: "Tu reunión fue rechazada.",
+        message: `${receiver?.nombre || "Un participante"} ha rechazado tu solicitud de reunión.`,
         timestamp: new Date(),
         read: false,
       });
+
+      // Enviar WhatsApp al solicitante informando del rechazo
+      if (requester?.telefono) {
+        const phone = (requester.telefono || "").toString().replace(/[^\d]/g, "");
+        const eventLine = evName ? `📌 *Evento:* ${evName}\n` : "";
+        const message =
+          `😔 *Solicitud de reunión rechazada*\n\n` +
+          eventLine +
+          `*${receiver?.nombre || "Un participante"}* ha rechazado tu solicitud de reunión.\n\n` +
+          `👤 *Nombre:* ${receiver?.nombre || ""}\n` +
+          `🏢 *Empresa:* ${receiver?.empresa || ""}\n\n` +
+          `Puedes enviar solicitudes a otros participantes desde el dashboard del evento.`;
+
+        fetch(API_WP_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clientId: CLIENT_ID,
+            phone: `57${phone}`,
+            message,
+          }),
+        }).catch(() => {});
+      }
+
       setStatus("Reunión rechazada.");
     } catch (e) {
       console.error(e);
@@ -307,13 +345,76 @@ export default function MeetingAutoResponse() {
         available: false,
         meetingId,
       });
+
+      const mtgData = (await getDoc(mtgRef)).data();
+
+      // Obtener datos de ambos participantes y nombre del evento
+      const requesterSnap = await getDoc(doc(db, "users", mtgData.requesterId));
+      const receiverSnap = await getDoc(doc(db, "users", mtgData.receiverId));
+      const requester = requesterSnap.exists() ? requesterSnap.data() : {};
+      const receiver = receiverSnap.exists() ? receiverSnap.data() : {};
+
+      const eventSnap = await getDoc(doc(db, "events", eventId));
+      const evName = eventSnap.exists() ? eventSnap.data().eventName || "" : "";
+
+      // Notificación in-app
       await addDoc(collection(db, "notifications"), {
-        userId: (await getDoc(mtgRef)).data().requesterId,
+        userId: mtgData.requesterId,
         title: "Reunión aceptada",
-        message: `Tu reunión fue aceptada para ${slot.startTime} en mesa ${slot.tableNumber}.`,
+        message: `${receiver?.nombre || "Un participante"} ha aceptado tu reunión para ${slot.startTime} en mesa ${slot.tableNumber}.`,
         timestamp: new Date(),
         read: false,
       });
+
+      // Enviar WhatsApp a ambos participantes
+      const accepterName = receiver?.nombre || "";
+      const meetingInfo = {
+        timeSlot: `${slot.startTime} - ${slot.endTime}`,
+        tableAssigned: String(slot.tableNumber),
+      };
+
+      const buildAcceptedMsg = (otherParticipant) => {
+        const eventLine = evName ? `📌 *Evento:* ${evName}\n` : "";
+        const acceptedLine = accepterName
+          ? `✅ *${accepterName}* ha aceptado la reunión.\n\n`
+          : "";
+        return (
+          `🤝 *¡Reunión confirmada!*\n\n` +
+          eventLine +
+          acceptedLine +
+          `👤 *Con:* ${otherParticipant?.nombre || ""}\n` +
+          `🏢 *Empresa:* ${otherParticipant?.empresa || ""}\n` +
+          `🕐 *Horario:* ${meetingInfo.timeSlot}\n` +
+          `🪑 *Mesa:* ${meetingInfo.tableAssigned}\n\n` +
+          `¡Te esperamos!`
+        );
+      };
+
+      if (requester?.telefono) {
+        const phone = (requester.telefono || "").toString().replace(/[^\d]/g, "");
+        fetch(API_WP_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clientId: CLIENT_ID,
+            phone: `57${phone}`,
+            message: buildAcceptedMsg(receiver),
+          }),
+        }).catch(() => {});
+      }
+      if (receiver?.telefono) {
+        const phone = (receiver.telefono || "").toString().replace(/[^\d]/g, "");
+        fetch(API_WP_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clientId: CLIENT_ID,
+            phone: `57${phone}`,
+            message: buildAcceptedMsg(requester),
+          }),
+        }).catch(() => {});
+      }
+
       setStatus("Reunión confirmada.");
     } catch (e) {
       console.error(e);

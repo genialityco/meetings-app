@@ -24,6 +24,7 @@ This is a React 19 + Vite 6 meetings/networking app for events, using **Firebase
 - **events/{eventId}/agenda**: Slots with tableNumber, startTime, endTime, available, meetingId
 - **users**: Global collection, filtered by `eventId`. Attendees with companyId, tipoAsistente, etc.
 - **locks**: Prevents double-booking: lockId = `{eventId}_{userId}_{date}_{start}-{end}`
+- **aiChats**: Chatbot conversation history (userId, eventId, message, intent, aiMessage, results)
 - **notifications**, **meetingSurveys**, **config/generalSettings**
 
 ### Event Policies (event.config.policies)
@@ -33,7 +34,8 @@ Configurable per event via admin panel (`EventPoliciesModal.tsx`):
 - `tableMode`: "pool" | "fixed" — table assignment (pool=auto, fixed=company-assigned)
 - `discoveryMode`: "all" | "by_role" — directory visibility
 - `schedulingMode`: "manual" | "auto"
-- `uiViewsEnabled`: { attendees, companies, products } — which dashboard views are shown
+- `sellerRedirectToProducts`: boolean — redirects sellers to "Mis productos" on first login, hides that tab for buyers
+- `uiViewsEnabled`: { chatbot, attendees, companies, products } — which dashboard views are shown
 
 Defaults defined in `DEFAULT_POLICIES` in `src/pages/dashboard/types.ts`.
 
@@ -43,24 +45,30 @@ Defaults defined in `DEFAULT_POLICIES` in `src/pages/dashboard/types.ts`.
 - `src/context/UserContext.jsx` — Auth state (anonymous auth + manual login by cedula/email)
 - `src/utils/` — Utilities (companyStorage.ts for logo upload)
 - `src/pages/admin/` — Admin panel: event management, attendees, meetings, policies config
-- `src/pages/dashboard/` — Attendee dashboard with 3 discovery views + activity tabs
-- `src/components/` — Shared components (UserProfile)
+- `src/pages/dashboard/` — Attendee dashboard with discovery views + activity tabs
+- `src/components/` — Shared components (UserProfile, DashboardHeader, NotificationMenu)
 
 ### Dashboard Architecture
 
 `Dashboard.tsx` → `useDashboardData.ts` (hook) → `TabsPanel.tsx` (view router)
 
-**TabsPanel** uses a `SegmentedControl` with 4 sections driven by `policies.uiViewsEnabled`:
-1. **Directorio** (`AttendeesView.tsx`) — Card-based attendee list with search/filters
-2. **Empresas** (`CompaniesView.tsx`) — Companies grouped by NIT with logo, representatives, meeting CTA
-3. **Productos** (`ProductsView.tsx`) — Product catalog with company/text filters, meeting CTA with context
-4. **Mi actividad** — Tabs for: Reuniones (`MeetingsTab`), Solicitudes (`RequestsTab`), Mis productos (`MyProductsTab`)
+**TabsPanel** uses a `SegmentedControl` with 5 sections driven by `policies.uiViewsEnabled`:
+1. **Chatbot** (`ChatbotTab.tsx`) — AI-powered search assistant (also gated by `VITE_ENABLE_CHATBOT` env var)
+2. **Directorio** (`AttendeesView.tsx`) — Card-based attendee list with search/filters
+3. **Empresas** (`CompaniesView.tsx`) — Companies grouped by NIT with logo, representatives, meeting CTA
+4. **Productos** (`ProductsView.tsx`) — Product catalog with company/text filters, meeting CTA with context
+5. **Mi actividad** — Tabs for: Reuniones (`MeetingsTab`), Solicitudes (`RequestsTab`), Mis productos (`MyProductsTab`), Mi empresa (`MyCompanyTab`)
 
 Meeting requests from CompaniesView/ProductsView pass context (productId, companyId, contextNote).
 
+### Key Hooks
+
+- **`useDashboardData.ts`** — Centralizes ALL dashboard state and Firestore operations (real-time via onSnapshot). ~1600 lines.
+- **`useCompanyData.ts`** — Used by `CompanyLanding` and `MyCompanyTab` for company data, products, representatives, and meeting requests.
+
 ### Data Flow
 
-- `UserContext` provides `currentUser`, `loginByCedula()`, `loginByEmail()`, `logout()`
+- `UserContext` provides `currentUser`, `updateUser()`, `loginByCedula()`, `loginByEmail()`, `logout()`
 - `useDashboardData.ts` centralizes ALL dashboard state and Firestore operations (real-time via onSnapshot)
 - Companies loaded as real-time subscription from `events/{eventId}/companies`
 - Policies loaded from `event.config.policies` with DEFAULT_POLICIES fallback
@@ -82,6 +90,7 @@ Meeting requests from CompaniesView/ProductsView pass context (productId, compan
 | `/event/:eventId` | Landing | Event-specific registration |
 | `/dashboard` | Dashboard | Attendee dashboard (no event filter) |
 | `/dashboard/:eventId` | Dashboard | Event-specific dashboard |
+| `/dashboard/:eventId/company/:companyNit` | CompanyLanding | Public company landing page |
 | `/admin` | AdminPanel | List all events |
 | `/admin/event/:eventId` | EventAdmin | Event management |
 | `/admin/event/:eventId/agenda` | AgendaAdminPanel | Schedule management |
@@ -94,7 +103,8 @@ Meeting requests from CompaniesView/ProductsView pass context (productId, compan
 
 ### Cloud Functions (`functions/`)
 
-- `notifyMeetingsScheduled`: Runs every 5 minutes (America/Bogota timezone), sends SMS notifications for meetings starting within 5 minutes via Onurix API.
+- `notifyMeetingsScheduled`: Runs every 5 minutes (America/Bogota timezone), sends WhatsApp/SMS notifications for meetings starting within 5 minutes via Onurix API.
+- `aiProxy`: HTTP function for chatbot backend. Uses Google Gemini API for intent classification (greeting, search_query, general_question, meeting_related) and context-aware search across attendees, products, companies. Requires secrets: `GEMINI_API_KEY`, `GEMINI_API_URL`, `DEFAULT_AI_MODEL`.
 - Deploy: `firebase deploy --only functions`
 
 ### External API Integrations
@@ -116,6 +126,7 @@ Meeting requests from CompaniesView/ProductsView pass context (productId, compan
 Firebase config via Vite env vars (prefix `VITE_`):
 - `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`
 - `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`
+- `VITE_ENABLE_CHATBOT` — toggles chatbot tab availability (separate from policy toggle)
 
 ## npm Configuration
 
@@ -125,7 +136,7 @@ Firebase config via Vite env vars (prefix `VITE_`):
 
 - Mixed JSX (JavaScript) and TSX (TypeScript) — new files should be .tsx
 - Spanish used in variable names, comments, and UI text
-- ESLint configured for React with hooks rules
+- ESLint flat config (`eslint.config.js`) for React with hooks rules
 - Types defined centrally in `src/pages/dashboard/types.ts`
 - Entry point: `src/index.jsx` wraps App with MantineProvider, BrowserRouter, and UserContextProvider
 

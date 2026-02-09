@@ -21,6 +21,7 @@ export default function TabsPanel({ dashboard }: { dashboard: any }) {
   const { eventId } = useParams();
   const policies = dashboard.policies || DEFAULT_POLICIES;
   const uiViews = policies.uiViewsEnabled || DEFAULT_POLICIES.uiViewsEnabled;
+  const cardFieldsConfig = policies.cardFieldsConfig || DEFAULT_POLICIES.cardFieldsConfig;
   const enableChatbot = import.meta.env.VITE_ENABLE_CHATBOT === "true"
 
   // Política configurable: redirigir vendedor a productos en primer ingreso
@@ -113,6 +114,8 @@ export default function TabsPanel({ dashboard }: { dashboard: any }) {
           setAvatarModalOpened={dashboard.setAvatarModalOpened}
           setSelectedImage={dashboard.setSelectedImage}
           currentUser={dashboard.currentUser}
+          formFields={dashboard.formFields}
+          cardFields={cardFieldsConfig!.attendeeCard}
         />
       )}
 
@@ -126,6 +129,8 @@ export default function TabsPanel({ dashboard }: { dashboard: any }) {
           setAvatarModalOpened={dashboard.setAvatarModalOpened}
           setSelectedImage={dashboard.setSelectedImage}
           currentUser={dashboard.currentUser}
+          formFields={dashboard.formFields}
+          cardFields={cardFieldsConfig!.companyCard}
         />
       )}
 

@@ -30,8 +30,38 @@ import {
   IconTargetArrow,
   IconBulb,
   IconCalendarCheck,
+  IconPhone,
+  IconId,
+  IconUsers,
 } from "@tabler/icons-react";
 import type { Assistant } from "./types";
+
+const FIELD_ICONS: Record<string, any> = {
+  empresa: IconBuildingStore,
+  cargo: IconBriefcase,
+  correo: IconMail,
+  telefono: IconPhone,
+  descripcion: IconFileDescription,
+  interesPrincipal: IconTargetArrow,
+  necesidad: IconBulb,
+  cedula: IconId,
+  tipoAsistente: IconUsers,
+};
+
+/** Formatea el valor de un campo para mostrar en card.
+ *  - Arrays (multiselect): une con ", " y reemplaza __otro__ por el texto de {field}_otro */
+function formatFieldValue(fieldName: string, data: any): string | null {
+  const raw = data[fieldName];
+  if (raw == null) return null;
+  if (Array.isArray(raw)) {
+    const otroText = data[`${fieldName}_otro`];
+    const items = raw.map((v: string) =>
+      v === "__otro__" && otroText ? otroText : v
+    );
+    return items.join(", ");
+  }
+  return String(raw);
+}
 
 interface AttendeesViewProps {
   filteredAssistants: Assistant[];
@@ -48,6 +78,8 @@ interface AttendeesViewProps {
   setAvatarModalOpened: (v: boolean) => void;
   setSelectedImage: (v: string | null) => void;
   currentUser: any;
+  formFields: any[];
+  cardFields: string[];
 }
 
 function InfoRow({
@@ -64,7 +96,7 @@ function InfoRow({
       <ThemeIcon variant="light" radius="xl" size={26}>
         {icon}
       </ThemeIcon>
-      <Text size="sm" style={{ minWidth: 0 }} lineClamp={2}>
+      <Text size="sm" style={{ minWidth: 0 }}>
         <Text span fw={700}>
           {label}:
         </Text>{" "}
@@ -89,6 +121,8 @@ export default function AttendeesView({
   setAvatarModalOpened,
   setSelectedImage,
   currentUser,
+  formFields,
+  cardFields,
 }: AttendeesViewProps) {
   const theme = useMantineTheme();
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -246,47 +280,33 @@ export default function AttendeesView({
                       </Title>
                       <Text size="sm" c="dimmed" lineClamp={1}>
                         {assistant.cargo || "Asistente"}
-                        {assistant.empresa ? ` • ${assistant.empresa}` : ""}
                       </Text>
                     </Box>
                   </Group>
 
                   <Divider my="sm" />
 
-                  {/* Body */}
+                  {/* Body - campos configurables */}
                   <Stack gap={8} style={{ flex: 1, minHeight: 0 }}>
-                    <InfoRow
-                      icon={<IconBuildingStore size={14} />}
-                      label="Empresa"
-                      value={assistant.empresa || "No especificada"}
-                    />
-                    {assistant.cargo && (
-                      <InfoRow
-                        icon={<IconBriefcase size={14} />}
-                        label="Cargo"
-                        value={assistant.cargo}
-                      />
-                    )}
-                    <InfoRow
-                      icon={<IconMail size={14} />}
-                      label="Correo"
-                      value={assistant.correo}
-                    />
-                    <InfoRow
-                      icon={<IconFileDescription size={14} />}
-                      label="Descripción"
-                      value={assistant.descripcion || "No especificada"}
-                    />
-                    <InfoRow
-                      icon={<IconTargetArrow size={14} />}
-                      label="Interés"
-                      value={assistant.interesPrincipal || "No especificado"}
-                    />
-                    <InfoRow
-                      icon={<IconBulb size={14} />}
-                      label="Necesidad"
-                      value={assistant.necesidad || "No especificada"}
-                    />
+                    {cardFields.map((fieldName) => {
+                      const fieldDef = formFields.find((f: any) => f.name === fieldName);
+                      // Respetar condición showWhen: no mostrar si el asistente no cumple
+                      if (fieldDef?.showWhen) {
+                        const parentValue = assistant[fieldDef.showWhen.field];
+                        const allowed = fieldDef.showWhen.value as string[];
+                        if (!parentValue || !allowed.includes(parentValue)) return null;
+                      }
+                      const label = fieldDef?.label || fieldName;
+                      const Icon = FIELD_ICONS[fieldName] || IconFileDescription;
+                      return (
+                        <InfoRow
+                          key={fieldName}
+                          icon={<Icon size={14} />}
+                          label={label}
+                          value={formatFieldValue(fieldName, assistant)}
+                        />
+                      );
+                    })}
                   </Stack>
 
                   {/* CTA */}

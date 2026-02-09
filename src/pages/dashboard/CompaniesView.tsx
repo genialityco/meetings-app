@@ -33,8 +33,38 @@ import {
   IconBulb,
   IconClock,
   IconUsers,
+  IconBuildingStore,
+  IconFileDescription,
+  IconPhone,
 } from "@tabler/icons-react";
 import type { Assistant, Company, EventPolicies, MeetingContext } from "./types";
+
+const FIELD_ICONS: Record<string, any> = {
+  empresa: IconBuildingStore,
+  cargo: IconBriefcase,
+  correo: IconMail,
+  telefono: IconPhone,
+  descripcion: IconFileDescription,
+  interesPrincipal: IconTargetArrow,
+  necesidad: IconBulb,
+  cedula: IconId,
+  tipoAsistente: IconUsers,
+};
+
+/** Formatea el valor de un campo para mostrar en card.
+ *  - Arrays (multiselect): une con ", " y reemplaza __otro__ por el texto de {field}_otro */
+function formatFieldValue(fieldName: string, data: any): string | null {
+  const raw = data?.[fieldName];
+  if (raw == null) return null;
+  if (Array.isArray(raw)) {
+    const otroText = data[`${fieldName}_otro`];
+    const items = raw.map((v: string) =>
+      v === "__otro__" && otroText ? otroText : v
+    );
+    return items.join(", ");
+  }
+  return String(raw);
+}
 
 interface CompaniesViewProps {
   filteredAssistants: Assistant[];
@@ -50,6 +80,8 @@ interface CompaniesViewProps {
   setAvatarModalOpened: (v: boolean) => void;
   setSelectedImage: (v: string | null) => void;
   currentUser: any;
+  formFields: any[];
+  cardFields: string[];
 }
 
 export default function CompaniesView({
@@ -61,6 +93,8 @@ export default function CompaniesView({
   setAvatarModalOpened,
   setSelectedImage,
   currentUser,
+  formFields,
+  cardFields,
 }: CompaniesViewProps) {
   const theme = useMantineTheme();
   const navigate = useNavigate();
@@ -385,59 +419,31 @@ export default function CompaniesView({
                     </Stack>
                   )}
 
-                  {/* Detalle tipo “lista de info” como en imagen */}
+                  {/* Detalle del representante - campos configurables */}
                   <Stack gap={8} mt="md">
-                    <Group gap={8} wrap="nowrap">
-                      <ThemeIcon variant="light" color={theme.primaryColor} radius="xl" size={26}>
-                        <IconBriefcase size={14} />
-                      </ThemeIcon>
-                      <Text size="sm" style={{ minWidth: 0 }}>
-                        <Text span fw={700}>Cargo: </Text>
-                        {selectedAssistant?.cargo || "No disponible"}
-                      </Text>
-                    </Group>
-
-                    <Group gap={8} wrap="nowrap">
-                      <ThemeIcon variant="light" color={theme.primaryColor} radius="xl" size={26}>
-                        <IconMail size={14} />
-                      </ThemeIcon>
-                      <Text size="sm" style={{ minWidth: 0 }} lineClamp={1}>
-                        <Text span fw={700}>Correo: </Text>
-                        {selectedAssistant?.correo || "No disponible"}
-                      </Text>
-                    </Group>
-
-                    <Group gap={8} wrap="nowrap">
-                      <ThemeIcon variant="light" color={theme.primaryColor} radius="xl" size={26}>
-                        <IconTargetArrow size={14} />
-                      </ThemeIcon>
-                      <Text size="sm" style={{ minWidth: 0 }} lineClamp={1}>
-                        <Text span fw={700}>Interés principal: </Text>
-                        {selectedAssistant?.interesPrincipal || "No especificado"}
-                      </Text>
-                    </Group>
-
-                    <Group gap={8} wrap="nowrap">
-                      <ThemeIcon variant="light" color={theme.primaryColor} radius="xl" size={26}>
-                        <IconBulb size={14} />
-                      </ThemeIcon>
-                      <Text size="sm" style={{ minWidth: 0 }} lineClamp={1}>
-                        <Text span fw={700}>Necesidad: </Text>
-                        {selectedAssistant?.necesidad || "No especificada"}
-                      </Text>
-                    </Group>
-
-                    {/* Si tienes lastSeen o algo similar, úsalo aquí.
-                        Mientras tanto dejo fallback para que no rompa */}
-                    <Group gap={8} wrap="nowrap">
-                      <ThemeIcon variant="light" color={theme.primaryColor} radius="xl" size={26}>
-                        <IconClock size={14} />
-                      </ThemeIcon>
-                      <Text size="sm" style={{ minWidth: 0 }} lineClamp={1}>
-                        <Text span fw={700}>Última conexión: </Text>
-                        {(selectedAssistant as any)?.lastSeen || "No registrada"}
-                      </Text>
-                    </Group>
+                    {cardFields.map((fieldName) => {
+                      const fieldDef = formFields.find((f: any) => f.name === fieldName);
+                      // Respetar condición showWhen: no mostrar si el representante no cumple
+                      if (fieldDef?.showWhen) {
+                        const parentValue = selectedAssistant?.[fieldDef.showWhen.field];
+                        const allowed = fieldDef.showWhen.value as string[];
+                        if (!parentValue || !allowed.includes(parentValue)) return null;
+                      }
+                      const label = fieldDef?.label || fieldName;
+                      const Icon = FIELD_ICONS[fieldName] || IconFileDescription;
+                      const value = formatFieldValue(fieldName, selectedAssistant);
+                      return (
+                        <Group key={fieldName} gap={8} wrap="nowrap">
+                          <ThemeIcon variant="light" color={theme.primaryColor} radius="xl" size={26}>
+                            <Icon size={14} />
+                          </ThemeIcon>
+                          <Text size="sm" style={{ minWidth: 0 }}>
+                            <Text span fw={700}>{label}: </Text>
+                            {value && value.trim().length > 0 ? value : "No disponible"}
+                          </Text>
+                        </Group>
+                      );
+                    })}
                   </Stack>
 
                   {/* CTA grande abajo */}

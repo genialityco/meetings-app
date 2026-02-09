@@ -28,10 +28,41 @@ import {
   IconPhone,
   IconBriefcase,
   IconBuildingStore,
+  IconFileDescription,
+  IconTargetArrow,
+  IconBulb,
+  IconId,
+  IconUsers,
 } from "@tabler/icons-react";
 import { useCompanyData } from "./useCompanyData";
+import { DEFAULT_POLICIES } from "./types";
 import type { Product } from "./types";
 import type { CompanyRepresentative } from "./useCompanyData";
+
+const FIELD_ICONS: Record<string, any> = {
+  empresa: IconBuildingStore,
+  cargo: IconBriefcase,
+  correo: IconMail,
+  telefono: IconPhone,
+  descripcion: IconFileDescription,
+  interesPrincipal: IconTargetArrow,
+  necesidad: IconBulb,
+  cedula: IconId,
+  tipoAsistente: IconUsers,
+};
+
+function formatFieldValue(fieldName: string, data: any): string | null {
+  const raw = data?.[fieldName];
+  if (raw == null) return null;
+  if (Array.isArray(raw)) {
+    const otroText = data[`${fieldName}_otro`];
+    const items = raw.map((v: string) =>
+      v === "__otro__" && otroText ? otroText : v
+    );
+    return items.join(", ");
+  }
+  return String(raw);
+}
 
 export default function CompanyLanding() {
   const { eventId, companyNit } = useParams();
@@ -51,6 +82,13 @@ export default function CompanyLanding() {
 
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const myUid = currentUser?.uid;
+
+  // Campos configurables para la card de empresa
+  const formFields = useMemo(() => eventConfig?.formFields || [], [eventConfig]);
+  const cardFields = useMemo(() => {
+    const cfg = eventConfig?.policies?.cardFieldsConfig;
+    return cfg?.companyCard || DEFAULT_POLICIES.cardFieldsConfig!.companyCard;
+  }, [eventConfig]);
 
   const eventTheme = useMemo(() => {
     const hex = eventConfig?.primaryColor;
@@ -125,7 +163,7 @@ export default function CompanyLanding() {
   }
 
   return (
-    <MantineProvider theme={eventTheme} inherit>
+    <MantineProvider theme={eventTheme}>
       <Container size="lg" py="md">
         <Stack gap="lg">
           {/* Back button + event branding */}
@@ -171,11 +209,6 @@ export default function CompanyLanding() {
                 <Text size="sm" c="dimmed">
                   NIT: {company.nitNorm}
                 </Text>
-                {company.descripcion && (
-                  <Text size="sm" mt="xs" style={{ whiteSpace: "pre-wrap" }}>
-                    {company.descripcion}
-                  </Text>
-                )}
                 <Group gap="sm" mt="xs">
                   <Badge variant="light" size="sm">
                     {representatives.length}{" "}
@@ -195,6 +228,37 @@ export default function CompanyLanding() {
                 </Group>
               </Stack>
             </Group>
+
+            {/* Campos configurables de empresa (datos del primer representante) */}
+            {representatives.length > 0 && cardFields.length > 0 && (
+              <>
+                <Divider my="md" />
+                <Stack gap={8}>
+                  {cardFields.map((fieldName: string) => {
+                    const fieldDef = formFields.find((f: any) => f.name === fieldName);
+                    if (fieldDef?.showWhen) {
+                      const parentValue = representatives[0]?.[fieldDef.showWhen.field];
+                      const allowed = fieldDef.showWhen.value as string[];
+                      if (!parentValue || !allowed.includes(parentValue)) return null;
+                    }
+                    const label = fieldDef?.label || fieldName;
+                    const Icon = FIELD_ICONS[fieldName] || IconFileDescription;
+                    const value = formatFieldValue(fieldName, representatives[0]);
+                    return (
+                      <Group key={fieldName} gap={8} wrap="nowrap">
+                        <ThemeIcon variant="light" radius="xl" size={26}>
+                          <Icon size={14} />
+                        </ThemeIcon>
+                        <Text size="sm" style={{ minWidth: 0 }}>
+                          <Text span fw={700}>{label}: </Text>
+                          {value && value.trim().length > 0 ? value : "No disponible"}
+                        </Text>
+                      </Group>
+                    );
+                  })}
+                </Stack>
+              </>
+            )}
           </Paper>
 
           {/* Representatives section */}
