@@ -1029,6 +1029,19 @@ const Landing = () => {
     <MantineProvider theme={eventTheme} inherit>
       <Box style={bgStyle}>
         <Container size={isMobile ? "xs" : "sm"} px={0} w="100%">
+          {(event.dashboardLogo || event.eventImage) && (
+            <Group justify="center">
+              <Image
+                src={event.dashboardLogo || event.eventImage}
+                alt={event.eventName || "Logo del evento"}
+                h={isMobile ? 90 : 120}
+                w="auto"
+                fit="contain"
+                style={{ filter: "drop-shadow(0 2px 8px rgba(0,0,0,0.25))" }}
+              />
+            </Group>
+          )}
+
           <Paper
             radius="xl"
             shadow="xl"
@@ -1454,7 +1467,6 @@ const Landing = () => {
                       alt="Encuentro"
                       style={{
                         width: "100%",
-                        maxHeight: isMobile ? 180 : 220,
                         objectFit: "cover",
                         borderRadius: 14,
                         display: "block",
@@ -1467,7 +1479,14 @@ const Landing = () => {
           </Paper>
 
           <Text ta="center" mt="md" c="rgba(255,255,255,0.85)" size="sm">
-            Powered by Geniality
+            <a
+              href="https://geniality.com.co/"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "inherit", textDecoration: "underline" }}
+            >
+              Powered by Geniality
+            </a>
           </Text>
         </Container>
       </Box>
