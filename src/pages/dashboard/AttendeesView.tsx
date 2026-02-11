@@ -35,6 +35,7 @@ import {
   IconUsers,
 } from "@tabler/icons-react";
 import type { Assistant } from "./types";
+import { useNavigate } from "react-router-dom";
 
 const FIELD_ICONS: Record<string, any> = {
   empresa: IconBuildingStore,
@@ -56,7 +57,7 @@ function formatFieldValue(fieldName: string, data: any): string | null {
   if (Array.isArray(raw)) {
     const otroText = data[`${fieldName}_otro`];
     const items = raw.map((v: string) =>
-      v === "__otro__" && otroText ? otroText : v
+      v === "__otro__" && otroText ? otroText : v,
     );
     return items.join(", ");
   }
@@ -128,6 +129,7 @@ export default function AttendeesView({
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
   const myUid = currentUser?.uid;
+  const navigate = useNavigate();
 
   const maxMeetingsText = useMemo(() => {
     const n = eventConfig?.maxMeetingsPerUser;
@@ -207,8 +209,13 @@ export default function AttendeesView({
               </Button>
 
               <Text size="sm" c="dimmed">
-                Máximo: <Text span fw={800}>{maxMeetingsText}</Text>{" "}
-                {eventConfig?.maxMeetingsPerUser === 1 ? "reunión" : "reuniones"}
+                Máximo:{" "}
+                <Text span fw={800}>
+                  {maxMeetingsText}
+                </Text>{" "}
+                {eventConfig?.maxMeetingsPerUser === 1
+                  ? "reunión"
+                  : "reuniones"}
               </Text>
             </Group>
           </Grid.Col>
@@ -281,6 +288,21 @@ export default function AttendeesView({
                       <Text size="sm" c="dimmed" lineClamp={1}>
                         {assistant.cargo || "Asistente"}
                       </Text>
+                      <Text
+                        size="sm"
+                        c="dimmed"
+                        style={{textDecoration: "underline"}}
+                        onClick={
+                          assistant.nitNorm !== "sin-nit" && assistant.eventId
+                            ? () =>
+                                navigate(
+                                  `/dashboard/${assistant.eventId}/company/${assistant.company_nit}`,
+                                )
+                            : undefined
+                        }
+                      >
+                        {assistant.empresa || "Sin empresa"}
+                      </Text>
                     </Box>
                   </Group>
 
@@ -289,15 +311,19 @@ export default function AttendeesView({
                   {/* Body - campos configurables */}
                   <Stack gap={8} style={{ flex: 1, minHeight: 0 }}>
                     {cardFields.map((fieldName) => {
-                      const fieldDef = formFields.find((f: any) => f.name === fieldName);
+                      const fieldDef = formFields.find(
+                        (f: any) => f.name === fieldName,
+                      );
                       // Respetar condición showWhen: no mostrar si el asistente no cumple
                       if (fieldDef?.showWhen) {
                         const parentValue = assistant[fieldDef.showWhen.field];
                         const allowed = fieldDef.showWhen.value as string[];
-                        if (!parentValue || !allowed.includes(parentValue)) return null;
+                        if (!parentValue || !allowed.includes(parentValue))
+                          return null;
                       }
                       const label = fieldDef?.label || fieldName;
-                      const Icon = FIELD_ICONS[fieldName] || IconFileDescription;
+                      const Icon =
+                        FIELD_ICONS[fieldName] || IconFileDescription;
                       return (
                         <InfoRow
                           key={fieldName}
@@ -334,7 +360,8 @@ export default function AttendeesView({
           <Grid.Col span={12}>
             <Paper withBorder radius="lg" p="lg">
               <Text c="dimmed">
-                No se encontraron asistentes. Intenta ajustar los filtros de búsqueda.
+                No se encontraron asistentes. Intenta ajustar los filtros de
+                búsqueda.
               </Text>
             </Paper>
           </Grid.Col>
