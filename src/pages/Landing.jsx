@@ -1034,7 +1034,7 @@ const Landing = () => {
               <Image
                 src={event.dashboardLogo || event.eventImage}
                 alt={event.eventName || "Logo del evento"}
-                h={isMobile ? 90 : 120}
+                h={isMobile ? 90 : 200}
                 w="auto"
                 fit="contain"
                 style={{ filter: "drop-shadow(0 2px 8px rgba(0,0,0,0.25))" }}

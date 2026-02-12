@@ -35,14 +35,15 @@ Configurable per event via admin panel (`EventPoliciesModal.tsx`):
 - `discoveryMode`: "all" | "by_role" — directory visibility
 - `schedulingMode`: "manual" | "auto"
 - `sellerRedirectToProducts`: boolean — redirects sellers to "Mis productos" on first login, hides that tab for buyers
+- `cardFieldsConfig`: { attendeeCard: string[], companyCard: string[] } — fields visible on dashboard cards per view
 - `uiViewsEnabled`: { chatbot, attendees, companies, products } — which dashboard views are shown
 
 Defaults defined in `DEFAULT_POLICIES` in `src/pages/dashboard/types.ts`.
 
 ### Key Directories
 
-- `src/firebase/` — Firebase configuration, exports `db`, `auth`, `storage`, `messaging`
-- `src/context/UserContext.jsx` — Auth state (anonymous auth + manual login by cedula/email)
+- `src/firebase/firebaseConfig.js` — Firebase init, exports `db`, `auth`, `storage`, `messaging`
+- `src/context/UserContext.jsx` — Auth state (anonymous auth + manual login by cedula/email), exports `UserProvider` and `UserContext`
 - `src/utils/` — Utilities (companyStorage.ts for logo upload)
 - `src/pages/admin/` — Admin panel: event management, attendees, meetings, policies config
 - `src/pages/dashboard/` — Attendee dashboard with discovery views + activity tabs
@@ -105,7 +106,7 @@ Meeting requests from CompaniesView/ProductsView pass context (productId, compan
 
 - `notifyMeetingsScheduled`: Runs every 5 minutes (America/Bogota timezone), sends WhatsApp/SMS notifications for meetings starting within 5 minutes via Onurix API.
 - `aiProxy`: HTTP function for chatbot backend. Uses Google Gemini API for intent classification (greeting, search_query, general_question, meeting_related) and context-aware search across attendees, products, companies. Requires secrets: `GEMINI_API_KEY`, `GEMINI_API_URL`, `DEFAULT_AI_MODEL`.
-- Deploy: `firebase deploy --only functions`
+- Deploy: `firebase deploy --only functions` (Node 22)
 
 ### External API Integrations
 
@@ -136,9 +137,11 @@ Firebase config via Vite env vars (prefix `VITE_`):
 
 - Mixed JSX (JavaScript) and TSX (TypeScript) — new files should be .tsx
 - Spanish used in variable names, comments, and UI text
-- ESLint flat config (`eslint.config.js`) for React with hooks rules
+- ESLint flat config (`eslint.config.js`) only targets `**/*.{js,jsx}` — TypeScript files are not linted
 - Types defined centrally in `src/pages/dashboard/types.ts`
-- Entry point: `src/index.jsx` wraps App with MantineProvider, BrowserRouter, and UserContextProvider
+- Custom Mantine theme with Barlow font family (`src/index.jsx`)
+- Provider order: `UserProvider` > `BrowserRouter` > `MantineProvider` > `ModalsProvider` > `Notifications` > `App`
+- StrictMode is disabled
 
 ## Extending the System
 

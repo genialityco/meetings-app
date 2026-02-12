@@ -136,13 +136,10 @@ export default function TabsPanel({ dashboard }: { dashboard: any }) {
 
       {topView === "chatbot" && (
         <ChatbotTab
-          filteredAssistants={dashboard.filteredAssistants}
-          products={dashboard.products}
           sendMeetingRequest={dashboard.sendMeetingRequest}
           solicitarReunionHabilitado={dashboard.solicitarReunionHabilitado}
-          setAvatarModalOpened={dashboard.setAvatarModalOpened}
-          setSelectedImage={dashboard.setSelectedImage}
           currentUser={dashboard.currentUser}
+          eventId={eventId}
         />
       )}
 

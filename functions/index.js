@@ -296,70 +296,100 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
       // PASO 3: Búsqueda en base de datos (search_query o meeting_related)
       // ========================================================================
 
-      // Refinar keywords y scopes
-      const keywords = cleanAndNormalizeKeywords(
+      // Refinar keywords SIN incluir perfil del usuario (evita contaminar resultados)
+      let keywords = cleanAndNormalizeKeywords(
         intentAnalysis.keywords || [],
-        [descripcion, necesidad, interesPrincipal]
+        [] // no mezclar perfil — el perfil se usa solo en el ranking AI (paso 4)
       );
-      const scopes = intentAnalysis.scopes && intentAnalysis.scopes.length > 0 
-        ? intentAnalysis.scopes 
+      // Fallback: si AI no extrajo keywords útiles, usar palabras del mensaje original
+      if (keywords.length === 0) {
+        keywords = extractSimpleKeywords(message);
+        console.log("Fallback to simple keywords from message:", keywords);
+      }
+      const scopes = intentAnalysis.scopes && intentAnalysis.scopes.length > 0
+        ? intentAnalysis.scopes
         : ["assistants", "products", "companies"];
 
       console.log("Refined search - scopes:", scopes, "keywords:", keywords);
 
-      // Lógica de inversión de tipo (vendedor busca compradores, etc.)
+      // Cargar políticas del evento para respetar roleMode / discoveryMode
+      let eventPolicies = { roleMode: "open", discoveryMode: "all" };
+      if (eventId) {
+        try {
+          const eventDoc = await db.collection("events").doc(eventId).get();
+          if (eventDoc.exists) {
+            const cfg = eventDoc.data()?.config?.policies;
+            if (cfg) {
+              eventPolicies = { ...eventPolicies, ...cfg };
+            }
+          }
+        } catch (err) {
+          console.warn("Could not load event policies, using defaults", err);
+        }
+      }
+      console.log("Event policies:", eventPolicies.roleMode, eventPolicies.discoveryMode);
+
+      // Lógica de inversión de tipo: solo si roleMode=buyer_seller o discoveryMode=by_role
       const userTipo = tipoAsistente ? String(tipoAsistente).toLowerCase() : null;
       let desiredOpposite = null;
-      if (userTipo === "vendedor") desiredOpposite = "comprador";
-      else if (userTipo === "comprador") desiredOpposite = "vendedor";
+      const shouldFilterByRole =
+        eventPolicies.roleMode === "buyer_seller" || eventPolicies.discoveryMode === "by_role";
+      if (shouldFilterByRole && userTipo) {
+        if (userTipo === "vendedor") desiredOpposite = "comprador";
+        else if (userTipo === "comprador") desiredOpposite = "vendedor";
+      }
 
-      const results = { 
-        assistants: [], 
-        products: [], 
-        companies: [], 
-        meetings: [] 
+      const results = {
+        assistants: [],
+        products: [],
+        companies: [],
+        meetings: []
       };
 
-      // Helper para matching
+      // Helper para matching (normaliza acentos para match consistente)
+      const normalizeForMatch = (s) =>
+        String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
       const matchesAny = (obj, fields) => {
         const text = fields
-          .map((f) => (obj[f] || ""))
-          .join(" ")
-          .toLowerCase();
+          .map((f) => normalizeForMatch(obj[f]))
+          .join(" ");
         return keywords.some((kw) => text.includes(kw));
       };
 
-      // Buscar Asistentes
-      if (scopes.includes("assistants")) {
+      // Precargar asistentes del evento (una sola query, reutilizada por companies)
+      let allEventUsers = [];
+      const needsUsers = scopes.includes("assistants") || scopes.includes("companies");
+      if (needsUsers && eventId) {
         try {
-          const usersQuery = eventId 
-            ? db.collection("users").where("eventId", "==", eventId) 
-            : db.collection("users");
-          const usersSnap = await usersQuery.get();
-          
-          usersSnap.forEach((d) => {
-            if (d.id === userId) return; // excluir al usuario mismo
-            const o = d.data();
-            
-            // Filtrar por tipo opuesto si aplica
-            if (desiredOpposite) {
-              const otherType = (o.tipoAsistente || "").toString().toLowerCase();
-              if (otherType !== desiredOpposite) return;
-            }
-            
-            if (matchesAny(o, [
-              "nombre",
-              "empresa",
-              "company_razonSocial",
-              "descripcion",
-              "interesPrincipal",
-              "necesidad",
-            ])) {
-              results.assistants.push({ id: d.id, ...o });
-            }
-          });
+          const usersSnap = await db.collection("users").where("eventId", "==", eventId).get();
+          allEventUsers = usersSnap.docs
+            .filter((d) => d.id !== userId)
+            .map((d) => ({ id: d.id, ...d.data() }));
         } catch (err) {
-          console.warn("Assistants query failed", err);
+          console.warn("Users preload failed", err);
+        }
+      }
+
+      // Buscar Asistentes (usando datos precargados)
+      if (scopes.includes("assistants")) {
+        for (const o of allEventUsers) {
+          // Filtrar por tipo opuesto si aplica
+          if (desiredOpposite) {
+            const otherType = (o.tipoAsistente || "").toString().toLowerCase();
+            if (otherType !== desiredOpposite) continue;
+          }
+
+          if (matchesAny(o, [
+            "nombre",
+            "empresa",
+            "company_razonSocial",
+            "descripcion",
+            "interesPrincipal",
+            "necesidad",
+          ])) {
+            results.assistants.push(o);
+          }
         }
       }
 
@@ -384,7 +414,7 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
         }
       }
 
-      // Buscar Empresas (con asistentes incluidos)
+      // Buscar Empresas (reutiliza allEventUsers para evitar N+1 queries)
       if (scopes.includes("companies")) {
         try {
           if (eventId) {
@@ -408,28 +438,14 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
               for (const d of companiesSnap.docs) {
                 const o = d.data();
                 if (matchesAny(o, ["razonSocial", "descripcion"])) {
-                  // Buscar asistentes de la empresa
-                  let companyAssistants = [];
-                  if (o.nitNorm) {
-                    try {
-                      const assistantsSnap = await db.collection("users")
-                        .where("eventId", "==", eventId)
-                        .where("company_nit", "==", o.nitNorm)
-                        .get();
-                      companyAssistants = assistantsSnap.docs
-                        .filter((ad) => ad.id !== userId) // Excluir al usuario actual
-                        .map((ad) => ({ 
-                          id: ad.id, 
-                          ...ad.data() 
-                        }));
-                    } catch (err) {
-                      console.warn(`Error fetching assistants for company ${o.razonSocial}`, err);
-                    }
-                  }
-                  results.companies.push({ 
-                    id: d.id, 
-                    ...o, 
-                    assistants: companyAssistants 
+                  // Reutilizar allEventUsers en vez de query por empresa
+                  const companyAssistants = o.nitNorm
+                    ? allEventUsers.filter((u) => u.company_nit === o.nitNorm)
+                    : [];
+                  results.companies.push({
+                    id: d.id,
+                    ...o,
+                    assistants: companyAssistants
                   });
                 }
               }
