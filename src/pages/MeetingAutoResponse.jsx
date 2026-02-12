@@ -294,6 +294,7 @@ export default function MeetingAutoResponse() {
         message: `${receiver?.nombre || "Un participante"} ha rechazado tu solicitud de reunión.`,
         timestamp: new Date(),
         read: false,
+        type: "meeting_rejected",
       });
 
       // Enviar WhatsApp al solicitante informando del rechazo
@@ -364,6 +365,7 @@ export default function MeetingAutoResponse() {
         message: `${receiver?.nombre || "Un participante"} ha aceptado tu reunión para ${slot.startTime} en mesa ${slot.tableNumber}.`,
         timestamp: new Date(),
         read: false,
+        type: "meeting_accepted",
       });
 
       // Enviar WhatsApp a ambos participantes

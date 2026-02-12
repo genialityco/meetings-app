@@ -17,7 +17,19 @@ import MyProductsTab from "./MyProductsTab";
 import MyCompanyTab from "./MyCompanyTab";
 import { DEFAULT_POLICIES } from "./types";
 
-export default function TabsPanel({ dashboard }: { dashboard: any }) {
+interface ViewRequest {
+  view: string;
+  tab?: string;
+  _k: number;
+}
+
+export default function TabsPanel({
+  dashboard,
+  viewRequest,
+}: {
+  dashboard: any;
+  viewRequest?: ViewRequest | null;
+}) {
   const { eventId } = useParams();
   const policies = dashboard.policies || DEFAULT_POLICIES;
   const uiViews = policies.uiViewsEnabled || DEFAULT_POLICIES.uiViewsEnabled;
@@ -81,6 +93,18 @@ export default function TabsPanel({ dashboard }: { dashboard: any }) {
     setTopView("activity");
     setActivityDefaultTab("mis-productos");
   }, [isVendedor, redirectKey]);
+
+  // Navegación externa (ej: click en notificación)
+  useEffect(() => {
+    if (!viewRequest) return;
+    const { view, tab } = viewRequest;
+    if (validValues.includes(view)) {
+      setTopView(view);
+    }
+    if (tab) {
+      setActivityDefaultTab(tab);
+    }
+  }, [viewRequest?._k]);
 
   const requestsCount =
     (dashboard.pendingRequests?.length || 0) +
@@ -155,7 +179,7 @@ export default function TabsPanel({ dashboard }: { dashboard: any }) {
       )}
 
       {topView === "activity" && (
-        <Tabs defaultValue={activityDefaultTab} radius="md">
+        <Tabs value={activityDefaultTab} onChange={(v) => setActivityDefaultTab(v || "reuniones")} radius="md">
           <Tabs.List grow>
             <Tabs.Tab
               value="reuniones"

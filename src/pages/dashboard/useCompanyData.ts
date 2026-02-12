@@ -169,6 +169,7 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
         message: `${requester?.nombre || "Alguien"} te ha enviado una solicitud de reunión.`,
         timestamp: new Date(),
         read: false,
+        type: "meeting_request",
       });
     },
     [uid, eventId, currentUser, eventName],

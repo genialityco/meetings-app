@@ -50,12 +50,20 @@ export interface MeetingContext {
 
 export interface ParticipantInfo extends Assistant {}
 
+export type NotificationType =
+  | "meeting_request"
+  | "meeting_accepted"
+  | "meeting_rejected"
+  | "meeting_cancelled"
+  | "meeting_modified";
+
 export interface Notification {
   id: string;
   title: string;
   message: string;
   read: boolean;
   timestamp: any;
+  type?: NotificationType;
 }
 
 export interface AgendaSlot {

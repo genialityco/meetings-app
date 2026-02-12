@@ -23,6 +23,8 @@ export default defineConfig({
       'react-icons/bi',
       'react-router-dom',
       'dayjs',
+      'dayjs/plugin/relativeTime',
+      'dayjs/locale/es',
       'xlsx',
     ],
   },

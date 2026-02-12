@@ -9,14 +9,41 @@ import TabsPanel from "./TabsPanel";
 import AvatarModal from "./AvatarModal";
 import SlotModal from "./SlotModal";
 import ConfirmModal from "./ConfirmModal";
-import { useContext, useMemo } from "react";
+import { useCallback, useContext, useMemo, useState } from "react";
 import { UserContext } from "../../context/UserContext";
 import DashboardHeader from "../../components/DashboardHeader";
+import type { Notification, NotificationType } from "./types";
+
+const NOTIF_NAV_MAP: Record<string, { view: string; tab?: string }> = {
+  meeting_request: { view: "activity", tab: "solicitudes" },
+  meeting_accepted: { view: "activity", tab: "reuniones" },
+  meeting_rejected: { view: "activity", tab: "solicitudes" },
+  meeting_cancelled: { view: "activity", tab: "reuniones" },
+  meeting_modified: { view: "activity", tab: "reuniones" },
+};
 
 export default function Dashboard() {
   const { eventId } = useParams();
   const dashboard = useDashboardData(eventId);
     const { currentUser } = useContext(UserContext);
+
+  const [viewRequest, setViewRequest] = useState<{
+    view: string;
+    tab?: string;
+    _k: number;
+  } | null>(null);
+
+  const handleNotificationClick = useCallback(
+    (notif: Notification) => {
+      dashboard.markNotificationRead(notif.id);
+      const target = NOTIF_NAV_MAP[notif.type || ""] || {
+        view: "activity",
+        tab: "solicitudes",
+      };
+      setViewRequest({ ...target, _k: Date.now() });
+    },
+    [dashboard.markNotificationRead],
+  );
 
   const eventTheme = useMemo(() => {
     const hex = dashboard.eventConfig?.primaryColor;
@@ -36,12 +63,14 @@ export default function Dashboard() {
           dashboardLogo={dashboard.dashboardLogo}
           eventName={dashboard.eventName}
           notifications={dashboard.notifications}
+          onNotificationClick={handleNotificationClick}
+          onMarkAllRead={dashboard.markAllNotificationsRead}
           formFields={dashboard.formFields}
           eventConfig={dashboard.eventConfig}
         />
       )}
       <Container fluid pt="sm">
-        <TabsPanel dashboard={dashboard} />
+        <TabsPanel dashboard={dashboard} viewRequest={viewRequest} />
       </Container>
       <AvatarModal
         opened={dashboard.avatarModalOpened}

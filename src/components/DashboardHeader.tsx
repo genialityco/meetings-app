@@ -36,6 +36,8 @@ interface DashboardHeaderProps {
   dashboardLogo: string;
   eventName: string;
   notifications: any[];
+  onNotificationClick?: (notif: any) => void;
+  onMarkAllRead?: () => void;
   formFields: any[];
   eventConfig?: any;
 }
@@ -55,6 +57,8 @@ const DashboardHeader = ({
   dashboardLogo,
   eventName,
   notifications,
+  onNotificationClick,
+  onMarkAllRead,
   formFields,
   eventConfig,
 }: DashboardHeaderProps) => {
@@ -386,7 +390,11 @@ const DashboardHeader = ({
 
         {/* Derecha: Notificaciones + Avatar con Menu */}
         <Group gap="sm" align="center">
-          <NotificationsMenu notifications={notifications} />
+          <NotificationsMenu
+            notifications={notifications}
+            onNotificationClick={onNotificationClick}
+            onMarkAllRead={onMarkAllRead}
+          />
 
           <Menu position="bottom-end" width={200} shadow="md">
             <Menu.Target>

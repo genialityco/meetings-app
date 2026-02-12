@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useMemo } from "react";
+import { useState, useEffect, useContext, useMemo, useRef, useCallback } from "react";
 import {
   collection,
   doc,
@@ -247,6 +247,7 @@ export function useDashboardData(eventId?: string) {
   const [assistants, setAssistants] = useState<Assistant[]>([]);
   const [filteredAssistants, setFilteredAssistants] = useState<Assistant[]>([]);
   const [acceptedMeetings, setAcceptedMeetings] = useState<Meeting[]>([]);
+  const [cancelledMeetings, setCancelledMeetings] = useState<Meeting[]>([]);
   const [loadingMeetings, setLoadingMeetings] = useState(true);
   const [pendingRequests, setPendingRequests] = useState<Meeting[]>([]);
   const [sentRequests, setSentRequests] = useState<Meeting[]>([]);
@@ -259,6 +260,7 @@ export function useDashboardData(eventId?: string) {
     [userId: string]: Assistant;
   }>({});
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const shownToastIds = useRef<Set<string>>(new Set());
   const [solicitarReunionHabilitado, setSolicitarReunionHabilitado] =
     useState<boolean>(true);
   const [eventConfig, setEventConfig] = useState<any>(null);
@@ -342,24 +344,33 @@ export function useDashboardData(eventId?: string) {
         (d) => ({ id: d.id, ...d.data() }) as Notification,
       );
 
-      // Mostrar notificaciones tipo toast solo las no leídas
+      // Mostrar toast solo para notificaciones no leídas que no se hayan mostrado aún
       nots.forEach((n) => {
-        if (!n.read) {
+        if (!n.read && !shownToastIds.current.has(n.id)) {
+          shownToastIds.current.add(n.id);
           showNotification({
             title: n.title,
             message: n.message,
-            color: "teal", // o el color que prefieras
+            color: "teal",
             autoClose: 6000,
-            // icon: <AlgúnIconoOpcional />,
           });
-          // Si quieres marcarlas como leídas después de mostrar:
-          updateDoc(doc(db, "notifications", n.id), { read: true });
         }
       });
 
       setNotifications(nots);
     });
   }, [uid]);
+
+  const markNotificationRead = useCallback(async (notifId: string) => {
+    await updateDoc(doc(db, "notifications", notifId), { read: true });
+  }, []);
+
+  const markAllNotificationsRead = useCallback(async () => {
+    const unread = notifications.filter((n) => !n.read);
+    await Promise.all(
+      unread.map((n) => updateDoc(doc(db, "notifications", n.id), { read: true }))
+    );
+  }, [notifications]);
 
   // 3. Configuración global para habilitar solicitudes
   useEffect(() => {
@@ -525,6 +536,38 @@ export function useDashboardData(eventId?: string) {
     });
   }, [uid, eventId]);
 
+  // 7b. Reuniones canceladas
+  useEffect(() => {
+    if (!uid || !eventId) return;
+    const q = query(
+      collection(db, "events", eventId, "meetings"),
+      where("status", "==", "cancelled"),
+      where("participants", "array-contains", uid),
+    );
+    return onSnapshot(q, async (snap) => {
+      const mts: Meeting[] = [];
+      for (const d of snap.docs) {
+        const m = { id: d.id, ...d.data() } as Meeting;
+        m.timeSlot = typeof m.timeSlot === "string" ? m.timeSlot : "";
+        mts.push(m);
+        // Cargar info del participante si no está cargada
+        const other = m.requesterId === uid ? m.receiverId : m.requesterId;
+        if (other && !participantsInfo[other]) {
+          try {
+            const uSnap = await getDoc(doc(db, "users", other));
+            if (uSnap.exists()) {
+              setParticipantsInfo((prev) => ({
+                ...prev,
+                [other]: uSnap.data() as Assistant,
+              }));
+            }
+          } catch (e) {}
+        }
+      }
+      setCancelledMeetings(mts);
+    });
+  }, [uid, eventId]);
+
   // 8. Solicitudes donde usuario es receptor
   useEffect(() => {
     if (!uid || !eventId) return;
@@ -684,6 +727,7 @@ export function useDashboardData(eventId?: string) {
         } te ha enviado una solicitud de reunión.`,
         timestamp: new Date(),
         read: false,
+        type: "meeting_request",
       });
       return Promise.resolve();
     } catch (e) {
@@ -756,6 +800,7 @@ export function useDashboardData(eventId?: string) {
         message: "Tu reunión fue cancelada.",
         timestamp: new Date(),
         read: false,
+        type: "meeting_cancelled",
       });
       await addDoc(collection(db, "notifications"), {
         userId: meeting.receiverId,
@@ -763,6 +808,7 @@ export function useDashboardData(eventId?: string) {
         message: "Tu reunión fue cancelada.",
         timestamp: new Date(),
         read: false,
+        type: "meeting_cancelled",
       });
 
       return true; // <-- IMPORTANTE
@@ -874,6 +920,7 @@ export function useDashboardData(eventId?: string) {
           message: "Tu reunión fue aceptada.",
           timestamp: new Date(),
           read: false,
+          type: "meeting_accepted",
         });
 
         // 5. Enviar SMS a ambos participantes
@@ -951,6 +998,7 @@ export function useDashboardData(eventId?: string) {
           message: `${receiver?.nombre || "Un participante"} ha rechazado tu solicitud de reunión.`,
           timestamp: new Date(),
           read: false,
+          type: "meeting_rejected",
         });
 
         // Enviar WhatsApp al solicitante informando del rechazo
@@ -1381,6 +1429,7 @@ export function useDashboardData(eventId?: string) {
               message: `Tu reunión con ${receiver?.nombre || ""} fue movida a ${
                 slot.startTime
               } (Mesa ${slot.tableNumber}).`,
+              type: "meeting_modified" as const,
             },
             {
               userId: receiverId!,
@@ -1388,6 +1437,7 @@ export function useDashboardData(eventId?: string) {
               message: `Has cambiado la reunión con ${
                 requester?.nombre || ""
               } a ${slot.startTime} (Mesa ${slot.tableNumber}).`,
+              type: "meeting_modified" as const,
             },
           ]
         : [
@@ -1399,6 +1449,7 @@ export function useDashboardData(eventId?: string) {
               } fue aceptada para ${slot.startTime} en Mesa ${
                 slot.tableNumber
               }.`,
+              type: "meeting_accepted" as const,
             },
             {
               userId: receiverId!,
@@ -1406,6 +1457,7 @@ export function useDashboardData(eventId?: string) {
               message: `Has aceptado la reunión con ${
                 requester?.nombre || ""
               } para ${slot.startTime} en Mesa ${slot.tableNumber}.`,
+              type: "meeting_accepted" as const,
             },
           ];
 
@@ -1599,6 +1651,7 @@ export function useDashboardData(eventId?: string) {
     assistants,
     filteredAssistants,
     acceptedMeetings,
+    cancelledMeetings,
     loadingMeetings,
     pendingRequests,
     cancelSentMeeting,
@@ -1608,6 +1661,8 @@ export function useDashboardData(eventId?: string) {
     rejectedRequests,
     participantsInfo,
     notifications,
+    markNotificationRead,
+    markAllNotificationsRead,
     solicitarReunionHabilitado,
     eventConfig,
     eventImage,

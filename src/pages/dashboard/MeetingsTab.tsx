@@ -38,6 +38,7 @@ import {
   IconClipboardCheck,
   IconX,
   IconNote,
+  IconCalendarOff,
 } from "@tabler/icons-react";
 import {
   collection,
@@ -78,6 +79,7 @@ function InfoRow({
 
 export default function MeetingsTab({
   acceptedMeetings,
+  cancelledMeetings = [],
   participantsInfo,
   uid,
   expandedMeetingId,
@@ -433,6 +435,87 @@ export default function MeetingsTab({
           </Grid.Col>
         )}
       </Grid>
+
+      {/* Reuniones canceladas */}
+      {cancelledMeetings.length > 0 && (
+        <Stack mt="xl" gap="sm">
+          <Divider
+            label={
+              <Group gap={6}>
+                <IconCalendarOff size={16} />
+                <Text fw={600} size="sm">
+                  Canceladas ({cancelledMeetings.length})
+                </Text>
+              </Group>
+            }
+            labelPosition="left"
+          />
+          <Grid gutter="sm">
+            {cancelledMeetings.map((meeting) => {
+              const otherUserId =
+                meeting.requesterId === uid
+                  ? meeting.receiverId
+                  : meeting.requesterId;
+              const participant = participantsInfo[otherUserId];
+
+              return (
+                <Grid.Col span={{ base: 12, sm: 6, lg: 4 }} key={meeting.id}>
+                  <Card
+                    withBorder
+                    radius="xl"
+                    padding="md"
+                    shadow="sm"
+                    style={{ opacity: 0.7 }}
+                  >
+                    <Group wrap="nowrap" align="center" gap="sm">
+                      <Avatar
+                        src={participant?.photoURL}
+                        radius="xl"
+                        size={44}
+                        color="gray"
+                      >
+                        {(participant?.nombre || "R")[0]?.toUpperCase()}
+                      </Avatar>
+                      <Box style={{ minWidth: 0, flex: 1 }}>
+                        <Title order={6} lineClamp={1}>
+                          {participant?.empresa || "—"}
+                        </Title>
+                        <Text size="sm" c="dimmed" lineClamp={1}>
+                          {participant?.nombre || "—"}
+                        </Text>
+                      </Box>
+                      <Badge color="red" variant="light" size="sm">
+                        Cancelada
+                      </Badge>
+                    </Group>
+
+                    {meeting.timeSlot && (
+                      <>
+                        <Divider my="xs" />
+                        <Group gap={6}>
+                          <IconClock size={14} color="gray" />
+                          <Text size="xs" c="dimmed">
+                            {meeting.timeSlot}
+                          </Text>
+                          {meeting.tableAssigned && (
+                            <>
+                              <Text size="xs" c="dimmed">•</Text>
+                              <IconTable size={14} color="gray" />
+                              <Text size="xs" c="dimmed">
+                                Mesa {meeting.tableAssigned}
+                              </Text>
+                            </>
+                          )}
+                        </Group>
+                      </>
+                    )}
+                  </Card>
+                </Grid.Col>
+              );
+            })}
+          </Grid>
+        </Stack>
+      )}
 
       {/* Modal de encuesta */}
       <Modal
