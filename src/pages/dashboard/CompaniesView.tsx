@@ -335,6 +335,14 @@ export default function CompaniesView({
                         variant="light"
                         color={theme.primaryColor}
                         radius="xl"
+                        style={{
+                          cursor: nit !== "sin-nit" && eventId ? "pointer" : undefined,
+                        }}
+                        onClick={
+                          nit !== "sin-nit" && eventId
+                            ? () => navigate(`/dashboard/${eventId}/company/${nit}`)
+                            : undefined
+                        }
                       >
                         <Group gap={6} wrap="nowrap">
                           <IconUsers size={14} />
@@ -356,7 +364,7 @@ export default function CompaniesView({
                   {/* Descripción corta */}
                   {!!(asistentes?.[0]?.descripcion || "").trim() && (
                     <>
-                      <Text mt="sm" c="dimmed" size="sm" lineClamp={2}>
+                      <Text mt="sm" c="dimmed" size="sm">
                         {asistentes[0]?.descripcion}
                       </Text>
                     </>
@@ -365,13 +373,13 @@ export default function CompaniesView({
                   <Divider my="md" />
 
                   {/* Lista de reps (compacta y bonita) */}
-                  {isMulti && (
+                  {(
                     <Stack gap="xs">
                       <Text size="xs" c="dimmed" fw={600}>
                         Representantes
                       </Text>
 
-                      <ScrollArea h={170} type="auto">
+                      <ScrollArea  type="auto" >
                         <Stack gap={8} pr="xs">
                           {asistentes.map((a) => {
                             const active = selectedAssistant?.id === a.id;
