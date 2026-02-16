@@ -16,6 +16,7 @@ import RequestsTab from "./RequestsTab";
 import MyProductsTab from "./MyProductsTab";
 import MyCompanyTab from "./MyCompanyTab";
 import { DEFAULT_POLICIES } from "./types";
+import { useMediaQuery } from "@mantine/hooks";
 
 interface ViewRequest {
   view: string;
@@ -43,6 +44,8 @@ export default function TabsPanel({
   const roleLower = userRole?.toLowerCase();
   const isVendedor = sellerRedirect && roleLower === "vendedor";
   const isComprador = sellerRedirect && roleLower === "comprador";
+
+  const isMobile = useMediaQuery("(max-width: 48em)"); // ~768px
 
   // DEBUG: verificar valores de la redirección
   console.log("[TabsPanel DEBUG]", {
@@ -115,12 +118,24 @@ export default function TabsPanel({
 
   return (
     <Stack mt="md">
+    {isMobile ? (
+      <Tabs value={topView} onChange={(v) => v && setTopView(v)} variant="outline">
+        <Tabs.List style={{ flexWrap: "nowrap", overflowX: "auto" }}>
+          {viewOptions.map((o) => (
+            <Tabs.Tab key={o.value} value={o.value}>
+              {o.label}
+            </Tabs.Tab>
+          ))}
+        </Tabs.List>
+      </Tabs>
+    ) : (
       <SegmentedControl
         value={topView}
         onChange={setTopView}
         data={viewOptions}
         fullWidth
       />
+    )}
 
       {topView === "attendees" && (
         <AttendeesView
