@@ -18,7 +18,6 @@ import {
   Checkbox,
   Box,
   Group,
-  Avatar,
   Alert,
   Tabs,
   Badge,
@@ -33,6 +32,7 @@ import Highlight from "@tiptap/extension-highlight";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
+import Placeholder from "@tiptap/extension-placeholder";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   doc,
@@ -45,12 +45,12 @@ import {
   setDoc,
   serverTimestamp,
 } from "firebase/firestore";
-import { db } from "../firebase/firebaseConfig";
-import { UserContext } from "../context/UserContext";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { storage } from "../firebase/firebaseConfig";
 import { useMediaQuery } from "@mantine/hooks";
-import Placeholder from "@tiptap/extension-placeholder";
+
+import { db } from "../firebase/firebaseConfig";
+import { storage } from "../firebase/firebaseConfig";
+import { UserContext } from "../context/UserContext";
 import { uploadCompanyLogo } from "../utils/companyStorage";
 
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
@@ -68,19 +68,6 @@ const isValidEmail = (v = "") =>
 
 const normalizeNit = (v = "") => String(v || "").replace(/\D/g, "");
 
-const formatDateCO = (value) => {
-  if (!value) return null;
-  const d =
-    typeof value?.toDate === "function"
-      ? value.toDate()
-      : value instanceof Date
-        ? value
-        : new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleString("es-CO", { timeZone: "America/Bogota" });
-};
-
-// Función para eliminar tags HTML
 const stripHtmlTags = (html) => {
   if (!html) return "";
   const tmp = document.createElement("DIV");
@@ -118,19 +105,9 @@ function formatDate(dateString) {
   return `${day} de ${months[month - 1]} de ${year}`;
 }
 
-const InfoLine = ({ label, value }) => (
-  <Group wrap="nowrap" gap="xs">
-    <Text fw={500}>{label}:</Text>
-    <Text c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>
-      {value || "—"}
-    </Text>
-  </Group>
-);
-
 const validateField = (field, value) => {
   const { validation = {}, required = true } = field;
 
-  // checkbox: value puede ser boolean
   if (required) {
     if (typeof value === "boolean") {
       if (!value)
@@ -208,7 +185,6 @@ const Landing = () => {
   const [companyLookupLoading, setCompanyLookupLoading] = useState(false);
 
   const [photoUploadStatus, setPhotoUploadStatus] = useState("idle");
-  // "idle" | "ready" | "uploading" | "done" | "error"
   const [photoUploadError, setPhotoUploadError] = useState("");
 
   // Company logo state
@@ -240,8 +216,6 @@ const Landing = () => {
 
   const getValueForField = useCallback(
     (fieldName) => {
-      // tu código original usa startsWith("contacto") (sin punto),
-      // pero el resto del componente usa "contacto." → dejamos soportados ambos
       if (fieldName.startsWith("contacto.")) {
         return formValues.contacto?.[fieldName.split(".")[1]] || "";
       }
@@ -259,23 +233,19 @@ const Landing = () => {
     return map;
   }, [event?.config?.formFields]);
 
-  // Si estás usando stepper: config desde admin
   const registrationForm = event?.config?.registrationForm || null;
   const steps =
     registrationForm?.mode === "stepper" ? registrationForm.steps || [] : null;
 
-  // Campos que pertenecen al paso de empresa → se guardan en el doc de empresa
   const companyStepFields = useMemo(() => {
     const allSteps = registrationForm?.steps || [];
     const companyStep = allSteps.find((s) =>
       (s.fields || []).includes("company_nit"),
     );
     if (companyStep) return companyStep.fields || [];
-    // Fallback si no hay step con company_nit
     return ["company_nit", "company_razonSocial", "descripcion"];
   }, [registrationForm?.steps]);
 
-  // Evalúa visibilidad condicional de un campo (showWhen)
   const isFieldVisible = useCallback(
     (field) => {
       if (!field?.showWhen) return true;
@@ -292,7 +262,6 @@ const Landing = () => {
   const validateForm = useCallback(() => {
     const errors = {};
     (event?.config?.formFields || []).forEach((field) => {
-      // No validar campos ocultos por condición
       if (!isFieldVisible(field)) return;
 
       let value = getValueForField(field.name);
@@ -305,7 +274,6 @@ const Landing = () => {
       }
 
       const error = validateField(field, value);
-
       if (error) errors[field.name] = error;
     });
 
@@ -324,12 +292,10 @@ const Landing = () => {
       fieldNames.forEach((name) => {
         const def = fieldsByName.get(name);
         if (!def) return;
-        // No validar campos ocultos por condición
         if (!isFieldVisible(def)) return;
 
         let value = getValueForField(def.name);
 
-        // ✅ si el campo es foto, aceptar archivo seleccionado como "cumple"
         if (
           (def.name === "photoURL" || def.type === "photo") &&
           formValues._photoFile
@@ -338,11 +304,9 @@ const Landing = () => {
         }
 
         const err = validateField(def, value);
-
         if (err) errors[def.name] = err;
       });
 
-      // si es el último paso, exigir consentimiento
       const isLast = steps && activeStep === steps.length - 1;
       if (isLast && !formValues[CONSENTIMIENTO_FIELD_NAME]) {
         errors[CONSENTIMIENTO_FIELD_NAME] =
@@ -362,7 +326,6 @@ const Landing = () => {
     ],
   );
 
-  // Actualizar el editor cuando formValues.descripcion cambia
   useEffect(() => {
     if (editor && formValues.descripcion) {
       const currentText = stripHtmlTags(editor.getHTML());
@@ -400,13 +363,11 @@ const Landing = () => {
         setActiveStep(0);
         if (editor) editor.commands.setContent("");
       } else {
-        // Si hay sesión activa y está en el evento correcto, redirigir a dashboard
         navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
       }
     }
   }, [currentUser, eventId, logout, editor, navigate]);
 
-  // Prefill
   useEffect(() => {
     if (currentUser?.data) {
       setFormValues((prev) => ({
@@ -438,7 +399,6 @@ const Landing = () => {
     }
   }, []);
 
-  // ✅ lookup empresa por NIT usando docId = nitNorm
   const lookupCompanyByNit = useCallback(async () => {
     if (!eventId) return;
 
@@ -458,14 +418,12 @@ const Landing = () => {
             company_nit: nitNorm,
             companyId: companyRef.id,
           };
-          // Autocompletar campos del paso empresa desde el doc
           companyStepFields.forEach((fieldName) => {
             if (fieldName === "company_nit") return;
             if (data[fieldName] !== undefined && data[fieldName] !== null) {
               updated[fieldName] = data[fieldName];
             }
           });
-          // Compatibilidad: razonSocial se guarda como company_razonSocial en el form
           if (data.razonSocial && !updated.company_razonSocial) {
             updated.company_razonSocial = data.razonSocial;
           }
@@ -490,7 +448,6 @@ const Landing = () => {
     }
   }, [eventId, formValues.company_nit, companyStepFields]);
 
-  // Login
   const handleLogin = useCallback(async () => {
     setLoginError("");
     if (!isValidEmail(loginEmail)) {
@@ -501,7 +458,6 @@ const Landing = () => {
     try {
       const result = await loginByEmail(loginEmail.trim(), eventId);
       if (result?.success) {
-        // Redirigir automáticamente a dashboard sin mostrar resumen
         navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
       } else {
         setLoginError(
@@ -516,7 +472,6 @@ const Landing = () => {
     }
   }, [loginByEmail, loginEmail, eventId, navigate]);
 
-  // Submit
   const handleSubmit = useCallback(async () => {
     if (!validateForm()) return;
 
@@ -537,7 +492,6 @@ const Landing = () => {
         updatedAt: new Date().toISOString(),
       };
 
-      // Verificar duplicado correo por evento
       if (dataToUpdate.correo) {
         const usersRef = collection(db, "users");
         const q = query(usersRef, where("correo", "==", dataToUpdate.correo));
@@ -558,7 +512,6 @@ const Landing = () => {
         dataToUpdate.createdAt = new Date().toISOString();
       }
 
-      // Foto
       if (formValues._photoFile) {
         try {
           setPhotoUploadStatus("uploading");
@@ -579,7 +532,6 @@ const Landing = () => {
         }
       }
 
-      // ✅ Empresa: crear o enlazar — guarda todos los campos del paso empresa
       const nitNorm = normalizeNit(formValues.company_nit || "");
       const razon = String(formValues.company_razonSocial || "").trim();
 
@@ -587,7 +539,6 @@ const Landing = () => {
         const companyRef = doc(db, "events", eventId, "companies", nitNorm);
         const snap = await getDoc(companyRef);
 
-        // Recopilar valores de los campos del paso empresa
         const companyFieldData = {};
         companyStepFields.forEach((fieldName) => {
           if (fieldName === "company_nit") return;
@@ -596,7 +547,6 @@ const Landing = () => {
             companyFieldData[fieldName] = val;
           }
         });
-        // Compatibilidad: razonSocial como campo raíz del doc
         if (razon) companyFieldData.razonSocial = razon;
 
         if (!snap.exists()) {
@@ -616,7 +566,6 @@ const Landing = () => {
           );
         }
 
-        // Subir logo de empresa si se seleccionó uno
         if (companyLogoFile && eventId && nitNorm) {
           try {
             const logoUrl = await uploadCompanyLogo(
@@ -637,8 +586,6 @@ const Landing = () => {
         dataToUpdate.companyId = nitNorm;
         dataToUpdate.company_nit = nitNorm;
         dataToUpdate.company_razonSocial = razon || null;
-
-        // compatibilidad: tu directorio usa "empresa"
         if (razon) dataToUpdate.empresa = razon;
       }
 
@@ -660,19 +607,15 @@ const Landing = () => {
     companyLogoFile,
   ]);
 
-  // Render de campos (lista fija)
   const renderFieldsForNames = useCallback(
     (names = []) => {
       return names.map((name) => {
         const field = fieldsByName.get(name);
         if (!field) return null;
-
-        // Campo oculto por condición showWhen
         if (!isFieldVisible(field)) return null;
 
         const fieldError = formErrors[field.name];
 
-        // Photo
         if (field.name === "photoURL" || field.type === "photo") {
           return (
             <Box key={field.name}>
@@ -736,7 +679,6 @@ const Landing = () => {
           );
         }
 
-        // Richtext
         if (field.type === "richtext") {
           return (
             <Box key={field.name}>
@@ -753,7 +695,6 @@ const Landing = () => {
           );
         }
 
-        // Select
         if (field.type === "select") {
           return (
             <Select
@@ -775,7 +716,6 @@ const Landing = () => {
           );
         }
 
-        // MultiSelect (con opción "Otro, ¿Cuál?" si includeOtro)
         if (field.type === "multiselect") {
           const baseOptions = field.options || [];
           const msOptions = field.includeOtro
@@ -830,7 +770,6 @@ const Landing = () => {
           );
         }
 
-        // Checkbox (except consentimiento)
         if (
           field.type === "checkbox" &&
           field.name !== CONSENTIMIENTO_FIELD_NAME
@@ -851,7 +790,6 @@ const Landing = () => {
           );
         }
 
-        // Special: company_nit (normaliza y lookup)
         if (field.name === "company_nit") {
           return (
             <TextInput
@@ -874,7 +812,6 @@ const Landing = () => {
           );
         }
 
-        // Special: company_logo — file upload for company logo
         if (field.name === "company_logo" || field.type === "file") {
           return (
             <Box key={field.name}>
@@ -912,7 +849,6 @@ const Landing = () => {
           );
         }
 
-        // Default text
         return (
           <TextInput
             key={field.name}
@@ -948,7 +884,6 @@ const Landing = () => {
     ],
   );
 
-  // fallback (modo plano)
   const renderDynamicFormFields = useCallback(() => {
     if (!Array.isArray(event?.config?.formFields)) return null;
     return renderFieldsForNames(event.config.formFields.map((f) => f.name));
@@ -963,7 +898,6 @@ const Landing = () => {
     });
   }, [event.config?.primaryColor]);
 
-  // 🎨 estilos del layout (como la imagen)
   const bgStyle = useMemo(() => {
     const img =
       event.backgroundImage && String(event.backgroundImage).startsWith("http")
@@ -987,16 +921,6 @@ const Landing = () => {
       padding: isMobile ? 18 : 28,
     };
   }, [event.backgroundImage, event.backgroundMobileImage, isMobile]);
-
-  // const headerBg = useMemo(
-  //   () => ({
-  //     padding: isMobile ? 14 : 18,
-  //     background:
-  //       "radial-gradient(900px 280px at 18% 0%, rgba(34,197,94,0.25), transparent 60%), radial-gradient(900px 280px at 82% 0%, rgba(16,185,129,0.18), transparent 60%), rgba(16, 185, 129, 0.10)",
-  //     borderBottom: "1px solid rgba(0,0,0,0.06)",
-  //   }),
-  //   [isMobile],
-  // );
 
   if (userLoading) return <Loader />;
 
@@ -1025,23 +949,24 @@ const Landing = () => {
     );
   }
 
+  // ========= estilos reutilizables tabs =========
+  const tabBaseStyle = (active) => ({
+    borderRadius: 14,
+    height: 44,
+    fontWeight: 800,
+    letterSpacing: 0.2,
+    border: "1px solid rgba(0,0,0,0.12)",
+    background: active
+      ? "linear-gradient(180deg, rgba(16,185,129,1), rgba(5,150,105,1))"
+      : "rgba(255,255,255,0.85)",
+    color: active ? "white" : "rgba(0,0,0,0.78)",
+    boxShadow: active ? "0 12px 22px rgba(5,150,105,0.25)" : "none",
+  });
+
   return (
     <MantineProvider theme={eventTheme} inherit>
       <Box style={bgStyle}>
-        <Container size={isMobile ? "xs" : "sm"} px={0} w="100%">
-          {/* {(event.dashboardLogo || event.eventImage) && (
-            <Group justify="center">
-              <Image
-                src={event.dashboardLogo || event.eventImage}
-                alt={event.eventName || "Logo del evento"}
-                h={isMobile ? 90 : 200}
-                w="auto"
-                fit="contain"
-                style={{ filter: "drop-shadow(0 2px 8px rgba(0,0,0,0.25))" }}
-              />
-            </Group>
-          )} */}
-
+        <Container size={isMobile ? "xs" : "lg"} px={0} w="100%">
           <Paper
             radius="xl"
             shadow="xl"
@@ -1053,427 +978,725 @@ const Landing = () => {
               borderColor: "rgba(255,255,255,0.55)",
             }}
           >
-            {/* Body */}
-            <Box px={isMobile ? 18 : 22} py={isMobile ? 18 : 20}>
-              {/* Header banner (responsive) */}
-              <Box mb="lg" >
-                <Flex
-                  direction={isMobile ? "column" : "row"}
-                  align={isMobile ? "stretch" : "center"}
-                  justify="center"
-                  gap={isMobile ? "sm" : "md"}
-                >
-                  {/* QR */}
-                  {/* {event?.landingQR ? (
-                  <Paper
-                    radius="lg"
-                    withBorder
-                    p="sm"
-                    style={{
-                      background: "rgba(255,255,255,0.8)",
-                      width: isMobile ? "100%" : 220,
-                      maxWidth: isMobile ? 240 : 220,
-                      margin: isMobile ? "0 auto" : 0,
-                      flexShrink: 0,
-                    }}
-                  >
-                    <Stack gap={6} align="center">
-                      <Badge variant="light" radius="md">
-                        QR para acceder al evento
-                      </Badge>
-
-                      <Image
-                        src={event.landingQR}
-                        alt="QR del evento"
-                        fit="contain"
-                        style={{ width: "100%" }}
-                      />
-
-                      <Text size="xs" c="dimmed" ta="center">
-                        Escanéalo con tu cámara.
-                      </Text>
-                    </Stack>
-                  </Paper>
-                ) : null} */}
-
-                  {/* Banner / imagen del evento */}
-                  <Paper
-                    radius="xl"
-                    withBorder
-                    style={{
-                      overflow: "hidden",
-                      background: "rgba(255,255,255,0.72)",
-                      borderColor: "rgba(255,255,255,0.7)",
-                      flex: 1,
-                      minWidth: 0,
-                    }}
-                  >
-                    <Box>
-                      <img
-                        src={event.eventImage}
-                        alt="Encuentro"
+            <Box px={isMobile ? 18 : 28} py={isMobile ? 18 : 24}>
+              <Tabs
+                value={activeTab}
+                onChange={setActiveTab}
+                keepMounted={false}
+                variant="unstyled"
+              >
+                {/* ================= MOBILE (se mantiene) ================= */}
+                {isMobile ? (
+                  <Stack gap="md">
+                    {/* Imagen */}
+                    <Box mb="lg">
+                      <Paper
+                        radius="xl"
+                        withBorder
                         style={{
-                          width: "100%",
-                          objectFit: "cover",
-                          borderRadius: 14,
-                          display: "block",
+                          overflow: "hidden",
+                          background: "rgba(255,255,255,0.72)",
+                          borderColor: "rgba(255,255,255,0.7)",
                         }}
-                      />
+                      >
+                        <Box>
+                          <img
+                            src={event.eventImage}
+                            alt="Encuentro"
+                            style={{
+                              width: "100%",
+                              objectFit: "cover",
+                              borderRadius: 14,
+                              display: "block",
+                            }}
+                          />
+                        </Box>
+                      </Paper>
                     </Box>
-                  </Paper>
-                </Flex>
-              </Box>
-              
-              <Stack gap="md">
-                <Stack gap={4} ta="center">
-                  <Title order={2} style={{ lineHeight: 1.05 }}>
-                    {event.eventName || "Encuentro de afiliados"}
-                  </Title>
 
-                  {event?.config?.eventDate ? (
-                    <Text c="dimmed" size="sm">
-                      <Text span fw={700} c="dark">
-                        Fecha del evento:
-                      </Text>{" "}
-                      {formatDate(event?.config?.eventDate)}
-                    </Text>
-                  ) : null}
+                    {/* Info */}
+                    <Stack gap={4} ta="center">
+                      <Title order={2} style={{ lineHeight: 1.05 }}>
+                        {event.eventName || "Encuentro de afiliados"}
+                      </Title>
 
-                  <Group justify="center" gap="xs">
-                    {event?.config?.eventStartTime ? (
-                      <Badge variant="light" radius="md">
-                        Inicio: {formatTime(event?.config?.eventStartTime)}
-                      </Badge>
-                    ) : null}
-                    {event?.config?.eventEndTime ? (
-                      <Badge variant="light" radius="md">
-                        Fin: {formatTime(event?.config?.eventEndTime)}
-                      </Badge>
-                    ) : null}
-                  </Group>
-
-                  {event?.config?.eventLocation ? (
-                    <Text size="sm" c="dimmed">
-                      <Text span fw={700} c="dark">
-                        Lugar:
-                      </Text>{" "}
-                      {event.config.eventLocation}
-                    </Text>
-                  ) : null}
-                </Stack>
-
-                {/* {event?.landingQR ? (
-                  <Paper
-                    radius="lg"
-                    withBorder
-                    p="sm"
-                    style={{
-                      maxWidth: 220,
-                      margin: "0 auto",
-                      background: "rgba(255,255,255,0.8)",
-                    }}
-                  >
-                    <Image
-                      src={event.landingQR}
-                      alt="QR del evento"
-                      fit="contain"
-                      style={{ width: "100%" }}
-                    />
-                  </Paper>
-                ) : null} */}
-
-                {/* Tabs tipo botones grandes */}
-                <Tabs
-                  value={activeTab}
-                  onChange={setActiveTab}
-                  keepMounted={false}
-                  variant="unstyled"
-                >
-                  <Tabs.List grow style={{ gap: 12 }}>
-                    <Tabs.Tab
-                      value="login"
-                      style={{
-                        borderRadius: 14,
-                        height: 44,
-                        fontWeight: 800,
-                        letterSpacing: 0.2,
-                        border: "1px solid rgba(0,0,0,0.12)",
-                        background:
-                          activeTab === "login"
-                            ? "linear-gradient(180deg, rgba(16,185,129,1), rgba(5,150,105,1))"
-                            : "rgba(255,255,255,0.85)",
-                        color:
-                          activeTab === "login" ? "white" : "rgba(0,0,0,0.78)",
-                        boxShadow:
-                          activeTab === "login"
-                            ? "0 12px 22px rgba(5,150,105,0.25)"
-                            : "none",
-                      }}
-                    >
-                      INGRESAR
-                    </Tabs.Tab>
-
-                    <Tabs.Tab
-                      value="register"
-                      disabled={!registrationEnabled}
-                      style={{
-                        borderRadius: 14,
-                        height: 44,
-                        fontWeight: 800,
-                        letterSpacing: 0.2,
-                        border: "1px solid rgba(0,0,0,0.12)",
-                        background:
-                          activeTab === "register"
-                            ? "linear-gradient(180deg, rgba(16,185,129,1), rgba(5,150,105,1))"
-                            : "rgba(255,255,255,0.85)",
-                        color:
-                          activeTab === "register"
-                            ? "white"
-                            : "rgba(0,0,0,0.78)",
-                        boxShadow:
-                          activeTab === "register"
-                            ? "0 12px 22px rgba(5,150,105,0.25)"
-                            : "none",
-                        opacity: !registrationEnabled ? 0.5 : 1,
-                      }}
-                    >
-                      {currentUser?.data ? "ACTUALIZAR" : "REGISTRARSE"}
-                    </Tabs.Tab>
-                  </Tabs.List>
-
-                  {/* LOGIN */}
-                  <Tabs.Panel value="login" pt="md">
-                    <Stack gap="sm">
-                      <TextInput
-                        label="Correo electrónico"
-                        placeholder="tu@empresa.com"
-                        value={loginEmail}
-                        onChange={(e) => setLoginEmail(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-                        required
-                        radius="md"
-                        size="md"
-                      />
-
-                      {loginError ? (
-                        <Alert color="red" variant="light" radius="md">
-                          {loginError}
-                        </Alert>
+                      {event?.config?.eventDate ? (
+                        <Text c="dimmed" size="sm">
+                          <Text span fw={700} c="dark">
+                            Fecha del evento:
+                          </Text>{" "}
+                          {formatDate(event?.config?.eventDate)}
+                        </Text>
                       ) : null}
 
-                      <Button
-                        radius="md"
-                        size="md"
-                        loading={loginLoading}
-                        onClick={handleLogin}
-                        style={{ height: 44, fontWeight: 800 }}
+                      <Group justify="center" gap="xs">
+                        {event?.config?.eventStartTime ? (
+                          <Badge variant="light" radius="md">
+                            Inicio: {formatTime(event?.config?.eventStartTime)}
+                          </Badge>
+                        ) : null}
+                        {event?.config?.eventEndTime ? (
+                          <Badge variant="light" radius="md">
+                            Fin: {formatTime(event?.config?.eventEndTime)}
+                          </Badge>
+                        ) : null}
+                      </Group>
+
+                      {event?.config?.eventLocation ? (
+                        <Text size="sm" c="dimmed">
+                          <Text span fw={700} c="dark">
+                            Lugar:
+                          </Text>{" "}
+                          {event.config.eventLocation}
+                        </Text>
+                      ) : null}
+                    </Stack>
+
+                    {/* Tabs list */}
+                    <Tabs.List grow style={{ gap: 12 }}>
+                      <Tabs.Tab
+                        value="login"
+                        style={tabBaseStyle(activeTab === "login")}
                       >
                         INGRESAR
-                      </Button>
-                    </Stack>
-                  </Tabs.Panel>
+                      </Tabs.Tab>
+                      <Tabs.Tab
+                        value="register"
+                        disabled={!registrationEnabled}
+                        style={{
+                          ...tabBaseStyle(activeTab === "register"),
+                          opacity: !registrationEnabled ? 0.5 : 1,
+                        }}
+                      >
+                        {currentUser?.data ? "ACTUALIZAR" : "REGISTRARSE"}
+                      </Tabs.Tab>
+                    </Tabs.List>
 
-                  {/* REGISTER */}
-                  <Tabs.Panel value="register" pt="md">
-                    {!registrationEnabled ? (
-                      <Text ta="center" c="dimmed" mt="md">
-                        Los nuevos registros están inhabilitados para este
-                        evento.
-                      </Text>
-                    ) : (
-                      <Stack>
-                        <Text ta="center" c="dimmed">
-                          {currentUser?.data
-                            ? "Actualiza tu información antes de continuar."
-                            : "Completa el formulario para crear tu registro."}
+                    {/* Panels (mobile) */}
+                    <Tabs.Panel value="login" pt="md">
+                      <Stack gap="sm">
+                        <TextInput
+                          label="Correo electrónico"
+                          placeholder="tu@empresa.com"
+                          value={loginEmail}
+                          onChange={(e) => setLoginEmail(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                          required
+                          radius="md"
+                          size="md"
+                        />
+
+                        {loginError ? (
+                          <Alert color="red" variant="light" radius="md">
+                            {loginError}
+                          </Alert>
+                        ) : null}
+
+                        <Button
+                          radius="md"
+                          size="md"
+                          loading={loginLoading}
+                          onClick={handleLogin}
+                          style={{ height: 44, fontWeight: 800 }}
+                        >
+                          INGRESAR
+                        </Button>
+                      </Stack>
+                    </Tabs.Panel>
+
+                    <Tabs.Panel value="register" pt="md">
+                      {!registrationEnabled ? (
+                        <Text ta="center" c="dimmed" mt="md">
+                          Los nuevos registros están inhabilitados para este
+                          evento.
                         </Text>
+                      ) : (
+                        <Stack>
+                          <Text ta="center" c="dimmed">
+                            {currentUser?.data
+                              ? "Actualiza tu información antes de continuar."
+                              : "Completa el formulario para crear tu registro."}
+                          </Text>
 
-                        {steps ? (
-                          <>
-                            <Paper
-                              radius="lg"
-                              withBorder
-                              p="md"
-                              style={{ background: "rgba(255,255,255,0.75)" }}
-                            >
-                              <Stepper
-                                active={activeStep}
-                                onStepClick={setActiveStep}
-                                breakpoint="sm"
+                          {steps ? (
+                            <>
+                              <Paper
+                                radius="lg"
+                                withBorder
+                                p="md"
+                                style={{ background: "rgba(255,255,255,0.75)" }}
                               >
-                                {steps.map((s) => (
-                                  <Stepper.Step key={s.id} label={s.title} />
-                                ))}
-                              </Stepper>
-                            </Paper>
+                                <Stepper
+                                  active={activeStep}
+                                  onStepClick={setActiveStep}
+                                  breakpoint="sm"
+                                >
+                                  {steps.map((s) => (
+                                    <Stepper.Step key={s.id} label={s.title} />
+                                  ))}
+                                </Stepper>
+                              </Paper>
 
-                            <Paper
-                              radius="lg"
-                              withBorder
-                              p="md"
-                              style={{ background: "rgba(255,255,255,0.75)" }}
-                            >
-                              <Stack>
-                                {renderFieldsForNames(
-                                  steps[activeStep]?.fields || [],
-                                )}
-
-                                {activeStep === steps.length - 1 && (
-                                  <>
-                                    <Checkbox
-                                      label={
-                                        event.config?.tratamientoDatosText ||
-                                        "Al utilizar este aplicativo, autorizo a GEN.IALITY SAS identificada con NIT 901555490, ..."
-                                      }
-                                      checked={
-                                        !!formValues[CONSENTIMIENTO_FIELD_NAME]
-                                      }
-                                      onChange={(e) =>
-                                        handleDynamicChange(
-                                          CONSENTIMIENTO_FIELD_NAME,
-                                          e.currentTarget.checked,
-                                        )
-                                      }
-                                      required
-                                      mt="sm"
-                                    />
-                                    {formErrors[CONSENTIMIENTO_FIELD_NAME] ? (
-                                      <Text c="red" size="sm">
-                                        {formErrors[CONSENTIMIENTO_FIELD_NAME]}
-                                      </Text>
-                                    ) : null}
-                                  </>
-                                )}
-                              </Stack>
-                            </Paper>
-
-                            <Group
-                              justify="space-between"
-                              grow={isMobile}
-                              mt="sm"
-                            >
-                              <Button
-                                variant="default"
-                                radius="md"
-                                size="md"
-                                onClick={() =>
-                                  setActiveStep((s) => Math.max(0, s - 1))
-                                }
-                                disabled={activeStep === 0}
+                              <Paper
+                                radius="lg"
+                                withBorder
+                                p="md"
+                                style={{ background: "rgba(255,255,255,0.75)" }}
                               >
-                                Atrás
-                              </Button>
+                                <Stack>
+                                  {renderFieldsForNames(
+                                    steps[activeStep]?.fields || [],
+                                  )}
 
-                              {activeStep < steps.length - 1 ? (
+                                  {activeStep === steps.length - 1 && (
+                                    <>
+                                      <Checkbox
+                                        label={
+                                          event.config?.tratamientoDatosText ||
+                                          "Al utilizar este aplicativo, autorizo a GEN.IALITY SAS identificada con NIT 901555490, ..."
+                                        }
+                                        checked={
+                                          !!formValues[
+                                            CONSENTIMIENTO_FIELD_NAME
+                                          ]
+                                        }
+                                        onChange={(e) =>
+                                          handleDynamicChange(
+                                            CONSENTIMIENTO_FIELD_NAME,
+                                            e.currentTarget.checked,
+                                          )
+                                        }
+                                        required
+                                        mt="sm"
+                                      />
+                                      {formErrors[CONSENTIMIENTO_FIELD_NAME] ? (
+                                        <Text c="red" size="sm">
+                                          {
+                                            formErrors[
+                                              CONSENTIMIENTO_FIELD_NAME
+                                            ]
+                                          }
+                                        </Text>
+                                      ) : null}
+                                    </>
+                                  )}
+                                </Stack>
+                              </Paper>
+
+                              <Group justify="space-between" grow mt="sm">
                                 <Button
+                                  variant="default"
                                   radius="md"
                                   size="md"
-                                  onClick={() => {
-                                    const ok = validateStep(
-                                      steps[activeStep]?.fields || [],
-                                    );
-                                    if (!ok) return;
-                                    setActiveStep((s) =>
-                                      Math.min(steps.length - 1, s + 1),
-                                    );
-                                  }}
+                                  onClick={() =>
+                                    setActiveStep((s) => Math.max(0, s - 1))
+                                  }
+                                  disabled={activeStep === 0}
                                 >
-                                  Siguiente
+                                  Atrás
                                 </Button>
-                              ) : (
+
+                                {activeStep < steps.length - 1 ? (
+                                  <Button
+                                    radius="md"
+                                    size="md"
+                                    onClick={() => {
+                                      const ok = validateStep(
+                                        steps[activeStep]?.fields || [],
+                                      );
+                                      if (!ok) return;
+                                      setActiveStep((s) =>
+                                        Math.min(steps.length - 1, s + 1),
+                                      );
+                                    }}
+                                  >
+                                    Siguiente
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    radius="md"
+                                    size="md"
+                                    onClick={handleSubmit}
+                                    loading={
+                                      saving ||
+                                      photoUploadStatus === "uploading"
+                                    }
+                                    disabled={
+                                      saving ||
+                                      photoUploadStatus === "uploading"
+                                    }
+                                    style={{ fontWeight: 800, height: 44 }}
+                                  >
+                                    {currentUser?.data
+                                      ? "Guardar cambios"
+                                      : "Registrarme"}
+                                  </Button>
+                                )}
+                              </Group>
+                            </>
+                          ) : (
+                            <>
+                              <Paper
+                                radius="lg"
+                                withBorder
+                                p="md"
+                                style={{ background: "rgba(255,255,255,0.75)" }}
+                              >
+                                <Stack>
+                                  {renderDynamicFormFields()}
+
+                                  <Checkbox
+                                    label={
+                                      event.config?.tratamientoDatosText ||
+                                      "Al utilizar este aplicativo, autorizo a GEN.IALITY SAS identificada con NIT 901555490, ..."
+                                    }
+                                    checked={
+                                      !!formValues[CONSENTIMIENTO_FIELD_NAME]
+                                    }
+                                    onChange={(e) =>
+                                      handleDynamicChange(
+                                        CONSENTIMIENTO_FIELD_NAME,
+                                        e.currentTarget.checked,
+                                      )
+                                    }
+                                    required
+                                    mt="sm"
+                                  />
+                                  {formErrors[CONSENTIMIENTO_FIELD_NAME] ? (
+                                    <Text c="red" size="sm">
+                                      {formErrors[CONSENTIMIENTO_FIELD_NAME]}
+                                    </Text>
+                                  ) : null}
+                                </Stack>
+                              </Paper>
+
+                              <Group justify="space-between" grow mt="sm">
                                 <Button
                                   radius="md"
                                   size="md"
                                   onClick={handleSubmit}
-                                  loading={
-                                    saving || photoUploadStatus === "uploading"
-                                  }
-                                  disabled={
-                                    saving || photoUploadStatus === "uploading"
-                                  }
+                                  loading={saving}
                                   style={{ fontWeight: 800, height: 44 }}
                                 >
                                   {currentUser?.data
                                     ? "Guardar cambios"
                                     : "Registrarme"}
                                 </Button>
-                              )}
+                              </Group>
+                            </>
+                          )}
+                        </Stack>
+                      )}
+                    </Tabs.Panel>
+
+                    <Text
+                      ta="center"
+                      size="xs"
+                      style={{ maxWidth: 560, margin: "0 auto" }}
+                    >
+                      <strong>
+                        Plataforma de Networking y Reuniones de Negocio.
+                      </strong>{" "}
+                      Conecta con otras empresas y permite que te encuentren
+                      para agendar reuniones durante el evento. Ingresa con el
+                      correo registrado de la empresa o regístrate si es tu
+                      primera vez.
+                    </Text>
+
+                    <Divider my={6} />
+                  </Stack>
+                ) : (
+                  /* ================= DESKTOP (nuevo) ================= */
+                  <Stack gap="lg">
+                    {/* Fila 1: 2 columnas (Imagen + Info/Tabs) */}
+                    <Box
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1.25fr 1fr",
+                        gap: 18,
+                        alignItems: "stretch",
+                      }}
+                    >
+                      {/* Columna izquierda: banner/imagen */}
+                      <Paper
+                        radius="xl"
+                        withBorder
+                        style={{
+                          overflow: "hidden",
+                          background: "rgba(255,255,255,0.72)",
+                          borderColor: "rgba(255,255,255,0.7)",
+                          minHeight: 260,
+                        }}
+                      >
+                        <img
+                          src={event.eventImage}
+                          alt="Encuentro"
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                            display: "block",
+                          }}
+                        />
+                      </Paper>
+
+                      {/* Columna derecha: info + tabs */}
+                      <Paper
+                        radius="xl"
+                        withBorder
+                        p="lg"
+                        style={{
+                          background: "rgba(255,255,255,0.75)",
+                          borderColor: "rgba(255,255,255,0.7)",
+                          display: "flex",
+                          flexDirection: "column",
+                          justifyContent: "space-between",
+                          gap: 14,
+                        }}
+                      >
+                        <Stack
+                          gap={8}
+                          style={{
+                            textAlign: "center",
+                            height: "100%",
+                            minHeight: 260,
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <Title order={1} style={{ lineHeight: 1.05 }}>
+                            {event.eventName || "Encuentro de afiliados"}
+                          </Title>
+
+                          <Stack gap={4}>
+                            {event?.config?.eventDate ? (
+                              <Text c="dimmed" size="md">
+                                <Text span fw={700} c="dark">
+                                  Fecha del evento:
+                                </Text>{" "}
+                                {formatDate(event?.config?.eventDate)}
+                              </Text>
+                            ) : null}
+
+                            <Group gap="md" justify="center">
+                              {event?.config?.eventStartTime ? (
+                                <Badge variant="light" radius="md">
+                                  Inicio:{" "}
+                                  {formatTime(event?.config?.eventStartTime)}
+                                </Badge>
+                              ) : null}
+                              {event?.config?.eventEndTime ? (
+                                <Badge variant="light" radius="md">
+                                  Fin: {formatTime(event?.config?.eventEndTime)}
+                                </Badge>
+                              ) : null}
                             </Group>
-                          </>
+
+                            {event?.config?.eventLocation ? (
+                              <Text size="md" c="dimmed">
+                                <Text span fw={700} c="dark">
+                                  Lugar:
+                                </Text>{" "}
+                                {event.config.eventLocation}
+                              </Text>
+                            ) : null}
+                          </Stack>
+
+                          <Text size="md" c="dimmed">
+                            <strong>
+                              Plataforma de Networking y Reuniones de Negocio.
+                            </strong>{" "}
+                            Conecta con otras empresas y permite que te
+                            encuentren para agendar reuniones durante el evento.
+                          </Text>
+                        </Stack>
+                      </Paper>
+                    </Box>
+
+                    {/* Fila 2: 1 columna (contenido tabs + botones) */}
+                    <Paper
+                      radius="xl"
+                      withBorder
+                      p="lg"
+                      style={{
+                        background: "rgba(255,255,255,0.75)",
+                        borderColor: "rgba(255,255,255,0.7)",
+                      }}
+                    >
+                      <Tabs.List grow style={{ gap: 8, marginBottom: 18 }}>
+                        <Tabs.Tab
+                          value="login"
+                          style={tabBaseStyle(activeTab === "login")}
+                        >
+                          INGRESAR
+                        </Tabs.Tab>
+
+                        <Tabs.Tab
+                          value="register"
+                          disabled={!registrationEnabled}
+                          style={{
+                            ...tabBaseStyle(activeTab === "register"),
+                            opacity: !registrationEnabled ? 0.5 : 1,
+                          }}
+                        >
+                          {currentUser?.data ? "ACTUALIZAR" : "REGISTRARSE"}
+                        </Tabs.Tab>
+                      </Tabs.List>
+                      {/* LOGIN */}
+                      <Tabs.Panel value="login">
+                        <Box style={{ maxWidth: 520, margin: "0 auto" }}>
+                          <Stack gap="sm">
+                            <TextInput
+                              label="Correo electrónico"
+                              placeholder="tu@empresa.com"
+                              value={loginEmail}
+                              onChange={(e) => setLoginEmail(e.target.value)}
+                              onKeyDown={(e) =>
+                                e.key === "Enter" && handleLogin()
+                              }
+                              required
+                              radius="md"
+                              size="md"
+                            />
+
+                            {loginError ? (
+                              <Alert color="red" variant="light" radius="md">
+                                {loginError}
+                              </Alert>
+                            ) : null}
+
+                            <Button
+                              radius="md"
+                              size="md"
+                              loading={loginLoading}
+                              onClick={handleLogin}
+                              style={{ height: 44, fontWeight: 800 }}
+                              fullWidth
+                            >
+                              INGRESAR
+                            </Button>
+                          </Stack>
+                        </Box>
+                      </Tabs.Panel>
+
+                      {/* REGISTER */}
+                      <Tabs.Panel value="register">
+                        {!registrationEnabled ? (
+                          <Text ta="center" c="dimmed" mt="md">
+                            Los nuevos registros están inhabilitados para este
+                            evento.
+                          </Text>
                         ) : (
-                          <>
-                            <Paper
-                              radius="lg"
-                              withBorder
-                              p="md"
-                              style={{ background: "rgba(255,255,255,0.75)" }}
-                            >
-                              <Stack>
-                                {renderDynamicFormFields()}
-
-                                <Checkbox
-                                  label={
-                                    event.config?.tratamientoDatosText ||
-                                    "Al utilizar este aplicativo, autorizo a GEN.IALITY SAS identificada con NIT 901555490, ..."
-                                  }
-                                  checked={
-                                    !!formValues[CONSENTIMIENTO_FIELD_NAME]
-                                  }
-                                  onChange={(e) =>
-                                    handleDynamicChange(
-                                      CONSENTIMIENTO_FIELD_NAME,
-                                      e.currentTarget.checked,
-                                    )
-                                  }
-                                  required
-                                  mt="sm"
-                                />
-                                {formErrors[CONSENTIMIENTO_FIELD_NAME] ? (
-                                  <Text c="red" size="sm">
-                                    {formErrors[CONSENTIMIENTO_FIELD_NAME]}
-                                  </Text>
-                                ) : null}
-                              </Stack>
-                            </Paper>
-
-                            <Group
-                              justify="space-between"
-                              grow={isMobile}
-                              mt="sm"
-                            >
-                              <Button
-                                radius="md"
-                                size="md"
-                                onClick={handleSubmit}
-                                loading={saving}
-                                style={{ fontWeight: 800, height: 44 }}
-                              >
+                          <Box style={{ maxWidth: 860, margin: "0 auto" }}>
+                            <Stack>
+                              <Text ta="center" c="dimmed">
                                 {currentUser?.data
-                                  ? "Guardar cambios"
-                                  : "Registrarme"}
-                              </Button>
-                            </Group>
-                          </>
-                        )}
-                      </Stack>
-                    )}
-                  </Tabs.Panel>
-                </Tabs>
-                <Text
-                  ta="center"
-                  size={isMobile ? "xs" : "sm"}
-                  style={{ maxWidth: 560, margin: "0 auto" }}
-                >
-                  <strong>
-                    Plataforma de Networking y Reuniones de Negocio.
-                  </strong>{" "}
-                  Conecta con otras empresas y permite que te encuentren para
-                  agendar reuniones durante el evento. Ingresa con el correo
-                  registrado de la empresa o regístrate si es tu primera vez.
-                </Text>
+                                  ? "Actualiza tu información antes de continuar."
+                                  : "Completa el formulario para crear tu registro."}
+                              </Text>
 
-                <Divider my={6} />
-              </Stack>
+                              {steps ? (
+                                <>
+                                  <Paper
+                                    radius="lg"
+                                    withBorder
+                                    p="md"
+                                    style={{
+                                      background: "rgba(255,255,255,0.6)",
+                                    }}
+                                  >
+                                    <Stepper
+                                      active={activeStep}
+                                      onStepClick={setActiveStep}
+                                      breakpoint="sm"
+                                    >
+                                      {steps.map((s) => (
+                                        <Stepper.Step
+                                          key={s.id}
+                                          label={s.title}
+                                        />
+                                      ))}
+                                    </Stepper>
+                                  </Paper>
+
+                                  <Paper
+                                    radius="lg"
+                                    withBorder
+                                    p="md"
+                                    style={{
+                                      background: "rgba(255,255,255,0.6)",
+                                    }}
+                                  >
+                                    <Stack>
+                                      {renderFieldsForNames(
+                                        steps[activeStep]?.fields || [],
+                                      )}
+
+                                      {activeStep === steps.length - 1 && (
+                                        <>
+                                          <Checkbox
+                                            label={
+                                              event.config
+                                                ?.tratamientoDatosText ||
+                                              "Al utilizar este aplicativo, autorizo a GEN.IALITY SAS identificada con NIT 901555490, ..."
+                                            }
+                                            checked={
+                                              !!formValues[
+                                                CONSENTIMIENTO_FIELD_NAME
+                                              ]
+                                            }
+                                            onChange={(e) =>
+                                              handleDynamicChange(
+                                                CONSENTIMIENTO_FIELD_NAME,
+                                                e.currentTarget.checked,
+                                              )
+                                            }
+                                            required
+                                            mt="sm"
+                                          />
+                                          {formErrors[
+                                            CONSENTIMIENTO_FIELD_NAME
+                                          ] ? (
+                                            <Text c="red" size="sm">
+                                              {
+                                                formErrors[
+                                                  CONSENTIMIENTO_FIELD_NAME
+                                                ]
+                                              }
+                                            </Text>
+                                          ) : null}
+                                        </>
+                                      )}
+                                    </Stack>
+                                  </Paper>
+
+                                  <Group justify="space-between" mt="sm">
+                                    <Button
+                                      variant="default"
+                                      radius="md"
+                                      size="md"
+                                      onClick={() =>
+                                        setActiveStep((s) => Math.max(0, s - 1))
+                                      }
+                                      disabled={activeStep === 0}
+                                    >
+                                      Atrás
+                                    </Button>
+
+                                    {activeStep < steps.length - 1 ? (
+                                      <Button
+                                        radius="md"
+                                        size="md"
+                                        onClick={() => {
+                                          const ok = validateStep(
+                                            steps[activeStep]?.fields || [],
+                                          );
+                                          if (!ok) return;
+                                          setActiveStep((s) =>
+                                            Math.min(steps.length - 1, s + 1),
+                                          );
+                                        }}
+                                      >
+                                        Siguiente
+                                      </Button>
+                                    ) : (
+                                      <Button
+                                        radius="md"
+                                        size="md"
+                                        onClick={handleSubmit}
+                                        loading={
+                                          saving ||
+                                          photoUploadStatus === "uploading"
+                                        }
+                                        disabled={
+                                          saving ||
+                                          photoUploadStatus === "uploading"
+                                        }
+                                        style={{ fontWeight: 800, height: 44 }}
+                                      >
+                                        {currentUser?.data
+                                          ? "Guardar cambios"
+                                          : "Registrarme"}
+                                      </Button>
+                                    )}
+                                  </Group>
+                                </>
+                              ) : (
+                                <>
+                                  <Paper
+                                    radius="lg"
+                                    withBorder
+                                    p="md"
+                                    style={{
+                                      background: "rgba(255,255,255,0.6)",
+                                    }}
+                                  >
+                                    <Stack>
+                                      {renderDynamicFormFields()}
+
+                                      <Checkbox
+                                        label={
+                                          event.config?.tratamientoDatosText ||
+                                          "Al utilizar este aplicativo, autorizo a GEN.IALITY SAS identificada con NIT 901555490, ..."
+                                        }
+                                        checked={
+                                          !!formValues[
+                                            CONSENTIMIENTO_FIELD_NAME
+                                          ]
+                                        }
+                                        onChange={(e) =>
+                                          handleDynamicChange(
+                                            CONSENTIMIENTO_FIELD_NAME,
+                                            e.currentTarget.checked,
+                                          )
+                                        }
+                                        required
+                                        mt="sm"
+                                      />
+                                      {formErrors[CONSENTIMIENTO_FIELD_NAME] ? (
+                                        <Text c="red" size="sm">
+                                          {
+                                            formErrors[
+                                              CONSENTIMIENTO_FIELD_NAME
+                                            ]
+                                          }
+                                        </Text>
+                                      ) : null}
+                                    </Stack>
+                                  </Paper>
+
+                                  <Group justify="flex-end" mt="sm">
+                                    <Button
+                                      radius="md"
+                                      size="md"
+                                      onClick={handleSubmit}
+                                      loading={saving}
+                                      style={{ fontWeight: 800, height: 44 }}
+                                    >
+                                      {currentUser?.data
+                                        ? "Guardar cambios"
+                                        : "Registrarme"}
+                                    </Button>
+                                  </Group>
+                                </>
+                              )}
+                            </Stack>
+                          </Box>
+                        )}
+                      </Tabs.Panel>
+                    </Paper>
+
+                    <Divider my={2} />
+
+                    <Text ta="center" size="sm" c="dimmed">
+                      Ingresa con el correo registrado de la empresa o
+                      regístrate si es tu primera vez.
+                    </Text>
+                  </Stack>
+                )}
+              </Tabs>
             </Box>
           </Paper>
 
