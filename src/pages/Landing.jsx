@@ -1055,6 +1055,75 @@ const Landing = () => {
           >
             {/* Body */}
             <Box px={isMobile ? 18 : 22} py={isMobile ? 18 : 20}>
+              {/* Header banner (responsive) */}
+              <Box mb="lg" >
+                <Flex
+                  direction={isMobile ? "column" : "row"}
+                  align={isMobile ? "stretch" : "center"}
+                  justify="center"
+                  gap={isMobile ? "sm" : "md"}
+                >
+                  {/* QR */}
+                  {/* {event?.landingQR ? (
+                  <Paper
+                    radius="lg"
+                    withBorder
+                    p="sm"
+                    style={{
+                      background: "rgba(255,255,255,0.8)",
+                      width: isMobile ? "100%" : 220,
+                      maxWidth: isMobile ? 240 : 220,
+                      margin: isMobile ? "0 auto" : 0,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Stack gap={6} align="center">
+                      <Badge variant="light" radius="md">
+                        QR para acceder al evento
+                      </Badge>
+
+                      <Image
+                        src={event.landingQR}
+                        alt="QR del evento"
+                        fit="contain"
+                        style={{ width: "100%" }}
+                      />
+
+                      <Text size="xs" c="dimmed" ta="center">
+                        Escanéalo con tu cámara.
+                      </Text>
+                    </Stack>
+                  </Paper>
+                ) : null} */}
+
+                  {/* Banner / imagen del evento */}
+                  <Paper
+                    radius="xl"
+                    withBorder
+                    style={{
+                      overflow: "hidden",
+                      background: "rgba(255,255,255,0.72)",
+                      borderColor: "rgba(255,255,255,0.7)",
+                      flex: 1,
+                      minWidth: 0,
+                    }}
+                  >
+                    <Box>
+                      <img
+                        src={event.eventImage}
+                        alt="Encuentro"
+                        style={{
+                          width: "100%",
+                          objectFit: "cover",
+                          borderRadius: 14,
+                          display: "block",
+                        }}
+                      />
+                    </Box>
+                  </Paper>
+                </Flex>
+              </Box>
+              
               <Stack gap="md">
                 <Stack gap={4} ta="center">
                   <Title order={2} style={{ lineHeight: 1.05 }}>
@@ -1112,19 +1181,6 @@ const Landing = () => {
                     />
                   </Paper>
                 ) : null} */}
-
-                <Text
-                  ta="center"
-                  size={isMobile ? "sm" : "md"}
-                  style={{ maxWidth: 560, margin: "0 auto" }}
-                >
-                  <strong>
-                    Plataforma de Networking y Reuniones de Negocio.
-                  </strong>{" "}
-                  Conecta con otras empresas y permite que te encuentren para
-                  agendar reuniones durante el evento. Ingresa con el correo
-                  registrado de la empresa o regístrate si es tu primera vez.
-                </Text>
 
                 {/* Tabs tipo botones grandes */}
                 <Tabs
@@ -1403,78 +1459,21 @@ const Landing = () => {
                     )}
                   </Tabs.Panel>
                 </Tabs>
+                <Text
+                  ta="center"
+                  size={isMobile ? "xs" : "sm"}
+                  style={{ maxWidth: 560, margin: "0 auto" }}
+                >
+                  <strong>
+                    Plataforma de Networking y Reuniones de Negocio.
+                  </strong>{" "}
+                  Conecta con otras empresas y permite que te encuentren para
+                  agendar reuniones durante el evento. Ingresa con el correo
+                  registrado de la empresa o regístrate si es tu primera vez.
+                </Text>
 
                 <Divider my={6} />
               </Stack>
-            </Box>
-
-            {/* Header banner (responsive) */}
-            <Box style={headerBg}>
-              <Flex
-                direction={isMobile ? "column" : "row"}
-                align={isMobile ? "stretch" : "center"}
-                justify="center"
-                gap={isMobile ? "sm" : "md"}
-              >
-                {/* QR */}
-                {/* {event?.landingQR ? (
-                  <Paper
-                    radius="lg"
-                    withBorder
-                    p="sm"
-                    style={{
-                      background: "rgba(255,255,255,0.8)",
-                      width: isMobile ? "100%" : 220,
-                      maxWidth: isMobile ? 240 : 220,
-                      margin: isMobile ? "0 auto" : 0,
-                      flexShrink: 0,
-                    }}
-                  >
-                    <Stack gap={6} align="center">
-                      <Badge variant="light" radius="md">
-                        QR para acceder al evento
-                      </Badge>
-
-                      <Image
-                        src={event.landingQR}
-                        alt="QR del evento"
-                        fit="contain"
-                        style={{ width: "100%" }}
-                      />
-
-                      <Text size="xs" c="dimmed" ta="center">
-                        Escanéalo con tu cámara.
-                      </Text>
-                    </Stack>
-                  </Paper>
-                ) : null} */}
-
-                {/* Banner / imagen del evento */}
-                <Paper
-                  radius="xl"
-                  withBorder
-                  style={{
-                    overflow: "hidden",
-                    background: "rgba(255,255,255,0.72)",
-                    borderColor: "rgba(255,255,255,0.7)",
-                    flex: 1,
-                    minWidth: 0,
-                  }}
-                >
-                  <Box style={{ padding: isMobile ? 10 : 12 }}>
-                    <img
-                      src={event.eventImage}
-                      alt="Encuentro"
-                      style={{
-                        width: "100%",
-                        objectFit: "cover",
-                        borderRadius: 14,
-                        display: "block",
-                      }}
-                    />
-                  </Box>
-                </Paper>
-              </Flex>
             </Box>
           </Paper>
 
