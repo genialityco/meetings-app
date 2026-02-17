@@ -982,21 +982,21 @@ const Landing = () => {
       backgroundSize: "cover",
       backgroundRepeat: "no-repeat",
       display: "flex",
-      alignItems: "center",
+      alignItems: "flex-start",
       justifyContent: "center",
       padding: isMobile ? 18 : 28,
     };
   }, [event.backgroundImage, event.backgroundMobileImage, isMobile]);
 
-  const headerBg = useMemo(
-    () => ({
-      padding: isMobile ? 14 : 18,
-      background:
-        "radial-gradient(900px 280px at 18% 0%, rgba(34,197,94,0.25), transparent 60%), radial-gradient(900px 280px at 82% 0%, rgba(16,185,129,0.18), transparent 60%), rgba(16, 185, 129, 0.10)",
-      borderBottom: "1px solid rgba(0,0,0,0.06)",
-    }),
-    [isMobile],
-  );
+  // const headerBg = useMemo(
+  //   () => ({
+  //     padding: isMobile ? 14 : 18,
+  //     background:
+  //       "radial-gradient(900px 280px at 18% 0%, rgba(34,197,94,0.25), transparent 60%), radial-gradient(900px 280px at 82% 0%, rgba(16,185,129,0.18), transparent 60%), rgba(16, 185, 129, 0.10)",
+  //     borderBottom: "1px solid rgba(0,0,0,0.06)",
+  //   }),
+  //   [isMobile],
+  // );
 
   if (userLoading) return <Loader />;
 
@@ -1029,7 +1029,7 @@ const Landing = () => {
     <MantineProvider theme={eventTheme} inherit>
       <Box style={bgStyle}>
         <Container size={isMobile ? "xs" : "sm"} px={0} w="100%">
-          {(event.dashboardLogo || event.eventImage) && (
+          {/* {(event.dashboardLogo || event.eventImage) && (
             <Group justify="center">
               <Image
                 src={event.dashboardLogo || event.eventImage}
@@ -1040,7 +1040,7 @@ const Landing = () => {
                 style={{ filter: "drop-shadow(0 2px 8px rgba(0,0,0,0.25))" }}
               />
             </Group>
-          )}
+          )} */}
 
           <Paper
             radius="xl"
