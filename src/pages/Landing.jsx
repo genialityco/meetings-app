@@ -1048,7 +1048,7 @@ const Landing = () => {
             withBorder
             style={{
               overflow: "hidden",
-              background: "rgba(255,255,255,0.92)",
+              background: "rgba(255, 255, 255, 0.82)",
               backdropFilter: "blur(10px)",
               borderColor: "rgba(255,255,255,0.55)",
             }}
