@@ -166,7 +166,7 @@ const Landing = () => {
   const [registrationEnabled, setRegistrationEnabled] = useState(true);
 
   // UI state
-  const [activeTab, setActiveTab] = useState("login"); // 'login' | 'register'
+  const [activeTab, setActiveTab] = useState("register"); // 'login' | 'register'
   const isMobile = useMediaQuery("(max-width: 600px)");
 
   // Login state
@@ -1408,8 +1408,10 @@ const Landing = () => {
                             <strong>
                               Plataforma de Networking y Reuniones de Negocio.
                             </strong>{" "}
-                            Conecta con otras empresas y permite que te
-                            encuentren para agendar reuniones durante el evento.
+                            Si ya estás registrado, haz clic en Ingresar con tu
+                            correo electrónico. Si aún no estás registrado y
+                            deseas participar como comprador o vendedor, haz
+                            clic en Registrarse.
                           </Text>
                         </Stack>
                       </Paper>
