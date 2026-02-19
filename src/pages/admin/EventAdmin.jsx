@@ -547,7 +547,41 @@ const EventAdmin = () => {
         </Group>
       </Card>
 
-      {/* Resumen */}
+      {/* Resumen de Asistentes */}
+      <Card withBorder shadow="sm" radius="md" p="lg" mt="md">
+        <Group justify="space-between" mb="xs" wrap="wrap">
+          <Title order={5}>Resumen de Asistentes</Title>
+        </Group>
+
+        <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+          <Card withBorder radius="md" p="md">
+            <Text c="dimmed" size="sm">
+              Total Asistentes
+            </Text>
+            <Title order={3}>{attendees.length}</Title>
+          </Card>
+
+          <Card withBorder radius="md" p="md">
+            <Text c="dimmed" size="sm">
+              Vendedores
+            </Text>
+            <Title order={3}>
+              {attendees.filter((a) => a.tipoAsistente.toLowerCase() === "vendedor").length}
+            </Title>
+          </Card>
+
+          <Card withBorder radius="md" p="md">
+            <Text c="dimmed" size="sm">
+              Compradores
+            </Text>
+            <Title order={3}>
+              {attendees.filter((a) => a.tipoAsistente.toLowerCase() === "comprador").length}
+            </Title>
+          </Card>
+        </SimpleGrid>
+      </Card>
+
+      {/* Resumen de Reuniones */}
       <Card withBorder shadow="sm" radius="md" p="lg" mt="md">
         <Group justify="space-between" mb="xs" wrap="wrap">
           <Title order={5}>Resumen de Reuniones</Title>
