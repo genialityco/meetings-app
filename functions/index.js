@@ -118,10 +118,193 @@ Por favor diríjase a su mesa asignada (${meeting.tableAssigned}).`;
     }
   }
 );
+// HTTP AI proxy mejorado: recibe { userId, eventId, message }
+// HTTP AI proxy mejorado: recibe { userId, eventId, message }
+// HTTP AI proxy mejorado: recibe { userId, eventId, message }
+// HTTP AI proxy mejorado: recibe { userId, eventId, message }
+// ============================================================================
+// FUNCIÓN MODIFICADA CON BÚSQUEDA POR EMBEDDINGS
 
-// HTTP AI proxy: recibe { userId, eventId, message }
+/**
+ * NUEVA FUNCIÓN: Genera embedding del texto usando Gemini
+ */
+async function generateEmbedding(text) {
+  try {
+    // Usando la API de embeddings de Gemini
+    const model = "gemini-embedding-001"; // Modelo actualizado
+    const apiUrl = GEMINI_API_URL.value();
+    const apiKey = GEMINI_API_KEY.value();
+    
+    const response = await fetch(
+      `${apiUrl}/models/${model}:embedContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          content: {
+            parts: [{ text }],
+          },
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Embedding API error:", errorText);
+      throw new Error(`Embedding API failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (!data.embedding || !data.embedding.values) {
+      console.error("Invalid embedding response:", data);
+      throw new Error("No embedding returned from API");
+    }
+    
+    return data.embedding.values; // Array de números (vector)
+  } catch (err) {
+    console.error("Error generating embedding:", err);
+    throw err;
+  }
+}
+
+/**
+ * NUEVA FUNCIÓN: Calcula similitud coseno entre dos vectores
+ */
+function cosineSimilarity(vecA, vecB) {
+  if (vecA.length !== vecB.length) {
+    throw new Error("Vectors must have same length");
+  }
+
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+
+  for (let i = 0; i < vecA.length; i++) {
+    dotProduct += vecA[i] * vecB[i];
+    normA += vecA[i] * vecA[i];
+    normB += vecB[i] * vecB[i];
+  }
+
+  normA = Math.sqrt(normA);
+  normB = Math.sqrt(normB);
+
+  if (normA === 0 || normB === 0) return 0;
+
+  return dotProduct / (normA * normB);
+}
+
+/**
+ * NUEVA FUNCIÓN: Búsqueda por similitud de vectores
+ * @param {Array} queryVector - Vector del query del usuario
+ * @param {Array} documents - Array de documentos con campo 'vector'
+ * @param {number} topK - Número de resultados a retornar
+ * @param {number} threshold - Umbral mínimo de similitud (0-1)
+ */
+function searchByVectorSimilarity(queryVector, documents, topK = 10, threshold = 0.65) {
+  const results = documents
+    .filter(doc => doc.vector && Array.isArray(doc.vector))
+    .map(doc => {
+      const similarity = cosineSimilarity(queryVector, doc.vector);
+      return {
+        ...doc,
+        similarity,
+      };
+    })
+    .filter(doc => doc.similarity >= threshold)
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, topK);
+
+  console.log(`Vector search: ${documents.length} docs, ${results.length} above threshold ${threshold}`);
+  if (results.length > 0) {
+    console.log(`Top result similarity: ${results[0].similarity.toFixed(3)}, Lowest: ${results[results.length - 1].similarity.toFixed(3)}`);
+  }
+  return results;
+}
+
+/**
+ * NUEVA FUNCIÓN: Combina búsqueda por keywords Y vectores
+ * Útil para hacer búsquedas híbridas que aprovechan ambos métodos
+ */
+function hybridSearch(queryVector, documents, keywords, topK = 10) {
+  // Primero obtener resultados por vector con threshold más alto
+  const vectorResults = searchByVectorSimilarity(queryVector, documents, topK * 2, 0.65);
+  
+  console.log(`Hybrid search: ${vectorResults.length} vector results, keywords: ${keywords.join(', ')}`);
+  
+  // Aplicar boost por keywords
+  const scoredResults = vectorResults.map(doc => {
+    let keywordScore = 0;
+    let keywordMatches = [];
+    
+    const searchableText = [
+      doc.nombre,
+      doc.empresa,
+      doc.company_razonSocial,
+      doc.descripcion,
+      doc.interesPrincipal,
+      doc.necesidad,
+      doc.title,
+      doc.description,
+      doc.category,
+      doc.razonSocial,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    keywords.forEach(kw => {
+      const kwLower = kw.toLowerCase();
+      if (searchableText.includes(kwLower)) {
+        keywordScore += 0.2; // Boost de 0.2 por cada keyword
+        keywordMatches.push(kw);
+      }
+    });
+
+    const hybridScore = doc.similarity + keywordScore;
+    
+    if (keywordScore > 0) {
+      console.log(`Doc ${doc.id || doc.nombre || doc.title}: similarity=${doc.similarity.toFixed(3)}, keywordBoost=${keywordScore.toFixed(3)} (${keywordMatches.join(', ')}), hybrid=${hybridScore.toFixed(3)}`);
+    }
+
+    return {
+      ...doc,
+      hybridScore,
+      keywordMatches: keywordMatches.length,
+    };
+  });
+
+  // Filtrar resultados que tengan buena similitud O keywords
+  // Esto asegura que solo devolvemos resultados relevantes
+  const filteredResults = scoredResults.filter(doc => {
+    // Si tiene alta similitud de vector (>0.4), incluirlo
+    if (doc.similarity >= 0.4) return true;
+    
+    // Si tiene similitud media (>0.3) Y al menos una keyword, incluirlo
+    if (doc.similarity >= 0.3 && doc.keywordMatches > 0) return true;
+    
+    // Si tiene múltiples keywords (>1), incluirlo aunque la similitud sea menor
+    if (doc.keywordMatches > 1) return true;
+    
+    return false;
+  });
+
+  const finalResults = filteredResults
+    .sort((a, b) => b.hybridScore - a.hybridScore)
+    .slice(0, topK);
+    
+  console.log(`Hybrid search final: ${finalResults.length} results (filtered from ${scoredResults.length})`);
+  return finalResults;
+}
+
 export const aiProxy = onRequest(
-  { region: "us-central1", memory: "512MiB", secrets: [GEMINI_API_KEY, GEMINI_API_URL, DEFAULT_AI_MODEL], },
+  { 
+    region: "us-central1", 
+    memory: "512MiB", 
+    secrets: ["GEMINI_API_KEY", "GEMINI_API_URL", "DEFAULT_AI_MODEL"],
+  },
   async (req, res) => {
     // Set CORS headers for preflight requests and responses
     const origin = req.headers.origin || "*";
@@ -148,7 +331,6 @@ export const aiProxy = onRequest(
       const userId = body.userId;
       let eventId = body.eventId || null;
       const message = body.message;
-      // optional profile fields sent from frontend
       const descripcion = body.descripcion || null;
       const necesidad = body.necesidad || null;
       const interesPrincipal = body.interesPrincipal || null;
@@ -162,8 +344,9 @@ export const aiProxy = onRequest(
       
       console.log(`AI Proxy request from user ${userId} (event: ${eventId || "N/A"}), message length: ${String(message).length}`);
       
-      // If eventId not provided, try to derive it from the user's document
       const db = getFirestore();
+      
+      // Derivar eventId si es necesario
       if (!eventId) {
         try {
           const userDoc = await db.collection("users").doc(userId).get();
@@ -195,17 +378,18 @@ Analiza el mensaje del usuario y clasifica su intención en una de estas categor
 3. "greeting": Saludo, conversación casual o mensaje sin intención clara
 4. "meeting_related": Consultas sobre reuniones (programadas, disponibilidad, solicitudes)
 
-Considera que búsquedas pueden incluir:
-- Buscar personas por empresa, sector, necesidades
-- Buscar productos o servicios específicos
-- Buscar empresas por tipo, sector, ubicación
-- Consultar reuniones programadas o disponibles
+IMPORTANTE para keywords:
+- Extrae SOLO las palabras clave más relevantes y específicas del mensaje
+- Para búsquedas de productos, incluye el nombre exacto del producto y términos relacionados
+- Evita palabras genéricas como "busco", "necesito", "quiero"
+- Incluye sinónimos y términos relacionados cuando sea relevante
+- Ejemplo: "busco sillas de oficina" → keywords: ["sillas", "silla", "oficina", "mobiliario", "muebles"]
 
 Devuelve ÚNICAMENTE un objeto JSON con esta estructura:
 {
   "intent": "search_query | general_question | greeting | meeting_related",
   "confidence": 0.0-1.0,
-  "keywords": ["palabra1", "palabra2"],
+  "keywords": ["palabra1", "palabra2", "sinonimo1"],
   "scopes": ["assistants", "products", "companies", "meetings"],
   "reasoning": "breve explicación de por qué clasificaste así"
 }
@@ -219,7 +403,6 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
         console.log("Intent analysis:", intentAnalysis);
       } catch (err) {
         console.error("Intent classification failed:", err);
-        // Fallback conservador: asumir búsqueda
         intentAnalysis = {
           intent: "search_query",
           confidence: 0.5,
@@ -262,7 +445,7 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
         return;
       }
 
-      // Caso 2: Pregunta general (no requiere búsqueda en DB)
+      // Caso 2: Pregunta general
       if (intentAnalysis.intent === "general_question") {
         const generalResponse = await handleGeneralQuestion(message, profileText);
         const chatRef = db.collection("aiChats").doc();
@@ -293,7 +476,7 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
       }
 
       // ========================================================================
-      // PASO 3: Búsqueda en base de datos (search_query o meeting_related)
+      // PASO 3: BÚSQUEDA POR EMBEDDINGS Y KEYWORDS (HÍBRIDA)
       // ========================================================================
 
       // Refinar keywords SIN incluir perfil del usuario (evita contaminar resultados)
@@ -301,13 +484,15 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
         intentAnalysis.keywords || [],
         [] // no mezclar perfil — el perfil se usa solo en el ranking AI (paso 4)
       );
+      
       // Fallback: si AI no extrajo keywords útiles, usar palabras del mensaje original
       if (keywords.length === 0) {
         keywords = extractSimpleKeywords(message);
         console.log("Fallback to simple keywords from message:", keywords);
       }
-      const scopes = intentAnalysis.scopes && intentAnalysis.scopes.length > 0
-        ? intentAnalysis.scopes
+      
+      const scopes = intentAnalysis.scopes && intentAnalysis.scopes.length > 0 
+        ? intentAnalysis.scopes 
         : ["assistants", "products", "companies"];
 
       console.log("Refined search - scopes:", scopes, "keywords:", keywords);
@@ -329,31 +514,42 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
       }
       console.log("Event policies:", eventPolicies.roleMode, eventPolicies.discoveryMode);
 
+      // *** GENERAR EMBEDDING DEL MENSAJE DEL USUARIO ***
+      let queryVector = null;
+      try {
+        // Combinar mensaje con perfil para mejor contexto en el embedding
+        const searchContext = `${message}${profileText}`;
+        queryVector = await generateEmbedding(searchContext);
+        console.log("Query vector generated, dimension:", queryVector.length);
+      } catch (embErr) {
+        console.warn("Failed to generate embedding, falling back to keyword search:", embErr);
+        // Continuar sin vector (fallback a búsqueda por keywords)
+      }
+
       // Lógica de inversión de tipo: solo si roleMode=buyer_seller o discoveryMode=by_role
       const userTipo = tipoAsistente ? String(tipoAsistente).toLowerCase() : null;
       let desiredOpposite = null;
       const shouldFilterByRole =
         eventPolicies.roleMode === "buyer_seller" || eventPolicies.discoveryMode === "by_role";
+      
       if (shouldFilterByRole && userTipo) {
         if (userTipo === "vendedor") desiredOpposite = "comprador";
         else if (userTipo === "comprador") desiredOpposite = "vendedor";
       }
 
-      const results = {
-        assistants: [],
-        products: [],
-        companies: [],
-        meetings: []
+      const results = { 
+        assistants: [], 
+        products: [], 
+        companies: [], 
+        meetings: [] 
       };
 
       // Helper para matching (normaliza acentos para match consistente)
       const normalizeForMatch = (s) =>
         String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-
+      
       const matchesAny = (obj, fields) => {
-        const text = fields
-          .map((f) => normalizeForMatch(obj[f]))
-          .join(" ");
+        const text = fields.map((f) => normalizeForMatch(obj[f])).join(" ");
         return keywords.some((kw) => text.includes(kw));
       };
 
@@ -366,34 +562,45 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
           allEventUsers = usersSnap.docs
             .filter((d) => d.id !== userId)
             .map((d) => ({ id: d.id, ...d.data() }));
+          console.log(`Preloaded ${allEventUsers.length} event users`);
         } catch (err) {
           console.warn("Users preload failed", err);
         }
       }
 
-      // Buscar Asistentes (usando datos precargados)
+      // *** BUSCAR ASISTENTES CON VECTOR SIMILARITY O KEYWORDS ***
       if (scopes.includes("assistants")) {
-        for (const o of allEventUsers) {
-          // Filtrar por tipo opuesto si aplica
-          if (desiredOpposite) {
-            const otherType = (o.tipoAsistente || "").toString().toLowerCase();
-            if (otherType !== desiredOpposite) continue;
-          }
+        // Filtrar por tipo opuesto si aplica
+        let filteredUsers = allEventUsers;
+        if (desiredOpposite) {
+          filteredUsers = allEventUsers.filter(u => {
+            const otherType = (u.tipoAsistente || "").toString().toLowerCase();
+            return otherType === desiredOpposite;
+          });
+          console.log(`Filtered users by role: ${filteredUsers.length} (looking for ${desiredOpposite})`);
+        }
 
-          if (matchesAny(o, [
-            "nombre",
-            "empresa",
-            "company_razonSocial",
-            "descripcion",
-            "interesPrincipal",
-            "necesidad",
-          ])) {
-            results.assistants.push(o);
-          }
+        // Usar búsqueda híbrida si hay vector, sino keywords
+        if (queryVector) {
+          results.assistants = hybridSearch(queryVector, filteredUsers, keywords, 20);
+          console.log(`Found ${results.assistants.length} assistants via hybrid search`);
+        } else {
+          // Fallback a búsqueda por keywords
+          results.assistants = filteredUsers.filter(u =>
+            matchesAny(u, [
+              "nombre",
+              "empresa",
+              "company_razonSocial",
+              "descripcion",
+              "interesPrincipal",
+              "necesidad",
+            ])
+          );
+          console.log(`Found ${results.assistants.length} assistants via keyword search`);
         }
       }
 
-      // Buscar Productos
+      // *** BUSCAR PRODUCTOS CON VECTOR SIMILARITY O KEYWORDS ***
       if (scopes.includes("products")) {
         try {
           if (eventId) {
@@ -402,19 +609,34 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
               .collection("products")
               .get();
             
-            productsSnap.forEach((d) => {
-              const o = d.data();
-              if (matchesAny(o, ["title", "description", "category"])) {
-                results.products.push({ id: d.id, ...o });
-              }
-            });
+            // Filtrar productos que no pertenezcan al usuario actual
+            const allProducts = productsSnap.docs
+              .map(d => ({ 
+                id: d.id, 
+                ...d.data() 
+              }))
+              .filter(p => p.ownerUserId !== userId); // Excluir productos propios
+
+            console.log(`Products: ${productsSnap.docs.length} total, ${allProducts.length} after filtering own products`);
+
+            if (queryVector) {
+              results.products = hybridSearch(queryVector, allProducts, keywords, 20);
+              console.log(`Found ${results.products.length} products via hybrid search`);
+            } else {
+              // Fallback a keywords
+              results.products = allProducts.filter(p =>
+                matchesAny(p, ["title", "description", "category"])
+              );
+              console.log(`Found ${results.products.length} products via keyword search`);
+            }
           }
         } catch (err) {
           console.warn("Products query failed", err);
         }
       }
 
-      // Buscar Empresas (reutiliza allEventUsers para evitar N+1 queries)
+      // *** BUSCAR EMPRESAS CON VECTOR SIMILARITY O KEYWORDS ***
+      // Reutiliza allEventUsers para evitar N+1 queries
       if (scopes.includes("companies")) {
         try {
           if (eventId) {
@@ -435,19 +657,31 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
             }
 
             if (companiesSnap) {
+              const allCompanies = [];
+              
               for (const d of companiesSnap.docs) {
-                const o = d.data();
-                if (matchesAny(o, ["razonSocial", "descripcion"])) {
-                  // Reutilizar allEventUsers en vez de query por empresa
-                  const companyAssistants = o.nitNorm
-                    ? allEventUsers.filter((u) => u.company_nit === o.nitNorm)
-                    : [];
-                  results.companies.push({
-                    id: d.id,
-                    ...o,
-                    assistants: companyAssistants
-                  });
-                }
+                const companyData = { id: d.id, ...d.data() };
+                
+                // Reutilizar allEventUsers en vez de query por empresa (optimización)
+                const companyAssistants = companyData.nitNorm
+                  ? allEventUsers.filter((u) => u.company_nit === companyData.nitNorm)
+                  : [];
+                
+                companyData.assistants = companyAssistants;
+                allCompanies.push(companyData);
+              }
+
+              console.log(`Loaded ${allCompanies.length} companies`);
+
+              if (queryVector) {
+                results.companies = hybridSearch(queryVector, allCompanies, keywords, 15);
+                console.log(`Found ${results.companies.length} companies via hybrid search`);
+              } else {
+                // Fallback a keywords
+                results.companies = allCompanies.filter(c =>
+                  matchesAny(c, ["razonSocial", "descripcion"])
+                );
+                console.log(`Found ${results.companies.length} companies via keyword search`);
               }
             }
           }
@@ -456,11 +690,10 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
         }
       }
 
-      // Buscar Reuniones (si el scope lo incluye)
+      // *** BUSCAR REUNIONES (sin cambios, no usa embeddings) ***
       if (scopes.includes("meetings")) {
         try {
           if (eventId) {
-            // Buscar reuniones donde el usuario es participante
             const meetingsSnap = await db.collection("events")
               .doc(eventId)
               .collection("meetings")
@@ -470,16 +703,14 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
 
             if (meetingsSnap) {
               console.log(`Found ${meetingsSnap.docs.length} meetings for user ${userId}`);
-              // Procesar cada reunión y obtener info de la contraparte
+              
               for (const d of meetingsSnap.docs) {
                 const meetingData = d.data();
                 
-                // Determinar quién es la contraparte
                 const counterpartId = meetingData.requesterId === userId 
                   ? meetingData.receiverId 
                   : meetingData.requesterId;
 
-                // Buscar información de la contraparte
                 let counterpartInfo = null;
                 if (counterpartId) {
                   try {
@@ -500,7 +731,6 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
                   }
                 }
 
-                // Construir objeto de reunión enriquecido
                 const enrichedMeeting = {
                   id: d.id,
                   status: meetingData.status,
@@ -513,7 +743,6 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
                   isRequester: meetingData.requesterId === userId,
                 };
 
-                // Agregar campos específicos para reuniones aceptadas
                 if (meetingData.status === "accepted") {
                   enrichedMeeting.meetingDate = meetingData.meetingDate || null;
                   enrichedMeeting.timeSlot = meetingData.timeSlot || null;
@@ -523,7 +752,6 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
                   enrichedMeeting.slotId = meetingData.slotId || null;
                 }
 
-                // Aplicar filtro de keywords si existen Y no son relacionadas con reuniones
                 const meetingRelatedKeywords = [
                   'reunion', 'reuniones', 'meeting', 'meetings', 
                   'pendiente', 'pendientes', 'pending',
@@ -536,11 +764,9 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
                   meetingRelatedKeywords.some(mk => kw.includes(mk) || mk.includes(kw))
                 );
 
-                // Si hay keywords relacionadas con reuniones, incluir TODAS las reuniones del usuario
                 if (hasMeetingKeyword || keywords.length === 0) {
                   results.meetings.push(enrichedMeeting);
                 } else if (keywords.length > 0) {
-                  // Si hay keywords pero NO son de reuniones, filtrar por coincidencia
                   const meetingText = [
                     meetingData.status,
                     counterpartInfo?.nombre,
@@ -575,7 +801,6 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
                           results.companies.length + results.meetings.length;
 
       if (totalResults > 0) {
-        // Generar análisis de compatibilidad
         const analysisResult = await analyzeResultsWithAI(
           message,
           results,
@@ -587,7 +812,6 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
         rankedResults = analysisResult.rankedResults;
         aiAnalysisMessage = analysisResult.message;
       } else {
-        // No hay resultados - sugerir alternativas
         aiAnalysisMessage = await generateNoResultsMessage(message, keywords, scopes);
       }
 
@@ -617,6 +841,11 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
         isGreeting: false,
         createdAt: new Date().toISOString(),
         intentAnalysis,
+        // Agregar métricas de búsqueda por embeddings
+        searchMetrics: {
+          usedEmbeddings: queryVector !== null,
+          vectorDimension: queryVector ? queryVector.length : null,
+        },
       });
 
       res.status(200).send({ 
@@ -758,7 +987,6 @@ Responde de forma clara, concisa y profesional (máximo 5-6 líneas):`;
 async function analyzeResultsWithAI(message, results, profileText, keywords) {
   // Preparar datos resumidos para el análisis
   const assistantsSummary = results.assistants.slice(0, 20).map(a => ({
-    id: a.id,
     nombre: a.nombre,
     empresa: a.empresa || a.company_razonSocial,
     descripcion: a.descripcion,
@@ -768,21 +996,18 @@ async function analyzeResultsWithAI(message, results, profileText, keywords) {
   }));
 
   const productsSummary = results.products.slice(0, 20).map(p => ({
-    id: p.id,
     title: p.title,
     description: p.description,
     category: p.category,
   }));
 
   const companiesSummary = results.companies.slice(0, 20).map(c => ({
-    id: c.id,
     razonSocial: c.razonSocial,
     descripcion: c.descripcion,
     assistantsCount: c.assistants?.length || 0,
   }));
 
   const meetingsSummary = results.meetings.slice(0, 10).map(m => ({
-    id: m.id,
     status: m.status,
     isRequester: m.isRequester,
     meetingDate: m.meetingDate || null,
@@ -811,23 +1036,36 @@ ${meetingsSummary.length > 0 ? `\nREUNIONES (${meetingsSummary.length}):\n${JSON
 - status "rejected" = solicitud rechazada
 - isRequester: true = usuario envió la solicitud, false = usuario recibió la solicitud` : ""}
 
+CRITERIOS DE RELEVANCIA ESTRICTOS:
+- SOLO menciona resultados que estén DIRECTAMENTE relacionados con la búsqueda del usuario
+- Si el usuario busca "sillas", menciona sillas, escritorios, mobiliario de oficina (relacionado), pero NO colchones o productos no relacionados
+- Prioriza resultados que contengan las palabras clave exactas o términos muy similares
+- Si un resultado no es relevante, NO lo menciones en tu respuesta
+- Es mejor mencionar pocos resultados muy relevantes que muchos resultados poco relacionados
+
 TAREA:
 1. Analiza la compatibilidad de cada resultado con la consulta del usuario
-2. Para reuniones: indica claramente el estado (pendiente/aceptada/rechazada) y con quién es
-3. Identifica los 3-5 resultados MÁS compatibles y explica por qué
-4. Menciona también 1-2 resultados MENOS compatibles (si aplica)
-5. Da recomendaciones prácticas al usuario
+2. FILTRA y menciona SOLO los resultados DIRECTAMENTE relevantes (alta compatibilidad)
+3. Para reuniones: indica claramente el estado (pendiente/aceptada/rechazada) y con quién es
+4. Identifica los 3-5 resultados MÁS compatibles y explica por qué son relevantes
+5. Da recomendaciones prácticas al usuario basadas SOLO en resultados relevantes
+
+IMPORTANTE: En tu respuesta, menciona los resultados por su NOMBRE o TÍTULO, NO por ID. Por ejemplo:
+- Para asistentes: usa el campo "nombre"
+- Para productos: usa el campo "title"
+- Para empresas: usa el campo "razonSocial"
+- Para reuniones: usa el nombre del counterpart
 
 Devuelve un JSON con esta estructura:
 {
-  "message": "Respuesta natural y profesional al usuario (máximo 250 palabras). Menciona específicamente los resultados más relevantes y por qué son útiles para él.",
+  "message": "Respuesta natural y profesional al usuario (máximo 250 palabras). Menciona específicamente SOLO los resultados MÁS RELEVANTES POR NOMBRE/TÍTULO y por qué son útiles. NO menciones resultados poco relacionados. NO uses IDs.",
   "rankings": {
-    "assistants": ["id1", "id2", "id3"],
-    "products": ["id1", "id2"],
-    "companies": ["id1", "id2"],
-    "meetings": ["id1"]
+    "assistants": ["nombre1", "nombre2", "nombre3"],
+    "products": ["titulo1", "titulo2"],
+    "companies": ["razonSocial1", "razonSocial2"],
+    "meetings": ["nombreCounterpart1"]
   },
-  "insights": "Breve insight sobre los patrones encontrados"
+  "insights": "Breve insight sobre los patrones encontrados en los resultados RELEVANTES"
 }
 
 Sé específico, menciona nombres y razones concretas. Habla en español de forma natural y profesional.`;
@@ -860,23 +1098,35 @@ Sé específico, menciona nombres y razones concretas. Habla en español de form
 }
 
 /**
- * Reordena un array según un ranking de IDs
+ * Reordena un array según un ranking de nombres/títulos
  */
-function reorderByRanking(items, rankedIds) {
-  if (!rankedIds || rankedIds.length === 0) return items;
+function reorderByRanking(items, rankedNames) {
+  if (!rankedNames || rankedNames.length === 0) return items;
   
   const ranked = [];
   const unranked = [];
 
+  // Función helper para obtener el identificador del item
+  const getItemName = (item) => {
+    return item.nombre || item.title || item.razonSocial || item.counterpart?.nombre || null;
+  };
+
   // Primero agregar los items en el orden del ranking
-  rankedIds.forEach(id => {
-    const item = items.find(i => i.id === id);
+  rankedNames.forEach(name => {
+    const item = items.find(i => {
+      const itemName = getItemName(i);
+      return itemName && itemName.toLowerCase().trim() === name.toLowerCase().trim();
+    });
     if (item) ranked.push(item);
   });
 
   // Luego agregar los que no están en el ranking
   items.forEach(item => {
-    if (!rankedIds.includes(item.id)) {
+    const itemName = getItemName(item);
+    const isRanked = rankedNames.some(name => 
+      itemName && itemName.toLowerCase().trim() === name.toLowerCase().trim()
+    );
+    if (!isRanked) {
       unranked.push(item);
     }
   });
@@ -968,3 +1218,164 @@ function buildProfileObject(descripcion, necesidad, interesPrincipal, tipoAsiste
     tipoAsistente: tipoAsistente || null,
   };
 }
+
+async function getEmbedding(text, apiKey, apiUrl, model) {
+  if (!text.trim()) {
+    console.log("Skipping empty text for embedding");
+    return null;
+  }
+
+  try {
+    const url = `${apiUrl}/models/${model}:embedContent?key=${apiKey}`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: {
+          parts: [{ text }]
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Embedding API error: ${errorText}`);
+    }
+
+    const data = await response.json();
+    return data.embedding.values; // Asumiendo estructura estándar de Gemini embeddings
+  } catch (err) {
+    console.error("Error generating embedding:", err);
+    return null;
+  }
+}
+
+export const vectorizeDocuments = onRequest(
+  {
+    secrets: ["GEMINI_API_KEY", "GEMINI_API_URL"],
+    memory: "512MiB", // Aumentar memoria si hay muchos documentos
+    timeoutSeconds: 300, // Tiempo máximo para procesar
+    region: "us-central1"
+  },
+  async (req, res) => {
+    const eventId = req.query.eventId;
+
+    if (!eventId) {
+      console.log("Missing eventId");
+      return res.status(400).send("Missing eventId query parameter");
+    }
+
+    const db = getFirestore();
+    const apiKey = GEMINI_API_KEY.value();
+    const apiUrl = GEMINI_API_URL.value();
+    const model = "gemini-embedding-001"; // Modelo de embeddings actualizado
+
+    if (!apiKey || !apiUrl || !model) {
+      console.log("Missing secrets");
+      return res.status(500).send("Missing required secrets");
+    }
+
+    try {
+      console.log(`Starting vectorization for eventId: ${eventId}`);
+
+      // Procesar Users (assistants)
+      const usersSnap = await db.collection("users").where("eventId", "==", eventId).get();
+      console.log(`Found ${usersSnap.size} users to vectorize`);
+
+      const userPromises = usersSnap.docs.map(async (doc) => {
+        const data = doc.data();
+        const text = [
+          data.nombre,
+          data.empresa,
+          data.company_razonSocial,
+          data.descripcion,
+          data.interesPrincipal,
+          data.necesidad
+        ].filter(Boolean).join(" ");
+
+        const vector = await getEmbedding(text, apiKey, apiUrl, model);
+        if (vector) {
+          await doc.ref.update({ vector });
+          console.log(`Updated user ${doc.id} with vector`);
+        }
+      });
+      await Promise.all(userPromises);
+
+      // Procesar Products
+      const productsSnap = await db.collection("events").doc(eventId).collection("products").get();
+      console.log(`Found ${productsSnap.size} products to vectorize`);
+
+      const productPromises = productsSnap.docs.map(async (doc) => {
+        const data = doc.data();
+        const text = [data.title, data.description, data.category].filter(Boolean).join(" ");
+
+        const vector = await getEmbedding(text, apiKey, apiUrl, model);
+        if (vector) {
+          await doc.ref.update({ vector });
+          console.log(`Updated product ${doc.id} with vector`);
+        }
+      });
+      await Promise.all(productPromises);
+
+      // Procesar Companies
+      const companiesSnap = await db.collection("events").doc(eventId).collection("companies").get();
+      console.log(`Found ${companiesSnap.size} companies to vectorize`);
+
+      const companyPromises = companiesSnap.docs.map(async (doc) => {
+        const data = doc.data();
+        const text = [data.razonSocial, data.descripcion].filter(Boolean).join(" ");
+
+        const vector = await getEmbedding(text, apiKey, apiUrl, model);
+        if (vector) {
+          await doc.ref.update({ vector });
+          console.log(`Updated company ${doc.id} with vector`);
+        }
+      });
+      await Promise.all(companyPromises);
+
+      // Procesar Meetings (enriquecido con info de participantes)
+      const meetingsSnap = await db.collection("events").doc(eventId).collection("meetings").get();
+      console.log(`Found ${meetingsSnap.size} meetings to vectorize`);
+
+      const meetingPromises = meetingsSnap.docs.map(async (doc) => {
+        const meetingData = doc.data();
+        let texts = [
+          meetingData.status,
+          meetingData.timeSlot,
+          meetingData.meetingDate
+        ];
+
+        // Fetch y agregar info de participantes
+        for (const uid of meetingData.participants || []) {
+          const userDoc = await db.collection("users").doc(uid).get();
+          if (userDoc.exists) {
+            const u = userDoc.data();
+            texts.push(
+              u.nombre,
+              u.empresa,
+              u.company_razonSocial,
+              u.descripcion
+            );
+          } else {
+            console.warn(`User ${uid} not found for meeting ${doc.id}`);
+          }
+        }
+
+        const text = texts.filter(Boolean).join(" ");
+
+        const vector = await getEmbedding(text, apiKey, apiUrl, model);
+        if (vector) {
+          await doc.ref.update({ vector });
+          console.log(`Updated meeting ${doc.id} with vector`);
+        }
+      });
+      await Promise.all(meetingPromises);
+
+      console.log("Vectorization complete");
+      return res.status(200).send(`Vectorization complete for eventId: ${eventId}`);
+    } catch (error) {
+      console.error("Error during vectorization:", error);
+      return res.status(500).send("Error during vectorization");
+    }
+  }
+);
