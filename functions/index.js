@@ -568,6 +568,92 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
         }
       }
 
+      // Precargar reuniones del usuario (optimizado con batch get de usuarios)
+      let userMeetingParticipants = new Set();
+      let allUserMeetings = [];
+      if ((scopes.includes("assistants") || scopes.includes("meetings")) && eventId) {
+        try {
+          const meetingsSnap = await db.collection("events")
+            .doc(eventId)
+            .collection("meetings")
+            .where("participants", "array-contains", userId)
+            .get();
+          
+          console.log(`Preloaded ${meetingsSnap.size} meetings for user`);
+          
+          // Recolectar todos los IDs de usuarios únicos de las reuniones
+          const counterpartIds = new Set();
+          const meetingsData = [];
+          
+          meetingsSnap.forEach(doc => {
+            const meeting = doc.data();
+            meetingsData.push({ id: doc.id, ...meeting });
+            
+            // Para filtro de asistentes: solo excluir si está pendiente o aceptada
+            if (meeting.status === "pending" || meeting.status === "accepted") {
+              meeting.participants?.forEach(participantId => {
+                if (participantId !== userId) {
+                  userMeetingParticipants.add(participantId);
+                }
+              });
+            }
+            
+            // Para enriquecer meetings: obtener counterpart
+            const counterpartId = meeting.requesterId === userId 
+              ? meeting.receiverId 
+              : meeting.requesterId;
+            
+            if (counterpartId) {
+              counterpartIds.add(counterpartId);
+            }
+          });
+          
+          console.log(`User has ${userMeetingParticipants.size} existing meeting participants to exclude`);
+          
+          // Batch get de todos los counterparts (mucho más eficiente que N queries)
+          const counterpartMap = new Map();
+          if (counterpartIds.size > 0) {
+            const counterpartIdsArray = Array.from(counterpartIds);
+            
+            // Firestore batch get (máximo 10 por batch)
+            const batchSize = 10;
+            for (let i = 0; i < counterpartIdsArray.length; i += batchSize) {
+              const batch = counterpartIdsArray.slice(i, i + batchSize);
+              const userDocs = await Promise.all(
+                batch.map(id => db.collection("users").doc(id).get())
+              );
+              
+              userDocs.forEach(doc => {
+                if (doc.exists) {
+                  const data = doc.data();
+                  counterpartMap.set(doc.id, {
+                    id: doc.id,
+                    nombre: data.nombre || "Sin nombre",
+                    empresa: data.empresa || data.company_razonSocial || "Sin empresa",
+                    tipoAsistente: data.tipoAsistente || null,
+                    descripcion: data.descripcion || null,
+                    photoURL: data.photoURL || null,
+                  });
+                }
+              });
+            }
+            
+            console.log(`Batch loaded ${counterpartMap.size} counterpart users`);
+          }
+          
+          // Guardar meetings con counterpart info ya cargada
+          allUserMeetings = meetingsData.map(meeting => ({
+            ...meeting,
+            counterpartInfo: counterpartMap.get(
+              meeting.requesterId === userId ? meeting.receiverId : meeting.requesterId
+            ) || null
+          }));
+          
+        } catch (err) {
+          console.warn("Failed to preload meetings", err);
+        }
+      }
+
       // *** BUSCAR ASISTENTES CON VECTOR SIMILARITY O KEYWORDS ***
       if (scopes.includes("assistants")) {
         // Filtrar por tipo opuesto si aplica
@@ -579,6 +665,10 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
           });
           console.log(`Filtered users by role: ${filteredUsers.length} (looking for ${desiredOpposite})`);
         }
+
+        // Excluir usuarios con reuniones existentes (pendientes o aceptadas)
+        filteredUsers = filteredUsers.filter(u => !userMeetingParticipants.has(u.id));
+        console.log(`After excluding existing meetings: ${filteredUsers.length} users`);
 
         // Usar búsqueda híbrida si hay vector, sino keywords
         if (queryVector) {
@@ -690,103 +780,69 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
         }
       }
 
-      // *** BUSCAR REUNIONES (sin cambios, no usa embeddings) ***
+      // *** BUSCAR REUNIONES (optimizado - usa datos precargados) ***
       if (scopes.includes("meetings")) {
         try {
-          if (eventId) {
-            const meetingsSnap = await db.collection("events")
-              .doc(eventId)
-              .collection("meetings")
-              .where("participants", "array-contains", userId)
-              .get()
-              .catch(() => null);
+          if (eventId && allUserMeetings.length > 0) {
+            console.log(`Processing ${allUserMeetings.length} preloaded meetings`);
+            
+            for (const meeting of allUserMeetings) {
+              const enrichedMeeting = {
+                id: meeting.id,
+                status: meeting.status,
+                createdAt: meeting.createdAt,
+                updatedAt: meeting.updatedAt || null,
+                requesterId: meeting.requesterId,
+                receiverId: meeting.receiverId,
+                participants: meeting.participants || [],
+                counterpart: meeting.counterpartInfo,
+                isRequester: meeting.requesterId === userId,
+              };
 
-            if (meetingsSnap) {
-              console.log(`Found ${meetingsSnap.docs.length} meetings for user ${userId}`);
+              if (meeting.status === "accepted") {
+                enrichedMeeting.meetingDate = meeting.meetingDate || null;
+                enrichedMeeting.timeSlot = meeting.timeSlot || null;
+                enrichedMeeting.startMinutes = meeting.startMinutes || null;
+                enrichedMeeting.endMinutes = meeting.endMinutes || null;
+                enrichedMeeting.tableAssigned = meeting.tableAssigned || null;
+                enrichedMeeting.slotId = meeting.slotId || null;
+              }
+
+              const meetingRelatedKeywords = [
+                'reunion', 'reuniones', 'meeting', 'meetings', 
+                'pendiente', 'pendientes', 'pending',
+                'aceptada', 'aceptadas', 'accepted', 'confirmada', 'confirmadas',
+                'rechazada', 'rechazadas', 'rejected',
+                'programada', 'programadas', 'scheduled'
+              ];
               
-              for (const d of meetingsSnap.docs) {
-                const meetingData = d.data();
-                
-                const counterpartId = meetingData.requesterId === userId 
-                  ? meetingData.receiverId 
-                  : meetingData.requesterId;
+              const hasMeetingKeyword = keywords.some(kw => 
+                meetingRelatedKeywords.some(mk => kw.includes(mk) || mk.includes(kw))
+              );
 
-                let counterpartInfo = null;
-                if (counterpartId) {
-                  try {
-                    const counterpartDoc = await db.collection("users").doc(counterpartId).get();
-                    if (counterpartDoc.exists) {
-                      const counterpartData = counterpartDoc.data();
-                      counterpartInfo = {
-                        id: counterpartId,
-                        nombre: counterpartData.nombre || "Sin nombre",
-                        empresa: counterpartData.empresa || counterpartData.company_razonSocial || "Sin empresa",
-                        tipoAsistente: counterpartData.tipoAsistente || null,
-                        descripcion: counterpartData.descripcion || null,
-                        photoURL: counterpartData.photoURL || null,
-                      };
-                    }
-                  } catch (err) {
-                    console.warn(`Error fetching counterpart info for meeting ${d.id}:`, err);
-                  }
-                }
+              if (hasMeetingKeyword || keywords.length === 0) {
+                results.meetings.push(enrichedMeeting);
+              } else if (keywords.length > 0) {
+                const meetingText = [
+                  meeting.status,
+                  meeting.counterpartInfo?.nombre,
+                  meeting.counterpartInfo?.empresa,
+                  meeting.counterpartInfo?.descripcion,
+                  meeting.meetingDate,
+                  meeting.timeSlot,
+                ].filter(Boolean).join(" ").toLowerCase();
 
-                const enrichedMeeting = {
-                  id: d.id,
-                  status: meetingData.status,
-                  createdAt: meetingData.createdAt,
-                  updatedAt: meetingData.updatedAt || null,
-                  requesterId: meetingData.requesterId,
-                  receiverId: meetingData.receiverId,
-                  participants: meetingData.participants || [],
-                  counterpart: counterpartInfo,
-                  isRequester: meetingData.requesterId === userId,
-                };
-
-                if (meetingData.status === "accepted") {
-                  enrichedMeeting.meetingDate = meetingData.meetingDate || null;
-                  enrichedMeeting.timeSlot = meetingData.timeSlot || null;
-                  enrichedMeeting.startMinutes = meetingData.startMinutes || null;
-                  enrichedMeeting.endMinutes = meetingData.endMinutes || null;
-                  enrichedMeeting.tableAssigned = meetingData.tableAssigned || null;
-                  enrichedMeeting.slotId = meetingData.slotId || null;
-                }
-
-                const meetingRelatedKeywords = [
-                  'reunion', 'reuniones', 'meeting', 'meetings', 
-                  'pendiente', 'pendientes', 'pending',
-                  'aceptada', 'aceptadas', 'accepted', 'confirmada', 'confirmadas',
-                  'rechazada', 'rechazadas', 'rejected',
-                  'programada', 'programadas', 'scheduled'
-                ];
-                
-                const hasMeetingKeyword = keywords.some(kw => 
-                  meetingRelatedKeywords.some(mk => kw.includes(mk) || mk.includes(kw))
-                );
-
-                if (hasMeetingKeyword || keywords.length === 0) {
+                const hasMatch = keywords.some(kw => meetingText.includes(kw));
+                if (hasMatch) {
                   results.meetings.push(enrichedMeeting);
-                } else if (keywords.length > 0) {
-                  const meetingText = [
-                    meetingData.status,
-                    counterpartInfo?.nombre,
-                    counterpartInfo?.empresa,
-                    counterpartInfo?.descripcion,
-                    meetingData.meetingDate,
-                    meetingData.timeSlot,
-                  ].filter(Boolean).join(" ").toLowerCase();
-
-                  const hasMatch = keywords.some(kw => meetingText.includes(kw));
-                  if (hasMatch) {
-                    results.meetings.push(enrichedMeeting);
-                  }
                 }
               }
             }
+            
             console.log(`Meetings after filtering: ${results.meetings.length}`);
           }
         } catch (err) {
-          console.warn("Meetings query failed", err);
+          console.warn("Meetings processing failed", err);
         }
       }
 
