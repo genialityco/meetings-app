@@ -16,10 +16,11 @@ import {
   ThemeIcon,
   Box,
   useMantineTheme,
-  rem,
+  Loader,
+  Badge,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   IconSearch,
   IconX,
@@ -33,9 +34,12 @@ import {
   IconPhone,
   IconId,
   IconUsers,
+  IconSparkles,
 } from "@tabler/icons-react";
 import type { Assistant } from "./types";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+
+const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
 
 const FIELD_ICONS: Record<string, any> = {
   empresa: IconBuildingStore,
@@ -127,15 +131,157 @@ export default function AttendeesView({
 }: AttendeesViewProps) {
   const theme = useMantineTheme();
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [vectorResults, setVectorResults] = useState<Assistant[]>([]);
+  const [isVectorSearching, setIsVectorSearching] = useState(false);
+  const [useVectorSearch, setUseVectorSearch] = useState(false);
 
   const myUid = currentUser?.uid;
   const navigate = useNavigate();
+  const { eventId: eventIdFromParams } = useParams<{ eventId: string }>();
+  const eventId = currentUser?.eventId || eventIdFromParams;
 
   const maxMeetingsText = useMemo(() => {
     const n = eventConfig?.maxMeetingsPerUser;
     if (n === undefined || n === null) return "∞";
     return String(n);
   }, [eventConfig]);
+
+  // Búsqueda por vectores con debounce
+  useEffect(() => {
+    const trimmed = searchTerm.trim();
+    
+    // Si no hay eventId, no podemos hacer búsqueda
+    if (!eventId) {
+      setUseVectorSearch(false);
+      setVectorResults([]);
+      return;
+    }
+    
+    // Si no hay texto de búsqueda, resetear
+    if (!trimmed) {
+      setUseVectorSearch(false);
+      setVectorResults([]);
+      return;
+    }
+
+    // Si el texto es muy corto, no usar vectores
+    if (trimmed.length < 3) {
+      setUseVectorSearch(false);
+      return;
+    }
+
+    // Debounce: esperar 500ms después de que el usuario deje de escribir
+    const timeoutId = setTimeout(async () => {
+      setIsVectorSearching(true);
+      
+      try {
+        const requestBody = {
+          text: trimmed,
+          category: "assistants",
+          eventId: eventId,
+          userId: myUid,
+          limit: 50,
+          threshold: 0.55,
+        };
+        
+        console.log("Vector search request:", requestBody);
+        
+        const response = await fetch(VECTOR_SEARCH_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(requestBody),
+        });
+
+        if (!response.ok) {
+          throw new Error("Vector search failed");
+        }
+
+        const data = await response.json();
+        console.log("Vector search response:", data);
+        
+        // Los resultados de vectorSearch ya vienen con todos los campos necesarios
+        setVectorResults(data.results as Assistant[]);
+        setUseVectorSearch(true);
+        
+        console.log(`Vector search found ${data.results.length} assistants`);
+      } catch (error) {
+        console.error("Vector search error:", error);
+        // Fallback a búsqueda normal
+        setUseVectorSearch(false);
+        setVectorResults([]);
+      } finally {
+        setIsVectorSearching(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, eventId, myUid, filteredAssistants]);
+
+  // Aplicar búsqueda por vectores si está activa
+  const displayedAssistants = useMemo(() => {
+    console.log("=== displayedAssistants useMemo ===");
+    console.log("useVectorSearch:", useVectorSearch);
+    console.log("searchTerm:", searchTerm);
+    console.log("vectorResults.length:", vectorResults.length);
+    console.log("filteredAssistants.length:", filteredAssistants.length);
+    console.log("interestFilter:", interestFilter);
+    console.log("showOnlyToday:", showOnlyToday);
+    console.log("currentEventId:", eventId);
+    
+    // Si NO estamos usando búsqueda por vectores, devolver filteredAssistants
+    if (!useVectorSearch || searchTerm.trim().length < 3) {
+      console.log("Using filteredAssistants (no vector search)");
+      return filteredAssistants;
+    }
+    
+    // Si estamos usando búsqueda por vectores, empezar con vectorResults
+    let results = [...vectorResults]; // Crear copia para no mutar el original
+    console.log("Starting with vectorResults:", results.length);
+    
+    // Log de los primeros resultados para debugging
+    if (results.length > 0) {
+      console.log("First result:", {
+        id: results[0].id,
+        nombre: results[0].nombre,
+        interesPrincipal: results[0].interesPrincipal,
+        lastLogin: results[0].lastLogin,
+        eventId: results[0].eventId
+      });
+    }
+    
+    // Aplicar filtro de interés si existe
+    if (interestFilter) {
+      const beforeFilter = results.length;
+      results = results.filter(a => a.interesPrincipal === interestFilter);
+      console.log(`After interest filter (${interestFilter}): ${beforeFilter} -> ${results.length}`);
+    }
+    
+    // Aplicar filtro de "solo hoy" si está activo
+    if (showOnlyToday) {
+      const beforeFilter = results.length;
+      const today = new Date().toISOString().split("T")[0];
+      results = results.filter(a => {
+        const lastLogin = a.lastLogin;
+        if (!lastLogin) {
+          console.log(`Filtering out ${a.nombre} - no lastLogin`);
+          return false;
+        }
+        const loginDate = new Date(lastLogin).toISOString().split("T")[0];
+        const matches = loginDate === today;
+        if (!matches) {
+          console.log(`Filtering out ${a.nombre} - lastLogin: ${loginDate}, today: ${today}`);
+        }
+        return matches;
+      });
+      console.log(`After showOnlyToday filter: ${beforeFilter} -> ${results.length}`);
+    }
+    
+    console.log("Final displayedAssistants:", results.length);
+    console.log("=== End useMemo ===");
+    return results;
+  }, [useVectorSearch, searchTerm, vectorResults, filteredAssistants, interestFilter, showOnlyToday, eventId]);
 
   const handleSendMeeting = async (assistant: Assistant) => {
     setLoadingId(assistant.id);
@@ -169,7 +315,15 @@ export default function AttendeesView({
               placeholder="Buscar por cualquier campo..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              leftSection={<IconSearch size={16} />}
+              leftSection={
+                isVectorSearching ? (
+                  <Loader size={16} />
+                ) : useVectorSearch ? (
+                  <IconSparkles size={16} style={{ color: "var(--mantine-color-blue-6)" }} />
+                ) : (
+                  <IconSearch size={16} />
+                )
+              }
               rightSection={
                 hasSearch ? (
                   <ActionIcon
@@ -198,15 +352,22 @@ export default function AttendeesView({
 
           <Grid.Col span={{ base: 12 }}>
             <Group justify="space-between" wrap="wrap">
-              <Button
-                variant={showOnlyToday ? "filled" : "light"}
-                color={theme.primaryColor}
-                size="xs"
-                leftSection={<IconCalendarCheck size={14} />}
-                onClick={() => setShowOnlyToday((v: boolean) => !v)}
-              >
-                {showOnlyToday ? "Solo conectados hoy" : "Todos"}
-              </Button>
+              <Group gap="xs">
+                <Button
+                  variant={showOnlyToday ? "filled" : "light"}
+                  color={theme.primaryColor}
+                  size="xs"
+                  leftSection={<IconCalendarCheck size={14} />}
+                  onClick={() => setShowOnlyToday((v: boolean) => !v)}
+                >
+                  {showOnlyToday ? "Solo conectados hoy" : "Todos"}
+                </Button>
+                {useVectorSearch && (
+                  <Badge size="sm" variant="light" color="blue" leftSection={<IconSparkles size={10} />}>
+                    Búsqueda inteligente
+                  </Badge>
+                )}
+              </Group>
 
               <Text size="sm" c="dimmed">
                 Máximo:{" "}
@@ -223,7 +384,7 @@ export default function AttendeesView({
       </Paper>
 
       {/* Alert oportunista */}
-      {filteredAssistants.length > 0 && filteredAssistants.length <= 10 && (
+      {displayedAssistants.length > 0 && displayedAssistants.length <= 10 && (
         <Alert
           color={theme.primaryColor}
           title="Aún estás entre los primeros"
@@ -231,18 +392,18 @@ export default function AttendeesView({
         >
           Solo hay{" "}
           <strong>
-            {filteredAssistants.length} asistente
-            {filteredAssistants.length !== 1 ? "s" : ""}
+            {displayedAssistants.length} asistente
+            {displayedAssistants.length !== 1 ? "s" : ""}
           </strong>{" "}
-          registrado{filteredAssistants.length !== 1 ? "s" : ""}. Aprovecha para
+          registrado{displayedAssistants.length !== 1 ? "s" : ""}. Aprovecha para
           conectar con los pioneros del evento.
         </Alert>
       )}
 
       {/* Grid */}
       <Grid gutter="sm">
-        {filteredAssistants.length > 0 ? (
-          filteredAssistants.map((assistant) => {
+        {displayedAssistants.length > 0 ? (
+          displayedAssistants.map((assistant) => {
             const isMine = !!myUid && assistant.id === myUid;
             const disabled =
               !solicitarReunionHabilitado ||

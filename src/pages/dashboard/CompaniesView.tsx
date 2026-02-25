@@ -19,9 +19,10 @@ import {
   ThemeIcon,
   useMantineTheme,
   rem,
+  Loader,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   IconSearch,
@@ -31,13 +32,15 @@ import {
   IconMail,
   IconTargetArrow,
   IconBulb,
-  IconClock,
   IconUsers,
   IconBuildingStore,
   IconFileDescription,
   IconPhone,
+  IconSparkles,
 } from "@tabler/icons-react";
 import type { Assistant, Company, EventPolicies, MeetingContext } from "./types";
+
+const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
 
 const FIELD_ICONS: Record<string, any> = {
   empresa: IconBuildingStore,
@@ -105,6 +108,9 @@ export default function CompaniesView({
   const [selectedAssistantPerCompany, setSelectedAssistantPerCompany] =
     useState<Record<string, string | null>>({});
   const [searchTerm, setSearchTerm] = useState("");
+  const [vectorResults, setVectorResults] = useState<Company[]>([]);
+  const [isVectorSearching, setIsVectorSearching] = useState(false);
+  const [useVectorSearch, setUseVectorSearch] = useState(false);
 
   const myUid = currentUser?.uid;
 
@@ -159,6 +165,17 @@ export default function CompaniesView({
 
   // Filtrar por búsqueda
   const filtered = useMemo(() => {
+    // Si estamos usando búsqueda por vectores
+    if (useVectorSearch && searchTerm.trim().length >= 3) {
+      // Mapear resultados de vectores a companiesData
+      return vectorResults
+        .map(vectorCompany => {
+          return companiesData.find(c => c.nit === vectorCompany.nitNorm);
+        })
+        .filter(Boolean) as typeof companiesData;
+    }
+
+    // Búsqueda tradicional
     const t = searchTerm.toLowerCase().trim();
     if (!t) return companiesData;
     return companiesData.filter(
@@ -169,7 +186,65 @@ export default function CompaniesView({
           (a.nombre || "").toLowerCase().includes(t),
         ),
     );
-  }, [companiesData, searchTerm]);
+  }, [companiesData, searchTerm, useVectorSearch, vectorResults]);
+
+  // Búsqueda por vectores con debounce
+  useEffect(() => {
+    const trimmed = searchTerm.trim();
+    
+    // Si no hay texto de búsqueda, resetear
+    if (!trimmed) {
+      setUseVectorSearch(false);
+      setVectorResults([]);
+      return;
+    }
+
+    // Si el texto es muy corto, no usar vectores
+    if (trimmed.length < 3) {
+      setUseVectorSearch(false);
+      return;
+    }
+
+    // Debounce: esperar 500ms después de que el usuario deje de escribir
+    const timeoutId = setTimeout(async () => {
+      setIsVectorSearching(true);
+      
+      try {
+        const response = await fetch(VECTOR_SEARCH_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text: trimmed,
+            category: "companies",
+            eventId: eventId,
+            limit: 50,
+            threshold: 0.55,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Vector search failed");
+        }
+
+        const data = await response.json();
+        setVectorResults(data.results);
+        setUseVectorSearch(true);
+        
+        console.log(`Vector search found ${data.results.length} companies`);
+      } catch (error) {
+        console.error("Vector search error:", error);
+        // Fallback a búsqueda normal
+        setUseVectorSearch(false);
+        setVectorResults([]);
+      } finally {
+        setIsVectorSearching(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, eventId]);
 
   const handleSelectAssistant = (companyKey: string, assistantId: string) => {
     setSelectedAssistantPerCompany((prev) => ({
@@ -243,24 +318,40 @@ export default function CompaniesView({
     <Stack gap="md">
       {/* Search bar estilo “top” */}
       <Paper withBorder radius="lg" p="sm">
-        <TextInput
-          placeholder="Buscar empresa o representante..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          leftSection={<IconSearch size={16} />}
-          rightSection={
-            hasSearch ? (
-              <ActionIcon
-                variant="subtle"
-                onClick={() => setSearchTerm("")}
-                aria-label="Limpiar"
-              >
-                <IconX size={16} />
-              </ActionIcon>
-            ) : null
-          }
-          radius="md"
-        />
+        <Group gap="xs">
+          <TextInput
+            placeholder="Buscar empresa o representante..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            leftSection={
+              isVectorSearching ? (
+                <Loader size={16} />
+              ) : useVectorSearch ? (
+                <IconSparkles size={16} style={{ color: "var(--mantine-color-blue-6)" }} />
+              ) : (
+                <IconSearch size={16} />
+              )
+            }
+            rightSection={
+              hasSearch ? (
+                <ActionIcon
+                  variant="subtle"
+                  onClick={() => setSearchTerm("")}
+                  aria-label="Limpiar"
+                >
+                  <IconX size={16} />
+                </ActionIcon>
+              ) : null
+            }
+            radius="md"
+            style={{ flex: 1 }}
+          />
+          {useVectorSearch && (
+            <Badge size="sm" variant="light" color="blue" leftSection={<IconSparkles size={10} />}>
+              Búsqueda inteligente
+            </Badge>
+          )}
+        </Group>
       </Paper>
 
       <Grid gutter="sm">
