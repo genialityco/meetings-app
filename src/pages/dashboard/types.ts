@@ -77,6 +77,7 @@ export interface AgendaSlot {
   eventId?: string;
   meetingId?: string;
   isBreak?: boolean;
+  blockedBy?: string; // UID del usuario que bloqueó el slot
 }
 
 /** Políticas de evento configurables por admin */

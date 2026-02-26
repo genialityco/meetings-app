@@ -98,33 +98,44 @@ const EventMatchPage = () => {
 
   // Filtrar compradores y vendedores (adaptarse a diferentes modelos de datos)
   const getAsistenteType = (attendee) => {
-    // Modelo 1: Si existe tipoAsistente, usarlo
+    // Modelo 1: Si existe tipoAsistente, usarlo (case-insensitive)
     if (attendee.tipoAsistente) {
-      return attendee.tipoAsistente;
-    }
-
-    // Modelo 2: Si existe interesPrincipal, usarlo para inferir
-    if (attendee.interesPrincipal === "proveedores") {
-      return "vendedor";
-    }
-    if (attendee.interesPrincipal === "clientes") {
-      return "comprador";
-    }
-    if (attendee.interesPrincipal === "abierto") {
-      // Inferir basado en descripción o necesidad
-      // Si tiene descripción detallada, probablemente sea vendedor
-      const descripcionLen = (attendee.descripcion || "").length;
-      const necesidadLen = (attendee.necesidad || "").length;
-      
-      if (descripcionLen > necesidadLen) {
-        return "vendedor";
-      } else if (necesidadLen > descripcionLen) {
-        return "comprador";
-      }
-      // Si son similares o ambos están presentes, asumir que puede ser ambos
+      const tipo = attendee.tipoAsistente.toLowerCase();
+      if (tipo === "comprador") return "comprador";
+      if (tipo === "vendedor") return "vendedor";
       return "flexible";
     }
 
+    // Modelo 2: Si existe interesPrincipal, usarlo para inferir
+    if (attendee.interesPrincipal) {
+      const interes = attendee.interesPrincipal.toLowerCase();
+      if (interes === "proveedores") return "vendedor";
+      if (interes === "clientes") return "comprador";
+      if (interes === "abierto") {
+        // Inferir basado en descripción o necesidad
+        const descripcionLen = (attendee.descripcion || "").length;
+        const necesidadLen = (attendee.necesidad || "").length;
+        
+        if (descripcionLen > necesidadLen) return "vendedor";
+        if (necesidadLen > descripcionLen) return "comprador";
+        return "flexible";
+      }
+    }
+
+    // Modelo 3: Si no tiene tipoAsistente ni interesPrincipal, inferir por contenido
+    const descripcionLen = (attendee.descripcion || "").length;
+    const necesidadLen = (attendee.necesidad || "").length;
+    
+    // Si tiene más descripción que necesidad, probablemente sea vendedor
+    if (descripcionLen > 50 && descripcionLen > necesidadLen) {
+      return "vendedor";
+    }
+    // Si tiene más necesidad que descripción, probablemente sea comprador
+    if (necesidadLen > 50 && necesidadLen > descripcionLen) {
+      return "comprador";
+    }
+    
+    // Por defecto, marcar como flexible para incluirlo en ambos grupos
     return "flexible";
   };
 
@@ -136,6 +147,24 @@ const EventMatchPage = () => {
   const vendedores = attendees.filter((a) => {
     const tipo = getAsistenteType(a);
     return tipo === "vendedor" || tipo === "flexible";
+  });
+
+  console.log("Clasificación de asistentes:", {
+    totalAttendees: attendees.length,
+    compradores: compradores.length,
+    vendedores: vendedores.length,
+    ejemploComprador: compradores[0] ? {
+      nombre: compradores[0].nombre,
+      tipo: getAsistenteType(compradores[0]),
+      tipoAsistente: compradores[0].tipoAsistente,
+      descripcion: (compradores[0].descripcion || "").substring(0, 100),
+    } : null,
+    ejemploVendedor: vendedores[0] ? {
+      nombre: vendedores[0].nombre,
+      tipo: getAsistenteType(vendedores[0]),
+      tipoAsistente: vendedores[0].tipoAsistente,
+      descripcion: (vendedores[0].descripcion || "").substring(0, 100),
+    } : null,
   });
 
   // Detectar campos disponibles en los datos
@@ -675,31 +704,40 @@ Reglas: 1) No matches de misma empresa. 2) Score 0-1. 3) Max ${payload.maxPerUse
       }
       if (aiService === "gemini") {
         try {
-          // Simplificar datos para evitar problemas de escape en JSON
-          const compradoresSimplificados = compradores.map((c) => ({
+          // Enviar datos completos (sin truncar) para mejor análisis
+          const compradoresParaGemini = compradores.map((c) => ({
             id: c.id,
             nombre: c.nombre,
             correo: c.correo,
             empresa: c.empresa,
-            necesidad: (c.necesidad || "").substring(0, 100),
-            descripcion: (c.descripcion || "").substring(0, 100),
+            necesidad: c.necesidad || "",
+            descripcion: c.descripcion || "",
             interesPrincipal: c.interesPrincipal,
+            cargo: c.cargo,
           }));
 
-          const vendedoresSimplificados = vendedores.map((v) => ({
+          const vendedoresParaGemini = vendedores.map((v) => ({
             id: v.id,
             nombre: v.nombre,
             correo: v.correo,
             empresa: v.empresa,
-            necesidad: (v.necesidad || "").substring(0, 100),
-            descripcion: (v.descripcion || "").substring(0, 100),
+            necesidad: v.necesidad || "",
+            descripcion: v.descripcion || "",
             interesPrincipal: v.interesPrincipal,
+            cargo: v.cargo,
           }));
+
+          console.log("Enviando a Gemini:", {
+            numCompradores: compradoresParaGemini.length,
+            numVendedores: vendedoresParaGemini.length,
+            ejemploComprador: compradoresParaGemini[0],
+            ejemploVendedor: vendedoresParaGemini[0],
+          });
 
           // Construir el prompt para Gemini
           const prompt = `Eres un experto en matchmaking B2B. Genera matches entre compradores y vendedores.\n\nDATOS:\nCompradores: ${JSON.stringify(
-            compradoresSimplificados
-          )}\nVendedores: ${JSON.stringify(vendedoresSimplificados)}\n\nREGLAS:\n1. NO matches de la misma empresa\n2. Analizar necesidad vs descripcion\n3. Score 0-1 (1=perfecto)\n4. Max ${eventConfig?.maxMeetingsPerUser ?? 10} matches por comprador\n5. En razonMatch usa SOLO texto simple, sin comillas dobles ni saltos de linea\n\nRESPONDE SOLO CON ESTE JSON (sin markdown, sin texto extra):\n{\n  "results": [ { "compradorId": "id", "compradorNombre": "nombre", "compradorEmail": "email", "matches": [ { "vendedor": "nombre", "vendedorId": "id", "vendedorEmail": "email", "score": 0.85, "motivo": "Match por afinidad", "razonMatch": "Texto simple sin comillas" } ] } ],\n  "message": "Total de matches generados"\n}`;
+            compradoresParaGemini
+          )}\nVendedores: ${JSON.stringify(vendedoresParaGemini)}\n\nREGLAS:\n1. NO matches de la misma empresa\n2. Analizar necesidad vs descripcion\n3. Score 0-1 (1=perfecto)\n4. Max ${eventConfig?.maxMeetingsPerUser ?? 10} matches por comprador\n5. En razonMatch usa SOLO texto simple, sin comillas dobles ni saltos de linea\n\nRESPONDE SOLO CON ESTE JSON (sin markdown, sin texto extra):\n{\n  "results": [ { "compradorId": "id", "compradorNombre": "nombre", "compradorEmail": "email", "matches": [ { "vendedor": "nombre", "vendedorId": "id", "vendedorEmail": "email", "score": 0.85, "motivo": "Match por afinidad", "razonMatch": "Texto simple sin comillas" } ] } ],\n  "message": "Total de matches generados"\n}`;
 
           const resG = await fetch(`${GEMINI_BASE_URL}/models/${GEMINI_MODEL_NAME}:generateContent?key=${GEMINI_API}`, {
             method: "POST",

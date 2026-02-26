@@ -6,6 +6,7 @@ import {
   IconInbox,
   IconPackage,
   IconBuilding,
+  IconCalendar,
 } from "@tabler/icons-react";
 import AttendeesView from "./AttendeesView";
 import CompaniesView from "./CompaniesView";
@@ -15,6 +16,7 @@ import MeetingsTab from "./MeetingsTab";
 import RequestsTab from "./RequestsTab";
 import MyProductsTab from "./MyProductsTab";
 import MyCompanyTab from "./MyCompanyTab";
+import CalendarTab from "./CalendarTab";
 import { DEFAULT_POLICIES } from "./types";
 import { useMediaQuery } from "@mantine/hooks";
 
@@ -82,7 +84,7 @@ export default function TabsPanel({
   // Redirigir al vendedor a "Mi actividad > Mis productos" solo la primera vez
   const redirectKey = eventId && uid ? `seller_redirect_${eventId}_${uid}` : null;
   const redirectDone = useRef(false);
-  const [activityDefaultTab, setActivityDefaultTab] = useState("reuniones");
+  const [activityDefaultTab, setActivityDefaultTab] = useState("agenda");
 
   useEffect(() => {
     if (redirectDone.current) return;
@@ -194,8 +196,14 @@ export default function TabsPanel({
       )}
 
       {topView === "activity" && (
-        <Tabs value={activityDefaultTab} onChange={(v) => setActivityDefaultTab(v || "reuniones")} radius="md">
+        <Tabs value={activityDefaultTab} onChange={(v) => setActivityDefaultTab(v || "agenda")} radius="md">
           <Tabs.List grow>
+            <Tabs.Tab
+              value="agenda"
+              leftSection={<IconCalendar size={16} />}
+            >
+              Agenda
+            </Tabs.Tab>
             <Tabs.Tab
               value="reuniones"
               leftSection={<IconCalendarEvent size={16} />}
@@ -238,6 +246,18 @@ export default function TabsPanel({
             </Tabs.Tab>
           </Tabs.List>
 
+          <Tabs.Panel value="agenda" pt="md">
+            <CalendarTab
+              acceptedMeetings={dashboard.acceptedMeetings}
+              cancelledMeetings={dashboard.cancelledMeetings}
+              pendingRequests={dashboard.pendingRequests}
+              sentRequests={dashboard.sentRequests}
+              participantsInfo={dashboard.participantsInfo}
+              uid={dashboard.uid}
+              eventConfig={dashboard.eventConfig}
+              eventId={eventId}
+            />
+          </Tabs.Panel>
           <Tabs.Panel value="reuniones" pt="md">
             <MeetingsTab {...dashboard} />
           </Tabs.Panel>

@@ -443,16 +443,19 @@ const MatrixPage = () => {
       const requester = asistentes.find((a) => a.id === user1);
       const slotStr = `${slot.startTime} - ${slot.endTime}`;
       const mesa = slot.tableNumber;
+      const meetingDate = slot.date || selectedDate;
 
       if (receiver && requester) {
         // WhatsApp
         dashboard.sendMeetingAcceptedWhatsapp(receiver.telefono, requester, {
           timeSlot: slotStr,
           tableAssigned: mesa,
+          meetingDate: meetingDate,
         });
         dashboard.sendMeetingAcceptedWhatsapp(requester.telefono, receiver, {
           timeSlot: slotStr,
           tableAssigned: mesa,
+          meetingDate: meetingDate,
         });
         // SMS
         dashboard.sendSms(
@@ -550,15 +553,18 @@ const MatrixPage = () => {
       const receiver = asistentes.find((a) => a.id === user2);
       const requester = asistentes.find((a) => a.id === user1);
       const mesa = slot.tableNumber;
+      const meetingDate = slot.date || selectedDate;
 
       if (receiver && requester) {
         dashboard.sendMeetingAcceptedWhatsapp(receiver.telefono, requester, {
           timeSlot: nuevoSlotStr,
           tableAssigned: mesa,
+          meetingDate: meetingDate,
         });
         dashboard.sendMeetingAcceptedWhatsapp(requester.telefono, receiver, {
           timeSlot: nuevoSlotStr,
           tableAssigned: mesa,
+          meetingDate: meetingDate,
         });
         dashboard.sendSms(
           `¡Tu reunión ha sido actualizada!\nCon: ${requester.nombre}\nEmpresa: ${requester.empresa}\nHorario: ${nuevoSlotStr}\nMesa: ${mesa}`,
@@ -622,6 +628,7 @@ const MatrixPage = () => {
               {
                 timeSlot: cancelledMeeting.timeSlot,
                 tableAssigned: cancelledMeeting.tableAssigned,
+                meetingDate: cancelledMeeting.meetingDate || selectedDate,
               }
             );
             // // SMS
@@ -711,6 +718,7 @@ const MatrixPage = () => {
             // Notifica a ambas partes por WhatsApp y SMS
             const receiver = asistentes.find((a) => a.id === userId);
             const requester = asistentes.find((a) => a.id === requesterId);
+            const meetingDate = slotLiberado.date || selectedDate;
 
             if (receiver && requester) {
               console.log(
@@ -720,12 +728,20 @@ const MatrixPage = () => {
               dashboard.sendMeetingAcceptedWhatsapp(
                 receiver.telefono,
                 requester,
-                { timeSlot: slotStr, tableAssigned: slotLiberado.tableNumber }
+                { 
+                  timeSlot: slotStr, 
+                  tableAssigned: slotLiberado.tableNumber,
+                  meetingDate: meetingDate,
+                }
               );
               dashboard.sendMeetingAcceptedWhatsapp(
                 requester.telefono,
                 receiver,
-                { timeSlot: slotStr, tableAssigned: slotLiberado.tableNumber }
+                { 
+                  timeSlot: slotStr, 
+                  tableAssigned: slotLiberado.tableNumber,
+                  meetingDate: meetingDate,
+                }
               );
               // SMS
               dashboard.sendSms(

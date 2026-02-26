@@ -134,22 +134,38 @@ function sendWhatsAppMessage(participant: Assistant) {
 async function sendMeetingAcceptedWhatsapp(
   toPhone: string,
   otherParticipant: Assistant,
-  meetingInfo: { timeSlot?: string; tableAssigned?: string },
+  meetingInfo: { timeSlot?: string; tableAssigned?: string; meetingDate?: string },
   eventName?: string,
   acceptedByName?: string,
 ) {
   if (!toPhone) return;
   const phone = toPhone.replace(/[^\d]/g, "");
+  
+  // Formatear fecha si existe
+  let dateStr = "";
+  if (meetingInfo.meetingDate) {
+    const [year, month, day] = meetingInfo.meetingDate.split("-").map(Number);
+    const date = new Date(year, month - 1, day);
+    dateStr = date.toLocaleDateString("es-ES", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    });
+  }
+  
   const eventLine = eventName ? `📌 *Evento:* ${eventName}\n` : "";
   const acceptedLine = acceptedByName
     ? `✅ *${acceptedByName}* ha aceptado la reunión.\n\n`
     : "";
+  const dateLine = dateStr ? `📅 *Día:* ${dateStr}\n` : "";
+  
   const message =
     `🤝 *¡Reunión confirmada!*\n\n` +
     eventLine +
     acceptedLine +
     `👤 *Con:* ${otherParticipant?.nombre || ""}\n` +
     `🏢 *Empresa:* ${otherParticipant?.empresa || ""}\n` +
+    dateLine +
     `🕐 *Horario:* ${meetingInfo.timeSlot || ""}\n` +
     `🪑 *Mesa:* ${meetingInfo.tableAssigned || ""}\n\n` +
     `¡Te esperamos!`;
@@ -168,22 +184,38 @@ async function sendMeetingAcceptedWhatsapp(
 async function sendMeetingCancelledWhatsapp(
   toPhone: string,
   otherParticipant: Assistant,
-  meetingInfo: { timeSlot?: string; tableAssigned?: string },
+  meetingInfo: { timeSlot?: string; tableAssigned?: string; meetingDate?: string },
   eventName?: string,
   cancelledByName?: string,
 ) {
   if (!toPhone) return;
   const phone = (toPhone || "").toString().replace(/[^\d]/g, "");
+  
+  // Formatear fecha si existe
+  let dateStr = "";
+  if (meetingInfo.meetingDate) {
+    const [year, month, day] = meetingInfo.meetingDate.split("-").map(Number);
+    const date = new Date(year, month - 1, day);
+    dateStr = date.toLocaleDateString("es-ES", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    });
+  }
+  
   const eventLine = eventName ? `📌 *Evento:* ${eventName}\n` : "";
   const cancelledLine = cancelledByName
     ? `❌ *${cancelledByName}* ha cancelado la reunión.\n\n`
     : "";
+  const dateLine = dateStr ? `📅 *Día:* ${dateStr}\n` : "";
+  
   const message =
     `⚠️ *Reunión cancelada*\n\n` +
     eventLine +
     cancelledLine +
     `👤 *Con:* ${otherParticipant?.nombre || ""}\n` +
     `🏢 *Empresa:* ${otherParticipant?.empresa || ""}\n` +
+    dateLine +
     `🕐 *Horario:* ${meetingInfo.timeSlot || ""}\n` +
     `🪑 *Mesa:* ${meetingInfo.tableAssigned || ""}\n`;
 
@@ -788,12 +820,14 @@ export function useDashboardData(eventId?: string) {
         await sendMeetingCancelledWhatsapp(requester.telefono, receiver, {
           timeSlot: meeting.timeSlot,
           tableAssigned: meeting.tableAssigned,
+          meetingDate: meeting.meetingDate,
         }, eventName, cancellerName);
       }
       if (receiver?.telefono) {
         await sendMeetingCancelledWhatsapp(receiver.telefono, requester, {
           timeSlot: meeting.timeSlot,
           tableAssigned: meeting.tableAssigned,
+          meetingDate: meeting.meetingDate,
         }, eventName, cancellerName);
       }
 
@@ -906,10 +940,12 @@ export function useDashboardData(eventId?: string) {
         }
 
         // 3. Actualizar reunión y agenda
+        const meetingDate = chosen.date || eventConfig.eventDates?.[0] || eventConfig.eventDate;
         await updateDoc(mtgRef, {
           status: "accepted",
           tableAssigned: chosen.tableNumber.toString(),
           timeSlot: `${chosen.startTime} - ${chosen.endTime}`,
+          meetingDate: meetingDate,
         });
 
         await updateDoc(doc(db, "events", eventId, "agenda", chosenDoc.id), {
@@ -967,6 +1003,7 @@ export function useDashboardData(eventId?: string) {
             {
               timeSlot: `${chosen.startTime} - ${chosen.endTime}`,
               tableAssigned: chosen.tableNumber,
+              meetingDate: meetingDate,
             },
             eventName,
             accepterName,
@@ -977,6 +1014,7 @@ export function useDashboardData(eventId?: string) {
             {
               timeSlot: `${chosen.startTime} - ${chosen.endTime}`,
               tableAssigned: chosen.tableNumber,
+              meetingDate: meetingDate,
             },
             eventName,
             accepterName,
@@ -1207,11 +1245,42 @@ export function useDashboardData(eventId?: string) {
       
       const agSn = await getDocs(agendaQuery);
 
+      // Cargar slots bloqueados del usuario actual (requesterId o receiverId)
+      const blockedSlotsRequester = await getDocs(
+        query(
+          collection(db, "users", requesterId, "blockedSlots"),
+          where("eventId", "==", eventId),
+          where("date", "==", eventDayISO)
+        )
+      );
+      
+      const blockedSlotsReceiver = await getDocs(
+        query(
+          collection(db, "users", receiverId, "blockedSlots"),
+          where("eventId", "==", eventId),
+          where("date", "==", eventDayISO)
+        )
+      );
+
+      // Crear set de slots bloqueados (por startTime)
+      const blockedTimes = new Set<string>();
+      blockedSlotsRequester.docs.forEach((d) => {
+        const data = d.data();
+        blockedTimes.add(data.startTime);
+      });
+      blockedSlotsReceiver.docs.forEach((d) => {
+        const data = d.data();
+        blockedTimes.add(data.startTime);
+      });
+
       const filtered = agSn.docs
         .map((d) => ({ id: d.id, ...(d.data() as Omit<AgendaSlot, "id">) }))
         .filter((slot) => {
           // Filtrar por fecha si el slot tiene el campo date
           if (slot.date && slot.date !== eventDayISO) return false;
+          
+          // Filtrar slots bloqueados por cualquiera de los participantes
+          if (blockedTimes.has(slot.startTime)) return false;
           
           const [h, m] = slot.startTime.split(":").map(Number);
 
@@ -1457,12 +1526,24 @@ export function useDashboardData(eventId?: string) {
         ? (recvSnap.data() as Assistant)
         : null;
 
+      // Formatear fecha para notificaciones
+      let dateStr = "";
+      if (eventDateISO) {
+        const [year, month, day] = eventDateISO.split("-").map(Number);
+        const date = new Date(year, month - 1, day);
+        dateStr = date.toLocaleDateString("es-ES", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+        });
+      }
+
       const notificationsBatch = isEdit
         ? [
             {
               userId: requesterId!,
               title: "Reunión modificada",
-              message: `Tu reunión con ${receiver?.nombre || ""} fue movida a ${
+              message: `Tu reunión con ${receiver?.nombre || ""} fue movida a ${dateStr ? `${dateStr}, ` : ""}${
                 slot.startTime
               } (Mesa ${slot.tableNumber}).`,
               type: "meeting_modified" as const,
@@ -1472,7 +1553,7 @@ export function useDashboardData(eventId?: string) {
               title: "Reunión modificada",
               message: `Has cambiado la reunión con ${
                 requester?.nombre || ""
-              } a ${slot.startTime} (Mesa ${slot.tableNumber}).`,
+              } a ${dateStr ? `${dateStr}, ` : ""}${slot.startTime} (Mesa ${slot.tableNumber}).`,
               type: "meeting_modified" as const,
             },
           ]
@@ -1482,7 +1563,7 @@ export function useDashboardData(eventId?: string) {
               title: "Reunión aceptada",
               message: `Tu reunión con ${
                 receiver?.nombre || ""
-              } fue aceptada para ${slot.startTime} en Mesa ${
+              } fue aceptada para ${dateStr ? `${dateStr}, ` : ""}${slot.startTime} en Mesa ${
                 slot.tableNumber
               }.`,
               type: "meeting_accepted" as const,
@@ -1492,7 +1573,7 @@ export function useDashboardData(eventId?: string) {
               title: "Reunión confirmada",
               message: `Has aceptado la reunión con ${
                 requester?.nombre || ""
-              } para ${slot.startTime} en Mesa ${slot.tableNumber}.`,
+              } para ${dateStr ? `${dateStr}, ` : ""}${slot.startTime} en Mesa ${slot.tableNumber}.`,
               type: "meeting_accepted" as const,
             },
           ];
@@ -1519,12 +1600,14 @@ export function useDashboardData(eventId?: string) {
         await sendMeetingAcceptedWhatsapp(requester.telefono, receiver!, {
           timeSlot: slot.startTime,
           tableAssigned: slot.tableNumber,
+          meetingDate: eventDateISO,
         }, eventName, accepterName);
       }
       if (receiver?.telefono) {
         await sendMeetingAcceptedWhatsapp(receiver.telefono, requester!, {
           timeSlot: slot.startTime,
           tableAssigned: slot.tableNumber,
+          meetingDate: eventDateISO,
         }, eventName, accepterName);
       }
 

@@ -19,6 +19,7 @@ import {
   Paper,
   Grid,
   useMantineTheme,
+  Select,
 } from "@mantine/core";
 import {
   IconClock,
@@ -89,9 +90,27 @@ export default function MeetingsTab({
   prepareSlotSelection,
   loadingMeetings,
   cancelMeeting,
+  eventConfig,
+  globalDateFilter,
+  setGlobalDateFilter,
 }) {
   const { currentUser } = useContext(UserContext);
   const theme = useMantineTheme();
+
+  // Multi-day event dates
+  const eventDates = eventConfig?.eventDates || (eventConfig?.eventDate ? [eventConfig.eventDate] : []);
+  const isMultiDay = eventDates.length > 1;
+
+  // Format date for display - parse ISO date without timezone conversion
+  const formatDate = (dateStr: string) => {
+    const [year, month, day] = dateStr.split("-").map(Number);
+    const date = new Date(year, month - 1, day);
+    return date.toLocaleDateString("es-ES", { 
+      weekday: "short", 
+      day: "numeric", 
+      month: "short" 
+    });
+  };
 
   const [surveyModal, setSurveyModal] = useState({
     open: false,
@@ -212,6 +231,27 @@ export default function MeetingsTab({
 
   return (
     <>
+      {/* Selector de día para eventos multi-día */}
+      {isMultiDay && (
+        <Group mb="md">
+          <Select
+            label="Filtrar por día"
+            placeholder="Todos los días"
+            data={[
+              { value: "", label: "Todos los días" },
+              ...eventDates.map((date: string) => ({
+                value: date,
+                label: formatDate(date),
+              })),
+            ]}
+            value={globalDateFilter || ""}
+            onChange={(value) => setGlobalDateFilter(value || null)}
+            clearable
+            style={{ width: 250 }}
+          />
+        </Group>
+      )}
+
       <Grid gutter="sm">
         {acceptedMeetings.length > 0 ? (
           acceptedMeetings

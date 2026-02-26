@@ -67,8 +67,6 @@ export default function Dashboard() {
           onMarkAllRead={dashboard.markAllNotificationsRead}
           formFields={dashboard.formFields}
           eventConfig={dashboard.eventConfig}
-          globalDateFilter={dashboard.globalDateFilter}
-          onGlobalDateChange={dashboard.setGlobalDateFilter}
         />
       )}
       <Container fluid pt="sm">
