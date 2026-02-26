@@ -270,6 +270,21 @@ export default function MeetingsTab({
 
                     {/* Slot info */}
                     <Stack gap={8}>
+                      {meeting.meetingDate && (() => {
+                        const [year, month, day] = meeting.meetingDate.split("-").map(Number);
+                        const date = new Date(year, month - 1, day);
+                        return (
+                          <InfoRow
+                            icon={<IconClock size={14} />}
+                            label="Día"
+                            value={date.toLocaleDateString("es-ES", {
+                              weekday: "short",
+                              day: "numeric",
+                              month: "short",
+                            })}
+                          />
+                        );
+                      })()}
                       <InfoRow
                         icon={<IconClock size={14} />}
                         label="Horario"
@@ -492,21 +507,39 @@ export default function MeetingsTab({
                     {meeting.timeSlot && (
                       <>
                         <Divider my="xs" />
-                        <Group gap={6}>
-                          <IconClock size={14} color="gray" />
-                          <Text size="xs" c="dimmed">
-                            {meeting.timeSlot}
-                          </Text>
-                          {meeting.tableAssigned && (
-                            <>
-                              <Text size="xs" c="dimmed">•</Text>
-                              <IconTable size={14} color="gray" />
-                              <Text size="xs" c="dimmed">
-                                Mesa {meeting.tableAssigned}
-                              </Text>
-                            </>
-                          )}
-                        </Group>
+                        <Stack gap={4}>
+                          {meeting.meetingDate && (() => {
+                            const [year, month, day] = meeting.meetingDate.split("-").map(Number);
+                            const date = new Date(year, month - 1, day);
+                            return (
+                              <Group gap={6}>
+                                <IconClock size={14} color="gray" />
+                                <Text size="xs" c="dimmed">
+                                  {date.toLocaleDateString("es-ES", {
+                                    weekday: "short",
+                                    day: "numeric",
+                                    month: "short",
+                                  })}
+                                </Text>
+                              </Group>
+                            );
+                          })()}
+                          <Group gap={6}>
+                            <IconClock size={14} color="gray" />
+                            <Text size="xs" c="dimmed">
+                              {meeting.timeSlot}
+                            </Text>
+                            {meeting.tableAssigned && (
+                              <>
+                                <Text size="xs" c="dimmed">•</Text>
+                                <IconTable size={14} color="gray" />
+                                <Text size="xs" c="dimmed">
+                                  Mesa {meeting.tableAssigned}
+                                </Text>
+                              </>
+                            )}
+                          </Group>
+                        </Stack>
                       </>
                     )}
                   </Card>

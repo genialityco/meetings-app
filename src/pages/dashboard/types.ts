@@ -35,6 +35,7 @@ export interface Meeting {
   receiverId: string;
   timeSlot?: string;
   tableAssigned?: string;
+  meetingDate?: string; // Fecha específica de la reunión "YYYY-MM-DD"
   status?: string;
   productId?: string | null;
   companyId?: string | null;
@@ -68,12 +69,14 @@ export interface Notification {
 
 export interface AgendaSlot {
   id: string;
+  date: string; // NUEVO: fecha del slot en formato "YYYY-MM-DD"
   startTime: string;
   endTime: string;
   tableNumber: number | string;
   available?: boolean;
   eventId?: string;
   meetingId?: string;
+  isBreak?: boolean;
 }
 
 /** Políticas de evento configurables por admin */

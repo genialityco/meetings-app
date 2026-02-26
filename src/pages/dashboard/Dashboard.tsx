@@ -67,6 +67,8 @@ export default function Dashboard() {
           onMarkAllRead={dashboard.markAllNotificationsRead}
           formFields={dashboard.formFields}
           eventConfig={dashboard.eventConfig}
+          globalDateFilter={dashboard.globalDateFilter}
+          onGlobalDateChange={dashboard.setGlobalDateFilter}
         />
       )}
       <Container fluid pt="sm">
@@ -90,6 +92,9 @@ export default function Dashboard() {
         chosenSlot={dashboard.chosenSlot}
         setConfirmModalOpened={dashboard.setConfirmModalOpened}
         onClose={() => dashboard.setSlotModalOpened(false)}
+        eventDates={dashboard.eventConfig?.eventDates || (dashboard.eventConfig?.eventDate ? [dashboard.eventConfig.eventDate] : [])}
+        selectedDate={dashboard.selectedDate}
+        onDateChange={dashboard.handleDateChange}
       />
       <ConfirmModal
         opened={dashboard.confirmModalOpened}

@@ -40,6 +40,8 @@ interface DashboardHeaderProps {
   onMarkAllRead?: () => void;
   formFields: any[];
   eventConfig?: any;
+  globalDateFilter?: string | null;
+  onGlobalDateChange?: (date: string | null) => void;
 }
 
 const uploadProfilePicture = async (file: File, uid: string) => {
@@ -61,6 +63,8 @@ const DashboardHeader = ({
   onMarkAllRead,
   formFields,
   eventConfig,
+  globalDateFilter,
+  onGlobalDateChange,
 }: DashboardHeaderProps) => {
   const { currentUser, updateUser, logout } = useContext(UserContext);
   const uid = currentUser?.uid;
@@ -355,80 +359,125 @@ const DashboardHeader = ({
   const avatarSrc = data?.photoURL || null;
   const userName = data?.nombre || data?.name || "U";
 
+  // Multi-day event dates
+  const eventDates = eventConfig?.eventDates || (eventConfig?.eventDate ? [eventConfig.eventDate] : []);
+  const isMultiDay = eventDates.length > 1;
+
+  // Format date for display - parse ISO date without timezone conversion
+  const formatDate = (dateStr: string) => {
+    const [year, month, day] = dateStr.split("-").map(Number);
+    const date = new Date(year, month - 1, day);
+    return date.toLocaleDateString("es-ES", { 
+      weekday: "short", 
+      day: "numeric", 
+      month: "short" 
+    });
+  };
+
   return (
     <>
-      <Group
-        justify="space-between"
-        align="center"
-        py="sm"
-        px="md"
-        style={{
-          borderBottom: "1px solid var(--mantine-color-gray-3)",
-          position: "sticky",
-          top: 0,
-          zIndex: 100,
-          background: "var(--mantine-color-body)",
-        }}
-      >
-        {/* Izquierda: Logo + Nombre del evento */}
-        <Group gap="sm" align="center">
-          {(dashboardLogo || eventImage) ? (
-            <Image
-              src={dashboardLogo || eventImage}
-              alt={eventName}
-              h={50}
-              w="auto"
-              fit="contain"
+      <Stack gap={0}>
+        <Group
+          justify="space-between"
+          align="center"
+          py="sm"
+          px="md"
+          style={{
+            borderBottom: "1px solid var(--mantine-color-gray-3)",
+            position: "sticky",
+            top: 0,
+            zIndex: 100,
+            background: "var(--mantine-color-body)",
+          }}
+        >
+          {/* Izquierda: Logo + Nombre del evento */}
+          <Group gap="sm" align="center">
+            {(dashboardLogo || eventImage) ? (
+              <Image
+                src={dashboardLogo || eventImage}
+                alt={eventName}
+                h={50}
+                w="auto"
+                fit="contain"
+              />
+            ) : null}
+            {!isMobile && (
+              <Title order={5} lineClamp={1}>
+                {eventName || "Dashboard"}
+              </Title>
+            )}
+          </Group>
+
+          {/* Derecha: Notificaciones + Avatar con Menu */}
+          <Group gap="sm" align="center">
+            <NotificationsMenu
+              notifications={notifications}
+              onNotificationClick={onNotificationClick}
+              onMarkAllRead={onMarkAllRead}
             />
-          ) : null}
-          {!isMobile && (
-            <Title order={5} lineClamp={1}>
-              {eventName || "Dashboard"}
-            </Title>
-          )}
+
+            <Menu position="bottom-end" width={200} shadow="md">
+              <Menu.Target>
+                <Group gap={6} style={{ cursor: "pointer" }}>
+                  <Avatar src={avatarSrc} size={36} radius="xl">
+                    {String(userName).slice(0, 1).toUpperCase()}
+                  </Avatar>
+                  {!isMobile && (
+                    <Text size="sm" fw={500} lineClamp={1} maw={150}>
+                      {userName}
+                    </Text>
+                  )}
+                  <IconChevronDown size={14} />
+                </Group>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item
+                  leftSection={<IconEdit size={16} />}
+                  onClick={() => setEditModalOpened(true)}
+                >
+                  Editar perfil
+                </Menu.Item>
+                <Menu.Divider />
+                <Menu.Item
+                  color="red"
+                  leftSection={<IconLogout size={16} />}
+                  onClick={handleLogout}
+                >
+                  Cerrar sesión
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+          </Group>
         </Group>
 
-        {/* Derecha: Notificaciones + Avatar con Menu */}
-        <Group gap="sm" align="center">
-          <NotificationsMenu
-            notifications={notifications}
-            onNotificationClick={onNotificationClick}
-            onMarkAllRead={onMarkAllRead}
-          />
-
-          <Menu position="bottom-end" width={200} shadow="md">
-            <Menu.Target>
-              <Group gap={6} style={{ cursor: "pointer" }}>
-                <Avatar src={avatarSrc} size={36} radius="xl">
-                  {String(userName).slice(0, 1).toUpperCase()}
-                </Avatar>
-                {!isMobile && (
-                  <Text size="sm" fw={500} lineClamp={1} maw={150}>
-                    {userName}
-                  </Text>
-                )}
-                <IconChevronDown size={14} />
-              </Group>
-            </Menu.Target>
-            <Menu.Dropdown>
-              <Menu.Item
-                leftSection={<IconEdit size={16} />}
-                onClick={() => setEditModalOpened(true)}
-              >
-                Editar perfil
-              </Menu.Item>
-              <Menu.Divider />
-              <Menu.Item
-                color="red"
-                leftSection={<IconLogout size={16} />}
-                onClick={handleLogout}
-              >
-                Cerrar sesión
-              </Menu.Item>
-            </Menu.Dropdown>
-          </Menu>
-        </Group>
-      </Group>
+        {/* Global day selector for multi-day events */}
+        {isMultiDay && onGlobalDateChange && (
+          <Group
+            px="md"
+            py="xs"
+            style={{
+              borderBottom: "1px solid var(--mantine-color-gray-2)",
+              background: "var(--mantine-color-gray-0)",
+            }}
+          >
+            <Select
+              placeholder="Filtrar por día"
+              data={[
+                { value: "", label: "Todos los días" },
+                ...eventDates.map((date: string) => ({
+                  value: date,
+                  label: formatDate(date),
+                })),
+              ]}
+              value={globalDateFilter || ""}
+              onChange={(value) => onGlobalDateChange(value || null)}
+              clearable
+              size="sm"
+              style={{ width: 220 }}
+            />
+          </Group>
+        )}
+      </Stack>
 
       {/* Modal de edición con formFields dinámicos */}
       <Modal

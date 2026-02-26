@@ -23,7 +23,7 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { storage } from "../../firebase/firebaseConfig";
 
 const API_WP_URL = "https://apiwhatsapp.geniality.com.co/api/send";
-const CLIENT_ID = "genialitybussinesstest88";
+const CLIENT_ID = "genialitybussinesstest";
 
 type Product = {
   id: string;
@@ -294,6 +294,8 @@ export function useDashboardData(eventId?: string) {
   const [products, setProducts] = useState<Product[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [policies, setPolicies] = useState<EventPolicies>(DEFAULT_POLICIES);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [globalDateFilter, setGlobalDateFilter] = useState<string | null>(null);
 
   // ---------------------- EFECTOS PRINCIPALES ----------------------
 
@@ -1098,7 +1100,7 @@ export function useDashboardData(eventId?: string) {
   };
 
   // Seleccionar slots disponibles para aceptar/reagendar reuniones
-  const prepareSlotSelection = async (meetingId: string, isEdit = false) => {
+  const prepareSlotSelection = async (meetingId: string, isEdit = false, selectedDate?: string) => {
     setPrepareSlotSelectionLoading(true);
 
     try {
@@ -1118,9 +1120,23 @@ export function useDashboardData(eventId?: string) {
         setMeetingToAccept({ id: meetingId, requesterId, receiverId });
       }
 
-      // Fecha del evento
-      const eventDayISO = String(eventConfig.eventDate); // "YYYY-MM-DD"
+      // Soporte multi-día: usar eventDates si existe, sino eventDate
+      const eventDates = eventConfig.eventDates || [eventConfig.eventDate];
+      const eventDayISO = selectedDate || eventDates[0]; // Usar fecha seleccionada o primera fecha
+      
+      // Establecer la fecha seleccionada en el estado si no está definida
+      if (!selectedDate) {
+        setSelectedDate(eventDayISO);
+      }
+      
       const eventDate = parseISODate(eventDayISO);
+
+      // Obtener configuración específica del día (si existe)
+      const dayConfig = eventConfig.dailyConfig?.[eventDayISO] || {
+        startTime: eventConfig.startTime,
+        endTime: eventConfig.endTime,
+        breakBlocks: eventConfig.breakBlocks || [],
+      };
 
       // Para saber si el evento es hoy y así bloquear horas pasadas solo en ese caso
       const today = new Date();
@@ -1169,18 +1185,34 @@ export function useDashboardData(eventId?: string) {
           return { start: sh * 60 + sm, end: eh * 60 + em };
         });
 
-      // Agenda de slots disponibles (agenda es por evento)
-      const agSn = await getDocs(
-        query(
+      // Agenda de slots disponibles - FILTRAR POR FECHA
+      let agendaQuery = query(
+        collection(db, "events", eventId, "agenda"),
+        where("available", "==", true),
+        orderBy("startTime"),
+      );
+      
+      // Agregar filtro por fecha si el campo existe
+      try {
+        agendaQuery = query(
           collection(db, "events", eventId, "agenda"),
           where("available", "==", true),
+          where("date", "==", eventDayISO),
           orderBy("startTime"),
-        ),
-      );
+        );
+      } catch (e) {
+        // Si falla (índice no existe o campo no existe), usar query sin filtro de fecha
+        console.warn("Usando query sin filtro de fecha:", e);
+      }
+      
+      const agSn = await getDocs(agendaQuery);
 
       const filtered = agSn.docs
         .map((d) => ({ id: d.id, ...(d.data() as Omit<AgendaSlot, "id">) }))
         .filter((slot) => {
+          // Filtrar por fecha si el slot tiene el campo date
+          if (slot.date && slot.date !== eventDayISO) return false;
+          
           const [h, m] = slot.startTime.split(":").map(Number);
 
           // la fecha/hora del slot con la FECHA DEL EVENTO (y no con hoy)
@@ -1191,12 +1223,12 @@ export function useDashboardData(eventId?: string) {
           // Si el evento es futuro, muestra todos los slots del evento
           if (isEventToday && slotDateTime <= now) return false;
 
-          // Respeta bloques de descanso
+          // Respeta bloques de descanso del día específico
           if (
             slotOverlapsBreakBlock(
               slot.startTime,
               eventConfig.meetingDuration,
-              eventConfig.breakBlocks,
+              dayConfig.breakBlocks, // Usar breakBlocks del día específico
             )
           )
             return false;
@@ -1266,8 +1298,10 @@ export function useDashboardData(eventId?: string) {
         return;
       }
 
-      // 0) Determinar la fecha del evento para normalizar (fallback si no existe)
-      const eventDateISO: string =
+      // 0) Determinar la fecha del evento para normalizar
+      // Soporte multi-día: usar la fecha del slot si existe, sino usar eventDate
+      const eventDateISO: string = slot.date || 
+        (eventConfig?.eventDates?.[0]) ||
         String(eventConfig?.eventDate || "").trim() ||
         new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
 
@@ -1645,6 +1679,56 @@ export function useDashboardData(eventId?: string) {
     await deleteDoc(doc(db, "events", eventId, "products", productId));
   };
 
+  // Manejar cambio de fecha en el modal de slots
+  const handleDateChange = (date: string) => {
+    setSelectedDate(date);
+    // Limpiar selecciones actuales
+    setSelectedRange(null);
+    setSelectedSlotId(null);
+    // Recargar slots para la nueva fecha
+    if (meetingToAccept?.id || meetingToEdit) {
+      const meetingId = meetingToEdit || meetingToAccept?.id;
+      const isEdit = !!meetingToEdit;
+      prepareSlotSelection(meetingId, isEdit, date);
+    }
+  };
+
+  // Filtrar reuniones y solicitudes por fecha global
+  const filteredAcceptedMeetings = useMemo(() => {
+    if (!globalDateFilter) return acceptedMeetings;
+    return acceptedMeetings.filter(m => m.meetingDate === globalDateFilter);
+  }, [acceptedMeetings, globalDateFilter]);
+
+  const filteredCancelledMeetings = useMemo(() => {
+    if (!globalDateFilter) return cancelledMeetings;
+    return cancelledMeetings.filter(m => m.meetingDate === globalDateFilter);
+  }, [cancelledMeetings, globalDateFilter]);
+
+  const filteredPendingRequests = useMemo(() => {
+    if (!globalDateFilter) return pendingRequests;
+    return pendingRequests.filter(m => m.meetingDate === globalDateFilter);
+  }, [pendingRequests, globalDateFilter]);
+
+  const filteredSentRequests = useMemo(() => {
+    if (!globalDateFilter) return sentRequests;
+    return sentRequests.filter(m => m.meetingDate === globalDateFilter);
+  }, [sentRequests, globalDateFilter]);
+
+  const filteredAcceptedRequests = useMemo(() => {
+    if (!globalDateFilter) return acceptedRequests;
+    return acceptedRequests.filter(m => m.meetingDate === globalDateFilter);
+  }, [acceptedRequests, globalDateFilter]);
+
+  const filteredRejectedRequests = useMemo(() => {
+    if (!globalDateFilter) return rejectedRequests;
+    return rejectedRequests.filter(m => m.meetingDate === globalDateFilter);
+  }, [rejectedRequests, globalDateFilter]);
+
+  const filteredSentRejectedRequests = useMemo(() => {
+    if (!globalDateFilter) return sentRejectedRequests;
+    return sentRejectedRequests.filter(m => m.meetingDate === globalDateFilter);
+  }, [sentRejectedRequests, globalDateFilter]);
+
   // ---------------------- RETORNO ----------------------
 
   return {
@@ -1652,15 +1736,15 @@ export function useDashboardData(eventId?: string) {
     currentUser,
     assistants,
     filteredAssistants,
-    acceptedMeetings,
-    cancelledMeetings,
+    acceptedMeetings: filteredAcceptedMeetings,
+    cancelledMeetings: filteredCancelledMeetings,
     loadingMeetings,
-    pendingRequests,
+    pendingRequests: filteredPendingRequests,
     cancelSentMeeting,
-    sentRequests,
-    sentRejectedRequests,
-    acceptedRequests,
-    rejectedRequests,
+    sentRequests: filteredSentRequests,
+    sentRejectedRequests: filteredSentRejectedRequests,
+    acceptedRequests: filteredAcceptedRequests,
+    rejectedRequests: filteredRejectedRequests,
     participantsInfo,
     notifications,
     markNotificationRead,
@@ -1736,5 +1820,10 @@ export function useDashboardData(eventId?: string) {
     deleteProduct,
     companies,
     policies,
+    selectedDate,
+    setSelectedDate,
+    handleDateChange,
+    globalDateFilter,
+    setGlobalDateFilter,
   };
 }

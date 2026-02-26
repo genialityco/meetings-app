@@ -10,6 +10,7 @@ import {
   Avatar,
   Center,
   Stack,
+  Select,
 } from "@mantine/core";
 import {
   collection,
@@ -32,10 +33,27 @@ const MeetingsListModal = ({ opened, onClose, event, setGlobalMessage }) => {
   const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [canceling, setCanceling] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(null);
+
+  // Helper para formatear fecha
+  const formatDate = (dateStr) => {
+    const [year, month, day] = dateStr.split("-").map(Number);
+    const date = new Date(year, month - 1, day);
+    return date.toLocaleDateString("es-ES", { 
+      weekday: "short", 
+      day: "numeric", 
+      month: "short" 
+    });
+  };
 
   useEffect(() => {
     if (opened && event) {
       fetchMeetings();
+      // Inicializar fecha seleccionada con la primera fecha del evento
+      const eventDates = event.config?.eventDates || (event.config?.eventDate ? [event.config.eventDate] : []);
+      if (eventDates.length > 0 && !selectedDate) {
+        setSelectedDate(eventDates[0]);
+      }
     }
     // eslint-disable-next-line
   }, [opened, event]);
@@ -102,6 +120,15 @@ const MeetingsListModal = ({ opened, onClose, event, setGlobalMessage }) => {
     setCanceling(null);
   };
 
+  // Filtrar reuniones por fecha seleccionada
+  const filteredMeetings = selectedDate 
+    ? meetings.filter(m => !m.meetingDate || m.meetingDate === selectedDate)
+    : meetings;
+
+  // Obtener fechas del evento
+  const eventDates = event?.config?.eventDates || (event?.config?.eventDate ? [event.config.eventDate] : []);
+  const isMultiDay = eventDates.length > 1;
+
   return (
     <Modal
       opened={opened}
@@ -112,14 +139,31 @@ const MeetingsListModal = ({ opened, onClose, event, setGlobalMessage }) => {
       radius="md"
       overlayProps={{ blur: 2 }}
     >
+      {/* Selector de día para eventos multi-día */}
+      {isMultiDay && (
+        <Group mb="md">
+          <Select
+            label="Seleccionar día"
+            placeholder="Escoge un día"
+            data={eventDates.map((date) => ({
+              value: date,
+              label: formatDate(date),
+            }))}
+            value={selectedDate}
+            onChange={setSelectedDate}
+            style={{ width: 250 }}
+          />
+        </Group>
+      )}
+
       {loading ? (
         <Center style={{ minHeight: 200 }}>
           <Loader size="lg" />
         </Center>
-      ) : meetings.length === 0 ? (
+      ) : filteredMeetings.length === 0 ? (
         <Center style={{ minHeight: 120 }}>
           <Text color="dimmed">
-            No hay reuniones asignadas para este evento.
+            No hay reuniones asignadas para {isMultiDay && selectedDate ? 'este día' : 'este evento'}.
           </Text>
         </Center>
       ) : (
@@ -134,7 +178,7 @@ const MeetingsListModal = ({ opened, onClose, event, setGlobalMessage }) => {
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {meetings.map((m) => (
+            {filteredMeetings.map((m) => (
               <Table.Tr key={m.id}>
                 <Table.Td>
                   <Text fw={600}>{m.timeSlot || "--"}</Text>
