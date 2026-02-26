@@ -23,6 +23,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { IconSearch, IconX, IconFilterOff, IconBuildingStore, IconSparkles } from "@tabler/icons-react";
 import type { Product, Company, Assistant, MeetingContext } from "./types";
+import MeetingRequestModal from "./MeetingRequestModal";
 
 interface ProductsViewProps {
   products: Product[];
@@ -56,6 +57,8 @@ export default function ProductsView({
   const [vectorResults, setVectorResults] = useState<Product[]>([]);
   const [isVectorSearching, setIsVectorSearching] = useState(false);
   const [useVectorSearch, setUseVectorSearch] = useState(false);
+  const [modalOpened, setModalOpened] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<{ product: Product; assistantId: string; assistantPhone: string } | null>(null);
 
   const myUid = currentUser?.uid;
 
@@ -111,7 +114,7 @@ export default function ProductsView({
             eventId: eventId,
             userId: myUid,
             limit: 50,
-            threshold: 0.62,
+            threshold: 0.3,
           }),
         });
 
@@ -171,24 +174,36 @@ export default function ProductsView({
     });
   }, [products, searchTerm, categoryFilter, useVectorSearch, vectorResults]);
 
-  const handleSendMeeting = async (
+  const handleOpenModal = (
     assistantId: string,
     assistantPhone: string,
     product: Product,
   ) => {
+    setSelectedProduct({ product, assistantId, assistantPhone });
+    setModalOpened(true);
+  };
+
+  const handleConfirmMeeting = async (message: string) => {
+    if (!selectedProduct) return;
+    
+    const { product, assistantId, assistantPhone } = selectedProduct;
     setLoadingId(`${product.id}-${assistantId}`);
+    
     try {
       await sendMeetingRequest(assistantId, assistantPhone, null, {
         productId: product.id,
         companyId: product.companyId || null,
-        contextNote: `Interesado en: ${product.title}`,
+        contextNote: message || `Interesado en: ${product.title}`,
       });
 
       showNotification({
         title: "Solicitud enviada",
-        message: `Solicitud enviada por el producto "${product.title}".`,
+        message: `Solicitud enviada por el producto "${product.title}"${message ? ' con tu mensaje personalizado' : ''}.`,
         color: "teal",
       });
+      
+      setModalOpened(false);
+      setSelectedProduct(null);
     } catch {
       showNotification({
         title: "Error",
@@ -223,6 +238,10 @@ export default function ProductsView({
         ? "Tu producto"
         : "Solicitar reunión";
 
+    // Verificar si tiene similarity score (viene de búsqueda por vectores)
+    const hasSimilarity = typeof (p as any).similarity === 'number';
+    const similarityScore = hasSimilarity ? Math.round((p as any).similarity * 100) : null;
+
     return (
       <Grid.Col
         key={p.id}
@@ -237,8 +256,27 @@ export default function ProductsView({
           style={{
             height: "100%",
             overflow: "hidden",
+            position: "relative",
           }}
         >
+          {/* Badge de concordancia */}
+          {hasSimilarity && (
+            <Badge
+              variant="gradient"
+              gradient={{ from: 'blue', to: 'cyan', deg: 90 }}
+              size="sm"
+              radius="md"
+              style={{
+                position: "absolute",
+                top: 10,
+                right: 10,
+                zIndex: 2,
+              }}
+            >
+              {similarityScore}% match
+            </Badge>
+          )}
+
           {/* Imagen */}
           <Card.Section>
             {p.imageUrl ? (
@@ -354,7 +392,7 @@ export default function ProductsView({
               fullWidth
               variant={isDisabled ? "light" : "filled"}
               onClick={() =>
-                handleSendMeeting(p.ownerUserId, p.ownerPhone || "", p)
+                handleOpenModal(p.ownerUserId, p.ownerPhone || "", p)
               }
               disabled={isDisabled}
               loading={loadingId === `${p.id}-${p.ownerUserId}`}
@@ -468,6 +506,20 @@ export default function ProductsView({
       ) : (
         <Grid gutter="sm">{filteredProducts.map(renderProductCard)}</Grid>
       )}
+
+      {/* Modal de solicitud de reunión */}
+      <MeetingRequestModal
+        opened={modalOpened}
+        recipientName={selectedProduct?.product.ownerCompany || ""}
+        recipientType="producto"
+        contextInfo={selectedProduct?.product.title}
+        onCancel={() => {
+          setModalOpened(false);
+          setSelectedProduct(null);
+        }}
+        onConfirm={handleConfirmMeeting}
+        loading={loadingId === `${selectedProduct?.product.id}-${selectedProduct?.assistantId}`}
+      />
     </Stack>
   );
 }

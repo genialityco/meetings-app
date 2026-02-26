@@ -39,6 +39,7 @@ import {
   IconSparkles,
 } from "@tabler/icons-react";
 import type { Assistant, Company, EventPolicies, MeetingContext } from "./types";
+import MeetingRequestModal from "./MeetingRequestModal";
 
 const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
 
@@ -111,6 +112,8 @@ export default function CompaniesView({
   const [vectorResults, setVectorResults] = useState<Company[]>([]);
   const [isVectorSearching, setIsVectorSearching] = useState(false);
   const [useVectorSearch, setUseVectorSearch] = useState(false);
+  const [modalOpened, setModalOpened] = useState(false);
+  const [selectedMeeting, setSelectedMeeting] = useState<{ assistant: Assistant; companyNit: string } | null>(null);
 
   const myUid = currentUser?.uid;
 
@@ -159,6 +162,7 @@ export default function CompaniesView({
         logoUrl: companyDoc?.logoUrl || null,
         fixedTable: companyDoc?.fixedTable || null,
         asistentes,
+        similarity: undefined as number | undefined, // Add similarity field
       };
     });
   }, [filteredAssistants, companiesByNit]);
@@ -167,10 +171,17 @@ export default function CompaniesView({
   const filtered = useMemo(() => {
     // Si estamos usando búsqueda por vectores
     if (useVectorSearch && searchTerm.trim().length >= 3) {
-      // Mapear resultados de vectores a companiesData
+      // Mapear resultados de vectores a companiesData, preservando similarity
       return vectorResults
         .map(vectorCompany => {
-          return companiesData.find(c => c.nit === vectorCompany.nitNorm);
+          const companyData = companiesData.find(c => c.nit === vectorCompany.nitNorm);
+          if (companyData) {
+            return {
+              ...companyData,
+              similarity: (vectorCompany as any).similarity, // Preservar similarity
+            };
+          }
+          return null;
         })
         .filter(Boolean) as typeof companiesData;
     }
@@ -220,7 +231,7 @@ export default function CompaniesView({
             category: "companies",
             eventId: eventId,
             limit: 50,
-            threshold: 0.55,
+            threshold: 0.3,
           }),
         });
 
@@ -246,25 +257,31 @@ export default function CompaniesView({
     return () => clearTimeout(timeoutId);
   }, [searchTerm, eventId]);
 
-  const handleSelectAssistant = (companyKey: string, assistantId: string) => {
-    setSelectedAssistantPerCompany((prev) => ({
-      ...prev,
-      [companyKey]: prev[companyKey] === assistantId ? null : assistantId,
-    }));
+  const handleOpenModal = (assistant: Assistant, companyNit: string) => {
+    setSelectedMeeting({ assistant, companyNit });
+    setModalOpened(true);
   };
 
-  const handleSendMeeting = async (assistant: Assistant, companyNit: string) => {
+  const handleConfirmMeeting = async (message: string) => {
+    if (!selectedMeeting) return;
+    
+    const { assistant, companyNit } = selectedMeeting;
     setLoadingId(assistant.id);
+    
     try {
       await sendMeetingRequest(assistant.id, assistant.telefono || "", null, {
         companyId: companyNit,
-        contextNote: `Reunión desde vista de empresa: ${assistant.empresa || ""}`,
+        contextNote: message || `Reunión desde vista de empresa: ${assistant.empresa || ""}`,
       });
+      
       showNotification({
         title: "Solicitud enviada",
-        message: `Solicitud enviada a ${assistant.nombre}.`,
+        message: `Solicitud enviada a ${assistant.nombre}${message ? ' con tu mensaje personalizado' : ''}.`,
         color: "teal",
       });
+      
+      setModalOpened(false);
+      setSelectedMeeting(null);
     } catch {
       showNotification({
         title: "Error",
@@ -274,6 +291,13 @@ export default function CompaniesView({
     } finally {
       setLoadingId(null);
     }
+  };
+
+  const handleSelectAssistant = (companyKey: string, assistantId: string) => {
+    setSelectedAssistantPerCompany((prev) => ({
+      ...prev,
+      [companyKey]: prev[companyKey] === assistantId ? null : assistantId,
+    }));
   };
 
   const handleSendMeetingToAllCompany = async (
@@ -356,7 +380,7 @@ export default function CompaniesView({
 
       <Grid gutter="sm">
         {filtered.length > 0 ? (
-          filtered.map(({ nit, empresa, logoUrl, fixedTable, asistentes }) => {
+          filtered.map(({ nit, empresa, logoUrl, fixedTable, asistentes, similarity }) => {
             const companyKey = nit; // clave estable
             const selectedId = selectedAssistantPerCompany[companyKey];
 
@@ -366,9 +390,40 @@ export default function CompaniesView({
 
             const isMulti = asistentes.length > 1;
 
+            // Verificar si tiene similarity score (viene de búsqueda por vectores)
+            const hasSimilarity = typeof similarity === 'number';
+            const similarityScore = hasSimilarity ? Math.round(similarity * 100) : null;
+
             return (
               <Grid.Col span={{ base: 12, md: 6, lg: 4 }} key={companyKey}>
-                <Card withBorder radius="xl" padding="md" shadow="sm" style={{ height: "100%" }}>
+                <Card 
+                  withBorder 
+                  radius="xl" 
+                  padding="md" 
+                  shadow="sm" 
+                  style={{ 
+                    height: "100%",
+                    position: "relative",
+                  }}
+                >
+                  {/* Badge de concordancia */}
+                  {hasSimilarity && (
+                    <Badge
+                      variant="gradient"
+                      gradient={{ from: 'blue', to: 'cyan', deg: 90 }}
+                      size="sm"
+                      radius="md"
+                      style={{
+                        position: "absolute",
+                        top: 10,
+                        right: 10,
+                        zIndex: 1,
+                      }}
+                    >
+                      {similarityScore}% match
+                    </Badge>
+                  )}
+
                   {/* HEADER tipo imagen */}
                   <Group justify="space-between" align="flex-start" wrap="nowrap">
                     <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
@@ -552,7 +607,7 @@ export default function CompaniesView({
                     radius="md"
                     size="md"
                     color={theme.primaryColor}
-                    onClick={() => handleSendMeeting(selectedAssistant, nit)}
+                    onClick={() => handleOpenModal(selectedAssistant, nit)}
                     disabled={
                       !solicitarReunionHabilitado ||
                       loadingId === selectedAssistant?.id ||
@@ -592,6 +647,20 @@ export default function CompaniesView({
           </Grid.Col>
         )}
       </Grid>
+
+      {/* Modal de solicitud de reunión */}
+      <MeetingRequestModal
+        opened={modalOpened}
+        recipientName={selectedMeeting?.assistant.nombre || ""}
+        recipientType="empresa"
+        contextInfo={selectedMeeting?.assistant.empresa}
+        onCancel={() => {
+          setModalOpened(false);
+          setSelectedMeeting(null);
+        }}
+        onConfirm={handleConfirmMeeting}
+        loading={loadingId === selectedMeeting?.assistant.id}
+      />
     </Stack>
   );
 }

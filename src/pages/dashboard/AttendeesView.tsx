@@ -38,6 +38,7 @@ import {
 } from "@tabler/icons-react";
 import type { Assistant } from "./types";
 import { useNavigate, useParams } from "react-router-dom";
+import MeetingRequestModal from "./MeetingRequestModal";
 
 const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
 
@@ -79,7 +80,12 @@ interface AttendeesViewProps {
   setInterestFilter: (v: string | null) => void;
   eventConfig: any;
   solicitarReunionHabilitado: boolean;
-  sendMeetingRequest: (id: string, phone: string) => Promise<void>;
+  sendMeetingRequest: (
+    id: string,
+    phone: string,
+    groupId?: string | null,
+    context?: MeetingContext,
+  ) => Promise<void>;
   setAvatarModalOpened: (v: boolean) => void;
   setSelectedImage: (v: string | null) => void;
   currentUser: any;
@@ -134,6 +140,8 @@ export default function AttendeesView({
   const [vectorResults, setVectorResults] = useState<Assistant[]>([]);
   const [isVectorSearching, setIsVectorSearching] = useState(false);
   const [useVectorSearch, setUseVectorSearch] = useState(false);
+  const [modalOpened, setModalOpened] = useState(false);
+  const [selectedAssistant, setSelectedAssistant] = useState<Assistant | null>(null);
 
   const myUid = currentUser?.uid;
   const navigate = useNavigate();
@@ -283,15 +291,28 @@ export default function AttendeesView({
     return results;
   }, [useVectorSearch, searchTerm, vectorResults, filteredAssistants, interestFilter, showOnlyToday, eventId]);
 
-  const handleSendMeeting = async (assistant: Assistant) => {
-    setLoadingId(assistant.id);
+  const handleOpenModal = (assistant: Assistant) => {
+    setSelectedAssistant(assistant);
+    setModalOpened(true);
+  };
+
+  const handleConfirmMeeting = async (message: string) => {
+    if (!selectedAssistant) return;
+    
+    setLoadingId(selectedAssistant.id);
     try {
-      await sendMeetingRequest(assistant.id, assistant.telefono || "");
+      await sendMeetingRequest(selectedAssistant.id, selectedAssistant.telefono || "", null, {
+        contextNote: message || undefined,
+      });
+      
       showNotification({
         title: "Solicitud enviada",
-        message: `Solicitud enviada a ${assistant.nombre}, quedará en lista de pendientes por aceptar.`,
+        message: `Solicitud enviada a ${selectedAssistant.nombre}${message ? ' con tu mensaje personalizado' : ''}.`,
         color: "teal",
       });
+      
+      setModalOpened(false);
+      setSelectedAssistant(null);
     } catch {
       showNotification({
         title: "Error",
@@ -410,6 +431,10 @@ export default function AttendeesView({
               loadingId === assistant.id ||
               isMine;
 
+            // Verificar si tiene similarity score (viene de búsqueda por vectores)
+            const hasSimilarity = typeof (assistant as any).similarity === 'number';
+            const similarityScore = hasSimilarity ? Math.round((assistant as any).similarity * 100) : null;
+
             return (
               <Grid.Col
                 span={{ base: 12, sm: 6, md: 4, lg: 3 }}
@@ -424,8 +449,27 @@ export default function AttendeesView({
                     height: "100%",
                     display: "flex",
                     flexDirection: "column",
+                    position: "relative",
                   }}
                 >
+                  {/* Badge de concordancia */}
+                  {hasSimilarity && (
+                    <Badge
+                      variant="gradient"
+                      gradient={{ from: 'blue', to: 'cyan', deg: 90 }}
+                      size="sm"
+                      radius="md"
+                      style={{
+                        position: "absolute",
+                        top: 10,
+                        right: 10,
+                        zIndex: 1,
+                      }}
+                    >
+                      {similarityScore}% match
+                    </Badge>
+                  )}
+
                   {/* Header */}
                   <Group wrap="nowrap" align="center" gap="sm">
                     <Avatar
@@ -503,7 +547,7 @@ export default function AttendeesView({
                     size="sm"
                     fullWidth
                     color={theme.primaryColor}
-                    onClick={() => handleSendMeeting(assistant)}
+                    onClick={() => handleOpenModal(assistant)}
                     disabled={disabled}
                     loading={loadingId === assistant.id}
                   >
@@ -528,6 +572,19 @@ export default function AttendeesView({
           </Grid.Col>
         )}
       </Grid>
+
+      {/* Modal de solicitud de reunión */}
+      <MeetingRequestModal
+        opened={modalOpened}
+        recipientName={selectedAssistant?.nombre || ""}
+        recipientType="asistente"
+        onCancel={() => {
+          setModalOpened(false);
+          setSelectedAssistant(null);
+        }}
+        onConfirm={handleConfirmMeeting}
+        loading={loadingId === selectedAssistant?.id}
+      />
     </Stack>
   );
 }
