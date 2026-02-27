@@ -56,7 +56,8 @@ export type NotificationType =
   | "meeting_accepted"
   | "meeting_rejected"
   | "meeting_cancelled"
-  | "meeting_modified";
+  | "meeting_modified"
+  | "high_affinity";
 
 export interface Notification {
   id: string;
@@ -65,6 +66,10 @@ export interface Notification {
   read: boolean;
   timestamp: any;
   type?: NotificationType;
+  entityType?: "assistant" | "product" | "company"; // Tipo de entidad relacionada
+  entityId?: string; // ID de la entidad relacionada
+  affinityScore?: number; // Score de afinidad (para notificaciones de alta afinidad)
+  eventId?: string;
 }
 
 export interface AgendaSlot {

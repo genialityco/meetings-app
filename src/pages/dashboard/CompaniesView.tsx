@@ -86,6 +86,8 @@ interface CompaniesViewProps {
   currentUser: any;
   formFields: any[];
   cardFields: string[];
+  affinityScores: Record<string, number>;
+  highlightEntityId?: string;
 }
 
 export default function CompaniesView({
@@ -99,6 +101,8 @@ export default function CompaniesView({
   currentUser,
   formFields,
   cardFields,
+  affinityScores,
+  highlightEntityId,
 }: CompaniesViewProps) {
   const theme = useMantineTheme();
   const navigate = useNavigate();
@@ -114,8 +118,30 @@ export default function CompaniesView({
   const [useVectorSearch, setUseVectorSearch] = useState(false);
   const [modalOpened, setModalOpened] = useState(false);
   const [selectedMeeting, setSelectedMeeting] = useState<{ assistant: Assistant; companyNit: string } | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
   const myUid = currentUser?.uid;
+
+  // Efecto para hacer scroll y resaltar la card cuando viene de notificación
+  useEffect(() => {
+    if (highlightEntityId) {
+      setHighlightedId(highlightEntityId);
+      
+      setTimeout(() => {
+        const element = document.getElementById(`company-card-${highlightEntityId}`);
+        if (element) {
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 300);
+
+      // Remover el resaltado después de 8 segundos
+      const timer = setTimeout(() => {
+        setHighlightedId(null);
+      }, 8000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [highlightEntityId]);
 
   // Map para evitar companies.find repetitivo
   const companiesByNit = useMemo(() => {
@@ -169,10 +195,12 @@ export default function CompaniesView({
 
   // Filtrar por búsqueda
   const filtered = useMemo(() => {
+    let results: typeof companiesData = [];
+    
     // Si estamos usando búsqueda por vectores
     if (useVectorSearch && searchTerm.trim().length >= 3) {
       // Mapear resultados de vectores a companiesData, preservando similarity
-      return vectorResults
+      results = vectorResults
         .map(vectorCompany => {
           const companyData = companiesData.find(c => c.nit === vectorCompany.nitNorm);
           if (companyData) {
@@ -184,20 +212,39 @@ export default function CompaniesView({
           return null;
         })
         .filter(Boolean) as typeof companiesData;
+    } else {
+      // Búsqueda tradicional
+      const t = searchTerm.toLowerCase().trim();
+      if (!t) {
+        results = companiesData;
+      } else {
+        results = companiesData.filter(
+          (c) =>
+            c.empresa.toLowerCase().includes(t) ||
+            c.nit.includes(t) ||
+            c.asistentes.some((a) =>
+              (a.nombre || "").toLowerCase().includes(t),
+            ),
+        );
+      }
     }
-
-    // Búsqueda tradicional
-    const t = searchTerm.toLowerCase().trim();
-    if (!t) return companiesData;
-    return companiesData.filter(
-      (c) =>
-        c.empresa.toLowerCase().includes(t) ||
-        c.nit.includes(t) ||
-        c.asistentes.some((a) =>
-          (a.nombre || "").toLowerCase().includes(t),
-        ),
-    );
-  }, [companiesData, searchTerm, useVectorSearch, vectorResults]);
+    
+    // Ordenar por afinidad promedio de los asistentes de la empresa (si no hay búsqueda por vectores)
+    if (!useVectorSearch) {
+      results.sort((a, b) => {
+        // Calcular afinidad promedio de los asistentes de cada empresa
+        const avgAffinityA = a.asistentes.length > 0
+          ? a.asistentes.reduce((sum, assistant) => sum + (affinityScores[assistant.id] || 0), 0) / a.asistentes.length
+          : 0;
+        const avgAffinityB = b.asistentes.length > 0
+          ? b.asistentes.reduce((sum, assistant) => sum + (affinityScores[assistant.id] || 0), 0) / b.asistentes.length
+          : 0;
+        return avgAffinityB - avgAffinityA; // Mayor afinidad primero
+      });
+    }
+    
+    return results;
+  }, [companiesData, searchTerm, useVectorSearch, vectorResults, affinityScores]);
 
   // Búsqueda por vectores con debounce
   useEffect(() => {
@@ -339,6 +386,28 @@ export default function CompaniesView({
   const hasSearch = !!searchTerm.trim();
 
   return (
+    <>
+      <style>
+        {`
+          @keyframes pulse {
+            0%, 100% {
+              box-shadow: 0 0 20px rgba(20, 184, 166, 0.4);
+            }
+            50% {
+              box-shadow: 0 0 30px rgba(20, 184, 166, 0.7);
+            }
+          }
+          
+          @keyframes fadeOut {
+            from {
+              opacity: 1;
+            }
+            to {
+              opacity: 0;
+            }
+          }
+        `}
+      </style>
     <Stack gap="md">
       {/* Search bar estilo “top” */}
       <Paper withBorder radius="lg" p="sm">
@@ -394,9 +463,13 @@ export default function CompaniesView({
             const hasSimilarity = typeof similarity === 'number';
             const similarityScore = hasSimilarity ? Math.round(similarity * 100) : null;
 
+            // Verificar si esta card debe ser resaltada (usando el estado temporal)
+            const isHighlighted = highlightedId === nit;
+
             return (
               <Grid.Col span={{ base: 12, md: 6, lg: 4 }} key={companyKey}>
                 <Card 
+                  id={`company-card-${nit}`}
                   withBorder 
                   radius="xl" 
                   padding="md" 
@@ -404,6 +477,9 @@ export default function CompaniesView({
                   style={{ 
                     height: "100%",
                     position: "relative",
+                    border: isHighlighted ? "3px solid var(--mantine-color-teal-5)" : undefined,
+                    boxShadow: isHighlighted ? "0 0 20px rgba(20, 184, 166, 0.4)" : undefined,
+                    animation: isHighlighted ? "pulse 2s ease-in-out 3" : undefined,
                   }}
                 >
                   {/* Badge de concordancia */}
@@ -421,6 +497,25 @@ export default function CompaniesView({
                       }}
                     >
                       {similarityScore}% match
+                    </Badge>
+                  )}
+
+                  {/* Badge NUEVO cuando está resaltado */}
+                  {isHighlighted && (
+                    <Badge
+                      variant="filled"
+                      color="teal"
+                      size="lg"
+                      radius="md"
+                      style={{
+                        position: "absolute",
+                        top: 10,
+                        left: 10,
+                        zIndex: 2,
+                        fontWeight: 700,
+                      }}
+                    >
+                      ¡NUEVO!
                     </Badge>
                   )}
 
@@ -662,5 +757,6 @@ export default function CompaniesView({
         loading={loadingId === selectedMeeting?.assistant.id}
       />
     </Stack>
+    </>
   );
 }

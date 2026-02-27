@@ -1,5 +1,6 @@
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onRequest } from "firebase-functions/v2/https";
+import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
@@ -1642,6 +1643,393 @@ export const vectorizeDocuments = onRequest(
     } catch (error) {
       console.error("Error during vectorization:", error);
       return res.status(500).send("Error during vectorization");
+    }
+  }
+);
+
+
+/**
+ * Función helper para calcular score de afinidad entre dos usuarios
+ */
+function calculateAffinityScore(userA, userB) {
+  let score = 0;
+  const reasons = [];
+
+  // 1. Roles complementarios (+30 puntos)
+  const tipoA = (userA.tipoAsistente || "").toLowerCase();
+  const tipoB = (userB.tipoAsistente || "").toLowerCase();
+  
+  if ((tipoA === "comprador" && tipoB === "vendedor") || 
+      (tipoA === "vendedor" && tipoB === "comprador")) {
+    score += 30;
+    reasons.push("Roles complementarios");
+  }
+
+  // 2. Coincidencia de intereses (+25 puntos)
+  if (userA.interesPrincipal && userB.interesPrincipal && 
+      userA.interesPrincipal === userB.interesPrincipal) {
+    score += 25;
+    reasons.push("Mismo interés principal");
+  }
+
+  // 3. Keywords en descripción/necesidad (+20 puntos máximo)
+  const extractKeywords = (text) => {
+    if (!text) return [];
+    return text.toLowerCase()
+      .split(/\s+/)
+      .filter(w => w.length > 3)
+      .slice(0, 10); // Limitar a 10 keywords
+  };
+
+  const keywordsA = extractKeywords(userA.necesidad || userA.descripcion || "");
+  const textB = (userB.necesidad || userB.descripcion || "").toLowerCase();
+  
+  const matchingKeywords = keywordsA.filter(kw => textB.includes(kw));
+  if (matchingKeywords.length > 0) {
+    const keywordScore = Math.min(20, matchingKeywords.length * 5);
+    score += keywordScore;
+    reasons.push(`${matchingKeywords.length} palabras clave coinciden`);
+  }
+
+  // 4. Mismo sector/categoría (+15 puntos)
+  // Puedes agregar lógica de sector si tienes ese campo
+  // Por ahora, verificar si tienen palabras similares en empresa
+  const empresaA = (userA.empresa || userA.company_razonSocial || "").toLowerCase();
+  const empresaB = (userB.empresa || userB.company_razonSocial || "").toLowerCase();
+  
+  const sectores = ["tecnología", "alimentos", "construcción", "textil", "salud", "educación"];
+  const sectorA = sectores.find(s => empresaA.includes(s));
+  const sectorB = sectores.find(s => empresaB.includes(s));
+  
+  if (sectorA && sectorB && sectorA === sectorB) {
+    score += 15;
+    reasons.push(`Mismo sector: ${sectorA}`);
+  }
+
+  // 5. Actividad reciente (+10 puntos)
+  const now = new Date();
+  const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  
+  if (userB.lastConnection) {
+    let lastConn;
+    if (userB.lastConnection.toDate) {
+      lastConn = userB.lastConnection.toDate();
+    } else if (typeof userB.lastConnection === "string") {
+      lastConn = new Date(userB.lastConnection);
+    } else if (userB.lastConnection instanceof Date) {
+      lastConn = userB.lastConnection;
+    }
+    
+    if (lastConn && lastConn > oneDayAgo) {
+      score += 10;
+      reasons.push("Activo recientemente");
+    }
+  }
+
+  return {
+    score: Math.min(100, score), // Máximo 100
+    reasons,
+  };
+}
+
+/**
+ * Trigger: Calcular afinidad cuando se crea un nuevo usuario
+ * Se ejecuta automáticamente al crear un documento en /users/{userId}
+ */
+export const calculateAffinityOnUserCreate = onDocumentCreated(
+  {
+    document: "users/{userId}",
+    region: "us-central1",
+    memory: "512MiB",
+  },
+  async (event) => {
+    const snapshot = event.data;
+    if (!snapshot) {
+      console.log("No data associated with the event");
+      return;
+    }
+
+    const newUserId = event.params.userId;
+    const newUserData = snapshot.data();
+    const eventId = newUserData.eventId;
+
+    if (!eventId) {
+      console.log(`User ${newUserId} has no eventId, skipping affinity calculation`);
+      return;
+    }
+
+    console.log(`Calculating affinity for new user ${newUserId} in event ${eventId}`);
+
+    const db = getFirestore();
+
+    try {
+      // Obtener todos los usuarios del mismo evento (excepto el nuevo)
+      const usersSnap = await db.collection("users")
+        .where("eventId", "==", eventId)
+        .get();
+
+      const otherUsers = usersSnap.docs
+        .filter(doc => doc.id !== newUserId)
+        .map(doc => ({ id: doc.id, ...doc.data() }));
+
+      console.log(`Found ${otherUsers.length} other users in event ${eventId}`);
+
+      if (otherUsers.length === 0) {
+        console.log("No other users to calculate affinity with");
+        return;
+      }
+
+      // Calcular afinidad con cada usuario
+      let batch = db.batch();
+      let calculatedCount = 0;
+      const highAffinityNotifications = []; // Para notificaciones de alta afinidad
+
+      for (const otherUser of otherUsers) {
+        // Calcular afinidad UNA SOLA VEZ (simétrica)
+        const affinity = calculateAffinityScore(newUserData, otherUser);
+
+        // Guardar afinidad del nuevo usuario hacia el otro
+        const affinityRefAtoB = db.collection("users")
+          .doc(newUserId)
+          .collection("affinityScores")
+          .doc(otherUser.id);
+
+        batch.set(affinityRefAtoB, {
+          targetUserId: otherUser.id,
+          targetName: otherUser.nombre || "Sin nombre",
+          targetCompany: otherUser.empresa || otherUser.company_razonSocial || "Sin empresa",
+          score: affinity.score,
+          reasons: affinity.reasons,
+          eventId: eventId,
+          calculatedAt: new Date(),
+        });
+
+        // Guardar el MISMO score en el otro usuario (simétrico)
+        const affinityRefBtoA = db.collection("users")
+          .doc(otherUser.id)
+          .collection("affinityScores")
+          .doc(newUserId);
+
+        batch.set(affinityRefBtoA, {
+          targetUserId: newUserId,
+          targetName: newUserData.nombre || "Sin nombre",
+          targetCompany: newUserData.empresa || newUserData.company_razonSocial || "Sin empresa",
+          score: affinity.score, // MISMO SCORE
+          reasons: affinity.reasons, // MISMAS RAZONES
+          eventId: eventId,
+          calculatedAt: new Date(),
+        });
+
+        calculatedCount += 2;
+
+        // Si la afinidad es mayor a 80%, notificar al usuario ANTIGUO
+        if (affinity.score > 60) {
+          highAffinityNotifications.push({
+            userId: otherUser.id, // Usuario antiguo recibe la notificación
+            targetUserId: newUserId,
+            targetName: newUserData.nombre || "Sin nombre",
+            targetCompany: newUserData.empresa || newUserData.company_razonSocial || "Sin empresa",
+            targetRole: newUserData.tipoAsistente || "Asistente",
+            targetInterest: newUserData.interesPrincipal || "",
+            score: affinity.score,
+            reasons: affinity.reasons,
+          });
+        }
+
+        // Firestore batch tiene límite de 500 operaciones
+        if (calculatedCount >= 450) {
+          await batch.commit();
+          console.log(`Committed batch of ${calculatedCount} affinity scores`);
+          batch = db.batch(); // Crear nuevo batch
+          calculatedCount = 0;
+        }
+      }
+
+      // Commit final si quedan operaciones
+      if (calculatedCount > 0) {
+        await batch.commit();
+        console.log(`Committed final batch of ${calculatedCount} affinity scores`);
+      }
+
+      // Crear notificaciones de alta afinidad
+      if (highAffinityNotifications.length > 0) {
+        console.log(`Creating ${highAffinityNotifications.length} high affinity notifications`);
+        
+        for (const notif of highAffinityNotifications) {
+          const reasonsText = notif.reasons.length > 0 
+            ? notif.reasons.join(", ") 
+            : "Perfil compatible";
+          
+          await db.collection("notifications").add({
+            userId: notif.userId,
+            title: "¡Nueva persona con alta afinidad!",
+            message: `${notif.targetName} (${notif.targetCompany}) se ha registrado y tienen ${notif.score}% de afinidad. ${reasonsText}.`,
+            timestamp: new Date(),
+            read: false,
+            type: "high_affinity",
+            entityType: "assistant",
+            entityId: notif.targetUserId,
+            affinityScore: notif.score,
+            eventId: eventId,
+          });
+        }
+        
+        console.log(`Created ${highAffinityNotifications.length} high affinity notifications`);
+      }
+
+      console.log(`Affinity calculation complete for user ${newUserId}`);
+
+    } catch (error) {
+      console.error("Error calculating affinity:", error);
+      throw error;
+    }
+  }
+);
+
+/**
+ * Función HTTP para recalcular afinidad de todos los usuarios de un evento
+ * Útil para recalcular después de cambios en el algoritmo
+ * 
+ * Uso: POST https://[region]-[project].cloudfunctions.net/recalculateEventAffinity
+ * Body: { "eventId": "xxx" }
+ */
+export const recalculateEventAffinity = onRequest(
+  {
+    region: "us-central1",
+    memory: "1GiB",
+    timeoutSeconds: 540,
+  },
+  async (req, res) => {
+    // CORS headers
+    const origin = req.headers.origin || "*";
+    res.set({
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "POST,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type,Authorization",
+      "Access-Control-Allow-Credentials": "true",
+    });
+
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+
+    if (req.method !== "POST") {
+      res.status(405).send({ error: "Method not allowed" });
+      return;
+    }
+
+    const eventId = req.body?.eventId;
+
+    if (!eventId) {
+      res.status(400).send({ error: "Missing eventId" });
+      return;
+    }
+
+    console.log(`Recalculating affinity for all users in event ${eventId}`);
+
+    const db = getFirestore();
+
+    try {
+      // Obtener todos los usuarios del evento
+      const usersSnap = await db.collection("users")
+        .where("eventId", "==", eventId)
+        .get();
+
+      const allUsers = usersSnap.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data() 
+      }));
+
+      console.log(`Found ${allUsers.length} users in event ${eventId}`);
+
+      if (allUsers.length < 2) {
+        res.status(200).send({ 
+          message: "Not enough users to calculate affinity",
+          usersCount: allUsers.length,
+        });
+        return;
+      }
+
+      let totalCalculations = 0;
+      let batchCount = 0;
+      let batch = db.batch();
+
+      // Calcular afinidad entre todos los pares de usuarios (simétrico)
+      // Solo calculamos una vez por par (i < j) y guardamos en ambas direcciones
+      for (let i = 0; i < allUsers.length; i++) {
+        const userA = allUsers[i];
+
+        for (let j = i + 1; j < allUsers.length; j++) {
+          const userB = allUsers[j];
+          
+          // Calcular afinidad UNA SOLA VEZ
+          const affinity = calculateAffinityScore(userA, userB);
+
+          // Guardar en userA -> userB
+          const affinityRefAtoB = db.collection("users")
+            .doc(userA.id)
+            .collection("affinityScores")
+            .doc(userB.id);
+
+          batch.set(affinityRefAtoB, {
+            targetUserId: userB.id,
+            targetName: userB.nombre || "Sin nombre",
+            targetCompany: userB.empresa || userB.company_razonSocial || "Sin empresa",
+            score: affinity.score,
+            reasons: affinity.reasons,
+            eventId: eventId,
+            calculatedAt: new Date(),
+          });
+
+          // Guardar el MISMO score en userB -> userA (simétrico)
+          const affinityRefBtoA = db.collection("users")
+            .doc(userB.id)
+            .collection("affinityScores")
+            .doc(userA.id);
+
+          batch.set(affinityRefBtoA, {
+            targetUserId: userA.id,
+            targetName: userA.nombre || "Sin nombre",
+            targetCompany: userA.empresa || userA.company_razonSocial || "Sin empresa",
+            score: affinity.score, // MISMO SCORE
+            reasons: affinity.reasons, // MISMAS RAZONES
+            eventId: eventId,
+            calculatedAt: new Date(),
+          });
+
+          batchCount += 2;
+          totalCalculations += 2;
+
+          // Commit cada 450 operaciones (límite de Firestore es 500)
+          if (batchCount >= 450) {
+            await batch.commit();
+            console.log(`Committed batch: ${totalCalculations} calculations so far`);
+            batch = db.batch();
+            batchCount = 0;
+          }
+        }
+      }
+
+      // Commit final
+      if (batchCount > 0) {
+        await batch.commit();
+        console.log(`Committed final batch: ${totalCalculations} total calculations`);
+      }
+
+      res.status(200).send({
+        message: "Affinity recalculation complete",
+        eventId,
+        usersCount: allUsers.length,
+        totalCalculations,
+      });
+
+    } catch (error) {
+      console.error("Error recalculating affinity:", error);
+      res.status(500).send({ 
+        error: "Recalculation failed", 
+        details: error.message 
+      });
     }
   }
 );

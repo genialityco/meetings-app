@@ -37,6 +37,8 @@ interface ProductsViewProps {
     context?: MeetingContext,
   ) => Promise<void>;
   currentUser: any;
+  affinityScores: Record<string, number>;
+  highlightEntityId?: string;
 }
 
 const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
@@ -47,6 +49,8 @@ export default function ProductsView({
   solicitarReunionHabilitado,
   sendMeetingRequest,
   currentUser,
+  affinityScores,
+  highlightEntityId,
 }: ProductsViewProps) {
   const navigate = useNavigate();
   const { eventId } = useParams();
@@ -59,8 +63,30 @@ export default function ProductsView({
   const [useVectorSearch, setUseVectorSearch] = useState(false);
   const [modalOpened, setModalOpened] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<{ product: Product; assistantId: string; assistantPhone: string } | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
   const myUid = currentUser?.uid;
+
+  // Efecto para hacer scroll y resaltar la card cuando viene de notificación
+  useEffect(() => {
+    if (highlightEntityId) {
+      setHighlightedId(highlightEntityId);
+      
+      setTimeout(() => {
+        const element = document.getElementById(`product-card-${highlightEntityId}`);
+        if (element) {
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 300);
+
+      // Remover el resaltado después de 8 segundos
+      const timer = setTimeout(() => {
+        setHighlightedId(null);
+      }, 8000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [highlightEntityId]);
 
   // Mapa para evitar companies.find() por cada card
   const companiesByNit = useMemo(() => {
@@ -150,29 +176,43 @@ export default function ProductsView({
   }, [searchTerm, eventId, myUid, products]);
 
   const filteredProducts = useMemo(() => {
+    let results: Product[] = [];
+    
     // Si estamos usando búsqueda por vectores
     if (useVectorSearch && searchTerm.trim().length >= 3) {
       // Aplicar solo filtro de categoría si existe
       if (categoryFilter) {
-        return vectorResults.filter(p => p.category === categoryFilter);
+        results = vectorResults.filter(p => p.category === categoryFilter);
+      } else {
+        results = vectorResults;
       }
-      return vectorResults;
+    } else {
+      // Búsqueda tradicional (keyword-based)
+      const t = searchTerm.toLowerCase().trim();
+      results = (products || []).filter((p) => {
+        if (categoryFilter && p.category !== categoryFilter) return false;
+        if (!t) return true;
+
+        return (
+          (p.title || "").toLowerCase().includes(t) ||
+          (p.description || "").toLowerCase().includes(t) ||
+          (p.category || "").toLowerCase().includes(t) ||
+          (p.ownerCompany || "").toLowerCase().includes(t)
+        );
+      });
     }
-
-    // Búsqueda tradicional (keyword-based)
-    const t = searchTerm.toLowerCase().trim();
-    return (products || []).filter((p) => {
-      if (categoryFilter && p.category !== categoryFilter) return false;
-      if (!t) return true;
-
-      return (
-        (p.title || "").toLowerCase().includes(t) ||
-        (p.description || "").toLowerCase().includes(t) ||
-        (p.category || "").toLowerCase().includes(t) ||
-        (p.ownerCompany || "").toLowerCase().includes(t)
-      );
-    });
-  }, [products, searchTerm, categoryFilter, useVectorSearch, vectorResults]);
+    
+    // Ordenar por afinidad del dueño del producto (si no hay búsqueda por vectores activa)
+    if (!useVectorSearch) {
+      results.sort((a, b) => {
+        const scoreA = a.ownerUserId ? (affinityScores[a.ownerUserId] || 0) : 0;
+        const scoreB = b.ownerUserId ? (affinityScores[b.ownerUserId] || 0) : 0;
+        return scoreB - scoreA; // Mayor afinidad primero
+      });
+    }
+    
+    return results;
+  }, [products, searchTerm, categoryFilter, useVectorSearch, vectorResults, affinityScores]);
 
   const handleOpenModal = (
     assistantId: string,
@@ -242,6 +282,9 @@ export default function ProductsView({
     const hasSimilarity = typeof (p as any).similarity === 'number';
     const similarityScore = hasSimilarity ? Math.round((p as any).similarity * 100) : null;
 
+    // Verificar si esta card debe ser resaltada (usando el estado temporal)
+    const isHighlighted = highlightedId === p.id;
+
     return (
       <Grid.Col
         key={p.id}
@@ -249,6 +292,7 @@ export default function ProductsView({
         span={{ base: 6, sm: 4, md: 3, lg: 3 }}
       >
         <Card
+          id={`product-card-${p.id}`}
           withBorder
           radius="lg"
           padding="sm"
@@ -257,6 +301,9 @@ export default function ProductsView({
             height: "100%",
             overflow: "hidden",
             position: "relative",
+            border: isHighlighted ? "3px solid var(--mantine-color-teal-5)" : undefined,
+            boxShadow: isHighlighted ? "0 0 20px rgba(20, 184, 166, 0.4)" : undefined,
+            animation: isHighlighted ? "pulse 2s ease-in-out 3" : undefined,
           }}
         >
           {/* Badge de concordancia */}
@@ -274,6 +321,43 @@ export default function ProductsView({
               }}
             >
               {similarityScore}% match
+            </Badge>
+          )}
+
+          {/* Badge de afinidad del dueño */}
+          {!hasSimilarity && p.ownerUserId && affinityScores[p.ownerUserId] && affinityScores[p.ownerUserId] > 0 && (
+            <Badge
+              variant="gradient"
+              gradient={{ from: 'teal', to: 'green', deg: 90 }}
+              size="xs"
+              radius="md"
+              style={{
+                position: "absolute",
+                top: 10,
+                right: 10,
+                zIndex: 2,
+              }}
+            >
+              {affinityScores[p.ownerUserId]}% afinidad
+            </Badge>
+          )}
+
+          {/* Badge NUEVO cuando está resaltado */}
+          {isHighlighted && (
+            <Badge
+              variant="filled"
+              color="teal"
+              size="lg"
+              radius="md"
+              style={{
+                position: "absolute",
+                top: 10,
+                left: 10,
+                zIndex: 3,
+                fontWeight: 700,
+              }}
+            >
+              ¡NUEVO!
             </Badge>
           )}
 
@@ -408,6 +492,28 @@ export default function ProductsView({
   const hasFilters = !!searchTerm.trim() || !!categoryFilter;
 
   return (
+    <>
+      <style>
+        {`
+          @keyframes pulse {
+            0%, 100% {
+              box-shadow: 0 0 20px rgba(20, 184, 166, 0.4);
+            }
+            50% {
+              box-shadow: 0 0 30px rgba(20, 184, 166, 0.7);
+            }
+          }
+          
+          @keyframes fadeOut {
+            from {
+              opacity: 1;
+            }
+            to {
+              opacity: 0;
+            }
+          }
+        `}
+      </style>
     <Stack gap="md">
       {/* Filtros (responsive) */}
       <Paper withBorder radius="lg" p="sm">
@@ -521,5 +627,6 @@ export default function ProductsView({
         loading={loadingId === `${selectedProduct?.product.id}-${selectedProduct?.assistantId}`}
       />
     </Stack>
+    </>
   );
 }

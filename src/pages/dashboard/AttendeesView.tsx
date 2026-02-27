@@ -35,6 +35,7 @@ import {
   IconId,
   IconUsers,
   IconSparkles,
+  IconHeart,
 } from "@tabler/icons-react";
 import type { Assistant } from "./types";
 import { useNavigate, useParams } from "react-router-dom";
@@ -91,6 +92,8 @@ interface AttendeesViewProps {
   currentUser: any;
   formFields: any[];
   cardFields: string[];
+  affinityScores: Record<string, number>;
+  highlightEntityId?: string;
 }
 
 function InfoRow({
@@ -134,6 +137,8 @@ export default function AttendeesView({
   currentUser,
   formFields,
   cardFields,
+  affinityScores,
+  highlightEntityId,
 }: AttendeesViewProps) {
   const theme = useMantineTheme();
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -142,6 +147,30 @@ export default function AttendeesView({
   const [useVectorSearch, setUseVectorSearch] = useState(false);
   const [modalOpened, setModalOpened] = useState(false);
   const [selectedAssistant, setSelectedAssistant] = useState<Assistant | null>(null);
+  const [sortBy, setSortBy] = useState<"affinity" | "date">("affinity");
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+
+  // Efecto para hacer scroll y resaltar la card cuando viene de notificación
+  useEffect(() => {
+    if (highlightEntityId) {
+      setHighlightedId(highlightEntityId);
+      
+      // Esperar a que el DOM se renderice
+      setTimeout(() => {
+        const element = document.getElementById(`assistant-card-${highlightEntityId}`);
+        if (element) {
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 300);
+
+      // Remover el resaltado después de 8 segundos
+      const timer = setTimeout(() => {
+        setHighlightedId(null);
+      }, 8000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [highlightEntityId]);
 
   const myUid = currentUser?.uid;
   const navigate = useNavigate();
@@ -237,11 +266,31 @@ export default function AttendeesView({
     console.log("interestFilter:", interestFilter);
     console.log("showOnlyToday:", showOnlyToday);
     console.log("currentEventId:", eventId);
+    console.log("sortBy:", sortBy);
     
     // Si NO estamos usando búsqueda por vectores, devolver filteredAssistants
     if (!useVectorSearch || searchTerm.trim().length < 3) {
       console.log("Using filteredAssistants (no vector search)");
-      return filteredAssistants;
+      let results = [...filteredAssistants];
+      
+      // Aplicar ordenamiento por afinidad o fecha
+      if (sortBy === "affinity") {
+        results.sort((a, b) => {
+          const scoreA = affinityScores[a.id] || 0;
+          const scoreB = affinityScores[b.id] || 0;
+          return scoreB - scoreA; // Mayor score primero
+        });
+        console.log("Sorted by affinity");
+      } else {
+        results.sort((a, b) => {
+          const timeA = a.createdAt?.toMillis?.() || 0;
+          const timeB = b.createdAt?.toMillis?.() || 0;
+          return timeB - timeA; // Más reciente primero
+        });
+        console.log("Sorted by date");
+      }
+      
+      return results;
     }
     
     // Si estamos usando búsqueda por vectores, empezar con vectorResults
@@ -289,7 +338,7 @@ export default function AttendeesView({
     console.log("Final displayedAssistants:", results.length);
     console.log("=== End useMemo ===");
     return results;
-  }, [useVectorSearch, searchTerm, vectorResults, filteredAssistants, interestFilter, showOnlyToday, eventId]);
+  }, [useVectorSearch, searchTerm, vectorResults, filteredAssistants, interestFilter, showOnlyToday, eventId, sortBy, affinityScores]);
 
   const handleOpenModal = (assistant: Assistant) => {
     setSelectedAssistant(assistant);
@@ -327,6 +376,28 @@ export default function AttendeesView({
   const hasSearch = !!searchTerm.trim();
 
   return (
+    <>
+      <style>
+        {`
+          @keyframes pulse {
+            0%, 100% {
+              box-shadow: 0 0 20px rgba(20, 184, 166, 0.4);
+            }
+            50% {
+              box-shadow: 0 0 30px rgba(20, 184, 166, 0.7);
+            }
+          }
+          
+          @keyframes fadeOut {
+            from {
+              opacity: 1;
+            }
+            to {
+              opacity: 0;
+            }
+          }
+        `}
+      </style>
     <Stack gap="md">
       {/* Filtros (estilo app) */}
       <Paper withBorder radius="lg" p="sm">
@@ -390,6 +461,27 @@ export default function AttendeesView({
                 )}
               </Group>
 
+              <Group gap="xs">
+                <Button
+                  variant={sortBy === "affinity" ? "filled" : "light"}
+                  color="teal"
+                  size="xs"
+                  leftSection={<IconHeart size={14} />}
+                  onClick={() => setSortBy("affinity")}
+                >
+                  Por afinidad
+                </Button>
+                <Button
+                  variant={sortBy === "date" ? "filled" : "light"}
+                  color="gray"
+                  size="xs"
+                  leftSection={<IconCalendarCheck size={14} />}
+                  onClick={() => setSortBy("date")}
+                >
+                  Por fecha
+                </Button>
+              </Group>
+
               <Text size="sm" c="dimmed">
                 Máximo:{" "}
                 <Text span fw={800}>
@@ -435,12 +527,16 @@ export default function AttendeesView({
             const hasSimilarity = typeof (assistant as any).similarity === 'number';
             const similarityScore = hasSimilarity ? Math.round((assistant as any).similarity * 100) : null;
 
+            // Verificar si esta card debe ser resaltada (usando el estado temporal)
+            const isHighlighted = highlightedId === assistant.id;
+
             return (
               <Grid.Col
                 span={{ base: 12, sm: 6, md: 4, lg: 3 }}
                 key={assistant.id}
               >
                 <Card
+                  id={`assistant-card-${assistant.id}`}
                   withBorder
                   radius="xl"
                   padding="md"
@@ -450,6 +546,9 @@ export default function AttendeesView({
                     display: "flex",
                     flexDirection: "column",
                     position: "relative",
+                    border: isHighlighted ? "3px solid var(--mantine-color-teal-5)" : undefined,
+                    boxShadow: isHighlighted ? "0 0 20px rgba(20, 184, 166, 0.4)" : undefined,
+                    animation: isHighlighted ? "pulse 2s ease-in-out 3" : undefined,
                   }}
                 >
                   {/* Badge de concordancia */}
@@ -467,6 +566,44 @@ export default function AttendeesView({
                       }}
                     >
                       {similarityScore}% match
+                    </Badge>
+                  )}
+
+                  {/* Badge de afinidad */}
+                  {!hasSimilarity && affinityScores[assistant.id] && affinityScores[assistant.id] > 0 && (
+                    <Badge
+                      variant="gradient"
+                      gradient={{ from: 'teal', to: 'green', deg: 90 }}
+                      size="sm"
+                      radius="md"
+                      leftSection={<IconHeart size={12} />}
+                      style={{
+                        position: "absolute",
+                        top: 10,
+                        right: 10,
+                        zIndex: 1,
+                      }}
+                    >
+                      {affinityScores[assistant.id]}% afinidad
+                    </Badge>
+                  )}
+
+                  {/* Badge NUEVO cuando está resaltado */}
+                  {isHighlighted && (
+                    <Badge
+                      variant="filled"
+                      color="teal"
+                      size="lg"
+                      radius="md"
+                      style={{
+                        position: "absolute",
+                        top: 10,
+                        left: 10,
+                        zIndex: 2,
+                        fontWeight: 700,
+                      }}
+                    >
+                      ¡NUEVO!
                     </Badge>
                   )}
 
@@ -586,5 +723,6 @@ export default function AttendeesView({
         loading={loadingId === selectedAssistant?.id}
       />
     </Stack>
+    </>
   );
 }

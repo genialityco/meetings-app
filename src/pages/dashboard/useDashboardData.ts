@@ -328,6 +328,7 @@ export function useDashboardData(eventId?: string) {
   const [policies, setPolicies] = useState<EventPolicies>(DEFAULT_POLICIES);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [globalDateFilter, setGlobalDateFilter] = useState<string | null>(null);
+  const [affinityScores, setAffinityScores] = useState<Record<string, number>>({});
 
   // ---------------------- EFECTOS PRINCIPALES ----------------------
 
@@ -418,6 +419,31 @@ export function useDashboardData(eventId?: string) {
       }
     })();
   }, []);
+
+  // 3b. Cargar scores de afinidad del usuario
+  useEffect(() => {
+    if (!uid || !eventId) return;
+    
+    const unsubscribe = onSnapshot(
+      collection(db, "users", uid, "affinityScores"),
+      (snap) => {
+        const scores: Record<string, number> = {};
+        snap.docs.forEach((d) => {
+          const data = d.data();
+          if (data.targetUserId && typeof data.score === "number") {
+            scores[data.targetUserId] = data.score;
+          }
+        });
+        setAffinityScores(scores);
+        console.log(`Loaded ${snap.size} affinity scores`);
+      },
+      (error) => {
+        console.error("Error loading affinity scores:", error);
+      }
+    );
+    
+    return unsubscribe;
+  }, [uid, eventId]);
 
   // 4. Cargar lista de asistentes
   useEffect(() => {
@@ -1837,6 +1863,7 @@ export function useDashboardData(eventId?: string) {
     eventImage,
     dashboardLogo,
     eventName,
+    affinityScores,
 
     searchTerm,
     setSearchTerm,

@@ -49,6 +49,10 @@ export default function TabsPanel({
 
   const isMobile = useMediaQuery("(max-width: 48em)"); // ~768px
 
+  // Extraer highlightEntityId del viewRequest
+  const highlightEntityId = viewRequest?.highlightEntityId;
+  const highlightEntityType = viewRequest?.highlightEntityType;
+
   // DEBUG: verificar valores de la redirección
   console.log("[TabsPanel DEBUG]", {
     eventId,
@@ -157,6 +161,8 @@ export default function TabsPanel({
           currentUser={dashboard.currentUser}
           formFields={dashboard.formFields}
           cardFields={cardFieldsConfig!.attendeeCard}
+          affinityScores={dashboard.affinityScores}
+          highlightEntityId={highlightEntityType === "assistant" ? highlightEntityId : undefined}
         />
       )}
 
@@ -172,6 +178,8 @@ export default function TabsPanel({
           currentUser={dashboard.currentUser}
           formFields={dashboard.formFields}
           cardFields={cardFieldsConfig!.companyCard}
+          affinityScores={dashboard.affinityScores}
+          highlightEntityId={highlightEntityType === "company" ? highlightEntityId : undefined}
         />
       )}
 
@@ -192,6 +200,8 @@ export default function TabsPanel({
           solicitarReunionHabilitado={dashboard.solicitarReunionHabilitado}
           sendMeetingRequest={dashboard.sendMeetingRequest}
           currentUser={dashboard.currentUser}
+          affinityScores={dashboard.affinityScores}
+          highlightEntityId={highlightEntityType === "product" ? highlightEntityId : undefined}
         />
       )}
 
