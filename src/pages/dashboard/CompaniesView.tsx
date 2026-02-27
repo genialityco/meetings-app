@@ -19,9 +19,10 @@ import {
   ThemeIcon,
   useMantineTheme,
   rem,
+  Loader,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   IconSearch,
@@ -31,13 +32,16 @@ import {
   IconMail,
   IconTargetArrow,
   IconBulb,
-  IconClock,
   IconUsers,
   IconBuildingStore,
   IconFileDescription,
   IconPhone,
+  IconSparkles,
 } from "@tabler/icons-react";
 import type { Assistant, Company, EventPolicies, MeetingContext } from "./types";
+import MeetingRequestModal from "./MeetingRequestModal";
+
+const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
 
 const FIELD_ICONS: Record<string, any> = {
   empresa: IconBuildingStore,
@@ -105,6 +109,11 @@ export default function CompaniesView({
   const [selectedAssistantPerCompany, setSelectedAssistantPerCompany] =
     useState<Record<string, string | null>>({});
   const [searchTerm, setSearchTerm] = useState("");
+  const [vectorResults, setVectorResults] = useState<Company[]>([]);
+  const [isVectorSearching, setIsVectorSearching] = useState(false);
+  const [useVectorSearch, setUseVectorSearch] = useState(false);
+  const [modalOpened, setModalOpened] = useState(false);
+  const [selectedMeeting, setSelectedMeeting] = useState<{ assistant: Assistant; companyNit: string } | null>(null);
 
   const myUid = currentUser?.uid;
 
@@ -153,12 +162,31 @@ export default function CompaniesView({
         logoUrl: companyDoc?.logoUrl || null,
         fixedTable: companyDoc?.fixedTable || null,
         asistentes,
+        similarity: undefined as number | undefined, // Add similarity field
       };
     });
   }, [filteredAssistants, companiesByNit]);
 
   // Filtrar por búsqueda
   const filtered = useMemo(() => {
+    // Si estamos usando búsqueda por vectores
+    if (useVectorSearch && searchTerm.trim().length >= 3) {
+      // Mapear resultados de vectores a companiesData, preservando similarity
+      return vectorResults
+        .map(vectorCompany => {
+          const companyData = companiesData.find(c => c.nit === vectorCompany.nitNorm);
+          if (companyData) {
+            return {
+              ...companyData,
+              similarity: (vectorCompany as any).similarity, // Preservar similarity
+            };
+          }
+          return null;
+        })
+        .filter(Boolean) as typeof companiesData;
+    }
+
+    // Búsqueda tradicional
     const t = searchTerm.toLowerCase().trim();
     if (!t) return companiesData;
     return companiesData.filter(
@@ -169,27 +197,91 @@ export default function CompaniesView({
           (a.nombre || "").toLowerCase().includes(t),
         ),
     );
-  }, [companiesData, searchTerm]);
+  }, [companiesData, searchTerm, useVectorSearch, vectorResults]);
 
-  const handleSelectAssistant = (companyKey: string, assistantId: string) => {
-    setSelectedAssistantPerCompany((prev) => ({
-      ...prev,
-      [companyKey]: prev[companyKey] === assistantId ? null : assistantId,
-    }));
+  // Búsqueda por vectores con debounce
+  useEffect(() => {
+    const trimmed = searchTerm.trim();
+    
+    // Si no hay texto de búsqueda, resetear
+    if (!trimmed) {
+      setUseVectorSearch(false);
+      setVectorResults([]);
+      return;
+    }
+
+    // Si el texto es muy corto, no usar vectores
+    if (trimmed.length < 3) {
+      setUseVectorSearch(false);
+      return;
+    }
+
+    // Debounce: esperar 500ms después de que el usuario deje de escribir
+    const timeoutId = setTimeout(async () => {
+      setIsVectorSearching(true);
+      
+      try {
+        const response = await fetch(VECTOR_SEARCH_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text: trimmed,
+            category: "companies",
+            eventId: eventId,
+            limit: 50,
+            threshold: 0.3,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Vector search failed");
+        }
+
+        const data = await response.json();
+        setVectorResults(data.results);
+        setUseVectorSearch(true);
+        
+        console.log(`Vector search found ${data.results.length} companies`);
+      } catch (error) {
+        console.error("Vector search error:", error);
+        // Fallback a búsqueda normal
+        setUseVectorSearch(false);
+        setVectorResults([]);
+      } finally {
+        setIsVectorSearching(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, eventId]);
+
+  const handleOpenModal = (assistant: Assistant, companyNit: string) => {
+    setSelectedMeeting({ assistant, companyNit });
+    setModalOpened(true);
   };
 
-  const handleSendMeeting = async (assistant: Assistant, companyNit: string) => {
+  const handleConfirmMeeting = async (message: string) => {
+    if (!selectedMeeting) return;
+    
+    const { assistant, companyNit } = selectedMeeting;
     setLoadingId(assistant.id);
+    
     try {
       await sendMeetingRequest(assistant.id, assistant.telefono || "", null, {
         companyId: companyNit,
-        contextNote: `Reunión desde vista de empresa: ${assistant.empresa || ""}`,
+        contextNote: message || `Reunión desde vista de empresa: ${assistant.empresa || ""}`,
       });
+      
       showNotification({
         title: "Solicitud enviada",
-        message: `Solicitud enviada a ${assistant.nombre}.`,
+        message: `Solicitud enviada a ${assistant.nombre}${message ? ' con tu mensaje personalizado' : ''}.`,
         color: "teal",
       });
+      
+      setModalOpened(false);
+      setSelectedMeeting(null);
     } catch {
       showNotification({
         title: "Error",
@@ -199,6 +291,13 @@ export default function CompaniesView({
     } finally {
       setLoadingId(null);
     }
+  };
+
+  const handleSelectAssistant = (companyKey: string, assistantId: string) => {
+    setSelectedAssistantPerCompany((prev) => ({
+      ...prev,
+      [companyKey]: prev[companyKey] === assistantId ? null : assistantId,
+    }));
   };
 
   const handleSendMeetingToAllCompany = async (
@@ -243,29 +342,45 @@ export default function CompaniesView({
     <Stack gap="md">
       {/* Search bar estilo “top” */}
       <Paper withBorder radius="lg" p="sm">
-        <TextInput
-          placeholder="Buscar empresa o representante..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          leftSection={<IconSearch size={16} />}
-          rightSection={
-            hasSearch ? (
-              <ActionIcon
-                variant="subtle"
-                onClick={() => setSearchTerm("")}
-                aria-label="Limpiar"
-              >
-                <IconX size={16} />
-              </ActionIcon>
-            ) : null
-          }
-          radius="md"
-        />
+        <Group gap="xs">
+          <TextInput
+            placeholder="Buscar empresa o representante..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            leftSection={
+              isVectorSearching ? (
+                <Loader size={16} />
+              ) : useVectorSearch ? (
+                <IconSparkles size={16} style={{ color: "var(--mantine-color-blue-6)" }} />
+              ) : (
+                <IconSearch size={16} />
+              )
+            }
+            rightSection={
+              hasSearch ? (
+                <ActionIcon
+                  variant="subtle"
+                  onClick={() => setSearchTerm("")}
+                  aria-label="Limpiar"
+                >
+                  <IconX size={16} />
+                </ActionIcon>
+              ) : null
+            }
+            radius="md"
+            style={{ flex: 1 }}
+          />
+          {useVectorSearch && (
+            <Badge size="sm" variant="light" color="blue" leftSection={<IconSparkles size={10} />}>
+              Búsqueda inteligente
+            </Badge>
+          )}
+        </Group>
       </Paper>
 
       <Grid gutter="sm">
         {filtered.length > 0 ? (
-          filtered.map(({ nit, empresa, logoUrl, fixedTable, asistentes }) => {
+          filtered.map(({ nit, empresa, logoUrl, fixedTable, asistentes, similarity }) => {
             const companyKey = nit; // clave estable
             const selectedId = selectedAssistantPerCompany[companyKey];
 
@@ -275,9 +390,40 @@ export default function CompaniesView({
 
             const isMulti = asistentes.length > 1;
 
+            // Verificar si tiene similarity score (viene de búsqueda por vectores)
+            const hasSimilarity = typeof similarity === 'number';
+            const similarityScore = hasSimilarity ? Math.round(similarity * 100) : null;
+
             return (
               <Grid.Col span={{ base: 12, md: 6, lg: 4 }} key={companyKey}>
-                <Card withBorder radius="xl" padding="md" shadow="sm" style={{ height: "100%" }}>
+                <Card 
+                  withBorder 
+                  radius="xl" 
+                  padding="md" 
+                  shadow="sm" 
+                  style={{ 
+                    height: "100%",
+                    position: "relative",
+                  }}
+                >
+                  {/* Badge de concordancia */}
+                  {hasSimilarity && (
+                    <Badge
+                      variant="gradient"
+                      gradient={{ from: 'blue', to: 'cyan', deg: 90 }}
+                      size="sm"
+                      radius="md"
+                      style={{
+                        position: "absolute",
+                        top: 10,
+                        right: 10,
+                        zIndex: 1,
+                      }}
+                    >
+                      {similarityScore}% match
+                    </Badge>
+                  )}
+
                   {/* HEADER tipo imagen */}
                   <Group justify="space-between" align="flex-start" wrap="nowrap">
                     <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
@@ -461,7 +607,7 @@ export default function CompaniesView({
                     radius="md"
                     size="md"
                     color={theme.primaryColor}
-                    onClick={() => handleSendMeeting(selectedAssistant, nit)}
+                    onClick={() => handleOpenModal(selectedAssistant, nit)}
                     disabled={
                       !solicitarReunionHabilitado ||
                       loadingId === selectedAssistant?.id ||
@@ -501,6 +647,20 @@ export default function CompaniesView({
           </Grid.Col>
         )}
       </Grid>
+
+      {/* Modal de solicitud de reunión */}
+      <MeetingRequestModal
+        opened={modalOpened}
+        recipientName={selectedMeeting?.assistant.nombre || ""}
+        recipientType="empresa"
+        contextInfo={selectedMeeting?.assistant.empresa}
+        onCancel={() => {
+          setModalOpened(false);
+          setSelectedMeeting(null);
+        }}
+        onConfirm={handleConfirmMeeting}
+        loading={loadingId === selectedMeeting?.assistant.id}
+      />
     </Stack>
   );
 }

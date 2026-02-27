@@ -23,7 +23,7 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { storage } from "../../firebase/firebaseConfig";
 
 const API_WP_URL = "https://apiwhatsapp.geniality.com.co/api/send";
-const CLIENT_ID = "genialitybussinesstest";
+const CLIENT_ID = "genialitybussinesstest88";
 
 type Product = {
   id: string;
@@ -686,7 +686,7 @@ export function useDashboardData(eventId?: string) {
       const landingUrl = `${baseUrl}/event/${eventId}`;
 
       const contextLine = context?.contextNote
-        ? `\n📋 *Contexto:* ${context.contextNote}\n`
+        ? `\n📋 *Mensaje:* ${context.contextNote}\n`
         : "";
 
       const eventLine = eventName ? `📌 *Evento:* ${eventName}\n\n` : "";
@@ -719,12 +719,14 @@ export function useDashboardData(eventId?: string) {
       }).catch(() => {});
 
       // Notificación en la app
+      const notificationMessage = context?.contextNote
+        ? `${requester?.nombre || "Alguien"} te ha enviado una solicitud de reunión.\n\nMensaje: "${context.contextNote}"`
+        : `${requester?.nombre || "Alguien"} te ha enviado una solicitud de reunión.`;
+      
       await addDoc(collection(db, "notifications"), {
         userId: assistantId,
         title: "Nueva solicitud de reunión",
-        message: `${
-          requester?.nombre || "Alguien"
-        } te ha enviado una solicitud de reunión.`,
+        message: notificationMessage,
         timestamp: new Date(),
         read: false,
         type: "meeting_request",

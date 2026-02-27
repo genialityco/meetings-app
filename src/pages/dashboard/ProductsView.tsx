@@ -16,13 +16,14 @@ import {
   Divider,
   Paper,
   ThemeIcon,
-  useMantineTheme,
+  Loader,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { IconSearch, IconX, IconFilterOff, IconBuildingStore } from "@tabler/icons-react";
+import { IconSearch, IconX, IconFilterOff, IconBuildingStore, IconSparkles } from "@tabler/icons-react";
 import type { Product, Company, Assistant, MeetingContext } from "./types";
+import MeetingRequestModal from "./MeetingRequestModal";
 
 interface ProductsViewProps {
   products: Product[];
@@ -38,21 +39,26 @@ interface ProductsViewProps {
   currentUser: any;
 }
 
+const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
+
 export default function ProductsView({
   products,
   companies,
-  filteredAssistants,
   solicitarReunionHabilitado,
   sendMeetingRequest,
   currentUser,
 }: ProductsViewProps) {
-  const theme = useMantineTheme();
   const navigate = useNavigate();
   const { eventId } = useParams();
 
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [vectorResults, setVectorResults] = useState<Product[]>([]);
+  const [isVectorSearching, setIsVectorSearching] = useState(false);
+  const [useVectorSearch, setUseVectorSearch] = useState(false);
+  const [modalOpened, setModalOpened] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<{ product: Product; assistantId: string; assistantPhone: string } | null>(null);
 
   const myUid = currentUser?.uid;
 
@@ -75,7 +81,85 @@ export default function ProductsView({
       .map((c) => ({ value: c, label: c }));
   }, [products]);
 
+  // Búsqueda por vectores con debounce
+  useEffect(() => {
+    const trimmed = searchTerm.trim();
+    
+    // Si no hay texto de búsqueda, resetear
+    if (!trimmed) {
+      setUseVectorSearch(false);
+      setVectorResults([]);
+      return;
+    }
+
+    // Si el texto es muy corto, no usar vectores
+    if (trimmed.length < 3) {
+      setUseVectorSearch(false);
+      return;
+    }
+
+    // Debounce: esperar 500ms después de que el usuario deje de escribir
+    const timeoutId = setTimeout(async () => {
+      setIsVectorSearching(true);
+      
+      try {
+        const response = await fetch(VECTOR_SEARCH_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text: trimmed,
+            category: "products",
+            eventId: eventId,
+            userId: myUid,
+            limit: 50,
+            threshold: 0.3,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Vector search failed");
+        }
+
+        const data = await response.json();
+        
+        // Enriquecer resultados con datos completos de products
+        const enrichedResults = data.results
+          .map((result: any) => {
+            const fullProduct = products.find(p => p.id === result.id);
+            return fullProduct ? { ...fullProduct, similarity: result.similarity } : null;
+          })
+          .filter(Boolean) as Product[];
+
+        setVectorResults(enrichedResults);
+        setUseVectorSearch(true);
+        
+        console.log(`Vector search found ${enrichedResults.length} products`);
+      } catch (error) {
+        console.error("Vector search error:", error);
+        // Fallback a búsqueda normal
+        setUseVectorSearch(false);
+        setVectorResults([]);
+      } finally {
+        setIsVectorSearching(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, eventId, myUid, products]);
+
   const filteredProducts = useMemo(() => {
+    // Si estamos usando búsqueda por vectores
+    if (useVectorSearch && searchTerm.trim().length >= 3) {
+      // Aplicar solo filtro de categoría si existe
+      if (categoryFilter) {
+        return vectorResults.filter(p => p.category === categoryFilter);
+      }
+      return vectorResults;
+    }
+
+    // Búsqueda tradicional (keyword-based)
     const t = searchTerm.toLowerCase().trim();
     return (products || []).filter((p) => {
       if (categoryFilter && p.category !== categoryFilter) return false;
@@ -88,26 +172,38 @@ export default function ProductsView({
         (p.ownerCompany || "").toLowerCase().includes(t)
       );
     });
-  }, [products, searchTerm, categoryFilter]);
+  }, [products, searchTerm, categoryFilter, useVectorSearch, vectorResults]);
 
-  const handleSendMeeting = async (
+  const handleOpenModal = (
     assistantId: string,
     assistantPhone: string,
     product: Product,
   ) => {
+    setSelectedProduct({ product, assistantId, assistantPhone });
+    setModalOpened(true);
+  };
+
+  const handleConfirmMeeting = async (message: string) => {
+    if (!selectedProduct) return;
+    
+    const { product, assistantId, assistantPhone } = selectedProduct;
     setLoadingId(`${product.id}-${assistantId}`);
+    
     try {
       await sendMeetingRequest(assistantId, assistantPhone, null, {
         productId: product.id,
         companyId: product.companyId || null,
-        contextNote: `Interesado en: ${product.title}`,
+        contextNote: message || `Interesado en: ${product.title}`,
       });
 
       showNotification({
         title: "Solicitud enviada",
-        message: `Solicitud enviada por el producto "${product.title}".`,
+        message: `Solicitud enviada por el producto "${product.title}"${message ? ' con tu mensaje personalizado' : ''}.`,
         color: "teal",
       });
+      
+      setModalOpened(false);
+      setSelectedProduct(null);
     } catch {
       showNotification({
         title: "Error",
@@ -122,6 +218,8 @@ export default function ProductsView({
   const clearFilters = () => {
     setSearchTerm("");
     setCategoryFilter(null);
+    setUseVectorSearch(false);
+    setVectorResults([]);
   };
 
   const renderProductCard = (p: Product) => {
@@ -140,6 +238,10 @@ export default function ProductsView({
         ? "Tu producto"
         : "Solicitar reunión";
 
+    // Verificar si tiene similarity score (viene de búsqueda por vectores)
+    const hasSimilarity = typeof (p as any).similarity === 'number';
+    const similarityScore = hasSimilarity ? Math.round((p as any).similarity * 100) : null;
+
     return (
       <Grid.Col
         key={p.id}
@@ -154,8 +256,27 @@ export default function ProductsView({
           style={{
             height: "100%",
             overflow: "hidden",
+            position: "relative",
           }}
         >
+          {/* Badge de concordancia */}
+          {hasSimilarity && (
+            <Badge
+              variant="gradient"
+              gradient={{ from: 'blue', to: 'cyan', deg: 90 }}
+              size="sm"
+              radius="md"
+              style={{
+                position: "absolute",
+                top: 10,
+                right: 10,
+                zIndex: 2,
+              }}
+            >
+              {similarityScore}% match
+            </Badge>
+          )}
+
           {/* Imagen */}
           <Card.Section>
             {p.imageUrl ? (
@@ -271,7 +392,7 @@ export default function ProductsView({
               fullWidth
               variant={isDisabled ? "light" : "filled"}
               onClick={() =>
-                handleSendMeeting(p.ownerUserId, p.ownerPhone || "", p)
+                handleOpenModal(p.ownerUserId, p.ownerPhone || "", p)
               }
               disabled={isDisabled}
               loading={loadingId === `${p.id}-${p.ownerUserId}`}
@@ -296,7 +417,15 @@ export default function ProductsView({
               placeholder="Buscar producto, categoría, empresa..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              leftSection={<IconSearch size={16} />}
+              leftSection={
+                isVectorSearching ? (
+                  <Loader size={16} />
+                ) : useVectorSearch ? (
+                  <IconSparkles size={16} style={{ color: "var(--mantine-color-blue-6)" }} />
+                ) : (
+                  <IconSearch size={16} />
+                )
+              }
               rightSection={
                 searchTerm ? (
                   <ActionIcon
@@ -327,9 +456,16 @@ export default function ProductsView({
           {hasFilters && (
             <Grid.Col span={{ base: 12, sm: 12 }}>
               <Group justify="space-between" wrap="wrap">
-                <Text size="xs" c="dimmed">
-                  Mostrando {filteredProducts.length} resultado(s)
-                </Text>
+                <Group gap="xs">
+                  <Text size="xs" c="dimmed">
+                    Mostrando {filteredProducts.length} resultado(s)
+                  </Text>
+                  {useVectorSearch && (
+                    <Badge size="xs" variant="light" color="blue" leftSection={<IconSparkles size={10} />}>
+                      Búsqueda inteligente
+                    </Badge>
+                  )}
+                </Group>
                 <Button
                   size="xs"
                   variant="subtle"
@@ -370,6 +506,20 @@ export default function ProductsView({
       ) : (
         <Grid gutter="sm">{filteredProducts.map(renderProductCard)}</Grid>
       )}
+
+      {/* Modal de solicitud de reunión */}
+      <MeetingRequestModal
+        opened={modalOpened}
+        recipientName={selectedProduct?.product.ownerCompany || ""}
+        recipientType="producto"
+        contextInfo={selectedProduct?.product.title}
+        onCancel={() => {
+          setModalOpened(false);
+          setSelectedProduct(null);
+        }}
+        onConfirm={handleConfirmMeeting}
+        loading={loadingId === `${selectedProduct?.product.id}-${selectedProduct?.assistantId}`}
+      />
     </Stack>
   );
 }

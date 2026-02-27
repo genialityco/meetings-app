@@ -1306,6 +1306,216 @@ async function getEmbedding(text, apiKey, apiUrl, model) {
   }
 }
 
+/**
+ * Búsqueda por vectores pura
+ * Endpoint: /vectorSearch
+ * Parámetros:
+ * - text: texto a buscar (required)
+ * - category: "assistants" | "products" | "companies" (required)
+ * - eventId: ID del evento (required)
+ * - userId: ID del usuario que hace la búsqueda (optional, para filtros)
+ * - limit: número máximo de resultados (optional, default: 10)
+ * - threshold: umbral mínimo de similitud 0-1 (optional, default: 0.35)
+ */
+export const vectorSearch = onRequest(
+  {
+    region: "us-central1",
+    memory: "512MiB",
+    secrets: ["GEMINI_API_KEY", "GEMINI_API_URL"],
+  },
+  async (req, res) => {
+    // Set CORS headers
+    const origin = req.headers.origin || "*";
+    res.set({
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type,Authorization",
+      "Access-Control-Allow-Credentials": "true",
+    });
+
+    // Handle preflight
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+
+    try {
+      if (req.method !== "POST") {
+        res.status(405).send({ error: "Method not allowed" });
+        return;
+      }
+
+      const body = req.body || {};
+      const text = body.text;
+      const category = body.category;
+      const eventId = body.eventId;
+      const userId = body.userId || null;
+      const limit = body.limit || 10;
+      const threshold = body.threshold || 0.35;
+
+      // Validación de parámetros
+      if (!text || !category || !eventId) {
+        res.status(400).send({ 
+          error: "Missing required parameters: text, category, eventId" 
+        });
+        return;
+      }
+
+      if (!["assistants", "products", "companies"].includes(category)) {
+        res.status(400).send({ 
+          error: "Invalid category. Must be: assistants, products, or companies" 
+        });
+        return;
+      }
+
+      console.log(`Vector search: category=${category}, eventId=${eventId}, text="${text.substring(0, 50)}..."`);
+
+      const db = getFirestore();
+
+      // Generar embedding del texto
+      let queryVector = null;
+      try {
+        queryVector = await generateEmbedding(text);
+        console.log(`Query vector generated, dimension: ${queryVector.length}`);
+      } catch (embErr) {
+        console.error("Failed to generate embedding:", embErr);
+        res.status(500).send({ 
+          error: "Failed to generate embedding", 
+          details: embErr.message 
+        });
+        return;
+      }
+
+      let results = [];
+
+      // Búsqueda según categoría
+      if (category === "assistants") {
+        try {
+          const usersSnap = await db.collection("users")
+            .where("eventId", "==", eventId)
+            .get();
+
+          const allUsers = usersSnap.docs
+            .filter(d => !userId || d.id !== userId) // Excluir usuario actual si se proporciona
+            .map(d => ({ id: d.id, ...d.data() }));
+
+          console.log(`Loaded ${allUsers.length} users for vector search`);
+
+          results = searchByVectorSimilarity(queryVector, allUsers, limit, threshold);
+          
+          // Devolver todos los campos necesarios
+          results = results.map(user => ({
+            id: user.id,
+            nombre: user.nombre,
+            empresa: user.empresa || user.company_razonSocial,
+            cargo: user.cargo,
+            telefono: user.telefono,
+            correo: user.correo,
+            cedula: user.cedula,
+            descripcion: user.descripcion,
+            necesidad: user.necesidad,
+            interesPrincipal: user.interesPrincipal,
+            tipoAsistente: user.tipoAsistente,
+            photoURL: user.photoURL || null,
+            company_nit: user.company_nit,
+            company_razonSocial: user.company_razonSocial,
+            companyId: user.companyId,
+            nitNorm: user.nitNorm,
+            eventId: user.eventId,
+            lastLogin: user.lastLogin,
+            similarity: user.similarity,
+          }));
+
+        } catch (err) {
+          console.error("Assistants search failed:", err);
+          res.status(500).send({ error: "Assistants search failed", details: err.message });
+          return;
+        }
+      }
+
+      if (category === "products") {
+        try {
+          const productsSnap = await db.collection("events")
+            .doc(eventId)
+            .collection("products")
+            .get();
+
+          const allProducts = productsSnap.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter(p => !userId || p.ownerUserId !== userId); // Excluir productos propios
+
+          console.log(`Loaded ${allProducts.length} products for vector search`);
+
+          results = searchByVectorSimilarity(queryVector, allProducts, limit, threshold);
+          
+          // Formatear resultados
+          results = results.map(product => ({
+            id: product.id,
+            title: product.title,
+            description: product.description,
+            category: product.category,
+            ownerUserId: product.ownerUserId,
+            imageUrl: product.imageUrl || null,
+            similarity: product.similarity,
+          }));
+
+        } catch (err) {
+          console.error("Products search failed:", err);
+          res.status(500).send({ error: "Products search failed", details: err.message });
+          return;
+        }
+      }
+
+      if (category === "companies") {
+        try {
+          const companiesSnap = await db.collection("events")
+            .doc(eventId)
+            .collection("companies")
+            .get();
+
+          const allCompanies = companiesSnap.docs.map(d => ({ 
+            id: d.id, 
+            ...d.data() 
+          }));
+
+          console.log(`Loaded ${allCompanies.length} companies for vector search`);
+
+          results = searchByVectorSimilarity(queryVector, allCompanies, limit, threshold);
+          
+          // Formatear resultados
+          results = results.map(company => ({
+            id: company.id,
+            razonSocial: company.razonSocial,
+            descripcion: company.descripcion,
+            nitNorm: company.nitNorm,
+            similarity: company.similarity,
+          }));
+
+        } catch (err) {
+          console.error("Companies search failed:", err);
+          res.status(500).send({ error: "Companies search failed", details: err.message });
+          return;
+        }
+      }
+
+      console.log(`Vector search complete: ${results.length} results found`);
+
+      res.status(200).send({
+        category,
+        query: text,
+        threshold,
+        limit,
+        count: results.length,
+        results,
+      });
+
+    } catch (err) {
+      console.error("vectorSearch error:", err);
+      res.status(500).send({ error: "internal_error", details: err.message });
+    }
+  }
+);
+
 export const vectorizeDocuments = onRequest(
   {
     secrets: ["GEMINI_API_KEY", "GEMINI_API_URL"],
