@@ -4,7 +4,7 @@ import { useState } from "react";
 interface MeetingRequestModalProps {
   opened: boolean;
   recipientName: string;
-  recipientType: "asistente" | "empresa" | "producto";
+  recipientType: "asistente" | "empresa" | "producto" | "match";
   contextInfo?: string; // Info adicional como nombre de producto o empresa
   onCancel: () => void;
   onConfirm: (message: string) => void;
@@ -40,12 +40,17 @@ export default function MeetingRequestModal({
         return "Solicitar reunión por producto";
       case "empresa":
         return "Solicitar reunión con empresa";
+      case "match":
+        return "Solicitar reunión con match";
       default:
         return "Solicitar reunión";
     }
   };
 
   const getDescription = () => {
+    if (recipientType === "match") {
+      return `Vas a solicitar una reunión con ${recipientName}. Este es un match sugerido por alta afinidad.`;
+    }
     if (recipientType === "producto" && contextInfo) {
       return `Vas a solicitar una reunión con ${recipientName} por el producto "${contextInfo}".`;
     }

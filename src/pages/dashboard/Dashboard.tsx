@@ -20,7 +20,7 @@ const NOTIF_NAV_MAP: Record<string, { view: string; tab?: string }> = {
   meeting_rejected: { view: "activity", tab: "solicitudes" },
   meeting_cancelled: { view: "activity", tab: "reuniones" },
   meeting_modified: { view: "activity", tab: "reuniones" },
-  high_affinity: { view: "attendees" }, // Navega a vista de asistentes
+  high_affinity: { view: "matches" }, // Navega a vista de matches
 };
 
 export default function Dashboard() {
@@ -38,21 +38,27 @@ export default function Dashboard() {
 
   const handleNotificationClick = useCallback(
     (notif: Notification) => {
+      console.log("[Dashboard] Notification clicked:", notif);
       dashboard.markNotificationRead(notif.id);
       const target = NOTIF_NAV_MAP[notif.type || ""] || {
         view: "activity",
         tab: "solicitudes",
       };
       
+      console.log("[Dashboard] Target:", target);
+      
       // Si es notificación de alta afinidad, pasar el entityId para resaltar
       if (notif.type === "high_affinity" && notif.entityType && notif.entityId) {
-        setViewRequest({ 
+        const viewReq = { 
           ...target, 
           _k: Date.now(),
           highlightEntityId: notif.entityId,
           highlightEntityType: notif.entityType,
-        });
+        };
+        console.log("[Dashboard] Setting viewRequest with highlight:", viewReq);
+        setViewRequest(viewReq);
       } else {
+        console.log("[Dashboard] Setting viewRequest without highlight");
         setViewRequest({ ...target, _k: Date.now() });
       }
     },

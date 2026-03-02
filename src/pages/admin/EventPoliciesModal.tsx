@@ -276,6 +276,13 @@ export default function EventPoliciesModal({
           }
         />
         <Switch
+          label="Matches (sugerencias de alta afinidad)"
+          checked={uiViews.matches}
+          onChange={(e) =>
+            setUiViews((prev) => ({ ...prev, matches: e.currentTarget.checked }))
+          }
+        />
+        <Switch
           label="Vista de asistentes (directorio)"
           checked={uiViews.attendees}
           onChange={(e) =>

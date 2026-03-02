@@ -17,6 +17,7 @@ import RequestsTab from "./RequestsTab";
 import MyProductsTab from "./MyProductsTab";
 import MyCompanyTab from "./MyCompanyTab";
 import CalendarTab from "./CalendarTab";
+import MatchesTab from "./MatchesTab";
 import { DEFAULT_POLICIES } from "./types";
 import { useMediaQuery } from "@mantine/hooks";
 
@@ -70,6 +71,7 @@ export default function TabsPanel({
   // Construir opciones de vista dinámicamente según configuración del evento
   const viewOptions: { value: string; label: string }[] = [];
   if (uiViews.chatbot) viewOptions.push({ value: "chatbot", label: "Chatbot" });
+  viewOptions.push({ value: "matches", label: "Matches" }); // Siempre visible
   if (uiViews.attendees) viewOptions.push({ value: "attendees", label: "Asistentes" });
   if (uiViews.companies) viewOptions.push({ value: "companies", label: "Empresas" });
   if (uiViews.products) viewOptions.push({ value: "products", label: "Productos" });
@@ -188,6 +190,15 @@ export default function TabsPanel({
           sendMeetingRequest={dashboard.sendMeetingRequest}
           solicitarReunionHabilitado={dashboard.solicitarReunionHabilitado}
           currentUser={dashboard.currentUser}
+          eventId={eventId}
+        />
+      )}
+
+      {topView === "matches" && (
+        <MatchesTab
+          currentUser={dashboard.currentUser}
+          sendMeetingRequest={dashboard.sendMeetingRequest}
+          solicitarReunionHabilitado={dashboard.solicitarReunionHabilitado}
           eventId={eventId}
         />
       )}

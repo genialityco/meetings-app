@@ -1851,7 +1851,10 @@ export const calculateAffinityOnUserCreate = onDocumentCreated(
         console.log(`Committed final batch of ${calculatedCount} affinity scores`);
       }
 
-      // Crear notificaciones de alta afinidad
+      // Crear notificaciones de alta afinidad (>80%) y matches (>=70%)
+      const matchesBatch = db.batch();
+      let matchesCount = 0;
+      
       if (highAffinityNotifications.length > 0) {
         console.log(`Creating ${highAffinityNotifications.length} high affinity notifications`);
         
@@ -1875,6 +1878,78 @@ export const calculateAffinityOnUserCreate = onDocumentCreated(
         }
         
         console.log(`Created ${highAffinityNotifications.length} high affinity notifications`);
+      }
+
+      // Crear matches para afinidades >= 70%
+      for (const otherUser of otherUsers) {
+        const affinity = calculateAffinityScore(newUserData, otherUser);
+        
+        if (affinity.score >= 70) {
+          // Crear match para el usuario ANTIGUO (otherUser)
+          const matchRefOld = db.collection("users")
+            .doc(otherUser.id)
+            .collection("matches")
+            .doc(newUserId);
+          
+          matchesBatch.set(matchRefOld, {
+            userId: newUserId,
+            userName: newUserData.nombre || "Sin nombre",
+            userCompany: newUserData.empresa || newUserData.company_razonSocial || "Sin empresa",
+            userRole: newUserData.tipoAsistente || null,
+            userInterest: newUserData.interesPrincipal || null,
+            userPhoto: newUserData.photoURL || null,
+            userEmail: newUserData.correo || null,
+            userPhone: newUserData.telefono || null,
+            userPosition: newUserData.cargo || null,
+            userDescription: newUserData.descripcion || null,
+            userNeed: newUserData.necesidad || null,
+            affinityScore: affinity.score,
+            reasons: affinity.reasons,
+            status: "pending", // pending, meeting_requested, dismissed
+            eventId: eventId,
+            createdAt: new Date(),
+          });
+          
+          // Crear match para el usuario NUEVO (simétrico)
+          const matchRefNew = db.collection("users")
+            .doc(newUserId)
+            .collection("matches")
+            .doc(otherUser.id);
+          
+          matchesBatch.set(matchRefNew, {
+            userId: otherUser.id,
+            userName: otherUser.nombre || "Sin nombre",
+            userCompany: otherUser.empresa || otherUser.company_razonSocial || "Sin empresa",
+            userRole: otherUser.tipoAsistente || null,
+            userInterest: otherUser.interesPrincipal || null,
+            userPhoto: otherUser.photoURL || null,
+            userEmail: otherUser.correo || null,
+            userPhone: otherUser.telefono || null,
+            userPosition: otherUser.cargo || null,
+            userDescription: otherUser.descripcion || null,
+            userNeed: otherUser.necesidad || null,
+            affinityScore: affinity.score,
+            reasons: affinity.reasons,
+            status: "pending",
+            eventId: eventId,
+            createdAt: new Date(),
+          });
+          
+          matchesCount += 2;
+          
+          // Commit cada 450 operaciones
+          if (matchesCount >= 450) {
+            await matchesBatch.commit();
+            console.log(`Committed batch of ${matchesCount} matches`);
+            matchesCount = 0;
+          }
+        }
+      }
+      
+      // Commit final de matches
+      if (matchesCount > 0) {
+        await matchesBatch.commit();
+        console.log(`Committed final batch of ${matchesCount} matches`);
       }
 
       console.log(`Affinity calculation complete for user ${newUserId}`);

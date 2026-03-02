@@ -100,6 +100,7 @@ export interface EventPolicies {
   };
   uiViewsEnabled: {
     chatbot: boolean;
+    matches: boolean;
     attendees: boolean;
     companies: boolean;
     products: boolean;
@@ -144,5 +145,11 @@ export const DEFAULT_POLICIES: EventPolicies = {
     attendeeCard: ["empresa", "cargo", "correo", "descripcion", "interesPrincipal", "necesidad"],
     companyCard: ["cargo", "correo", "interesPrincipal", "necesidad"],
   },
-  uiViewsEnabled: { chatbot: true, attendees: true, companies: true, products: true },
+  uiViewsEnabled: { 
+    chatbot: false, 
+    matches: true, 
+    attendees: true, 
+    companies: true, 
+    products: true 
+  },
 };
