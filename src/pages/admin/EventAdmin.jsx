@@ -583,7 +583,7 @@ const EventAdmin = () => {
               Vendedores
             </Text>
             <Title order={3}>
-              {attendees.filter((a) => a.tipoAsistente.toLowerCase() === "vendedor").length}
+              {attendees.filter((a) => a.tipoAsistente?.toLowerCase() === "vendedor").length}
             </Title>
           </Card>
 
@@ -592,7 +592,7 @@ const EventAdmin = () => {
               Compradores
             </Text>
             <Title order={3}>
-              {attendees.filter((a) => a.tipoAsistente.toLowerCase() === "comprador").length}
+              {attendees.filter((a) => a.tipoAsistente?.toLowerCase() === "comprador").length}
             </Title>
           </Card>
         </SimpleGrid>

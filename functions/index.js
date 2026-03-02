@@ -1649,9 +1649,105 @@ export const vectorizeDocuments = onRequest(
 
 
 /**
- * Función helper para calcular score de afinidad entre dos usuarios
+ * Función helper para calcular score de afinidad entre dos usuarios usando Gemini AI
  */
-function calculateAffinityScore(userA, userB) {
+async function calculateAffinityScoreWithAI(userA, userB) {
+  try {
+    // Preparar datos de los usuarios para el prompt
+    const userAProfile = {
+      nombre: userA.nombre || "Sin nombre",
+      empresa: userA.empresa || userA.company_razonSocial || "Sin empresa",
+      cargo: userA.cargo || "Sin cargo",
+      tipoAsistente: userA.tipoAsistente || "No especificado",
+      interesPrincipal: userA.interesPrincipal || "No especificado",
+      descripcion: userA.descripcion || "Sin descripción",
+      necesidad: userA.necesidad || "Sin necesidad especificada",
+    };
+
+    const userBProfile = {
+      nombre: userB.nombre || "Sin nombre",
+      empresa: userB.empresa || userB.company_razonSocial || "Sin empresa",
+      cargo: userB.cargo || "Sin cargo",
+      tipoAsistente: userB.tipoAsistente || "No especificado",
+      interesPrincipal: userB.interesPrincipal || "No especificado",
+      descripcion: userB.descripcion || "Sin descripción",
+      necesidad: userB.necesidad || "Sin necesidad especificada",
+    };
+
+    const prompt = `Eres un experto en networking empresarial y matchmaking para eventos de negocios. Tu tarea es analizar dos perfiles de asistentes y calcular su nivel de afinidad/compatibilidad para una reunión de networking.
+
+PERFIL A:
+- Nombre: ${userAProfile.nombre}
+- Empresa: ${userAProfile.empresa}
+- Cargo: ${userAProfile.cargo}
+- Tipo: ${userAProfile.tipoAsistente}
+- Interés principal: ${userAProfile.interesPrincipal}
+- Descripción: ${userAProfile.descripcion}
+- Necesidad: ${userAProfile.necesidad}
+
+PERFIL B:
+- Nombre: ${userBProfile.nombre}
+- Empresa: ${userBProfile.empresa}
+- Cargo: ${userBProfile.cargo}
+- Tipo: ${userBProfile.tipoAsistente}
+- Interés principal: ${userBProfile.interesPrincipal}
+- Descripción: ${userBProfile.descripcion}
+- Necesidad: ${userBProfile.necesidad}
+
+CRITERIOS DE EVALUACIÓN:
+1. Roles complementarios (comprador-vendedor): Alta prioridad
+2. Coincidencia de intereses y necesidades: Alta prioridad
+3. Sinergia entre descripciones y necesidades: Media prioridad
+4. Compatibilidad de sectores/industrias: Media prioridad
+5. Nivel jerárquico compatible: Baja prioridad
+
+IMPORTANTE:
+- Un score de 70+ indica alta compatibilidad (deberían reunirse)
+- Un score de 50-69 indica compatibilidad media (podrían beneficiarse)
+- Un score de 30-49 indica baja compatibilidad
+- Un score menor a 30 indica muy baja compatibilidad
+
+Devuelve ÚNICAMENTE un objeto JSON con esta estructura exacta:
+{
+  "score": número entre 0-100,
+  "reasons": ["razón 1", "razón 2", "razón 3"],
+  "reasoning": "explicación breve de por qué este score"
+}
+
+Las razones deben ser frases cortas y específicas (máximo 8 palabras cada una).`;
+
+    const response = await callGeminiAPI(prompt, 0.3, 500, "application/json");
+    const result = parseAIResponse(response);
+
+    // Validar respuesta
+    if (!result || typeof result.score !== "number" || !Array.isArray(result.reasons)) {
+      console.warn("Invalid AI response, falling back to manual calculation");
+      return calculateAffinityScoreFallback(userA, userB);
+    }
+
+    // Asegurar que el score esté en rango válido
+    const score = Math.max(0, Math.min(100, Math.round(result.score)));
+    const reasons = result.reasons.slice(0, 5); // Máximo 5 razones
+
+    console.log(`AI Affinity: ${userA.nombre} <-> ${userB.nombre} = ${score}% (${reasons.join(", ")})`);
+
+    return {
+      score,
+      reasons,
+      aiGenerated: true,
+    };
+
+  } catch (error) {
+    console.error("Error calculating affinity with AI:", error);
+    // Fallback al algoritmo manual
+    return calculateAffinityScoreFallback(userA, userB);
+  }
+}
+
+/**
+ * Función de fallback: algoritmo manual de afinidad (usado si falla la IA)
+ */
+function calculateAffinityScoreFallback(userA, userB) {
   let score = 0;
   const reasons = [];
 
@@ -1678,7 +1774,7 @@ function calculateAffinityScore(userA, userB) {
     return text.toLowerCase()
       .split(/\s+/)
       .filter(w => w.length > 3)
-      .slice(0, 10); // Limitar a 10 keywords
+      .slice(0, 10);
   };
 
   const keywordsA = extractKeywords(userA.necesidad || userA.descripcion || "");
@@ -1692,8 +1788,6 @@ function calculateAffinityScore(userA, userB) {
   }
 
   // 4. Mismo sector/categoría (+15 puntos)
-  // Puedes agregar lógica de sector si tienes ese campo
-  // Por ahora, verificar si tienen palabras similares en empresa
   const empresaA = (userA.empresa || userA.company_razonSocial || "").toLowerCase();
   const empresaB = (userB.empresa || userB.company_razonSocial || "").toLowerCase();
   
@@ -1727,8 +1821,9 @@ function calculateAffinityScore(userA, userB) {
   }
 
   return {
-    score: Math.min(100, score), // Máximo 100
+    score: Math.min(100, score),
     reasons,
+    aiGenerated: false,
   };
 }
 
@@ -1741,6 +1836,7 @@ export const calculateAffinityOnUserCreate = onDocumentCreated(
     document: "users/{userId}",
     region: "us-central1",
     memory: "512MiB",
+    secrets: ["GEMINI_API_KEY", "GEMINI_API_URL", "DEFAULT_AI_MODEL"],
   },
   async (event) => {
     const snapshot = event.data;
@@ -1779,14 +1875,18 @@ export const calculateAffinityOnUserCreate = onDocumentCreated(
         return;
       }
 
-      // Calcular afinidad con cada usuario
+      // Calcular afinidad con cada usuario usando AI (una sola vez por par)
       let batch = db.batch();
       let calculatedCount = 0;
       const highAffinityNotifications = []; // Para notificaciones de alta afinidad
+      const affinityResults = new Map(); // Cache de resultados de afinidad
 
       for (const otherUser of otherUsers) {
-        // Calcular afinidad UNA SOLA VEZ (simétrica)
-        const affinity = calculateAffinityScore(newUserData, otherUser);
+        // Calcular afinidad UNA SOLA VEZ (simétrica) usando AI
+        const affinity = await calculateAffinityScoreWithAI(newUserData, otherUser);
+        
+        // Guardar en cache para reutilizar en matches
+        affinityResults.set(otherUser.id, affinity);
 
         // Guardar afinidad del nuevo usuario hacia el otro
         const affinityRefAtoB = db.collection("users")
@@ -1800,6 +1900,7 @@ export const calculateAffinityOnUserCreate = onDocumentCreated(
           targetCompany: otherUser.empresa || otherUser.company_razonSocial || "Sin empresa",
           score: affinity.score,
           reasons: affinity.reasons,
+          aiGenerated: affinity.aiGenerated || false,
           eventId: eventId,
           calculatedAt: new Date(),
         });
@@ -1816,6 +1917,7 @@ export const calculateAffinityOnUserCreate = onDocumentCreated(
           targetCompany: newUserData.empresa || newUserData.company_razonSocial || "Sin empresa",
           score: affinity.score, // MISMO SCORE
           reasons: affinity.reasons, // MISMAS RAZONES
+          aiGenerated: affinity.aiGenerated || false,
           eventId: eventId,
           calculatedAt: new Date(),
         });
@@ -1823,7 +1925,7 @@ export const calculateAffinityOnUserCreate = onDocumentCreated(
         calculatedCount += 2;
 
         // Si la afinidad es mayor a 80%, notificar al usuario ANTIGUO
-        if (affinity.score > 60) {
+        if (affinity.score > 80) {
           highAffinityNotifications.push({
             userId: otherUser.id, // Usuario antiguo recibe la notificación
             targetUserId: newUserId,
@@ -1880,11 +1982,11 @@ export const calculateAffinityOnUserCreate = onDocumentCreated(
         console.log(`Created ${highAffinityNotifications.length} high affinity notifications`);
       }
 
-      // Crear matches para afinidades >= 70%
+      // Crear matches para afinidades >= 70% usando los resultados cacheados
       for (const otherUser of otherUsers) {
-        const affinity = calculateAffinityScore(newUserData, otherUser);
+        const affinity = affinityResults.get(otherUser.id); // Reutilizar cálculo anterior
         
-        if (affinity.score >= 70) {
+        if (affinity && affinity.score >= 70) {
           // Crear match para el usuario ANTIGUO (otherUser)
           const matchRefOld = db.collection("users")
             .doc(otherUser.id)
@@ -1905,6 +2007,7 @@ export const calculateAffinityOnUserCreate = onDocumentCreated(
             userNeed: newUserData.necesidad || null,
             affinityScore: affinity.score,
             reasons: affinity.reasons,
+            aiGenerated: affinity.aiGenerated || false,
             status: "pending", // pending, meeting_requested, dismissed
             eventId: eventId,
             createdAt: new Date(),
@@ -1930,6 +2033,7 @@ export const calculateAffinityOnUserCreate = onDocumentCreated(
             userNeed: otherUser.necesidad || null,
             affinityScore: affinity.score,
             reasons: affinity.reasons,
+            aiGenerated: affinity.aiGenerated || false,
             status: "pending",
             eventId: eventId,
             createdAt: new Date(),
@@ -1973,6 +2077,7 @@ export const recalculateEventAffinity = onRequest(
     region: "us-central1",
     memory: "1GiB",
     timeoutSeconds: 540,
+    secrets: ["GEMINI_API_KEY", "GEMINI_API_URL", "DEFAULT_AI_MODEL"],
   },
   async (req, res) => {
     // CORS headers
@@ -2030,7 +2135,7 @@ export const recalculateEventAffinity = onRequest(
       let batchCount = 0;
       let batch = db.batch();
 
-      // Calcular afinidad entre todos los pares de usuarios (simétrico)
+      // Calcular afinidad entre todos los pares de usuarios (simétrico) usando AI
       // Solo calculamos una vez por par (i < j) y guardamos en ambas direcciones
       for (let i = 0; i < allUsers.length; i++) {
         const userA = allUsers[i];
@@ -2038,8 +2143,8 @@ export const recalculateEventAffinity = onRequest(
         for (let j = i + 1; j < allUsers.length; j++) {
           const userB = allUsers[j];
           
-          // Calcular afinidad UNA SOLA VEZ
-          const affinity = calculateAffinityScore(userA, userB);
+          // Calcular afinidad UNA SOLA VEZ usando AI
+          const affinity = await calculateAffinityScoreWithAI(userA, userB);
 
           // Guardar en userA -> userB
           const affinityRefAtoB = db.collection("users")
@@ -2053,6 +2158,7 @@ export const recalculateEventAffinity = onRequest(
             targetCompany: userB.empresa || userB.company_razonSocial || "Sin empresa",
             score: affinity.score,
             reasons: affinity.reasons,
+            aiGenerated: affinity.aiGenerated || false,
             eventId: eventId,
             calculatedAt: new Date(),
           });
@@ -2069,6 +2175,7 @@ export const recalculateEventAffinity = onRequest(
             targetCompany: userA.empresa || userA.company_razonSocial || "Sin empresa",
             score: affinity.score, // MISMO SCORE
             reasons: affinity.reasons, // MISMAS RAZONES
+            aiGenerated: affinity.aiGenerated || false,
             eventId: eventId,
             calculatedAt: new Date(),
           });
