@@ -492,15 +492,23 @@ const Landing = () => {
         updatedAt: new Date().toISOString(),
       };
 
+      // Validación de correo duplicado (mejorada)
       if (dataToUpdate.correo) {
         const usersRef = collection(db, "users");
         const q = query(usersRef, where("correo", "==", dataToUpdate.correo));
         const querySnapshot = await getDocs(q);
 
         if (!querySnapshot.empty) {
-          const existingUser = querySnapshot.docs[0];
-          const existingData = existingUser.data();
-          if (existingUser.id !== uid && existingData.eventId === eventId) {
+          // Verificar si algún documento existente es de otro usuario en el mismo evento
+          const duplicateFound = querySnapshot.docs.some((docSnap) => {
+            const existingData = docSnap.data();
+            // Es duplicado si:
+            // 1. Es un usuario diferente (docSnap.id !== uid)
+            // 2. Y está en el mismo evento (existingData.eventId === eventId)
+            return docSnap.id !== uid && existingData.eventId === eventId;
+          });
+
+          if (duplicateFound) {
             alert("⚠️ Este correo ya está registrado para este evento.");
             setSaving(false);
             return;

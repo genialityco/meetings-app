@@ -119,6 +119,97 @@ Por favor diríjase a su mesa asignada (${meeting.tableAssigned}).`;
     }
   }
 );
+
+/**
+ * Función HTTP para validar si un correo ya está registrado en un evento
+ * Uso: POST /checkEmailAvailability
+ * Body: { "email": "user@example.com", "eventId": "xxx", "currentUserId": "yyy" }
+ */
+export const checkEmailAvailability = onRequest(
+  {
+    region: "us-central1",
+    memory: "256MiB",
+  },
+  async (req, res) => {
+    // CORS headers
+    const origin = req.headers.origin || "*";
+    res.set({
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "POST,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type,Authorization",
+      "Access-Control-Allow-Credentials": "true",
+    });
+
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+
+    if (req.method !== "POST") {
+      res.status(405).send({ error: "Method not allowed" });
+      return;
+    }
+
+    const { email, eventId, currentUserId } = req.body;
+
+    if (!email || !eventId) {
+      res.status(400).send({ 
+        error: "Missing required fields: email and eventId" 
+      });
+      return;
+    }
+
+    const db = getFirestore();
+
+    try {
+      // Normalizar email
+      const normalizedEmail = String(email).toLowerCase().trim();
+
+      // Buscar usuarios con ese correo en el evento
+      const usersRef = db.collection("users");
+      const q = usersRef
+        .where("correo", "==", normalizedEmail)
+        .where("eventId", "==", eventId);
+
+      const querySnapshot = await q.get();
+
+      if (querySnapshot.empty) {
+        // Email disponible
+        res.status(200).send({
+          available: true,
+          message: "Email is available for this event",
+        });
+        return;
+      }
+
+      // Verificar si algún documento es de otro usuario
+      const duplicateFound = querySnapshot.docs.some((doc) => {
+        return doc.id !== currentUserId;
+      });
+
+      if (duplicateFound) {
+        // Email ya está en uso por otro usuario
+        res.status(200).send({
+          available: false,
+          message: "Email is already registered for this event",
+        });
+      } else {
+        // Email pertenece al usuario actual
+        res.status(200).send({
+          available: true,
+          message: "Email belongs to current user",
+        });
+      }
+
+    } catch (error) {
+      console.error("Error checking email availability:", error);
+      res.status(500).send({
+        error: "Internal server error",
+        details: error.message,
+      });
+    }
+  }
+);
 // HTTP AI proxy mejorado: recibe { userId, eventId, message }
 // HTTP AI proxy mejorado: recibe { userId, eventId, message }
 // HTTP AI proxy mejorado: recibe { userId, eventId, message }

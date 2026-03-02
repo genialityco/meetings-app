@@ -1624,14 +1624,14 @@ export function useDashboardData(eventId?: string) {
 
       if (requester?.telefono) {
         await sendMeetingAcceptedWhatsapp(requester.telefono, receiver!, {
-          timeSlot: slot.startTime,
+          timeSlot: `${slot.startTime} - ${slot.endTime}`,
           tableAssigned: slot.tableNumber,
           meetingDate: eventDateISO,
         }, eventName, accepterName);
       }
       if (receiver?.telefono) {
         await sendMeetingAcceptedWhatsapp(receiver.telefono, requester!, {
-          timeSlot: slot.startTime,
+          timeSlot: `${slot.startTime} - ${slot.endTime}`,
           tableAssigned: slot.tableNumber,
           meetingDate: eventDateISO,
         }, eventName, accepterName);
