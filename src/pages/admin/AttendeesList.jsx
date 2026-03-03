@@ -319,11 +319,11 @@ function parseFirestoreTimestamp(input) {
           <Button variant="outline" color="orange" onClick={exportVendedoresToExcel}>
             Exportar vendedores (Excel)
           </Button>
-          {attendees.length > 0 && (
+          {/* {attendees.length > 0 && (
             <Button color="red" variant="outline" onClick={() => setDeleteAllModal(true)} loading={deletingAll}>
               Eliminar TODOS
             </Button>
-          )}
+          )} */}
           {/* Selección de columnas */}
           <MultiSelect
             data={fields.map((f) => ({

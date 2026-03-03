@@ -111,7 +111,7 @@ const AVAILABLE_FIELDS = [
     label: "Descripción breve",
     type: "richtext",
     validation: {
-      maxLength: 500,
+      maxLength: 1000,
     },
   },
   {

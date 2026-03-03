@@ -440,10 +440,14 @@ const EditEventConfigModal = ({
           Añadir día al evento
         </Button>
         
-        <Divider label="Fechas y horarios del evento (multi-día)" my="sm" />
-        <Text size="sm" c="dimmed">
-          Configura uno o más días para el evento. Cada día puede tener horarios y descansos diferentes.
-        </Text>
+        <Divider label="Información del evento" my="sm" />
+        <TextInput
+          label="Lugar del evento"
+          value={eventLocation}
+          placeholder="Ej: Centro de Convenciones, Hotel XYZ, etc."
+          onChange={(e) => setEventLocation(e.target.value)}
+          description="Ubicación física donde se realizará el evento"
+        />
         <TextInput
           label="URL del Landing"
           value={landingUrl}

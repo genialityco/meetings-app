@@ -24,6 +24,8 @@ import {
   Stepper,
   MantineProvider,
   createTheme,
+  ActionIcon,
+  Tooltip,
 } from "@mantine/core";
 import { generateColors } from "@mantine/colors-generator";
 import { RichTextEditor, Link } from "@mantine/tiptap";
@@ -47,6 +49,7 @@ import {
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useMediaQuery } from "@mantine/hooks";
+import { IconSparkles } from "@tabler/icons-react";
 
 import { db } from "../firebase/firebaseConfig";
 import { storage } from "../firebase/firebaseConfig";
@@ -190,6 +193,9 @@ const Landing = () => {
   // Company logo state
   const [companyLogoFile, setCompanyLogoFile] = useState(null);
   const [companyLogoPreview, setCompanyLogoPreview] = useState(null);
+
+  // AI description improvement state
+  const [improvingDescription, setImprovingDescription] = useState(false);
 
   // Editor tiptap
   const editor = useEditor({
@@ -472,6 +478,51 @@ const Landing = () => {
     }
   }, [loginByEmail, loginEmail, eventId, navigate]);
 
+  // Función para mejorar descripción con IA
+  const handleImproveDescription = useCallback(async () => {
+    setImprovingDescription(true);
+    try {
+      const response = await fetch(
+        "https://improveuserdescription-6eaymlz5eq-uc.a.run.app" ,
+     
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tipoAsistente: formValues.tipoAsistente,
+            interesPrincipal: formValues.interesPrincipal,
+            necesidad: formValues.necesidad,
+            cargo: formValues.cargo,
+            empresa: formValues.empresa || formValues.company_razonSocial,
+            currentDescription: formValues.descripcion,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Error al mejorar descripción");
+      }
+
+      const data = await response.json();
+      
+      if (data.success && data.description) {
+        // Actualizar el editor y el formValues
+        if (editor) {
+          editor.commands.setContent(data.description);
+        }
+        setFormValues((prev) => ({
+          ...prev,
+          descripcion: data.description,
+        }));
+      }
+    } catch (error) {
+      console.error("Error improving description:", error);
+      // Solo log en consola, sin alertas
+    } finally {
+      setImprovingDescription(false);
+    }
+  }, [formValues, editor]);
+
   const handleSubmit = useCallback(async () => {
     if (!validateForm()) return;
 
@@ -657,7 +708,7 @@ const Landing = () => {
                   alt="Vista previa"
                   width={120}
                   height={120}
-                  style={{ borderRadius: "10px", marginTop: "10px" }}
+                  style={{ borderRadius: "10px", marginTop: "10px"}}
                 />
               ) : null}
 
@@ -690,10 +741,29 @@ const Landing = () => {
         if (field.type === "richtext") {
           return (
             <Box key={field.name}>
-              <Title order={6}>{field.label}</Title>
+              <Group justify="space-between" mb="xs">
+                <Title order={6}>{field.label}</Title>
+                <Tooltip label="Mejorar descripción con IA">
+                  <ActionIcon
+                    variant="light"
+                    color="blue"
+                    size="lg"
+                    onClick={handleImproveDescription}
+                    loading={improvingDescription}
+                    disabled={improvingDescription || !formValues.tipoAsistente}
+                  >
+                    <IconSparkles size={18} />
+                  </ActionIcon>
+                </Tooltip>
+              </Group>
               <RichTextEditor editor={editor}>
                 <RichTextEditor.Content />
               </RichTextEditor>
+              {!formValues.tipoAsistente && (
+                <Text size="xs" c="dimmed" mt="xs">
+                  💡 Completa el campo "Tipo de asistente" para usar la IA
+                </Text>
+              )}
               {fieldError && (
                 <Text c="red" size="sm" mt="xs">
                   {fieldError}
@@ -1028,27 +1098,78 @@ const Landing = () => {
                         {event.eventName || "Encuentro de afiliados"}
                       </Title>
 
-                      {event?.config?.eventDate ? (
-                        <Text c="dimmed" size="sm">
-                          <Text span fw={700} c="dark">
-                            Fecha del evento:
-                          </Text>{" "}
-                          {formatDate(event?.config?.eventDate)}
-                        </Text>
+                      {/* Mostrar fechas del evento (multi-día o single) */}
+                      {event?.config?.eventDates && event.config.eventDates.length > 0 ? (
+                        <Stack gap="xs">
+                          <Text c="dimmed" size="sm" fw={700}>
+                            Fechas del evento:
+                          </Text>
+                          {event.config.eventDates.map((date, index) => {
+                            const dailyConfig = event.config.dailyConfig?.[date];
+                            return (
+                              <Paper key={index} withBorder p="xs" radius="md">
+                                <Stack gap={4}>
+                                  <Text size="sm" fw={600}>
+                                    {formatDate(date)}
+                                  </Text>
+                                  {dailyConfig && (
+                                    <Group justify="center" gap="xs">
+                                      {dailyConfig.startTime && (
+                                        <Badge variant="light" size="sm" radius="md">
+                                          Inicio: {formatTime(dailyConfig.startTime)}
+                                        </Badge>
+                                      )}
+                                      {dailyConfig.endTime && (
+                                        <Badge variant="light" size="sm" radius="md">
+                                          Fin: {formatTime(dailyConfig.endTime)}
+                                        </Badge>
+                                      )}
+                                    </Group>
+                                  )}
+                                </Stack>
+                              </Paper>
+                            );
+                          })}
+                        </Stack>
+                      ) : event?.config?.eventDate ? (
+                        // Fallback para eventos antiguos (single day)
+                        <>
+                          <Text c="dimmed" size="sm">
+                            <Text span fw={700} c="dark">
+                              Fecha del evento:
+                            </Text>{" "}
+                            {formatDate(event?.config?.eventDate)}
+                          </Text>
+                          <Group justify="center" gap="xs">
+                            {event?.config?.eventStartTime ? (
+                              <Badge variant="light" radius="md">
+                                Inicio: {formatTime(event?.config?.eventStartTime)}
+                              </Badge>
+                            ) : null}
+                            {event?.config?.eventEndTime ? (
+                              <Badge variant="light" radius="md">
+                                Fin: {formatTime(event?.config?.eventEndTime)}
+                              </Badge>
+                            ) : null}
+                          </Group>
+                        </>
                       ) : null}
 
-                      <Group justify="center" gap="xs">
-                        {event?.config?.eventStartTime ? (
-                          <Badge variant="light" radius="md">
-                            Inicio: {formatTime(event?.config?.eventStartTime)}
-                          </Badge>
-                        ) : null}
-                        {event?.config?.eventEndTime ? (
-                          <Badge variant="light" radius="md">
-                            Fin: {formatTime(event?.config?.eventEndTime)}
-                          </Badge>
-                        ) : null}
-                      </Group>
+                      {/* Horarios globales (si no hay dailyConfig) */}
+                      {!event?.config?.dailyConfig && (
+                        <Group justify="center" gap="xs">
+                          {event?.config?.eventStartTime ? (
+                            <Badge variant="light" radius="md">
+                              Inicio: {formatTime(event?.config?.eventStartTime)}
+                            </Badge>
+                          ) : null}
+                          {event?.config?.eventEndTime ? (
+                            <Badge variant="light" radius="md">
+                              Fin: {formatTime(event?.config?.eventEndTime)}
+                            </Badge>
+                          ) : null}
+                        </Group>
+                      )}
 
                       {event?.config?.eventLocation ? (
                         <Text size="sm" c="dimmed">
@@ -1341,8 +1462,7 @@ const Landing = () => {
                           alt="Encuentro"
                           style={{
                             width: "100%",
-                            height: "100%",
-                            objectFit: "cover",
+                            height: "100%",                           
                             display: "block",
                           }}
                         />
@@ -1379,28 +1499,63 @@ const Landing = () => {
                           </Title>
 
                           <Stack gap={4}>
-                            {event?.config?.eventDate ? (
-                              <Text c="dimmed" size="md">
-                                <Text span fw={700} c="dark">
-                                  Fecha del evento:
-                                </Text>{" "}
-                                {formatDate(event?.config?.eventDate)}
-                              </Text>
+                            {/* Mostrar fechas del evento (multi-día o single) */}
+                            {event?.config?.eventDates && event.config.eventDates.length > 0 ? (
+                              <Stack gap="xs">
+                                <Text c="dimmed" size="md" fw={700}>
+                                  Fechas del evento:
+                                </Text>
+                                {event.config.eventDates.map((date, index) => {
+                                  const dailyConfig = event.config.dailyConfig?.[date];
+                                  return (
+                                    <Paper key={index} withBorder p="xs" radius="md">
+                                      <Stack gap={4}>
+                                        <Text size="sm" fw={600}>
+                                          {formatDate(date)}
+                                        </Text>
+                                        {dailyConfig && (
+                                          <Group justify="center" gap="xs">
+                                            {dailyConfig.startTime && (
+                                              <Badge variant="light" size="sm" radius="md">
+                                                Inicio: {formatTime(dailyConfig.startTime)}
+                                              </Badge>
+                                            )}
+                                            {dailyConfig.endTime && (
+                                              <Badge variant="light" size="sm" radius="md">
+                                                Fin: {formatTime(dailyConfig.endTime)}
+                                              </Badge>
+                                            )}
+                                          </Group>
+                                        )}
+                                      </Stack>
+                                    </Paper>
+                                  );
+                                })}
+                              </Stack>
+                            ) : event?.config?.eventDate ? (
+                              // Fallback para eventos antiguos (single day)
+                              <>
+                                <Text c="dimmed" size="md">
+                                  <Text span fw={700} c="dark">
+                                    Fecha del evento:
+                                  </Text>{" "}
+                                  {formatDate(event?.config?.eventDate)}
+                                </Text>
+                                <Group gap="md" justify="center">
+                                  {event?.config?.eventStartTime ? (
+                                    <Badge variant="light" radius="md">
+                                      Inicio:{" "}
+                                      {formatTime(event?.config?.eventStartTime)}
+                                    </Badge>
+                                  ) : null}
+                                  {event?.config?.eventEndTime ? (
+                                    <Badge variant="light" radius="md">
+                                      Fin: {formatTime(event?.config?.eventEndTime)}
+                                    </Badge>
+                                  ) : null}
+                                </Group>
+                              </>
                             ) : null}
-
-                            <Group gap="md" justify="center">
-                              {event?.config?.eventStartTime ? (
-                                <Badge variant="light" radius="md">
-                                  Inicio:{" "}
-                                  {formatTime(event?.config?.eventStartTime)}
-                                </Badge>
-                              ) : null}
-                              {event?.config?.eventEndTime ? (
-                                <Badge variant="light" radius="md">
-                                  Fin: {formatTime(event?.config?.eventEndTime)}
-                                </Badge>
-                              ) : null}
-                            </Group>
 
                             {event?.config?.eventLocation ? (
                               <Text size="md" c="dimmed">

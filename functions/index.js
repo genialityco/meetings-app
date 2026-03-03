@@ -210,6 +210,139 @@ export const checkEmailAvailability = onRequest(
     }
   }
 );
+
+/**
+ * Función HTTP para mejorar la descripción de un usuario usando IA
+ * Genera una descripción profesional optimizada para matching
+ * 
+ * Uso: POST /improveUserDescription
+ * Body: {
+ *   "tipoAsistente": "comprador",
+ *   "interesPrincipal": "Conocer proveedores",
+ *   "necesidad": "Equipos de cómputo",
+ *   "cargo": "Gerente de compras",
+ *   "empresa": "Tech Solutions",
+ *   "currentDescription": "Busco productos" // Opcional
+ * }
+ */
+export const improveUserDescription = onRequest(
+  {
+    region: "us-central1",
+    memory: "512MiB",
+    secrets: ["GEMINI_API_KEY", "GEMINI_API_URL", "DEFAULT_AI_MODEL"],
+  },
+  async (req, res) => {
+    // CORS headers
+    const origin = req.headers.origin || "*";
+    res.set({
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "POST,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type,Authorization",
+      "Access-Control-Allow-Credentials": "true",
+    });
+
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+
+    if (req.method !== "POST") {
+      res.status(405).send({ error: "Method not allowed" });
+      return;
+    }
+
+    const {
+      tipoAsistente,
+      interesPrincipal,
+      necesidad,
+      cargo,
+      empresa,
+      currentDescription,
+    } = req.body;
+
+    if (!tipoAsistente) {
+      res.status(400).send({ error: "Missing required field: tipoAsistente" });
+      return;
+    }
+
+    try {
+      // Construir prompt para generar descripción optimizada
+      const prompt = `Eres un experto en networking empresarial y redacción de perfiles profesionales. Tu tarea es crear una descripción profesional y concisa para un perfil de asistente a un evento de negocios.
+
+INFORMACIÓN DEL USUARIO:
+- Tipo de asistente: ${tipoAsistente || "No especificado"}
+- Cargo: ${cargo || "No especificado"}
+- Empresa: ${empresa || "No especificado"}
+- Interés principal: ${interesPrincipal || "No especificado"}
+- Necesidad: ${necesidad || "No especificado"}
+${currentDescription ? `- Descripción actual: ${currentDescription}` : ""}
+
+INSTRUCCIONES:
+1. Crea una descripción profesional de 2-3 párrafos (máximo 300 palabras)
+2. Enfócate en:
+   - Qué busca el asistente en el evento
+   - Qué puede ofrecer a otros asistentes
+   - Áreas de interés específicas
+   - Objetivos de networking
+3. Usa lenguaje profesional pero accesible
+4. Incluye palabras clave relevantes para facilitar el matching
+5. Si es COMPRADOR: enfatiza qué productos/servicios busca
+6. Si es VENDEDOR: enfatiza qué productos/servicios ofrece
+7. Sé específico y concreto, evita generalidades
+
+IMPORTANTE:
+- NO uses formato markdown, HTML o caracteres especiales
+- NO uses asteriscos, guiones o viñetas
+- Escribe en texto plano, párrafos separados por saltos de línea
+- Máximo 500 caracteres
+- Lenguaje: Español
+
+Devuelve ÚNICAMENTE el texto de la descripción mejorada, sin explicaciones adicionales.`;
+
+      console.log("Generating improved description for:", tipoAsistente, cargo, empresa);
+
+      const response = await callGeminiAPI(prompt, 0.7, 500, "text/plain");
+
+      // Extraer el texto de la respuesta
+      let improvedDescription = "";
+      
+      if (response?.candidates?.[0]?.content?.parts?.[0]?.text) {
+        improvedDescription = response.candidates[0].content.parts[0].text;
+      } else if (typeof response === "string") {
+        improvedDescription = response;
+      } else {
+        throw new Error("Invalid response format from Gemini API");
+      }
+      
+      // Limpiar la respuesta
+      improvedDescription = improvedDescription.trim();
+      
+      // Remover markdown si quedó algo
+      improvedDescription = improvedDescription
+        .replace(/\*\*/g, "")
+        .replace(/\*/g, "")
+        .replace(/#{1,6}\s/g, "")
+        .replace(/`/g, "");
+
+      console.log("Description improved successfully");
+
+      res.status(200).send({
+        success: true,
+        description: improvedDescription,
+        originalLength: currentDescription?.length || 0,
+        improvedLength: improvedDescription.length,
+      });
+
+    } catch (error) {
+      console.error("Error improving description:", error);
+      res.status(500).send({
+        error: "Failed to improve description",
+        details: error.message,
+      });
+    }
+  }
+);
+
 // HTTP AI proxy mejorado: recibe { userId, eventId, message }
 // HTTP AI proxy mejorado: recibe { userId, eventId, message }
 // HTTP AI proxy mejorado: recibe { userId, eventId, message }
@@ -1740,100 +1873,219 @@ export const vectorizeDocuments = onRequest(
 
 
 /**
- * Función helper para calcular score de afinidad entre dos usuarios usando Gemini AI
+ * Función helper para generar embedding de un usuario
+ * USA SOLO EL CAMPO DESCRIPCIÓN para el matching
+ * La descripción debe ser generada/mejorada por IA para mejores resultados
  */
-async function calculateAffinityScoreWithAI(userA, userB) {
+async function generateUserEmbedding(userData) {
   try {
-    // Preparar datos de los usuarios para el prompt
-    const userAProfile = {
-      nombre: userA.nombre || "Sin nombre",
-      empresa: userA.empresa || userA.company_razonSocial || "Sin empresa",
-      cargo: userA.cargo || "Sin cargo",
-      tipoAsistente: userA.tipoAsistente || "No especificado",
-      interesPrincipal: userA.interesPrincipal || "No especificado",
-      descripcion: userA.descripcion || "Sin descripción",
-      necesidad: userA.necesidad || "Sin necesidad especificada",
-    };
-
-    const userBProfile = {
-      nombre: userB.nombre || "Sin nombre",
-      empresa: userB.empresa || userB.company_razonSocial || "Sin empresa",
-      cargo: userB.cargo || "Sin cargo",
-      tipoAsistente: userB.tipoAsistente || "No especificado",
-      interesPrincipal: userB.interesPrincipal || "No especificado",
-      descripcion: userB.descripcion || "Sin descripción",
-      necesidad: userB.necesidad || "Sin necesidad especificada",
-    };
-
-    const prompt = `Eres un experto en networking empresarial y matchmaking para eventos de negocios. Tu tarea es analizar dos perfiles de asistentes y calcular su nivel de afinidad/compatibilidad para una reunión de networking.
-
-PERFIL A:
-- Nombre: ${userAProfile.nombre}
-- Empresa: ${userAProfile.empresa}
-- Cargo: ${userAProfile.cargo}
-- Tipo: ${userAProfile.tipoAsistente}
-- Interés principal: ${userAProfile.interesPrincipal}
-- Descripción: ${userAProfile.descripcion}
-- Necesidad: ${userAProfile.necesidad}
-
-PERFIL B:
-- Nombre: ${userBProfile.nombre}
-- Empresa: ${userBProfile.empresa}
-- Cargo: ${userBProfile.cargo}
-- Tipo: ${userBProfile.tipoAsistente}
-- Interés principal: ${userBProfile.interesPrincipal}
-- Descripción: ${userBProfile.descripcion}
-- Necesidad: ${userBProfile.necesidad}
-
-CRITERIOS DE EVALUACIÓN:
-1. Roles complementarios (comprador-vendedor): Alta prioridad
-2. Coincidencia de intereses y necesidades: Alta prioridad
-3. Sinergia entre descripciones y necesidades: Media prioridad
-4. Compatibilidad de sectores/industrias: Media prioridad
-5. Nivel jerárquico compatible: Baja prioridad
-
-IMPORTANTE:
-- Un score de 70+ indica alta compatibilidad (deberían reunirse)
-- Un score de 50-69 indica compatibilidad media (podrían beneficiarse)
-- Un score de 30-49 indica baja compatibilidad
-- Un score menor a 30 indica muy baja compatibilidad
-
-Devuelve ÚNICAMENTE un objeto JSON con esta estructura exacta:
-{
-  "score": número entre 0-100,
-  "reasons": ["razón 1", "razón 2", "razón 3"],
-  "reasoning": "explicación breve de por qué este score"
+    // Usar SOLO el campo descripción para el embedding
+    const descripcion = userData.descripcion || "";
+    
+    if (!descripcion || descripcion.trim().length === 0) {
+      console.warn(`User ${userData.nombre || "unknown"} has no description`);
+      return null;
+    }
+    
+    // Generar embedding usando Gemini
+    const embedding = await generateEmbedding(descripcion);
+    
+    return embedding;
+  } catch (error) {
+    console.error("Error generating user embedding:", error);
+    return null;
+  }
 }
 
-Las razones deben ser frases cortas y específicas (máximo 8 palabras cada una).`;
-
-    const response = await callGeminiAPI(prompt, 0.3, 500, "application/json");
-    const result = parseAIResponse(response);
-
-    // Validar respuesta
-    if (!result || typeof result.score !== "number" || !Array.isArray(result.reasons)) {
-      console.warn("Invalid AI response, falling back to manual calculation");
+/**
+ * Función para calcular afinidad usando embeddings con boost para roles complementarios
+ */
+async function calculateAffinityWithEmbeddings(userA, userB, vectorA = null, vectorB = null) {
+  try {
+    // Generar embeddings si no se proporcionan
+    const embeddingA = vectorA || await generateUserEmbedding(userA);
+    const embeddingB = vectorB || await generateUserEmbedding(userB);
+    
+    if (!embeddingA || !embeddingB) {
+      console.warn("Failed to generate embeddings, using fallback");
       return calculateAffinityScoreFallback(userA, userB);
     }
-
-    // Asegurar que el score esté en rango válido
-    const score = Math.max(0, Math.min(100, Math.round(result.score)));
-    const reasons = result.reasons.slice(0, 5); // Máximo 5 razones
-
-    console.log(`AI Affinity: ${userA.nombre} <-> ${userB.nombre} = ${score}% (${reasons.join(", ")})`);
-
+    
+    // Calcular similitud coseno base
+    const baseSimilarity = cosineSimilarity(embeddingA, embeddingB);
+    
+    // Aplicar boost por roles complementarios
+    const tipoA = (userA.tipoAsistente || "").toLowerCase();
+    const tipoB = (userB.tipoAsistente || "").toLowerCase();
+    
+    let roleBoost = 0;
+    let roleReason = null;
+    
+    if ((tipoA === "comprador" && tipoB === "vendedor") || 
+        (tipoA === "vendedor" && tipoB === "comprador")) {
+      roleBoost = 0.25; // Boost de 25% para roles complementarios
+      roleReason = "Roles complementarios (comprador-vendedor)";
+    } else if (tipoA === tipoB && tipoA !== "") {
+      roleBoost = 0.10; // Boost menor para mismo rol
+      roleReason = `Mismo rol: ${tipoA}`;
+    }
+    
+    // Score final = similitud base + boost (máximo 1.0)
+    const finalScore = Math.min(1.0, baseSimilarity + roleBoost);
+    
+    // Convertir a escala 0-100
+    const score = Math.round(finalScore * 100);
+    
+    // Generar razones basadas en la similitud
+    const reasons = [];
+    
+    if (roleReason) {
+      reasons.push(roleReason);
+    }
+    
+    if (userA.interesPrincipal && userB.interesPrincipal && 
+        userA.interesPrincipal === userB.interesPrincipal) {
+      reasons.push("Mismo interés principal");
+    }
+    
+    if (finalScore >= 0.8) {
+      reasons.push("Alta compatibilidad de perfiles");
+    } else if (finalScore >= 0.6) {
+      reasons.push("Buena compatibilidad de perfiles");
+    } else if (finalScore >= 0.4) {
+      reasons.push("Compatibilidad moderada");
+    }
+    
+    // Analizar keywords en común
+    const extractKeywords = (text) => {
+      if (!text) return [];
+      return text.toLowerCase()
+        .split(/\s+/)
+        .filter(w => w.length > 3)
+        .slice(0, 10);
+    };
+    
+    const keywordsA = extractKeywords(userA.necesidad || userA.descripcion || "");
+    const textB = (userB.necesidad || userB.descripcion || "").toLowerCase();
+    const matchingKeywords = keywordsA.filter(kw => textB.includes(kw));
+    
+    if (matchingKeywords.length > 0) {
+      reasons.push(`${matchingKeywords.length} palabras clave coinciden`);
+    }
+    
+    console.log(`Embedding Affinity: ${userA.nombre} <-> ${userB.nombre} = ${score}% (base: ${(baseSimilarity * 100).toFixed(1)}%, boost: ${(roleBoost * 100).toFixed(1)}%)`);
+    
     return {
       score,
-      reasons,
+      reasons: reasons.slice(0, 5), // Máximo 5 razones
       aiGenerated: true,
+      embeddingBased: true,
+      baseSimilarity: Math.round(baseSimilarity * 100),
+      roleBoost: Math.round(roleBoost * 100),
     };
-
+    
   } catch (error) {
-    console.error("Error calculating affinity with AI:", error);
-    // Fallback al algoritmo manual
+    console.error("Error calculating affinity with embeddings:", error);
     return calculateAffinityScoreFallback(userA, userB);
   }
 }
+
+/**
+ * Función helper para calcular score de afinidad entre dos usuarios usando Gemini AI
+ * DEPRECATED: Usar calculateAffinityWithEmbeddings en su lugar
+ */
+// async function calculateAffinityScoreWithAI(userA, userB) {
+//   try {
+//     // Preparar datos de los usuarios para el prompt
+//     const userAProfile = {
+//       nombre: userA.nombre || "Sin nombre",
+//       empresa: userA.empresa || userA.company_razonSocial || "Sin empresa",
+//       cargo: userA.cargo || "Sin cargo",
+//       tipoAsistente: userA.tipoAsistente || "No especificado",
+//       interesPrincipal: userA.interesPrincipal || "No especificado",
+//       descripcion: userA.descripcion || "Sin descripción",
+//       necesidad: userA.necesidad || "Sin necesidad especificada",
+//     };
+
+//     const userBProfile = {
+//       nombre: userB.nombre || "Sin nombre",
+//       empresa: userB.empresa || userB.company_razonSocial || "Sin empresa",
+//       cargo: userB.cargo || "Sin cargo",
+//       tipoAsistente: userB.tipoAsistente || "No especificado",
+//       interesPrincipal: userB.interesPrincipal || "No especificado",
+//       descripcion: userB.descripcion || "Sin descripción",
+//       necesidad: userB.necesidad || "Sin necesidad especificada",
+//     };
+
+//     const prompt = `Eres un experto en networking empresarial y matchmaking para eventos de negocios. Tu tarea es analizar dos perfiles de asistentes y calcular su nivel de afinidad/compatibilidad para una reunión de networking.
+
+// PERFIL A:
+// - Nombre: ${userAProfile.nombre}
+// - Empresa: ${userAProfile.empresa}
+// - Cargo: ${userAProfile.cargo}
+// - Tipo: ${userAProfile.tipoAsistente}
+// - Interés principal: ${userAProfile.interesPrincipal}
+// - Descripción: ${userAProfile.descripcion}
+// - Necesidad: ${userAProfile.necesidad}
+
+// PERFIL B:
+// - Nombre: ${userBProfile.nombre}
+// - Empresa: ${userBProfile.empresa}
+// - Cargo: ${userBProfile.cargo}
+// - Tipo: ${userBProfile.tipoAsistente}
+// - Interés principal: ${userBProfile.interesPrincipal}
+// - Descripción: ${userBProfile.descripcion}
+// - Necesidad: ${userBProfile.necesidad}
+
+// CRITERIOS DE EVALUACIÓN:
+// 1. Roles complementarios (comprador-vendedor) en el campo Tipo: Alta prioridad
+// 2. Compatibilidad de sectores/industrias: Alta prioridad
+// 3. Coincidencia de intereses y necesidades: Media prioridad
+// 4. Sinergia entre descripciones y necesidades: Media prioridad
+// 5. Nivel jerárquico compatible: Baja prioridad
+
+// IMPORTANTE:
+// - Un score de 70+ indica alta compatibilidad (deberían reunirse)
+// - Un score de 50-69 indica compatibilidad media (podrían beneficiarse)
+// - Un score de 30-49 indica baja compatibilidad
+// - Un score menor a 30 indica muy baja compatibilidad
+
+// Devuelve ÚNICAMENTE un objeto JSON con esta estructura exacta:
+// {
+//   "score": número entre 0-100,
+//   "reasons": ["razón 1", "razón 2", "razón 3"],
+//   "reasoning": "explicación breve de por qué este score"
+// }
+
+// Las razones deben ser frases cortas y específicas (máximo 8 palabras cada una).`;
+
+//     const response = await callGeminiAPI(prompt, 0.3, 5000, "application/json");
+//     const result = parseAIResponse(response);
+
+//     // Validar respuesta
+//     if (!result || typeof result.score !== "number" || !Array.isArray(result.reasons)) {
+//       console.warn("Invalid AI response, falling back to manual calculation");
+//       return calculateAffinityScoreFallback(userA, userB);
+//     }
+
+//     // Asegurar que el score esté en rango válido
+//     const score = Math.max(0, Math.min(100, Math.round(result.score)));
+//     const reasons = result.reasons.slice(0, 5); // Máximo 5 razones
+
+//     console.log(`AI Affinity: ${userA.nombre} <-> ${userB.nombre} = ${score}% (${reasons.join(", ")})`);
+
+//     return {
+//       score,
+//       reasons,
+//       aiGenerated: true,
+//     };
+
+//   } catch (error) {
+//     console.error("Error calculating affinity with AI:", error);
+//     // Fallback al algoritmo manual
+//     return calculateAffinityScoreFallback(userA, userB);
+//   }
+// }
 
 /**
  * Función de fallback: algoritmo manual de afinidad (usado si falla la IA)
@@ -1950,6 +2202,21 @@ export const calculateAffinityOnUserCreate = onDocumentCreated(
     const db = getFirestore();
 
     try {
+      // Generar embedding del nuevo usuario
+      console.log(`Generating embedding for new user ${newUserId}`);
+      const newUserEmbedding = await generateUserEmbedding(newUserData);
+      
+      if (newUserEmbedding) {
+        // Guardar el embedding en el documento del usuario
+        await db.collection("users").doc(newUserId).update({
+          vector: newUserEmbedding,
+          vectorGeneratedAt: new Date(),
+        });
+        console.log(`Embedding saved for user ${newUserId}`);
+      } else {
+        console.warn(`Failed to generate embedding for user ${newUserId}`);
+      }
+
       // Obtener todos los usuarios del mismo evento (excepto el nuevo)
       const usersSnap = await db.collection("users")
         .where("eventId", "==", eventId)
@@ -1966,15 +2233,36 @@ export const calculateAffinityOnUserCreate = onDocumentCreated(
         return;
       }
 
-      // Calcular afinidad con cada usuario usando AI (una sola vez por par)
+      // Calcular afinidad con cada usuario usando embeddings (una sola vez por par)
       let batch = db.batch();
       let calculatedCount = 0;
       const highAffinityNotifications = []; // Para notificaciones de alta afinidad
       const affinityResults = new Map(); // Cache de resultados de afinidad
 
       for (const otherUser of otherUsers) {
-        // Calcular afinidad UNA SOLA VEZ (simétrica) usando AI
-        const affinity = await calculateAffinityScoreWithAI(newUserData, otherUser);
+        // Generar embedding del otro usuario si no lo tiene
+        let otherUserEmbedding = otherUser.vector;
+        
+        if (!otherUserEmbedding) {
+          console.log(`Generating embedding for existing user ${otherUser.id}`);
+          otherUserEmbedding = await generateUserEmbedding(otherUser);
+          
+          if (otherUserEmbedding) {
+            // Guardar el embedding en el documento del usuario
+            await db.collection("users").doc(otherUser.id).update({
+              vector: otherUserEmbedding,
+              vectorGeneratedAt: new Date(),
+            });
+          }
+        }
+        
+        // Calcular afinidad usando embeddings
+        const affinity = await calculateAffinityWithEmbeddings(
+          newUserData, 
+          otherUser,
+          newUserEmbedding,
+          otherUserEmbedding
+        );
         
         // Guardar en cache para reutilizar en matches
         affinityResults.set(otherUser.id, affinity);
@@ -2016,7 +2304,7 @@ export const calculateAffinityOnUserCreate = onDocumentCreated(
         calculatedCount += 2;
 
         // Si la afinidad es mayor a 80%, notificar al usuario ANTIGUO
-        if (affinity.score > 80) {
+        if (affinity.score > 89) {
           highAffinityNotifications.push({
             userId: otherUser.id, // Usuario antiguo recibe la notificación
             targetUserId: newUserId,
@@ -2077,7 +2365,7 @@ export const calculateAffinityOnUserCreate = onDocumentCreated(
       for (const otherUser of otherUsers) {
         const affinity = affinityResults.get(otherUser.id); // Reutilizar cálculo anterior
         
-        if (affinity && affinity.score >= 70) {
+        if (affinity && affinity.score >= 89) {
           // Crear match para el usuario ANTIGUO (otherUser)
           const matchRefOld = db.collection("users")
             .doc(otherUser.id)
@@ -2222,11 +2510,29 @@ export const recalculateEventAffinity = onRequest(
         return;
       }
 
+      // Generar embeddings para todos los usuarios que no los tengan
+      console.log("Generating embeddings for users without vectors...");
+      for (const user of allUsers) {
+        if (!user.vector) {
+          console.log(`Generating embedding for user ${user.id}`);
+          const embedding = await generateUserEmbedding(user);
+          
+          if (embedding) {
+            await db.collection("users").doc(user.id).update({
+              vector: embedding,
+              vectorGeneratedAt: new Date(),
+            });
+            user.vector = embedding; // Actualizar en memoria
+          }
+        }
+      }
+      console.log("Embeddings generation complete");
+
       let totalCalculations = 0;
       let batchCount = 0;
       let batch = db.batch();
 
-      // Calcular afinidad entre todos los pares de usuarios (simétrico) usando AI
+      // Calcular afinidad entre todos los pares de usuarios (simétrico) usando embeddings
       // Solo calculamos una vez por par (i < j) y guardamos en ambas direcciones
       for (let i = 0; i < allUsers.length; i++) {
         const userA = allUsers[i];
@@ -2234,8 +2540,13 @@ export const recalculateEventAffinity = onRequest(
         for (let j = i + 1; j < allUsers.length; j++) {
           const userB = allUsers[j];
           
-          // Calcular afinidad UNA SOLA VEZ usando AI
-          const affinity = await calculateAffinityScoreWithAI(userA, userB);
+          // Calcular afinidad UNA SOLA VEZ usando embeddings
+          const affinity = await calculateAffinityWithEmbeddings(
+            userA, 
+            userB,
+            userA.vector,
+            userB.vector
+          );
 
           // Guardar en userA -> userB
           const affinityRefAtoB = db.collection("users")
