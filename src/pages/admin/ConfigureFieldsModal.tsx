@@ -111,7 +111,7 @@ const AVAILABLE_FIELDS = [
     label: "Descripción breve",
     type: "richtext",
     validation: {
-      maxLength: 500,
+      maxLength: 1000,
     },
   },
   {
@@ -217,6 +217,7 @@ function SortableFieldItem({
   allFields,
   handleDeleteCustomField,
   handleLabelChange,
+  handlePlaceholderChange,
   handleToggleRequired,
   onUpdateShowWhen,
 }: {
@@ -224,6 +225,7 @@ function SortableFieldItem({
   allFields: any[];
   handleDeleteCustomField: (name: string) => void;
   handleLabelChange: (name: string, value: string) => void;
+  handlePlaceholderChange: (name: string, value: string) => void;
   handleToggleRequired: (name: string, value: boolean) => void;
   onUpdateShowWhen: (name: string, showWhen: any) => void;
 }) {
@@ -266,11 +268,26 @@ function SortableFieldItem({
           <IconGripVertical size={16} />
         </div>
         <TextInput
-          value={field.label}
+          value={
+            field.label ||
+            (AVAILABLE_FIELDS.find((af) => af.name === field.name)?.label || "")
+          }
           onChange={(e) => handleLabelChange(field.name, e.currentTarget.value)}
           size="xs"
           style={{ width: 150 }}
           placeholder="Etiqueta"
+        />
+        <TextInput
+          value={
+            field.placeholder ||
+            ""
+          }
+          onChange={(e) =>
+            handlePlaceholderChange(field.name, e.currentTarget.value)
+          }
+          size="xs"
+          style={{ width: 180 }}
+          placeholder="Placeholder"
         />
         <Switch
           size="sm"
@@ -465,6 +482,18 @@ export default function ConfigureFieldsModal({
     );
   };
 
+  const handlePlaceholderChange = (fieldName: string, value: string) => {
+    setFields(
+      fields.map((f) => {
+        if (f.name !== fieldName) return f;
+        return {
+          ...f,
+          placeholder: value,
+        };
+      }),
+    );
+  };
+
   const handleAddCustomField = () => {
     if (!newFieldLabel.trim()) return;
 
@@ -481,6 +510,7 @@ export default function ConfigureFieldsModal({
     const newField: any = {
       name,
       label: newFieldLabel,
+      placeholder: newFieldLabel,
       type: newFieldType,
       required: false,
       isCustom: true,
@@ -727,40 +757,87 @@ export default function ConfigureFieldsModal({
       {/* -------- CAMPOS DISPONIBLES -------- */}
       <Paper shadow="xs" p="md" mb="md">
         <Text mb={6}>Selecciona los campos a mostrar y su configuración:</Text>
-        <Stack gap={4}>
-          {AVAILABLE_FIELDS.map((field) => (
-            <Group key={field.name} justify="space-between" align="center">
-              <Checkbox
-                label={field.label}
-                checked={fields.some((f) => f.name === field.name)}
-                onChange={(e) =>
-                  handleToggleField(field.name, e.currentTarget.checked)
-                }
-              />
-              <Switch
-                size="sm"
-                label="Obligatorio"
-                checked={!!fields.find((f) => f.name === field.name)?.required}
-                disabled={!fields.some((f) => f.name === field.name)}
-                onChange={(e) =>
-                  handleToggleRequired(field.name, e.currentTarget.checked)
-                }
-              />
-              <TextInput
-                value={
-                  fields.find((f) => f.name === field.name)?.label ||
-                  field.label
-                }
-                disabled={!fields.some((f) => f.name === field.name)}
-                onChange={(e) =>
-                  handleLabelChange(field.name, e.currentTarget.value)
-                }
-                size="xs"
-                style={{ width: 180 }}
-                placeholder="Etiqueta"
-              />
-            </Group>
-          ))}
+
+        {/* Encabezados de columnas */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(160px, 1.2fr) 100px minmax(140px, 1fr) minmax(140px, 1fr)",
+            gap: 8,
+            alignItems: "center",
+            padding: "4px 8px",
+            marginBottom: 4,
+            borderBottom: "2px solid #e2e8f0",
+          }}
+        >
+          <Text size="xs" fw={700} c="dimmed">Campo</Text>
+          <Text size="xs" fw={700} c="dimmed" ta="center">Obligatorio</Text>
+          <Text size="xs" fw={700} c="dimmed">Etiqueta</Text>
+          <Text size="xs" fw={700} c="dimmed">Placeholder</Text>
+        </div>
+
+        <Stack gap={2}>
+          {AVAILABLE_FIELDS.map((field) => {
+            const isActive = fields.some((f) => f.name === field.name);
+            return (
+              <div
+                key={field.name}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "minmax(160px, 1.2fr) 100px minmax(140px, 1fr) minmax(140px, 1fr)",
+                  gap: 8,
+                  alignItems: "center",
+                  padding: "6px 8px",
+                  borderRadius: 6,
+                  background: isActive ? "rgba(34,139,230,0.04)" : "transparent",
+                  borderBottom: "1px solid #f1f3f5",
+                }}
+              >
+                <Checkbox
+                  label={field.label}
+                  checked={isActive}
+                  onChange={(e) =>
+                    handleToggleField(field.name, e.currentTarget.checked)
+                  }
+                  size="xs"
+                  styles={{ label: { fontWeight: isActive ? 600 : 400 } }}
+                />
+                <Group justify="center">
+                  <Switch
+                    size="xs"
+                    checked={!!fields.find((f) => f.name === field.name)?.required}
+                    disabled={!isActive}
+                    onChange={(e) =>
+                      handleToggleRequired(field.name, e.currentTarget.checked)
+                    }
+                  />
+                </Group>
+                <TextInput
+                  value={
+                    fields.find((f) => f.name === field.name)?.label ||
+                    field.label
+                  }
+                  disabled={!isActive}
+                  onChange={(e) =>
+                    handleLabelChange(field.name, e.currentTarget.value)
+                  }
+                  size="xs"
+                  placeholder="Etiqueta"
+                />
+                <TextInput
+                  value={
+                    fields.find((f) => f.name === field.name)?.placeholder || ""
+                  }
+                  disabled={!isActive}
+                  onChange={(e) =>
+                    handlePlaceholderChange(field.name, e.currentTarget.value)
+                  }
+                  size="xs"
+                  placeholder="Placeholder"
+                />
+              </div>
+            );
+          })}
         </Stack>
       </Paper>
 
@@ -960,6 +1037,7 @@ export default function ConfigureFieldsModal({
                   allFields={fields}
                   handleDeleteCustomField={handleDeleteCustomField}
                   handleLabelChange={handleLabelChange}
+                  handlePlaceholderChange={handlePlaceholderChange}
                   handleToggleRequired={handleToggleRequired}
                   onUpdateShowWhen={handleUpdateShowWhen}
                 />

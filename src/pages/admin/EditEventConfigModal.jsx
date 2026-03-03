@@ -34,9 +34,44 @@ const EditEventConfigModal = ({
 }) => {
   // ---- Estados ----
   const [eventName, setEventName] = useState(event.eventName || "");
-  const [eventDate, setEventDate] = useState(event.config?.eventDate || "");
-  const [eventStartTime, setEventStartTime] = useState(event.config?.eventStartTime || "");
-  const [eventEndTime, setEventEndTime] = useState(event.config?.eventEndTime || "");
+  // Soporte multi-día con configuración por día
+  const [eventDays, setEventDays] = useState(() => {
+    // Si existe dailyConfig, usarlo
+    if (event.config?.dailyConfig) {
+      return Object.entries(event.config.dailyConfig).map(([date, config]) => ({
+        date,
+        startTime: config.startTime || "09:00",
+        endTime: config.endTime || "18:00",
+        breakBlocks: config.breakBlocks || [],
+      }));
+    }
+    // Si existe eventDates, crear configuración por defecto
+    if (event.config?.eventDates?.length) {
+      return event.config.eventDates.map((date) => ({
+        date,
+        startTime: event.config?.startTime || "09:00",
+        endTime: event.config?.endTime || "18:00",
+        breakBlocks: event.config?.breakBlocks || [],
+      }));
+    }
+    // Si solo existe eventDate, crear un día
+    if (event.config?.eventDate) {
+      return [{
+        date: event.config.eventDate,
+        startTime: event.config?.startTime || "09:00",
+        endTime: event.config?.endTime || "18:00",
+        breakBlocks: event.config?.breakBlocks || [],
+      }];
+    }
+    // Por defecto, un día vacío
+    return [{
+      date: "",
+      startTime: "09:00",
+      endTime: "18:00",
+      breakBlocks: [],
+    }];
+  });
+  
   const [eventLocation, setEventLocation] = useState(event.config?.eventLocation || "");
   const [eventImageUrl, setEventImageUrl] = useState(event.eventImage || "");
   const [eventImageFile, setEventImageFile] = useState(null);
@@ -58,12 +93,13 @@ const EditEventConfigModal = ({
   const [numTables, setNumTables] = useState(event.config?.numTables || 50);
   const [meetingDuration, setMeetingDuration] = useState(event.config?.meetingDuration || 10);
   const [breakTime, setBreakTime] = useState(event.config?.breakTime || 0);
+  // Configuración global (ya no se usa para horarios, solo para referencia)
   const [startTime, setStartTime] = useState(event.config?.startTime || "09:00");
   const [endTime, setEndTime] = useState(event.config?.endTime || "18:00");
   const [tableNamesInput, setTableNamesInput] = useState(
     (event.config?.tableNames || []).join(", ")
   );
-  // Bloques de descanso
+  // Bloques de descanso globales (ya no se usan, cada día tiene los suyos)
   const [breakBlocks, setBreakBlocks] = useState(event.config?.breakBlocks?.length
     ? event.config.breakBlocks
     : []);
@@ -131,29 +167,45 @@ const EditEventConfigModal = ({
 
   // ------ RESUMEN CALCULADO ------
   const configSummary = useMemo(() => {
-    const totalMinutes = timeToMinutes(endTime) - timeToMinutes(startTime);
-    const blockLen = meetingDuration + breakTime;
-    // Filtrar descansos válidos
-    const validBreakBlocks = breakBlocks.filter(
-      (b) => b.start && b.end && b.start < b.end
-    );
-    const totalBreakMinutes = validBreakBlocks.reduce((acc, block) => {
-      return acc + (timeToMinutes(block.end) - timeToMinutes(block.start));
-    }, 0);
-
-    // Calcular minutos hábiles descontando descansos definidos
-    const workingMinutes = totalMinutes - totalBreakMinutes;
-    const totalBlocks = Math.floor(workingMinutes / blockLen);
+    let totalBlocks = 0;
+    let totalBreakMinutes = 0;
+    
+    // Calcular para cada día
+    eventDays.forEach((day) => {
+      const totalMinutes = timeToMinutes(day.endTime) - timeToMinutes(day.startTime);
+      const blockLen = meetingDuration + breakTime;
+      
+      // Filtrar descansos válidos del día
+      const validBreakBlocks = (day.breakBlocks || []).filter(
+        (b) => b.start && b.end && b.start < b.end
+      );
+      
+      const dayBreakMinutes = validBreakBlocks.reduce((acc, block) => {
+        return acc + (timeToMinutes(block.end) - timeToMinutes(block.start));
+      }, 0);
+      
+      totalBreakMinutes += dayBreakMinutes;
+      
+      // Calcular minutos hábiles descontando descansos
+      const workingMinutes = totalMinutes - dayBreakMinutes;
+      const dayBlocks = Math.floor(workingMinutes / blockLen);
+      totalBlocks += dayBlocks;
+    });
+    
+    const numDays = eventDays.length || 1;
     const totalSlots = totalBlocks * numTables;
+    const avgBlocksPerDay = Math.floor(totalBlocks / numDays);
 
     return {
       totalBlocks,
       totalSlots,
-      maxMeetingsPerUser: totalBlocks,
-      breakBlocksCount: validBreakBlocks.length,
+      maxMeetingsPerUser: totalBlocks, // Total en todos los días
+      avgBlocksPerDay,
+      breakBlocksCount: eventDays.reduce((acc, day) => acc + (day.breakBlocks?.length || 0), 0),
       totalBreakMinutes,
+      numDays,
     };
-  }, [startTime, endTime, meetingDuration, breakTime, numTables, breakBlocks]);
+  }, [eventDays, meetingDuration, breakTime, numTables]);
 
   // ------ GUARDADO ------
   const saveConfig = async () => {
@@ -194,19 +246,37 @@ const EditEventConfigModal = ({
       (b) => b.start && b.end && b.start < b.end
     );
 
+    // Ordenar fechas cronológicamente
+    const sortedDays = [...eventDays].sort((a, b) => a.date.localeCompare(b.date));
+    const eventDates = sortedDays.map(d => d.date);
+    
+    // Crear dailyConfig con la configuración de cada día
+    const dailyConfig = {};
+    sortedDays.forEach((day) => {
+      if (day.date) {
+        dailyConfig[day.date] = {
+          startTime: day.startTime,
+          endTime: day.endTime,
+          breakBlocks: (day.breakBlocks || []).filter(
+            (b) => b.start && b.end && b.start < b.end
+          ),
+        };
+      }
+    });
+    
     const newConfig = {
       maxPersons,
       numTables,
       meetingDuration,
       breakTime,
-      startTime,
-      endTime,
+      startTime, // Mantener para compatibilidad
+      endTime, // Mantener para compatibilidad
       tableNames,
-      breakBlocks: breakBlocksSanitized,
+      breakBlocks: breakBlocksSanitized, // Mantener para compatibilidad
       maxMeetingsPerUser: maxMeetingsPerUser || configSummary.maxMeetingsPerUser,
-      eventDate,
-      eventStartTime,
-      eventEndTime,
+      eventDates: eventDates, // Array de fechas
+      eventDate: eventDates[0] || "", // Primera fecha (compatibilidad)
+      dailyConfig, // NUEVO: configuración específica por día
       eventLocation,
       primaryColor,
     };
@@ -244,34 +314,140 @@ const EditEventConfigModal = ({
           value={eventName}
           onChange={(e) => setEventName(e.target.value)}
         />
-        <TextInput
-          label="Fecha del Evento"
-          type="date"
-          value={eventDate}
-          onChange={(e) => setEventDate(e.target.value)}
-        />
-        <Group grow>
-          <TextInput
-            label="Hora de inicio del evento"
-            type="time"
-            value={eventStartTime}
-            onChange={(e) => setEventStartTime(e.target.value)}
-          />
-          <TextInput
-            label="Hora de fin del evento"
-            type="time"
-            value={eventEndTime}
-            onChange={(e) => setEventEndTime(e.target.value)}
-          />
-        </Group>
-        <TextInput
-          label="Lugar del Evento"
-          value={eventLocation}
-          placeholder="Ingrese la ubicación del evento"
-          onChange={(e) => setEventLocation(e.target.value)}
-        />
         
-        <Divider label="Landing y código QR" my="sm" />
+        <Divider label="Fechas y horarios del evento (multi-día)" my="sm" />
+        <Text size="sm" c="dimmed">
+          Configura uno o más días para el evento. Cada día puede tener horarios y descansos diferentes.
+        </Text>
+        
+        {eventDays.map((day, dayIdx) => (
+          <Stack key={dayIdx} p="md" style={{ border: "1px solid #e0e0e0", borderRadius: 8 }}>
+            <Group justify="space-between" align="center">
+              <Text fw={600} size="sm">Día {dayIdx + 1}</Text>
+              <Button
+                variant="subtle"
+                color="red"
+                size="xs"
+                onClick={() => setEventDays(eventDays.filter((_, i) => i !== dayIdx))}
+                disabled={eventDays.length === 1}
+              >
+                Eliminar día
+              </Button>
+            </Group>
+            
+            <TextInput
+              label="Fecha"
+              type="date"
+              value={day.date}
+              onChange={(e) => {
+                const updated = [...eventDays];
+                updated[dayIdx].date = e.target.value;
+                setEventDays(updated);
+              }}
+              required
+            />
+            
+            <Group grow>
+              <TextInput
+                label="Hora de inicio"
+                type="time"
+                value={day.startTime}
+                onChange={(e) => {
+                  const updated = [...eventDays];
+                  updated[dayIdx].startTime = e.target.value;
+                  setEventDays(updated);
+                }}
+              />
+              <TextInput
+                label="Hora de fin"
+                type="time"
+                value={day.endTime}
+                onChange={(e) => {
+                  const updated = [...eventDays];
+                  updated[dayIdx].endTime = e.target.value;
+                  setEventDays(updated);
+                }}
+              />
+            </Group>
+            
+            <Divider label="Bloques de descanso (opcional)" my="xs" />
+            {(day.breakBlocks || []).map((block, blockIdx) => (
+              <Group key={blockIdx} align="flex-end" spacing="xs" wrap="nowrap">
+                <Text size="xs">Descanso #{blockIdx + 1}</Text>
+                <TextInput
+                  label="Inicio"
+                  type="time"
+                  value={block.start}
+                  onChange={(e) => {
+                    const updated = [...eventDays];
+                    updated[dayIdx].breakBlocks[blockIdx].start = e.target.value;
+                    setEventDays(updated);
+                  }}
+                  style={{ width: 120 }}
+                />
+                <TextInput
+                  label="Fin"
+                  type="time"
+                  value={block.end}
+                  onChange={(e) => {
+                    const updated = [...eventDays];
+                    updated[dayIdx].breakBlocks[blockIdx].end = e.target.value;
+                    setEventDays(updated);
+                  }}
+                  style={{ width: 120 }}
+                />
+                <Button
+                  variant="subtle"
+                  color="red"
+                  size="xs"
+                  onClick={() => {
+                    const updated = [...eventDays];
+                    updated[dayIdx].breakBlocks = updated[dayIdx].breakBlocks.filter((_, i) => i !== blockIdx);
+                    setEventDays(updated);
+                  }}
+                >
+                  Eliminar
+                </Button>
+              </Group>
+            ))}
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={() => {
+                const updated = [...eventDays];
+                if (!updated[dayIdx].breakBlocks) updated[dayIdx].breakBlocks = [];
+                updated[dayIdx].breakBlocks.push({ start: "", end: "" });
+                setEventDays(updated);
+              }}
+              style={{ width: 200 }}
+            >
+              Añadir descanso a este día
+            </Button>
+          </Stack>
+        ))}
+        
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setEventDays([...eventDays, { 
+            date: "", 
+            startTime: "09:00", 
+            endTime: "18:00",
+            breakBlocks: []
+          }])}
+          fullWidth
+        >
+          Añadir día al evento
+        </Button>
+        
+        <Divider label="Información del evento" my="sm" />
+        <TextInput
+          label="Lugar del evento"
+          value={eventLocation}
+          placeholder="Ej: Centro de Convenciones, Hotel XYZ, etc."
+          onChange={(e) => setEventLocation(e.target.value)}
+          description="Ubicación física donde se realizará el evento"
+        />
         <TextInput
           label="URL del Landing"
           value={landingUrl}
@@ -328,6 +504,9 @@ const EditEventConfigModal = ({
         )}
 
         <Divider label="Configuración de agendamiento" my="sm" />
+        <Text size="sm" c="dimmed" mb="sm">
+          Configuración global que aplica a todos los días del evento.
+        </Text>
         <NumberInput
           label="Cantidad máxima de personas"
           value={maxPersons}
@@ -358,64 +537,6 @@ const EditEventConfigModal = ({
           onChange={setBreakTime}
           min={0}
         />
-        <Group grow>
-          <TextInput
-            label="Hora de inicio"
-            type="time"
-            value={startTime}
-            onChange={(e) => setStartTime(e.target.value)}
-          />
-          <TextInput
-            label="Hora de fin"
-            type="time"
-            value={endTime}
-            onChange={(e) => setEndTime(e.target.value)}
-          />
-        </Group>
-        <Divider label="Bloques de descanso (opcional)" my="sm" />
-        {breakBlocks.map((block, idx) => (
-          <Group key={idx} align="flex-end" spacing="xs" noWrap>
-            <Text size="sm">Bloque #{idx + 1}</Text>
-            <TextInput
-              label="Inicio"
-              type="time"
-              value={block.start}
-              onChange={(e) => {
-                const updated = [...breakBlocks];
-                updated[idx].start = e.target.value;
-                setBreakBlocks(updated);
-              }}
-              style={{ width: 120 }}
-            />
-            <TextInput
-              label="Fin"
-              type="time"
-              value={block.end}
-              onChange={(e) => {
-                const updated = [...breakBlocks];
-                updated[idx].end = e.target.value;
-                setBreakBlocks(updated);
-              }}
-              style={{ width: 120 }}
-            />
-            <Button
-              variant="subtle"
-              color="red"
-              size="xs"
-              onClick={() => setBreakBlocks(breakBlocks.filter((_, i) => i !== idx))}
-            >
-              Eliminar
-            </Button>
-          </Group>
-        ))}
-        <Button
-          variant="outline"
-          size="xs"
-          onClick={() => setBreakBlocks([...breakBlocks, { start: "", end: "" }])}
-          style={{ width: 180 }}
-        >
-          Añadir bloque de descanso
-        </Button>
         <Divider my="xs" />
         <NumberInput
           label="Límite máximo de citas por usuario"
@@ -427,19 +548,25 @@ const EditEventConfigModal = ({
         <Alert color="blue" variant="light" mt="md">
           <Text><b>Resumen configuración agenda:</b></Text>
           <Text size="sm">
-            • Bloques de reunión: {configSummary.totalBlocks}
+            • Días del evento: {configSummary.numDays}
+          </Text>
+          <Text size="sm">
+            • Bloques de reunión totales: {configSummary.totalBlocks}
+          </Text>
+          <Text size="sm">
+            • Bloques promedio por día: {configSummary.avgBlocksPerDay}
           </Text>
           <Text size="sm">
             • Slots totales (bloques × mesas): {configSummary.totalSlots}
           </Text>
           <Text size="sm">
-            • Citas máximas por usuario (teórico): {configSummary.maxMeetingsPerUser}
+            • Citas máximas por usuario (total): {configSummary.maxMeetingsPerUser}
           </Text>
           <Text size="sm">
             • Límite máximo de citas por usuario (editable): {maxMeetingsPerUser}
           </Text>
           <Text size="sm">
-            • Bloques de descanso definidos: {configSummary.breakBlocksCount}
+            • Bloques de descanso totales: {configSummary.breakBlocksCount}
           </Text>
           <Text size="sm">
             • Tiempo total de descansos: {configSummary.totalBreakMinutes} minutos

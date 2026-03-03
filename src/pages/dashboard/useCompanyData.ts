@@ -133,7 +133,7 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
       const landingUrl = `${baseUrl}/event/${eventId}`;
 
       const contextLine = context?.contextNote
-        ? `\n📋 *Contexto:* ${context.contextNote}\n`
+        ? `\n📋 *Mensaje:* ${context.contextNote}\n`
         : "";
 
       const eventLine = eventName ? `📌 *Evento:* ${eventName}\n\n` : "";

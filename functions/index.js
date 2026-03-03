@@ -1,5 +1,6 @@
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onRequest } from "firebase-functions/v2/https";
+import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
@@ -118,6 +119,230 @@ Por favor diríjase a su mesa asignada (${meeting.tableAssigned}).`;
     }
   }
 );
+
+/**
+ * Función HTTP para validar si un correo ya está registrado en un evento
+ * Uso: POST /checkEmailAvailability
+ * Body: { "email": "user@example.com", "eventId": "xxx", "currentUserId": "yyy" }
+ */
+export const checkEmailAvailability = onRequest(
+  {
+    region: "us-central1",
+    memory: "256MiB",
+  },
+  async (req, res) => {
+    // CORS headers
+    const origin = req.headers.origin || "*";
+    res.set({
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "POST,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type,Authorization",
+      "Access-Control-Allow-Credentials": "true",
+    });
+
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+
+    if (req.method !== "POST") {
+      res.status(405).send({ error: "Method not allowed" });
+      return;
+    }
+
+    const { email, eventId, currentUserId } = req.body;
+
+    if (!email || !eventId) {
+      res.status(400).send({ 
+        error: "Missing required fields: email and eventId" 
+      });
+      return;
+    }
+
+    const db = getFirestore();
+
+    try {
+      // Normalizar email
+      const normalizedEmail = String(email).toLowerCase().trim();
+
+      // Buscar usuarios con ese correo en el evento
+      const usersRef = db.collection("users");
+      const q = usersRef
+        .where("correo", "==", normalizedEmail)
+        .where("eventId", "==", eventId);
+
+      const querySnapshot = await q.get();
+
+      if (querySnapshot.empty) {
+        // Email disponible
+        res.status(200).send({
+          available: true,
+          message: "Email is available for this event",
+        });
+        return;
+      }
+
+      // Verificar si algún documento es de otro usuario
+      const duplicateFound = querySnapshot.docs.some((doc) => {
+        return doc.id !== currentUserId;
+      });
+
+      if (duplicateFound) {
+        // Email ya está en uso por otro usuario
+        res.status(200).send({
+          available: false,
+          message: "Email is already registered for this event",
+        });
+      } else {
+        // Email pertenece al usuario actual
+        res.status(200).send({
+          available: true,
+          message: "Email belongs to current user",
+        });
+      }
+
+    } catch (error) {
+      console.error("Error checking email availability:", error);
+      res.status(500).send({
+        error: "Internal server error",
+        details: error.message,
+      });
+    }
+  }
+);
+
+/**
+ * Función HTTP para mejorar la descripción de un usuario usando IA
+ * Genera una descripción profesional optimizada para matching
+ * 
+ * Uso: POST /improveUserDescription
+ * Body: {
+ *   "tipoAsistente": "comprador",
+ *   "interesPrincipal": "Conocer proveedores",
+ *   "necesidad": "Equipos de cómputo",
+ *   "cargo": "Gerente de compras",
+ *   "empresa": "Tech Solutions",
+ *   "currentDescription": "Busco productos" // Opcional
+ * }
+ */
+export const improveUserDescription = onRequest(
+  {
+    region: "us-central1",
+    memory: "512MiB",
+    secrets: ["GEMINI_API_KEY", "GEMINI_API_URL", "DEFAULT_AI_MODEL"],
+  },
+  async (req, res) => {
+    // CORS headers
+    const origin = req.headers.origin || "*";
+    res.set({
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "POST,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type,Authorization",
+      "Access-Control-Allow-Credentials": "true",
+    });
+
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+
+    if (req.method !== "POST") {
+      res.status(405).send({ error: "Method not allowed" });
+      return;
+    }
+
+    const {
+      tipoAsistente,
+      interesPrincipal,
+      necesidad,
+      cargo,
+      empresa,
+      currentDescription,
+    } = req.body;
+
+    if (!tipoAsistente) {
+      res.status(400).send({ error: "Missing required field: tipoAsistente" });
+      return;
+    }
+
+    try {
+      // Construir prompt para generar descripción optimizada
+      const prompt = `Eres un experto en networking empresarial y redacción de perfiles profesionales. Tu tarea es crear una descripción profesional y concisa para un perfil de asistente a un evento de negocios.
+
+INFORMACIÓN DEL USUARIO:
+- Tipo de asistente: ${tipoAsistente || "No especificado"}
+- Cargo: ${cargo || "No especificado"}
+- Empresa: ${empresa || "No especificado"}
+- Interés principal: ${interesPrincipal || "No especificado"}
+- Necesidad: ${necesidad || "No especificado"}
+${currentDescription ? `- Descripción actual: ${currentDescription}` : ""}
+
+INSTRUCCIONES:
+1. Crea una descripción profesional de 2-3 párrafos (máximo 300 palabras)
+2. Enfócate en:
+   - Qué busca el asistente en el evento
+   - Qué puede ofrecer a otros asistentes
+   - Áreas de interés específicas
+   - Objetivos de networking
+3. Usa lenguaje profesional pero accesible
+4. Incluye palabras clave relevantes para facilitar el matching
+5. Si es COMPRADOR: enfatiza qué productos/servicios busca
+6. Si es VENDEDOR: enfatiza qué productos/servicios ofrece
+7. Sé específico y concreto, evita generalidades
+
+IMPORTANTE:
+- NO uses formato markdown, HTML o caracteres especiales
+- NO uses asteriscos, guiones o viñetas
+- Escribe en texto plano, párrafos separados por saltos de línea
+- Máximo 500 caracteres
+- Lenguaje: Español
+
+Devuelve ÚNICAMENTE el texto de la descripción mejorada, sin explicaciones adicionales.`;
+
+      console.log("Generating improved description for:", tipoAsistente, cargo, empresa);
+
+      const response = await callGeminiAPI(prompt, 0.7, 500, "text/plain");
+
+      // Extraer el texto de la respuesta
+      let improvedDescription = "";
+      
+      if (response?.candidates?.[0]?.content?.parts?.[0]?.text) {
+        improvedDescription = response.candidates[0].content.parts[0].text;
+      } else if (typeof response === "string") {
+        improvedDescription = response;
+      } else {
+        throw new Error("Invalid response format from Gemini API");
+      }
+      
+      // Limpiar la respuesta
+      improvedDescription = improvedDescription.trim();
+      
+      // Remover markdown si quedó algo
+      improvedDescription = improvedDescription
+        .replace(/\*\*/g, "")
+        .replace(/\*/g, "")
+        .replace(/#{1,6}\s/g, "")
+        .replace(/`/g, "");
+
+      console.log("Description improved successfully");
+
+      res.status(200).send({
+        success: true,
+        description: improvedDescription,
+        originalLength: currentDescription?.length || 0,
+        improvedLength: improvedDescription.length,
+      });
+
+    } catch (error) {
+      console.error("Error improving description:", error);
+      res.status(500).send({
+        error: "Failed to improve description",
+        details: error.message,
+      });
+    }
+  }
+);
+
 // HTTP AI proxy mejorado: recibe { userId, eventId, message }
 // HTTP AI proxy mejorado: recibe { userId, eventId, message }
 // HTTP AI proxy mejorado: recibe { userId, eventId, message }
@@ -1306,6 +1531,216 @@ async function getEmbedding(text, apiKey, apiUrl, model) {
   }
 }
 
+/**
+ * Búsqueda por vectores pura
+ * Endpoint: /vectorSearch
+ * Parámetros:
+ * - text: texto a buscar (required)
+ * - category: "assistants" | "products" | "companies" (required)
+ * - eventId: ID del evento (required)
+ * - userId: ID del usuario que hace la búsqueda (optional, para filtros)
+ * - limit: número máximo de resultados (optional, default: 10)
+ * - threshold: umbral mínimo de similitud 0-1 (optional, default: 0.35)
+ */
+export const vectorSearch = onRequest(
+  {
+    region: "us-central1",
+    memory: "512MiB",
+    secrets: ["GEMINI_API_KEY", "GEMINI_API_URL"],
+  },
+  async (req, res) => {
+    // Set CORS headers
+    const origin = req.headers.origin || "*";
+    res.set({
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type,Authorization",
+      "Access-Control-Allow-Credentials": "true",
+    });
+
+    // Handle preflight
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+
+    try {
+      if (req.method !== "POST") {
+        res.status(405).send({ error: "Method not allowed" });
+        return;
+      }
+
+      const body = req.body || {};
+      const text = body.text;
+      const category = body.category;
+      const eventId = body.eventId;
+      const userId = body.userId || null;
+      const limit = body.limit || 10;
+      const threshold = body.threshold || 0.35;
+
+      // Validación de parámetros
+      if (!text || !category || !eventId) {
+        res.status(400).send({ 
+          error: "Missing required parameters: text, category, eventId" 
+        });
+        return;
+      }
+
+      if (!["assistants", "products", "companies"].includes(category)) {
+        res.status(400).send({ 
+          error: "Invalid category. Must be: assistants, products, or companies" 
+        });
+        return;
+      }
+
+      console.log(`Vector search: category=${category}, eventId=${eventId}, text="${text.substring(0, 50)}..."`);
+
+      const db = getFirestore();
+
+      // Generar embedding del texto
+      let queryVector = null;
+      try {
+        queryVector = await generateEmbedding(text);
+        console.log(`Query vector generated, dimension: ${queryVector.length}`);
+      } catch (embErr) {
+        console.error("Failed to generate embedding:", embErr);
+        res.status(500).send({ 
+          error: "Failed to generate embedding", 
+          details: embErr.message 
+        });
+        return;
+      }
+
+      let results = [];
+
+      // Búsqueda según categoría
+      if (category === "assistants") {
+        try {
+          const usersSnap = await db.collection("users")
+            .where("eventId", "==", eventId)
+            .get();
+
+          const allUsers = usersSnap.docs
+            .filter(d => !userId || d.id !== userId) // Excluir usuario actual si se proporciona
+            .map(d => ({ id: d.id, ...d.data() }));
+
+          console.log(`Loaded ${allUsers.length} users for vector search`);
+
+          results = searchByVectorSimilarity(queryVector, allUsers, limit, threshold);
+          
+          // Devolver todos los campos necesarios
+          results = results.map(user => ({
+            id: user.id,
+            nombre: user.nombre,
+            empresa: user.empresa || user.company_razonSocial,
+            cargo: user.cargo,
+            telefono: user.telefono,
+            correo: user.correo,
+            cedula: user.cedula,
+            descripcion: user.descripcion,
+            necesidad: user.necesidad,
+            interesPrincipal: user.interesPrincipal,
+            tipoAsistente: user.tipoAsistente,
+            photoURL: user.photoURL || null,
+            company_nit: user.company_nit,
+            company_razonSocial: user.company_razonSocial,
+            companyId: user.companyId,
+            nitNorm: user.nitNorm,
+            eventId: user.eventId,
+            lastLogin: user.lastLogin,
+            similarity: user.similarity,
+          }));
+
+        } catch (err) {
+          console.error("Assistants search failed:", err);
+          res.status(500).send({ error: "Assistants search failed", details: err.message });
+          return;
+        }
+      }
+
+      if (category === "products") {
+        try {
+          const productsSnap = await db.collection("events")
+            .doc(eventId)
+            .collection("products")
+            .get();
+
+          const allProducts = productsSnap.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter(p => !userId || p.ownerUserId !== userId); // Excluir productos propios
+
+          console.log(`Loaded ${allProducts.length} products for vector search`);
+
+          results = searchByVectorSimilarity(queryVector, allProducts, limit, threshold);
+          
+          // Formatear resultados
+          results = results.map(product => ({
+            id: product.id,
+            title: product.title,
+            description: product.description,
+            category: product.category,
+            ownerUserId: product.ownerUserId,
+            imageUrl: product.imageUrl || null,
+            similarity: product.similarity,
+          }));
+
+        } catch (err) {
+          console.error("Products search failed:", err);
+          res.status(500).send({ error: "Products search failed", details: err.message });
+          return;
+        }
+      }
+
+      if (category === "companies") {
+        try {
+          const companiesSnap = await db.collection("events")
+            .doc(eventId)
+            .collection("companies")
+            .get();
+
+          const allCompanies = companiesSnap.docs.map(d => ({ 
+            id: d.id, 
+            ...d.data() 
+          }));
+
+          console.log(`Loaded ${allCompanies.length} companies for vector search`);
+
+          results = searchByVectorSimilarity(queryVector, allCompanies, limit, threshold);
+          
+          // Formatear resultados
+          results = results.map(company => ({
+            id: company.id,
+            razonSocial: company.razonSocial,
+            descripcion: company.descripcion,
+            nitNorm: company.nitNorm,
+            similarity: company.similarity,
+          }));
+
+        } catch (err) {
+          console.error("Companies search failed:", err);
+          res.status(500).send({ error: "Companies search failed", details: err.message });
+          return;
+        }
+      }
+
+      console.log(`Vector search complete: ${results.length} results found`);
+
+      res.status(200).send({
+        category,
+        query: text,
+        threshold,
+        limit,
+        count: results.length,
+        results,
+      });
+
+    } catch (err) {
+      console.error("vectorSearch error:", err);
+      res.status(500).send({ error: "internal_error", details: err.message });
+    }
+  }
+);
+
 export const vectorizeDocuments = onRequest(
   {
     secrets: ["GEMINI_API_KEY", "GEMINI_API_URL"],
@@ -1432,6 +1867,852 @@ export const vectorizeDocuments = onRequest(
     } catch (error) {
       console.error("Error during vectorization:", error);
       return res.status(500).send("Error during vectorization");
+    }
+  }
+);
+
+
+/**
+ * Función helper para condensar información del usuario usando Gemini AI
+ * Toma interesPrincipal, necesidad y descripcion y genera un texto optimizado para embeddings
+ */
+async function condenseUserInfoWithAI(userData) {
+  try {
+    const interesPrincipal = userData.interesPrincipal || "";
+    const necesidad = userData.necesidad || "";
+    const descripcion = userData.descripcion || "";
+    
+    // Si no hay información suficiente, retornar null
+    if (!interesPrincipal && !necesidad && !descripcion) {
+      console.warn(`User ${userData.nombre || "unknown"} has no relevant information`);
+      return null;
+    }
+    
+    // Construir el prompt para Gemini
+    const prompt = `Eres un sistema de normalización semántica para embeddings.
+
+Convierte la información del asistente en un perfil estructurado optimizado para similitud vectorial.
+
+Reglas:
+- Usa frases cortas.
+- No uses conectores narrativos.
+- Usa formato consistente.
+- Prioriza sustantivos y conceptos clave.
+- No inventes información.
+- No uses texto decorativo.
+- Máximo 60 palabras.
+
+Formato obligatorio:
+
+Industria: <lista corta separada por coma>
+Sector: <lista corta separada por coma>
+
+Información:
+- Interés principal: ${interesPrincipal}
+- Necesidad: ${necesidad}
+- Descripción: ${descripcion}
+
+Responde solo con el perfil estructurado.`;
+
+    // Usar la API de Gemini directamente con fetch
+    const response = await fetch(
+      `${GEMINI_API_URL.value()}/models/${DEFAULT_AI_MODEL.value()}:generateContent?key=${GEMINI_API_KEY.value()}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Gemini API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const condensedText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+    
+    if (!condensedText) {
+      throw new Error("No text generated by Gemini");
+    }
+    
+    console.log(`Condensed text for user ${userData.nombre}: ${condensedText.substring(0, 100)}...`);
+    
+    return condensedText;
+  } catch (error) {
+    console.error("Error condensing user info with AI:", error);
+    // Fallback: concatenar los campos directamente
+    const fallbackText = [
+      userData.interesPrincipal,
+      userData.necesidad,
+      userData.descripcion
+    ].filter(Boolean).join(". ");
+    
+    return fallbackText || null;
+  }
+}
+
+/**
+ * Función helper para generar embedding de un usuario
+ * USA interesPrincipal, necesidad y descripcion condensados por IA
+ */
+async function generateUserEmbedding(userData) {
+  try {
+    // Condensar información usando IA
+    const condensedText = await condenseUserInfoWithAI(userData);
+    
+    if (!condensedText || condensedText.trim().length === 0) {
+      console.warn(`User ${userData.nombre || "unknown"} has no information to embed`);
+      return null;
+    }
+    
+    // Generar embedding usando Gemini
+    const embedding = await generateEmbedding(condensedText);
+    
+    // Retornar tanto el embedding como el texto condensado
+    return {
+      vector: embedding,
+      condensedText: condensedText
+    };
+  } catch (error) {
+    console.error("Error generating user embedding:", error);
+    return null;
+  }
+}
+
+/**
+ * Función para calcular afinidad usando embeddings con boost para roles complementarios
+ */
+async function calculateAffinityWithEmbeddings(userA, userB, vectorA = null, vectorB = null) {
+  try {
+    // Generar embeddings si no se proporcionan
+    let embeddingA = vectorA;
+    let embeddingB = vectorB;
+    
+    if (!embeddingA) {
+      const resultA = await generateUserEmbedding(userA);
+      embeddingA = resultA?.vector || null;
+    }
+    
+    if (!embeddingB) {
+      const resultB = await generateUserEmbedding(userB);
+      embeddingB = resultB?.vector || null;
+    }
+    
+    if (!embeddingA || !embeddingB) {
+      console.warn("Failed to generate embeddings, using fallback");
+      return calculateAffinityScoreFallback(userA, userB);
+    }
+    
+    // Calcular similitud coseno base
+    const baseSimilarity = cosineSimilarity(embeddingA, embeddingB);
+    
+    // Aplicar boost por roles complementarios
+    const tipoA = (userA.tipoAsistente || "").toLowerCase();
+    const tipoB = (userB.tipoAsistente || "").toLowerCase();
+    
+    let roleBoost = 1;
+    let roleReason = null;
+    
+    if ((tipoA === "comprador" && tipoB === "vendedor") || 
+        (tipoA === "vendedor" && tipoB === "comprador")) {
+      roleBoost = 1; // Boost de 25% para roles complementarios
+      roleReason = "Roles complementarios (comprador-vendedor)";
+    } else if (tipoA === tipoB && tipoA !== "") {
+      roleBoost = 0.7 // Boost menor para mismo rol
+      roleReason = `Mismo rol: ${tipoA}`;
+    }
+    
+    // Score final = similitud base + boost (máximo 1.0)
+    const finalScore = Math.min(1.0, baseSimilarity * roleBoost);
+    
+    // Convertir a escala 0-100
+    const score = Math.round(finalScore * 100);
+    
+    // Generar razones basadas en la similitud
+    const reasons = [];
+    
+    if (roleReason) {
+      reasons.push(roleReason);
+    }
+    
+    if (userA.interesPrincipal && userB.interesPrincipal && 
+        userA.interesPrincipal === userB.interesPrincipal) {
+      reasons.push("Mismo interés principal");
+    }
+    
+    if (finalScore >= 0.8) {
+      reasons.push("Alta compatibilidad de perfiles");
+    } else if (finalScore >= 0.6) {
+      reasons.push("Buena compatibilidad de perfiles");
+    } else if (finalScore >= 0.4) {
+      reasons.push("Compatibilidad moderada");
+    }
+    
+    // Analizar keywords en común
+    const extractKeywords = (text) => {
+      if (!text) return [];
+      return text.toLowerCase()
+        .split(/\s+/)
+        .filter(w => w.length > 3)
+        .slice(0, 10);
+    };
+    
+    const keywordsA = extractKeywords(userA.necesidad || userA.descripcion || "");
+    const textB = (userB.necesidad || userB.descripcion || "").toLowerCase();
+    const matchingKeywords = keywordsA.filter(kw => textB.includes(kw));
+    
+    if (matchingKeywords.length > 0) {
+      reasons.push(`${matchingKeywords.length} palabras clave coinciden`);
+    }
+    
+    console.log(`Embedding Affinity: ${userA.nombre} <-> ${userB.nombre} = ${score}% (base: ${(baseSimilarity * 100).toFixed(1)}%, boost: ${(roleBoost * 100).toFixed(1)}%)`);
+    
+    return {
+      score,
+      reasons: reasons.slice(0, 5), // Máximo 5 razones
+      aiGenerated: true,
+      embeddingBased: true,
+      baseSimilarity: Math.round(baseSimilarity * 100),
+      roleBoost: Math.round(roleBoost * 100),
+    };
+    
+  } catch (error) {
+    console.error("Error calculating affinity with embeddings:", error);
+    return calculateAffinityScoreFallback(userA, userB);
+  }
+}
+
+/**
+ * Función helper para calcular score de afinidad entre dos usuarios usando Gemini AI
+ * DEPRECATED: Usar calculateAffinityWithEmbeddings en su lugar
+ */
+// async function calculateAffinityScoreWithAI(userA, userB) {
+//   try {
+//     // Preparar datos de los usuarios para el prompt
+//     const userAProfile = {
+//       nombre: userA.nombre || "Sin nombre",
+//       empresa: userA.empresa || userA.company_razonSocial || "Sin empresa",
+//       cargo: userA.cargo || "Sin cargo",
+//       tipoAsistente: userA.tipoAsistente || "No especificado",
+//       interesPrincipal: userA.interesPrincipal || "No especificado",
+//       descripcion: userA.descripcion || "Sin descripción",
+//       necesidad: userA.necesidad || "Sin necesidad especificada",
+//     };
+
+//     const userBProfile = {
+//       nombre: userB.nombre || "Sin nombre",
+//       empresa: userB.empresa || userB.company_razonSocial || "Sin empresa",
+//       cargo: userB.cargo || "Sin cargo",
+//       tipoAsistente: userB.tipoAsistente || "No especificado",
+//       interesPrincipal: userB.interesPrincipal || "No especificado",
+//       descripcion: userB.descripcion || "Sin descripción",
+//       necesidad: userB.necesidad || "Sin necesidad especificada",
+//     };
+
+//     const prompt = `Eres un experto en networking empresarial y matchmaking para eventos de negocios. Tu tarea es analizar dos perfiles de asistentes y calcular su nivel de afinidad/compatibilidad para una reunión de networking.
+
+// PERFIL A:
+// - Nombre: ${userAProfile.nombre}
+// - Empresa: ${userAProfile.empresa}
+// - Cargo: ${userAProfile.cargo}
+// - Tipo: ${userAProfile.tipoAsistente}
+// - Interés principal: ${userAProfile.interesPrincipal}
+// - Descripción: ${userAProfile.descripcion}
+// - Necesidad: ${userAProfile.necesidad}
+
+// PERFIL B:
+// - Nombre: ${userBProfile.nombre}
+// - Empresa: ${userBProfile.empresa}
+// - Cargo: ${userBProfile.cargo}
+// - Tipo: ${userBProfile.tipoAsistente}
+// - Interés principal: ${userBProfile.interesPrincipal}
+// - Descripción: ${userBProfile.descripcion}
+// - Necesidad: ${userBProfile.necesidad}
+
+// CRITERIOS DE EVALUACIÓN:
+// 1. Roles complementarios (comprador-vendedor) en el campo Tipo: Alta prioridad
+// 2. Compatibilidad de sectores/industrias: Alta prioridad
+// 3. Coincidencia de intereses y necesidades: Media prioridad
+// 4. Sinergia entre descripciones y necesidades: Media prioridad
+// 5. Nivel jerárquico compatible: Baja prioridad
+
+// IMPORTANTE:
+// - Un score de 70+ indica alta compatibilidad (deberían reunirse)
+// - Un score de 50-69 indica compatibilidad media (podrían beneficiarse)
+// - Un score de 30-49 indica baja compatibilidad
+// - Un score menor a 30 indica muy baja compatibilidad
+
+// Devuelve ÚNICAMENTE un objeto JSON con esta estructura exacta:
+// {
+//   "score": número entre 0-100,
+//   "reasons": ["razón 1", "razón 2", "razón 3"],
+//   "reasoning": "explicación breve de por qué este score"
+// }
+
+// Las razones deben ser frases cortas y específicas (máximo 8 palabras cada una).`;
+
+//     const response = await callGeminiAPI(prompt, 0.3, 5000, "application/json");
+//     const result = parseAIResponse(response);
+
+//     // Validar respuesta
+//     if (!result || typeof result.score !== "number" || !Array.isArray(result.reasons)) {
+//       console.warn("Invalid AI response, falling back to manual calculation");
+//       return calculateAffinityScoreFallback(userA, userB);
+//     }
+
+//     // Asegurar que el score esté en rango válido
+//     const score = Math.max(0, Math.min(100, Math.round(result.score)));
+//     const reasons = result.reasons.slice(0, 5); // Máximo 5 razones
+
+//     console.log(`AI Affinity: ${userA.nombre} <-> ${userB.nombre} = ${score}% (${reasons.join(", ")})`);
+
+//     return {
+//       score,
+//       reasons,
+//       aiGenerated: true,
+//     };
+
+//   } catch (error) {
+//     console.error("Error calculating affinity with AI:", error);
+//     // Fallback al algoritmo manual
+//     return calculateAffinityScoreFallback(userA, userB);
+//   }
+// }
+
+/**
+ * Función de fallback: algoritmo manual de afinidad (usado si falla la IA)
+ */
+function calculateAffinityScoreFallback(userA, userB) {
+  let score = 0;
+  const reasons = [];
+
+  // 1. Roles complementarios (+30 puntos)
+  const tipoA = (userA.tipoAsistente || "").toLowerCase();
+  const tipoB = (userB.tipoAsistente || "").toLowerCase();
+  
+  if ((tipoA === "comprador" && tipoB === "vendedor") || 
+      (tipoA === "vendedor" && tipoB === "comprador")) {
+    score += 30;
+    reasons.push("Roles complementarios");
+  }
+
+  // 2. Coincidencia de intereses (+25 puntos)
+  if (userA.interesPrincipal && userB.interesPrincipal && 
+      userA.interesPrincipal === userB.interesPrincipal) {
+    score += 25;
+    reasons.push("Mismo interés principal");
+  }
+
+  // 3. Keywords en descripción/necesidad (+20 puntos máximo)
+  const extractKeywords = (text) => {
+    if (!text) return [];
+    return text.toLowerCase()
+      .split(/\s+/)
+      .filter(w => w.length > 3)
+      .slice(0, 10);
+  };
+
+  const keywordsA = extractKeywords(userA.necesidad || userA.descripcion || "");
+  const textB = (userB.necesidad || userB.descripcion || "").toLowerCase();
+  
+  const matchingKeywords = keywordsA.filter(kw => textB.includes(kw));
+  if (matchingKeywords.length > 0) {
+    const keywordScore = Math.min(20, matchingKeywords.length * 5);
+    score += keywordScore;
+    reasons.push(`${matchingKeywords.length} palabras clave coinciden`);
+  }
+
+  // 4. Mismo sector/categoría (+15 puntos)
+  const empresaA = (userA.empresa || userA.company_razonSocial || "").toLowerCase();
+  const empresaB = (userB.empresa || userB.company_razonSocial || "").toLowerCase();
+  
+  const sectores = ["tecnología", "alimentos", "construcción", "textil", "salud", "educación"];
+  const sectorA = sectores.find(s => empresaA.includes(s));
+  const sectorB = sectores.find(s => empresaB.includes(s));
+  
+  if (sectorA && sectorB && sectorA === sectorB) {
+    score += 15;
+    reasons.push(`Mismo sector: ${sectorA}`);
+  }
+
+  // 5. Actividad reciente (+10 puntos)
+  const now = new Date();
+  const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  
+  if (userB.lastConnection) {
+    let lastConn;
+    if (userB.lastConnection.toDate) {
+      lastConn = userB.lastConnection.toDate();
+    } else if (typeof userB.lastConnection === "string") {
+      lastConn = new Date(userB.lastConnection);
+    } else if (userB.lastConnection instanceof Date) {
+      lastConn = userB.lastConnection;
+    }
+    
+    if (lastConn && lastConn > oneDayAgo) {
+      score += 10;
+      reasons.push("Activo recientemente");
+    }
+  }
+
+  return {
+    score: Math.min(100, score),
+    reasons,
+    aiGenerated: false,
+  };
+}
+
+/**
+ * Trigger: Calcular afinidad cuando se crea un nuevo usuario
+ * Se ejecuta automáticamente al crear un documento en /users/{userId}
+ */
+export const calculateAffinityOnUserCreate = onDocumentCreated(
+  {
+    document: "users/{userId}",
+    region: "us-central1",
+    memory: "512MiB",
+    secrets: ["GEMINI_API_KEY", "GEMINI_API_URL", "DEFAULT_AI_MODEL"],
+  },
+  async (event) => {
+    const snapshot = event.data;
+    if (!snapshot) {
+      console.log("No data associated with the event");
+      return;
+    }
+
+    const newUserId = event.params.userId;
+    const newUserData = snapshot.data();
+    const eventId = newUserData.eventId;
+
+    if (!eventId) {
+      console.log(`User ${newUserId} has no eventId, skipping affinity calculation`);
+      return;
+    }
+
+    console.log(`Calculating affinity for new user ${newUserId} in event ${eventId}`);
+
+    const db = getFirestore();
+
+    try {
+      // Generar embedding del nuevo usuario
+      console.log(`Generating embedding for new user ${newUserId}`);
+      const embeddingResult = await generateUserEmbedding(newUserData);
+      
+      if (embeddingResult) {
+        // Guardar el embedding y el texto condensado en el documento del usuario
+        await db.collection("users").doc(newUserId).update({
+          vector: embeddingResult.vector,
+          condensedText: embeddingResult.condensedText,
+          vectorGeneratedAt: new Date(),
+        });
+        console.log(`Embedding and condensed text saved for user ${newUserId}`);
+      } else {
+        console.warn(`Failed to generate embedding for user ${newUserId}`);
+      }
+
+      // Obtener todos los usuarios del mismo evento (excepto el nuevo)
+      const usersSnap = await db.collection("users")
+        .where("eventId", "==", eventId)
+        .get();
+
+      const otherUsers = usersSnap.docs
+        .filter(doc => doc.id !== newUserId)
+        .map(doc => ({ id: doc.id, ...doc.data() }));
+
+      console.log(`Found ${otherUsers.length} other users in event ${eventId}`);
+
+      if (otherUsers.length === 0) {
+        console.log("No other users to calculate affinity with");
+        return;
+      }
+
+      // Calcular afinidad con cada usuario usando embeddings (una sola vez por par)
+      let batch = db.batch();
+      let calculatedCount = 0;
+      const highAffinityNotifications = []; // Para notificaciones de alta afinidad
+      const affinityResults = new Map(); // Cache de resultados de afinidad
+
+      for (const otherUser of otherUsers) {
+        // Generar embedding del otro usuario si no lo tiene
+        let otherUserEmbedding = otherUser.vector;
+        
+        if (!otherUserEmbedding) {
+          console.log(`Generating embedding for existing user ${otherUser.id}`);
+          const embeddingResult = await generateUserEmbedding(otherUser);
+          
+          if (embeddingResult) {
+            otherUserEmbedding = embeddingResult.vector;
+            // Guardar el embedding y texto condensado en el documento del usuario
+            await db.collection("users").doc(otherUser.id).update({
+              vector: embeddingResult.vector,
+              condensedText: embeddingResult.condensedText,
+              vectorGeneratedAt: new Date(),
+            });
+          }
+        }
+        
+        // Calcular afinidad usando embeddings
+        const affinity = await calculateAffinityWithEmbeddings(
+          newUserData, 
+          otherUser,
+          embeddingResult?.vector,
+          otherUserEmbedding
+        );
+        
+        // Guardar en cache para reutilizar en matches
+        affinityResults.set(otherUser.id, affinity);
+
+        // Guardar afinidad del nuevo usuario hacia el otro
+        const affinityRefAtoB = db.collection("users")
+          .doc(newUserId)
+          .collection("affinityScores")
+          .doc(otherUser.id);
+
+        batch.set(affinityRefAtoB, {
+          targetUserId: otherUser.id,
+          targetName: otherUser.nombre || "Sin nombre",
+          targetCompany: otherUser.empresa || otherUser.company_razonSocial || "Sin empresa",
+          score: affinity.score,
+          reasons: affinity.reasons,
+          aiGenerated: affinity.aiGenerated || false,
+          eventId: eventId,
+          calculatedAt: new Date(),
+        });
+
+        // Guardar el MISMO score en el otro usuario (simétrico)
+        const affinityRefBtoA = db.collection("users")
+          .doc(otherUser.id)
+          .collection("affinityScores")
+          .doc(newUserId);
+
+        batch.set(affinityRefBtoA, {
+          targetUserId: newUserId,
+          targetName: newUserData.nombre || "Sin nombre",
+          targetCompany: newUserData.empresa || newUserData.company_razonSocial || "Sin empresa",
+          score: affinity.score, // MISMO SCORE
+          reasons: affinity.reasons, // MISMAS RAZONES
+          aiGenerated: affinity.aiGenerated || false,
+          eventId: eventId,
+          calculatedAt: new Date(),
+        });
+
+        calculatedCount += 2;
+
+        // Si la afinidad es mayor a 80%, notificar al usuario ANTIGUO
+        if (affinity.score > 89) {
+          highAffinityNotifications.push({
+            userId: otherUser.id, // Usuario antiguo recibe la notificación
+            targetUserId: newUserId,
+            targetName: newUserData.nombre || "Sin nombre",
+            targetCompany: newUserData.empresa || newUserData.company_razonSocial || "Sin empresa",
+            targetRole: newUserData.tipoAsistente || "Asistente",
+            targetInterest: newUserData.interesPrincipal || "",
+            score: affinity.score,
+            reasons: affinity.reasons,
+          });
+        }
+
+        // Firestore batch tiene límite de 500 operaciones
+        if (calculatedCount >= 450) {
+          await batch.commit();
+          console.log(`Committed batch of ${calculatedCount} affinity scores`);
+          batch = db.batch(); // Crear nuevo batch
+          calculatedCount = 0;
+        }
+      }
+
+      // Commit final si quedan operaciones
+      if (calculatedCount > 0) {
+        await batch.commit();
+        console.log(`Committed final batch of ${calculatedCount} affinity scores`);
+      }
+
+      // Crear notificaciones de alta afinidad (>80%) y matches (>=70%)
+      const matchesBatch = db.batch();
+      let matchesCount = 0;
+      
+      if (highAffinityNotifications.length > 0) {
+        console.log(`Creating ${highAffinityNotifications.length} high affinity notifications`);
+        
+        for (const notif of highAffinityNotifications) {
+          const reasonsText = notif.reasons.length > 0 
+            ? notif.reasons.join(", ") 
+            : "Perfil compatible";
+          
+          await db.collection("notifications").add({
+            userId: notif.userId,
+            title: "¡Nueva persona con alta afinidad!",
+            message: `${notif.targetName} (${notif.targetCompany}) se ha registrado y tienen ${notif.score}% de afinidad. ${reasonsText}.`,
+            timestamp: new Date(),
+            read: false,
+            type: "high_affinity",
+            entityType: "assistant",
+            entityId: notif.targetUserId,
+            affinityScore: notif.score,
+            eventId: eventId,
+          });
+        }
+        
+        console.log(`Created ${highAffinityNotifications.length} high affinity notifications`);
+      }
+
+      // Crear matches para afinidades >= 70% usando los resultados cacheados
+      for (const otherUser of otherUsers) {
+        const affinity = affinityResults.get(otherUser.id); // Reutilizar cálculo anterior
+        
+        if (affinity && affinity.score >= 89) {
+          // Crear match para el usuario ANTIGUO (otherUser)
+          const matchRefOld = db.collection("users")
+            .doc(otherUser.id)
+            .collection("matches")
+            .doc(newUserId);
+          
+          matchesBatch.set(matchRefOld, {
+            userId: newUserId,
+            userName: newUserData.nombre || "Sin nombre",
+            userCompany: newUserData.empresa || newUserData.company_razonSocial || "Sin empresa",
+            userRole: newUserData.tipoAsistente || null,
+            userInterest: newUserData.interesPrincipal || null,
+            userPhoto: newUserData.photoURL || null,
+            userEmail: newUserData.correo || null,
+            userPhone: newUserData.telefono || null,
+            userPosition: newUserData.cargo || null,
+            userDescription: newUserData.descripcion || null,
+            userNeed: newUserData.necesidad || null,
+            affinityScore: affinity.score,
+            reasons: affinity.reasons,
+            aiGenerated: affinity.aiGenerated || false,
+            status: "pending", // pending, meeting_requested, dismissed
+            eventId: eventId,
+            createdAt: new Date(),
+          });
+          
+          // Crear match para el usuario NUEVO (simétrico)
+          const matchRefNew = db.collection("users")
+            .doc(newUserId)
+            .collection("matches")
+            .doc(otherUser.id);
+          
+          matchesBatch.set(matchRefNew, {
+            userId: otherUser.id,
+            userName: otherUser.nombre || "Sin nombre",
+            userCompany: otherUser.empresa || otherUser.company_razonSocial || "Sin empresa",
+            userRole: otherUser.tipoAsistente || null,
+            userInterest: otherUser.interesPrincipal || null,
+            userPhoto: otherUser.photoURL || null,
+            userEmail: otherUser.correo || null,
+            userPhone: otherUser.telefono || null,
+            userPosition: otherUser.cargo || null,
+            userDescription: otherUser.descripcion || null,
+            userNeed: otherUser.necesidad || null,
+            affinityScore: affinity.score,
+            reasons: affinity.reasons,
+            aiGenerated: affinity.aiGenerated || false,
+            status: "pending",
+            eventId: eventId,
+            createdAt: new Date(),
+          });
+          
+          matchesCount += 2;
+          
+          // Commit cada 450 operaciones
+          if (matchesCount >= 450) {
+            await matchesBatch.commit();
+            console.log(`Committed batch of ${matchesCount} matches`);
+            matchesCount = 0;
+          }
+        }
+      }
+      
+      // Commit final de matches
+      if (matchesCount > 0) {
+        await matchesBatch.commit();
+        console.log(`Committed final batch of ${matchesCount} matches`);
+      }
+
+      console.log(`Affinity calculation complete for user ${newUserId}`);
+
+    } catch (error) {
+      console.error("Error calculating affinity:", error);
+      throw error;
+    }
+  }
+);
+
+/**
+ * Función HTTP para recalcular afinidad de todos los usuarios de un evento
+ * Útil para recalcular después de cambios en el algoritmo
+ * 
+ * Uso: POST https://[region]-[project].cloudfunctions.net/recalculateEventAffinity
+ * Body: { "eventId": "xxx" }
+ */
+export const recalculateEventAffinity = onRequest(
+  {
+    region: "us-central1",
+    memory: "1GiB",
+    timeoutSeconds: 540,
+    secrets: ["GEMINI_API_KEY", "GEMINI_API_URL", "DEFAULT_AI_MODEL"],
+  },
+  async (req, res) => {
+    // CORS headers
+    const origin = req.headers.origin || "*";
+    res.set({
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "POST,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type,Authorization",
+      "Access-Control-Allow-Credentials": "true",
+    });
+
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+
+    if (req.method !== "POST") {
+      res.status(405).send({ error: "Method not allowed" });
+      return;
+    }
+
+    const eventId = req.body?.eventId;
+
+    if (!eventId) {
+      res.status(400).send({ error: "Missing eventId" });
+      return;
+    }
+
+    console.log(`Recalculating affinity for all users in event ${eventId}`);
+
+    const db = getFirestore();
+
+    try {
+      // Obtener todos los usuarios del evento
+      const usersSnap = await db.collection("users")
+        .where("eventId", "==", eventId)
+        .get();
+
+      const allUsers = usersSnap.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data() 
+      }));
+
+      console.log(`Found ${allUsers.length} users in event ${eventId}`);
+
+      if (allUsers.length < 2) {
+        res.status(200).send({ 
+          message: "Not enough users to calculate affinity",
+          usersCount: allUsers.length,
+        });
+        return;
+      }
+
+      // Generar embeddings para todos los usuarios que no los tengan
+      console.log("Generating embeddings for users without vectors...");
+      for (const user of allUsers) {
+        if (!user.vector) {
+          console.log(`Generating embedding for user ${user.id}`);
+          const embeddingResult = await generateUserEmbedding(user);
+          
+          if (embeddingResult) {
+            await db.collection("users").doc(user.id).update({
+              vector: embeddingResult.vector,
+              condensedText: embeddingResult.condensedText,
+              vectorGeneratedAt: new Date(),
+            });
+            user.vector = embeddingResult.vector; // Actualizar en memoria
+            user.condensedText = embeddingResult.condensedText;
+          }
+        }
+      }
+      console.log("Embeddings generation complete");
+
+      let totalCalculations = 0;
+      let batchCount = 0;
+      let batch = db.batch();
+
+      // Calcular afinidad entre todos los pares de usuarios (simétrico) usando embeddings
+      // Solo calculamos una vez por par (i < j) y guardamos en ambas direcciones
+      for (let i = 0; i < allUsers.length; i++) {
+        const userA = allUsers[i];
+
+        for (let j = i + 1; j < allUsers.length; j++) {
+          const userB = allUsers[j];
+          
+          // Calcular afinidad UNA SOLA VEZ usando embeddings
+          const affinity = await calculateAffinityWithEmbeddings(
+            userA, 
+            userB,
+            userA.vector,
+            userB.vector
+          );
+
+          // Guardar en userA -> userB
+          const affinityRefAtoB = db.collection("users")
+            .doc(userA.id)
+            .collection("affinityScores")
+            .doc(userB.id);
+
+          batch.set(affinityRefAtoB, {
+            targetUserId: userB.id,
+            targetName: userB.nombre || "Sin nombre",
+            targetCompany: userB.empresa || userB.company_razonSocial || "Sin empresa",
+            score: affinity.score,
+            reasons: affinity.reasons,
+            aiGenerated: affinity.aiGenerated || false,
+            eventId: eventId,
+            calculatedAt: new Date(),
+          });
+
+          // Guardar el MISMO score en userB -> userA (simétrico)
+          const affinityRefBtoA = db.collection("users")
+            .doc(userB.id)
+            .collection("affinityScores")
+            .doc(userA.id);
+
+          batch.set(affinityRefBtoA, {
+            targetUserId: userA.id,
+            targetName: userA.nombre || "Sin nombre",
+            targetCompany: userA.empresa || userA.company_razonSocial || "Sin empresa",
+            score: affinity.score, // MISMO SCORE
+            reasons: affinity.reasons, // MISMAS RAZONES
+            aiGenerated: affinity.aiGenerated || false,
+            eventId: eventId,
+            calculatedAt: new Date(),
+          });
+
+          batchCount += 2;
+          totalCalculations += 2;
+
+          // Commit cada 450 operaciones (límite de Firestore es 500)
+          if (batchCount >= 450) {
+            await batch.commit();
+            console.log(`Committed batch: ${totalCalculations} calculations so far`);
+            batch = db.batch();
+            batchCount = 0;
+          }
+        }
+      }
+
+      // Commit final
+      if (batchCount > 0) {
+        await batch.commit();
+        console.log(`Committed final batch: ${totalCalculations} total calculations`);
+      }
+
+      res.status(200).send({
+        message: "Affinity recalculation complete",
+        eventId,
+        usersCount: allUsers.length,
+        totalCalculations,
+      });
+
+    } catch (error) {
+      console.error("Error recalculating affinity:", error);
+      res.status(500).send({ 
+        error: "Recalculation failed", 
+        details: error.message 
+      });
     }
   }
 );

@@ -19,6 +19,7 @@ import {
   Paper,
   Grid,
   useMantineTheme,
+  Select,
 } from "@mantine/core";
 import {
   IconClock,
@@ -89,9 +90,27 @@ export default function MeetingsTab({
   prepareSlotSelection,
   loadingMeetings,
   cancelMeeting,
+  eventConfig,
+  globalDateFilter,
+  setGlobalDateFilter,
 }) {
   const { currentUser } = useContext(UserContext);
   const theme = useMantineTheme();
+
+  // Multi-day event dates
+  const eventDates = eventConfig?.eventDates || (eventConfig?.eventDate ? [eventConfig.eventDate] : []);
+  const isMultiDay = eventDates.length > 1;
+
+  // Format date for display - parse ISO date without timezone conversion
+  const formatDate = (dateStr: string) => {
+    const [year, month, day] = dateStr.split("-").map(Number);
+    const date = new Date(year, month - 1, day);
+    return date.toLocaleDateString("es-ES", { 
+      weekday: "short", 
+      day: "numeric", 
+      month: "short" 
+    });
+  };
 
   const [surveyModal, setSurveyModal] = useState({
     open: false,
@@ -212,6 +231,27 @@ export default function MeetingsTab({
 
   return (
     <>
+      {/* Selector de día para eventos multi-día */}
+      {isMultiDay && (
+        <Group mb="md">
+          <Select
+            label="Filtrar por día"
+            placeholder="Todos los días"
+            data={[
+              { value: "", label: "Todos los días" },
+              ...eventDates.map((date: string) => ({
+                value: date,
+                label: formatDate(date),
+              })),
+            ]}
+            value={globalDateFilter || ""}
+            onChange={(value) => setGlobalDateFilter(value || null)}
+            clearable
+            style={{ width: 250 }}
+          />
+        </Group>
+      )}
+
       <Grid gutter="sm">
         {acceptedMeetings.length > 0 ? (
           acceptedMeetings
@@ -270,6 +310,21 @@ export default function MeetingsTab({
 
                     {/* Slot info */}
                     <Stack gap={8}>
+                      {meeting.meetingDate && (() => {
+                        const [year, month, day] = meeting.meetingDate.split("-").map(Number);
+                        const date = new Date(year, month - 1, day);
+                        return (
+                          <InfoRow
+                            icon={<IconClock size={14} />}
+                            label="Día"
+                            value={date.toLocaleDateString("es-ES", {
+                              weekday: "short",
+                              day: "numeric",
+                              month: "short",
+                            })}
+                          />
+                        );
+                      })()}
                       <InfoRow
                         icon={<IconClock size={14} />}
                         label="Horario"
@@ -492,21 +547,39 @@ export default function MeetingsTab({
                     {meeting.timeSlot && (
                       <>
                         <Divider my="xs" />
-                        <Group gap={6}>
-                          <IconClock size={14} color="gray" />
-                          <Text size="xs" c="dimmed">
-                            {meeting.timeSlot}
-                          </Text>
-                          {meeting.tableAssigned && (
-                            <>
-                              <Text size="xs" c="dimmed">•</Text>
-                              <IconTable size={14} color="gray" />
-                              <Text size="xs" c="dimmed">
-                                Mesa {meeting.tableAssigned}
-                              </Text>
-                            </>
-                          )}
-                        </Group>
+                        <Stack gap={4}>
+                          {meeting.meetingDate && (() => {
+                            const [year, month, day] = meeting.meetingDate.split("-").map(Number);
+                            const date = new Date(year, month - 1, day);
+                            return (
+                              <Group gap={6}>
+                                <IconClock size={14} color="gray" />
+                                <Text size="xs" c="dimmed">
+                                  {date.toLocaleDateString("es-ES", {
+                                    weekday: "short",
+                                    day: "numeric",
+                                    month: "short",
+                                  })}
+                                </Text>
+                              </Group>
+                            );
+                          })()}
+                          <Group gap={6}>
+                            <IconClock size={14} color="gray" />
+                            <Text size="xs" c="dimmed">
+                              {meeting.timeSlot}
+                            </Text>
+                            {meeting.tableAssigned && (
+                              <>
+                                <Text size="xs" c="dimmed">•</Text>
+                                <IconTable size={14} color="gray" />
+                                <Text size="xs" c="dimmed">
+                                  Mesa {meeting.tableAssigned}
+                                </Text>
+                              </>
+                            )}
+                          </Group>
+                        </Stack>
                       </>
                     )}
                   </Card>

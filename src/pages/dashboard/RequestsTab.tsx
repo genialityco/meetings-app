@@ -301,6 +301,21 @@ export default function RequestsTab({
                     request={request}
                     statusBadge={
                       <Group gap="xs">
+                        {request.meetingDate && (() => {
+                          const [year, month, day] = request.meetingDate.split("-").map(Number);
+                          const date = new Date(year, month - 1, day);
+                          return (
+                            <Badge variant="light" color="gray" radius="md" size="sm">
+                              <Group gap={4} wrap="nowrap">
+                                <IconClock size={12} />
+                                {date.toLocaleDateString("es-ES", {
+                                  day: "numeric",
+                                  month: "short",
+                                })}
+                              </Group>
+                            </Badge>
+                          );
+                        })()}
                         {request.timeSlot && (
                           <Badge variant="light" color={theme.primaryColor} radius="md" size="sm">
                             <Group gap={4} wrap="nowrap">

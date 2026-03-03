@@ -6,6 +6,7 @@ import {
   IconInbox,
   IconPackage,
   IconBuilding,
+  IconCalendar,
 } from "@tabler/icons-react";
 import AttendeesView from "./AttendeesView";
 import CompaniesView from "./CompaniesView";
@@ -15,6 +16,8 @@ import MeetingsTab from "./MeetingsTab";
 import RequestsTab from "./RequestsTab";
 import MyProductsTab from "./MyProductsTab";
 import MyCompanyTab from "./MyCompanyTab";
+import CalendarTab from "./CalendarTab";
+import MatchesTab from "./MatchesTab";
 import { DEFAULT_POLICIES } from "./types";
 import { useMediaQuery } from "@mantine/hooks";
 
@@ -22,6 +25,8 @@ interface ViewRequest {
   view: string;
   tab?: string;
   _k: number;
+  highlightEntityId?: string;
+  highlightEntityType?: "assistant" | "product" | "company";
 }
 
 export default function TabsPanel({
@@ -35,7 +40,6 @@ export default function TabsPanel({
   const policies = dashboard.policies || DEFAULT_POLICIES;
   const uiViews = policies.uiViewsEnabled || DEFAULT_POLICIES.uiViewsEnabled;
   const cardFieldsConfig = policies.cardFieldsConfig || DEFAULT_POLICIES.cardFieldsConfig;
-  const enableChatbot = import.meta.env.VITE_ENABLE_CHATBOT === "true"
 
   // Política configurable: redirigir vendedor a productos en primer ingreso
   const sellerRedirect = policies.sellerRedirectToProducts === true;
@@ -46,6 +50,12 @@ export default function TabsPanel({
   const isComprador = sellerRedirect && roleLower === "comprador";
 
   const isMobile = useMediaQuery("(max-width: 48em)"); // ~768px
+
+  // Estado para mantener el highlightEntityId persistente
+  const [persistentHighlight, setPersistentHighlight] = useState<{
+    entityId?: string;
+    entityType?: "assistant" | "product" | "company";
+  }>({});
 
   // DEBUG: verificar valores de la redirección
   console.log("[TabsPanel DEBUG]", {
@@ -64,6 +74,7 @@ export default function TabsPanel({
   // Construir opciones de vista dinámicamente según configuración del evento
   const viewOptions: { value: string; label: string }[] = [];
   if (uiViews.chatbot) viewOptions.push({ value: "chatbot", label: "Chatbot" });
+  if (uiViews.matches) viewOptions.push({ value: "matches", label: "Matches" });
   if (uiViews.attendees) viewOptions.push({ value: "attendees", label: "Asistentes" });
   if (uiViews.companies) viewOptions.push({ value: "companies", label: "Empresas" });
   if (uiViews.products) viewOptions.push({ value: "products", label: "Productos" });
@@ -82,7 +93,7 @@ export default function TabsPanel({
   // Redirigir al vendedor a "Mi actividad > Mis productos" solo la primera vez
   const redirectKey = eventId && uid ? `seller_redirect_${eventId}_${uid}` : null;
   const redirectDone = useRef(false);
-  const [activityDefaultTab, setActivityDefaultTab] = useState("reuniones");
+  const [activityDefaultTab, setActivityDefaultTab] = useState("agenda");
 
   useEffect(() => {
     if (redirectDone.current) return;
@@ -100,12 +111,30 @@ export default function TabsPanel({
   // Navegación externa (ej: click en notificación)
   useEffect(() => {
     if (!viewRequest) return;
-    const { view, tab } = viewRequest;
+    const { view, tab, highlightEntityId, highlightEntityType } = viewRequest;
+    
+    console.log("[TabsPanel] viewRequest changed:", viewRequest);
+    
     if (validValues.includes(view)) {
       setTopView(view);
     }
     if (tab) {
       setActivityDefaultTab(tab);
+    }
+    
+    // Guardar highlight info para persistir durante el render
+    if (highlightEntityId && highlightEntityType) {
+      console.log("[TabsPanel] Setting persistent highlight:", highlightEntityId, highlightEntityType);
+      setPersistentHighlight({
+        entityId: highlightEntityId,
+        entityType: highlightEntityType,
+      });
+      
+      // Limpiar después de 10 segundos (más tiempo que el highlight visual)
+      setTimeout(() => {
+        console.log("[TabsPanel] Clearing persistent highlight");
+        setPersistentHighlight({});
+      }, 10000);
     }
   }, [viewRequest?._k]);
 
@@ -155,6 +184,8 @@ export default function TabsPanel({
           currentUser={dashboard.currentUser}
           formFields={dashboard.formFields}
           cardFields={cardFieldsConfig!.attendeeCard}
+          affinityScores={dashboard.affinityScores}
+          highlightEntityId={topView === "attendees" && persistentHighlight.entityType === "assistant" ? persistentHighlight.entityId : undefined}
         />
       )}
 
@@ -170,6 +201,8 @@ export default function TabsPanel({
           currentUser={dashboard.currentUser}
           formFields={dashboard.formFields}
           cardFields={cardFieldsConfig!.companyCard}
+          affinityScores={dashboard.affinityScores}
+          highlightEntityId={topView === "companies" && persistentHighlight.entityType === "company" ? persistentHighlight.entityId : undefined}
         />
       )}
 
@@ -182,6 +215,26 @@ export default function TabsPanel({
         />
       )}
 
+      {topView === "matches" && (
+        <MatchesTab
+          currentUser={dashboard.currentUser}
+          sendMeetingRequest={dashboard.sendMeetingRequest}
+          solicitarReunionHabilitado={dashboard.solicitarReunionHabilitado}
+          eventId={eventId}
+          highlightEntityId={(() => {
+            const shouldHighlight = topView === "matches" && persistentHighlight.entityType === "assistant";
+            const idToPass = shouldHighlight ? persistentHighlight.entityId : undefined;
+            console.log("[TabsPanel] Matches highlight:", {
+              topView,
+              persistentHighlight,
+              shouldHighlight,
+              idToPass,
+            });
+            return idToPass;
+          })()}
+        />
+      )}
+
       {topView === "products" && (
         <ProductsView
           products={dashboard.products}
@@ -190,12 +243,20 @@ export default function TabsPanel({
           solicitarReunionHabilitado={dashboard.solicitarReunionHabilitado}
           sendMeetingRequest={dashboard.sendMeetingRequest}
           currentUser={dashboard.currentUser}
+          affinityScores={dashboard.affinityScores}
+          highlightEntityId={topView === "products" && persistentHighlight.entityType === "product" ? persistentHighlight.entityId : undefined}
         />
       )}
 
       {topView === "activity" && (
-        <Tabs value={activityDefaultTab} onChange={(v) => setActivityDefaultTab(v || "reuniones")} radius="md">
+        <Tabs value={activityDefaultTab} onChange={(v) => setActivityDefaultTab(v || "agenda")} radius="md">
           <Tabs.List grow>
+            <Tabs.Tab
+              value="agenda"
+              leftSection={<IconCalendar size={16} />}
+            >
+              Agenda
+            </Tabs.Tab>
             <Tabs.Tab
               value="reuniones"
               leftSection={<IconCalendarEvent size={16} />}
@@ -238,6 +299,18 @@ export default function TabsPanel({
             </Tabs.Tab>
           </Tabs.List>
 
+          <Tabs.Panel value="agenda" pt="md">
+            <CalendarTab
+              acceptedMeetings={dashboard.acceptedMeetings}
+              cancelledMeetings={dashboard.cancelledMeetings}
+              pendingRequests={dashboard.pendingRequests}
+              sentRequests={dashboard.sentRequests}
+              participantsInfo={dashboard.participantsInfo}
+              uid={dashboard.uid}
+              eventConfig={dashboard.eventConfig}
+              eventId={eventId || ""}
+            />
+          </Tabs.Panel>
           <Tabs.Panel value="reuniones" pt="md">
             <MeetingsTab {...dashboard} />
           </Tabs.Panel>

@@ -35,6 +35,7 @@ export interface Meeting {
   receiverId: string;
   timeSlot?: string;
   tableAssigned?: string;
+  meetingDate?: string; // Fecha específica de la reunión "YYYY-MM-DD"
   status?: string;
   productId?: string | null;
   companyId?: string | null;
@@ -55,7 +56,8 @@ export type NotificationType =
   | "meeting_accepted"
   | "meeting_rejected"
   | "meeting_cancelled"
-  | "meeting_modified";
+  | "meeting_modified"
+  | "high_affinity";
 
 export interface Notification {
   id: string;
@@ -64,16 +66,23 @@ export interface Notification {
   read: boolean;
   timestamp: any;
   type?: NotificationType;
+  entityType?: "assistant" | "product" | "company"; // Tipo de entidad relacionada
+  entityId?: string; // ID de la entidad relacionada
+  affinityScore?: number; // Score de afinidad (para notificaciones de alta afinidad)
+  eventId?: string;
 }
 
 export interface AgendaSlot {
   id: string;
+  date: string; // NUEVO: fecha del slot en formato "YYYY-MM-DD"
   startTime: string;
   endTime: string;
   tableNumber: number | string;
   available?: boolean;
   eventId?: string;
   meetingId?: string;
+  isBreak?: boolean;
+  blockedBy?: string; // UID del usuario que bloqueó el slot
 }
 
 /** Políticas de evento configurables por admin */
@@ -91,6 +100,7 @@ export interface EventPolicies {
   };
   uiViewsEnabled: {
     chatbot: boolean;
+    matches: boolean;
     attendees: boolean;
     companies: boolean;
     products: boolean;
@@ -135,5 +145,11 @@ export const DEFAULT_POLICIES: EventPolicies = {
     attendeeCard: ["empresa", "cargo", "correo", "descripcion", "interesPrincipal", "necesidad"],
     companyCard: ["cargo", "correo", "interesPrincipal", "necesidad"],
   },
-  uiViewsEnabled: { chatbot: true, attendees: true, companies: true, products: true },
+  uiViewsEnabled: { 
+    chatbot: false, 
+    matches: true, 
+    attendees: true, 
+    companies: true, 
+    products: true 
+  },
 };

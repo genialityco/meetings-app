@@ -134,22 +134,38 @@ function sendWhatsAppMessage(participant: Assistant) {
 async function sendMeetingAcceptedWhatsapp(
   toPhone: string,
   otherParticipant: Assistant,
-  meetingInfo: { timeSlot?: string; tableAssigned?: string },
+  meetingInfo: { timeSlot?: string; tableAssigned?: string; meetingDate?: string },
   eventName?: string,
   acceptedByName?: string,
 ) {
   if (!toPhone) return;
   const phone = toPhone.replace(/[^\d]/g, "");
+  
+  // Formatear fecha si existe
+  let dateStr = "";
+  if (meetingInfo.meetingDate) {
+    const [year, month, day] = meetingInfo.meetingDate.split("-").map(Number);
+    const date = new Date(year, month - 1, day);
+    dateStr = date.toLocaleDateString("es-ES", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    });
+  }
+  
   const eventLine = eventName ? `📌 *Evento:* ${eventName}\n` : "";
   const acceptedLine = acceptedByName
     ? `✅ *${acceptedByName}* ha aceptado la reunión.\n\n`
     : "";
+  const dateLine = dateStr ? `📅 *Día:* ${dateStr}\n` : "";
+  
   const message =
     `🤝 *¡Reunión confirmada!*\n\n` +
     eventLine +
     acceptedLine +
     `👤 *Con:* ${otherParticipant?.nombre || ""}\n` +
     `🏢 *Empresa:* ${otherParticipant?.empresa || ""}\n` +
+    dateLine +
     `🕐 *Horario:* ${meetingInfo.timeSlot || ""}\n` +
     `🪑 *Mesa:* ${meetingInfo.tableAssigned || ""}\n\n` +
     `¡Te esperamos!`;
@@ -168,22 +184,38 @@ async function sendMeetingAcceptedWhatsapp(
 async function sendMeetingCancelledWhatsapp(
   toPhone: string,
   otherParticipant: Assistant,
-  meetingInfo: { timeSlot?: string; tableAssigned?: string },
+  meetingInfo: { timeSlot?: string; tableAssigned?: string; meetingDate?: string },
   eventName?: string,
   cancelledByName?: string,
 ) {
   if (!toPhone) return;
   const phone = (toPhone || "").toString().replace(/[^\d]/g, "");
+  
+  // Formatear fecha si existe
+  let dateStr = "";
+  if (meetingInfo.meetingDate) {
+    const [year, month, day] = meetingInfo.meetingDate.split("-").map(Number);
+    const date = new Date(year, month - 1, day);
+    dateStr = date.toLocaleDateString("es-ES", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    });
+  }
+  
   const eventLine = eventName ? `📌 *Evento:* ${eventName}\n` : "";
   const cancelledLine = cancelledByName
     ? `❌ *${cancelledByName}* ha cancelado la reunión.\n\n`
     : "";
+  const dateLine = dateStr ? `📅 *Día:* ${dateStr}\n` : "";
+  
   const message =
     `⚠️ *Reunión cancelada*\n\n` +
     eventLine +
     cancelledLine +
     `👤 *Con:* ${otherParticipant?.nombre || ""}\n` +
     `🏢 *Empresa:* ${otherParticipant?.empresa || ""}\n` +
+    dateLine +
     `🕐 *Horario:* ${meetingInfo.timeSlot || ""}\n` +
     `🪑 *Mesa:* ${meetingInfo.tableAssigned || ""}\n`;
 
@@ -294,6 +326,9 @@ export function useDashboardData(eventId?: string) {
   const [products, setProducts] = useState<Product[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [policies, setPolicies] = useState<EventPolicies>(DEFAULT_POLICIES);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [globalDateFilter, setGlobalDateFilter] = useState<string | null>(null);
+  const [affinityScores, setAffinityScores] = useState<Record<string, number>>({});
 
   // ---------------------- EFECTOS PRINCIPALES ----------------------
 
@@ -384,6 +419,31 @@ export function useDashboardData(eventId?: string) {
       }
     })();
   }, []);
+
+  // 3b. Cargar scores de afinidad del usuario
+  useEffect(() => {
+    if (!uid || !eventId) return;
+    
+    const unsubscribe = onSnapshot(
+      collection(db, "users", uid, "affinityScores"),
+      (snap) => {
+        const scores: Record<string, number> = {};
+        snap.docs.forEach((d) => {
+          const data = d.data();
+          if (data.targetUserId && typeof data.score === "number") {
+            scores[data.targetUserId] = data.score;
+          }
+        });
+        setAffinityScores(scores);
+        console.log(`Loaded ${snap.size} affinity scores`);
+      },
+      (error) => {
+        console.error("Error loading affinity scores:", error);
+      }
+    );
+    
+    return unsubscribe;
+  }, [uid, eventId]);
 
   // 4. Cargar lista de asistentes
   useEffect(() => {
@@ -686,7 +746,7 @@ export function useDashboardData(eventId?: string) {
       const landingUrl = `${baseUrl}/event/${eventId}`;
 
       const contextLine = context?.contextNote
-        ? `\n📋 *Contexto:* ${context.contextNote}\n`
+        ? `\n📋 *Mensaje:* ${context.contextNote}\n`
         : "";
 
       const eventLine = eventName ? `📌 *Evento:* ${eventName}\n\n` : "";
@@ -719,12 +779,14 @@ export function useDashboardData(eventId?: string) {
       }).catch(() => {});
 
       // Notificación en la app
+      const notificationMessage = context?.contextNote
+        ? `${requester?.nombre || "Alguien"} te ha enviado una solicitud de reunión.\n\nMensaje: "${context.contextNote}"`
+        : `${requester?.nombre || "Alguien"} te ha enviado una solicitud de reunión.`;
+      
       await addDoc(collection(db, "notifications"), {
         userId: assistantId,
         title: "Nueva solicitud de reunión",
-        message: `${
-          requester?.nombre || "Alguien"
-        } te ha enviado una solicitud de reunión.`,
+        message: notificationMessage,
         timestamp: new Date(),
         read: false,
         type: "meeting_request",
@@ -784,12 +846,14 @@ export function useDashboardData(eventId?: string) {
         await sendMeetingCancelledWhatsapp(requester.telefono, receiver, {
           timeSlot: meeting.timeSlot,
           tableAssigned: meeting.tableAssigned,
+          meetingDate: meeting.meetingDate,
         }, eventName, cancellerName);
       }
       if (receiver?.telefono) {
         await sendMeetingCancelledWhatsapp(receiver.telefono, requester, {
           timeSlot: meeting.timeSlot,
           tableAssigned: meeting.tableAssigned,
+          meetingDate: meeting.meetingDate,
         }, eventName, cancellerName);
       }
 
@@ -902,10 +966,12 @@ export function useDashboardData(eventId?: string) {
         }
 
         // 3. Actualizar reunión y agenda
+        const meetingDate = chosen.date || eventConfig.eventDates?.[0] || eventConfig.eventDate;
         await updateDoc(mtgRef, {
           status: "accepted",
           tableAssigned: chosen.tableNumber.toString(),
           timeSlot: `${chosen.startTime} - ${chosen.endTime}`,
+          meetingDate: meetingDate,
         });
 
         await updateDoc(doc(db, "events", eventId, "agenda", chosenDoc.id), {
@@ -963,6 +1029,7 @@ export function useDashboardData(eventId?: string) {
             {
               timeSlot: `${chosen.startTime} - ${chosen.endTime}`,
               tableAssigned: chosen.tableNumber,
+              meetingDate: meetingDate,
             },
             eventName,
             accepterName,
@@ -973,6 +1040,7 @@ export function useDashboardData(eventId?: string) {
             {
               timeSlot: `${chosen.startTime} - ${chosen.endTime}`,
               tableAssigned: chosen.tableNumber,
+              meetingDate: meetingDate,
             },
             eventName,
             accepterName,
@@ -1096,7 +1164,7 @@ export function useDashboardData(eventId?: string) {
   };
 
   // Seleccionar slots disponibles para aceptar/reagendar reuniones
-  const prepareSlotSelection = async (meetingId: string, isEdit = false) => {
+  const prepareSlotSelection = async (meetingId: string, isEdit = false, selectedDate?: string) => {
     setPrepareSlotSelectionLoading(true);
 
     try {
@@ -1116,9 +1184,23 @@ export function useDashboardData(eventId?: string) {
         setMeetingToAccept({ id: meetingId, requesterId, receiverId });
       }
 
-      // Fecha del evento
-      const eventDayISO = String(eventConfig.eventDate); // "YYYY-MM-DD"
+      // Soporte multi-día: usar eventDates si existe, sino eventDate
+      const eventDates = eventConfig.eventDates || [eventConfig.eventDate];
+      const eventDayISO = selectedDate || eventDates[0]; // Usar fecha seleccionada o primera fecha
+      
+      // Establecer la fecha seleccionada en el estado si no está definida
+      if (!selectedDate) {
+        setSelectedDate(eventDayISO);
+      }
+      
       const eventDate = parseISODate(eventDayISO);
+
+      // Obtener configuración específica del día (si existe)
+      const dayConfig = eventConfig.dailyConfig?.[eventDayISO] || {
+        startTime: eventConfig.startTime,
+        endTime: eventConfig.endTime,
+        breakBlocks: eventConfig.breakBlocks || [],
+      };
 
       // Para saber si el evento es hoy y así bloquear horas pasadas solo en ese caso
       const today = new Date();
@@ -1167,18 +1249,65 @@ export function useDashboardData(eventId?: string) {
           return { start: sh * 60 + sm, end: eh * 60 + em };
         });
 
-      // Agenda de slots disponibles (agenda es por evento)
-      const agSn = await getDocs(
-        query(
+      // Agenda de slots disponibles - FILTRAR POR FECHA
+      let agendaQuery = query(
+        collection(db, "events", eventId, "agenda"),
+        where("available", "==", true),
+        orderBy("startTime"),
+      );
+      
+      // Agregar filtro por fecha si el campo existe
+      try {
+        agendaQuery = query(
           collection(db, "events", eventId, "agenda"),
           where("available", "==", true),
+          where("date", "==", eventDayISO),
           orderBy("startTime"),
-        ),
+        );
+      } catch (e) {
+        // Si falla (índice no existe o campo no existe), usar query sin filtro de fecha
+        console.warn("Usando query sin filtro de fecha:", e);
+      }
+      
+      const agSn = await getDocs(agendaQuery);
+
+      // Cargar slots bloqueados del usuario actual (requesterId o receiverId)
+      const blockedSlotsRequester = await getDocs(
+        query(
+          collection(db, "users", requesterId, "blockedSlots"),
+          where("eventId", "==", eventId),
+          where("date", "==", eventDayISO)
+        )
       );
+      
+      const blockedSlotsReceiver = await getDocs(
+        query(
+          collection(db, "users", receiverId, "blockedSlots"),
+          where("eventId", "==", eventId),
+          where("date", "==", eventDayISO)
+        )
+      );
+
+      // Crear set de slots bloqueados (por startTime)
+      const blockedTimes = new Set<string>();
+      blockedSlotsRequester.docs.forEach((d) => {
+        const data = d.data();
+        blockedTimes.add(data.startTime);
+      });
+      blockedSlotsReceiver.docs.forEach((d) => {
+        const data = d.data();
+        blockedTimes.add(data.startTime);
+      });
 
       const filtered = agSn.docs
         .map((d) => ({ id: d.id, ...(d.data() as Omit<AgendaSlot, "id">) }))
         .filter((slot) => {
+          // Filtrar por fecha si el slot tiene el campo date
+          if (slot.date && slot.date !== eventDayISO) return false;
+          
+          // Filtrar slots bloqueados por cualquiera de los participantes
+          if (blockedTimes.has(slot.startTime)) return false;
+          
           const [h, m] = slot.startTime.split(":").map(Number);
 
           // la fecha/hora del slot con la FECHA DEL EVENTO (y no con hoy)
@@ -1189,12 +1318,12 @@ export function useDashboardData(eventId?: string) {
           // Si el evento es futuro, muestra todos los slots del evento
           if (isEventToday && slotDateTime <= now) return false;
 
-          // Respeta bloques de descanso
+          // Respeta bloques de descanso del día específico
           if (
             slotOverlapsBreakBlock(
               slot.startTime,
               eventConfig.meetingDuration,
-              eventConfig.breakBlocks,
+              dayConfig.breakBlocks, // Usar breakBlocks del día específico
             )
           )
             return false;
@@ -1264,8 +1393,10 @@ export function useDashboardData(eventId?: string) {
         return;
       }
 
-      // 0) Determinar la fecha del evento para normalizar (fallback si no existe)
-      const eventDateISO: string =
+      // 0) Determinar la fecha del evento para normalizar
+      // Soporte multi-día: usar la fecha del slot si existe, sino usar eventDate
+      const eventDateISO: string = slot.date || 
+        (eventConfig?.eventDates?.[0]) ||
         String(eventConfig?.eventDate || "").trim() ||
         new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
 
@@ -1421,12 +1552,24 @@ export function useDashboardData(eventId?: string) {
         ? (recvSnap.data() as Assistant)
         : null;
 
+      // Formatear fecha para notificaciones
+      let dateStr = "";
+      if (eventDateISO) {
+        const [year, month, day] = eventDateISO.split("-").map(Number);
+        const date = new Date(year, month - 1, day);
+        dateStr = date.toLocaleDateString("es-ES", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+        });
+      }
+
       const notificationsBatch = isEdit
         ? [
             {
               userId: requesterId!,
               title: "Reunión modificada",
-              message: `Tu reunión con ${receiver?.nombre || ""} fue movida a ${
+              message: `Tu reunión con ${receiver?.nombre || ""} fue movida a ${dateStr ? `${dateStr}, ` : ""}${
                 slot.startTime
               } (Mesa ${slot.tableNumber}).`,
               type: "meeting_modified" as const,
@@ -1436,7 +1579,7 @@ export function useDashboardData(eventId?: string) {
               title: "Reunión modificada",
               message: `Has cambiado la reunión con ${
                 requester?.nombre || ""
-              } a ${slot.startTime} (Mesa ${slot.tableNumber}).`,
+              } a ${dateStr ? `${dateStr}, ` : ""}${slot.startTime} (Mesa ${slot.tableNumber}).`,
               type: "meeting_modified" as const,
             },
           ]
@@ -1446,7 +1589,7 @@ export function useDashboardData(eventId?: string) {
               title: "Reunión aceptada",
               message: `Tu reunión con ${
                 receiver?.nombre || ""
-              } fue aceptada para ${slot.startTime} en Mesa ${
+              } fue aceptada para ${dateStr ? `${dateStr}, ` : ""}${slot.startTime} en Mesa ${
                 slot.tableNumber
               }.`,
               type: "meeting_accepted" as const,
@@ -1456,7 +1599,7 @@ export function useDashboardData(eventId?: string) {
               title: "Reunión confirmada",
               message: `Has aceptado la reunión con ${
                 requester?.nombre || ""
-              } para ${slot.startTime} en Mesa ${slot.tableNumber}.`,
+              } para ${dateStr ? `${dateStr}, ` : ""}${slot.startTime} en Mesa ${slot.tableNumber}.`,
               type: "meeting_accepted" as const,
             },
           ];
@@ -1481,14 +1624,16 @@ export function useDashboardData(eventId?: string) {
 
       if (requester?.telefono) {
         await sendMeetingAcceptedWhatsapp(requester.telefono, receiver!, {
-          timeSlot: slot.startTime,
+          timeSlot: `${slot.startTime} - ${slot.endTime}`,
           tableAssigned: slot.tableNumber,
+          meetingDate: eventDateISO,
         }, eventName, accepterName);
       }
       if (receiver?.telefono) {
         await sendMeetingAcceptedWhatsapp(receiver.telefono, requester!, {
-          timeSlot: slot.startTime,
+          timeSlot: `${slot.startTime} - ${slot.endTime}`,
           tableAssigned: slot.tableNumber,
+          meetingDate: eventDateISO,
         }, eventName, accepterName);
       }
 
@@ -1643,6 +1788,56 @@ export function useDashboardData(eventId?: string) {
     await deleteDoc(doc(db, "events", eventId, "products", productId));
   };
 
+  // Manejar cambio de fecha en el modal de slots
+  const handleDateChange = (date: string) => {
+    setSelectedDate(date);
+    // Limpiar selecciones actuales
+    setSelectedRange(null);
+    setSelectedSlotId(null);
+    // Recargar slots para la nueva fecha
+    if (meetingToAccept?.id || meetingToEdit) {
+      const meetingId = meetingToEdit || meetingToAccept?.id;
+      const isEdit = !!meetingToEdit;
+      prepareSlotSelection(meetingId, isEdit, date);
+    }
+  };
+
+  // Filtrar reuniones y solicitudes por fecha global
+  const filteredAcceptedMeetings = useMemo(() => {
+    if (!globalDateFilter) return acceptedMeetings;
+    return acceptedMeetings.filter(m => m.meetingDate === globalDateFilter);
+  }, [acceptedMeetings, globalDateFilter]);
+
+  const filteredCancelledMeetings = useMemo(() => {
+    if (!globalDateFilter) return cancelledMeetings;
+    return cancelledMeetings.filter(m => m.meetingDate === globalDateFilter);
+  }, [cancelledMeetings, globalDateFilter]);
+
+  const filteredPendingRequests = useMemo(() => {
+    if (!globalDateFilter) return pendingRequests;
+    return pendingRequests.filter(m => m.meetingDate === globalDateFilter);
+  }, [pendingRequests, globalDateFilter]);
+
+  const filteredSentRequests = useMemo(() => {
+    if (!globalDateFilter) return sentRequests;
+    return sentRequests.filter(m => m.meetingDate === globalDateFilter);
+  }, [sentRequests, globalDateFilter]);
+
+  const filteredAcceptedRequests = useMemo(() => {
+    if (!globalDateFilter) return acceptedRequests;
+    return acceptedRequests.filter(m => m.meetingDate === globalDateFilter);
+  }, [acceptedRequests, globalDateFilter]);
+
+  const filteredRejectedRequests = useMemo(() => {
+    if (!globalDateFilter) return rejectedRequests;
+    return rejectedRequests.filter(m => m.meetingDate === globalDateFilter);
+  }, [rejectedRequests, globalDateFilter]);
+
+  const filteredSentRejectedRequests = useMemo(() => {
+    if (!globalDateFilter) return sentRejectedRequests;
+    return sentRejectedRequests.filter(m => m.meetingDate === globalDateFilter);
+  }, [sentRejectedRequests, globalDateFilter]);
+
   // ---------------------- RETORNO ----------------------
 
   return {
@@ -1650,15 +1845,15 @@ export function useDashboardData(eventId?: string) {
     currentUser,
     assistants,
     filteredAssistants,
-    acceptedMeetings,
-    cancelledMeetings,
+    acceptedMeetings: filteredAcceptedMeetings,
+    cancelledMeetings: filteredCancelledMeetings,
     loadingMeetings,
-    pendingRequests,
+    pendingRequests: filteredPendingRequests,
     cancelSentMeeting,
-    sentRequests,
-    sentRejectedRequests,
-    acceptedRequests,
-    rejectedRequests,
+    sentRequests: filteredSentRequests,
+    sentRejectedRequests: filteredSentRejectedRequests,
+    acceptedRequests: filteredAcceptedRequests,
+    rejectedRequests: filteredRejectedRequests,
     participantsInfo,
     notifications,
     markNotificationRead,
@@ -1668,6 +1863,7 @@ export function useDashboardData(eventId?: string) {
     eventImage,
     dashboardLogo,
     eventName,
+    affinityScores,
 
     searchTerm,
     setSearchTerm,
@@ -1734,5 +1930,10 @@ export function useDashboardData(eventId?: string) {
     deleteProduct,
     companies,
     policies,
+    selectedDate,
+    setSelectedDate,
+    handleDateChange,
+    globalDateFilter,
+    setGlobalDateFilter,
   };
 }

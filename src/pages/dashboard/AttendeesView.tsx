@@ -16,10 +16,11 @@ import {
   ThemeIcon,
   Box,
   useMantineTheme,
-  rem,
+  Loader,
+  Badge,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   IconSearch,
   IconX,
@@ -33,9 +34,14 @@ import {
   IconPhone,
   IconId,
   IconUsers,
+  IconSparkles,
+  IconHeart,
 } from "@tabler/icons-react";
 import type { Assistant } from "./types";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import MeetingRequestModal from "./MeetingRequestModal";
+
+const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
 
 const FIELD_ICONS: Record<string, any> = {
   empresa: IconBuildingStore,
@@ -75,12 +81,19 @@ interface AttendeesViewProps {
   setInterestFilter: (v: string | null) => void;
   eventConfig: any;
   solicitarReunionHabilitado: boolean;
-  sendMeetingRequest: (id: string, phone: string) => Promise<void>;
+  sendMeetingRequest: (
+    id: string,
+    phone: string,
+    groupId?: string | null,
+    context?: MeetingContext,
+  ) => Promise<void>;
   setAvatarModalOpened: (v: boolean) => void;
   setSelectedImage: (v: string | null) => void;
   currentUser: any;
   formFields: any[];
   cardFields: string[];
+  affinityScores: Record<string, number>;
+  highlightEntityId?: string;
 }
 
 function InfoRow({
@@ -124,12 +137,45 @@ export default function AttendeesView({
   currentUser,
   formFields,
   cardFields,
+  affinityScores,
+  highlightEntityId,
 }: AttendeesViewProps) {
   const theme = useMantineTheme();
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [vectorResults, setVectorResults] = useState<Assistant[]>([]);
+  const [isVectorSearching, setIsVectorSearching] = useState(false);
+  const [useVectorSearch, setUseVectorSearch] = useState(false);
+  const [modalOpened, setModalOpened] = useState(false);
+  const [selectedAssistant, setSelectedAssistant] = useState<Assistant | null>(null);
+  const [sortBy, setSortBy] = useState<"affinity" | "date">("affinity");
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+
+  // Efecto para hacer scroll y resaltar la card cuando viene de notificación
+  useEffect(() => {
+    if (highlightEntityId) {
+      setHighlightedId(highlightEntityId);
+      
+      // Esperar a que el DOM se renderice
+      setTimeout(() => {
+        const element = document.getElementById(`assistant-card-${highlightEntityId}`);
+        if (element) {
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 300);
+
+      // Remover el resaltado después de 8 segundos
+      const timer = setTimeout(() => {
+        setHighlightedId(null);
+      }, 8000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [highlightEntityId]);
 
   const myUid = currentUser?.uid;
   const navigate = useNavigate();
+  const { eventId: eventIdFromParams } = useParams<{ eventId: string }>();
+  const eventId = currentUser?.eventId || eventIdFromParams;
 
   const maxMeetingsText = useMemo(() => {
     const n = eventConfig?.maxMeetingsPerUser;
@@ -137,15 +183,185 @@ export default function AttendeesView({
     return String(n);
   }, [eventConfig]);
 
-  const handleSendMeeting = async (assistant: Assistant) => {
-    setLoadingId(assistant.id);
+  // Búsqueda por vectores con debounce
+  useEffect(() => {
+    const trimmed = searchTerm.trim();
+    
+    // Si no hay eventId, no podemos hacer búsqueda
+    if (!eventId) {
+      setUseVectorSearch(false);
+      setVectorResults([]);
+      return;
+    }
+    
+    // Si no hay texto de búsqueda, resetear
+    if (!trimmed) {
+      setUseVectorSearch(false);
+      setVectorResults([]);
+      return;
+    }
+
+    // Si el texto es muy corto, no usar vectores
+    if (trimmed.length < 3) {
+      setUseVectorSearch(false);
+      return;
+    }
+
+    // Debounce: esperar 500ms después de que el usuario deje de escribir
+    const timeoutId = setTimeout(async () => {
+      setIsVectorSearching(true);
+      
+      try {
+        const requestBody = {
+          text: trimmed,
+          category: "assistants",
+          eventId: eventId,
+          userId: myUid,
+          limit: 50,
+          threshold: 0.55,
+        };
+        
+        console.log("Vector search request:", requestBody);
+        
+        const response = await fetch(VECTOR_SEARCH_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(requestBody),
+        });
+
+        if (!response.ok) {
+          throw new Error("Vector search failed");
+        }
+
+        const data = await response.json();
+        console.log("Vector search response:", data);
+        
+        // Los resultados de vectorSearch ya vienen con todos los campos necesarios
+        setVectorResults(data.results as Assistant[]);
+        setUseVectorSearch(true);
+        
+        console.log(`Vector search found ${data.results.length} assistants`);
+      } catch (error) {
+        console.error("Vector search error:", error);
+        // Fallback a búsqueda normal
+        setUseVectorSearch(false);
+        setVectorResults([]);
+      } finally {
+        setIsVectorSearching(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, eventId, myUid, filteredAssistants]);
+
+  // Aplicar búsqueda por vectores si está activa
+  const displayedAssistants = useMemo(() => {
+    console.log("=== displayedAssistants useMemo ===");
+    console.log("useVectorSearch:", useVectorSearch);
+    console.log("searchTerm:", searchTerm);
+    console.log("vectorResults.length:", vectorResults.length);
+    console.log("filteredAssistants.length:", filteredAssistants.length);
+    console.log("interestFilter:", interestFilter);
+    console.log("showOnlyToday:", showOnlyToday);
+    console.log("currentEventId:", eventId);
+    console.log("sortBy:", sortBy);
+    
+    // Si NO estamos usando búsqueda por vectores, devolver filteredAssistants
+    if (!useVectorSearch || searchTerm.trim().length < 3) {
+      console.log("Using filteredAssistants (no vector search)");
+      let results = [...filteredAssistants];
+      
+      // Aplicar ordenamiento por afinidad o fecha
+      if (sortBy === "affinity") {
+        results.sort((a, b) => {
+          const scoreA = affinityScores[a.id] || 0;
+          const scoreB = affinityScores[b.id] || 0;
+          return scoreB - scoreA; // Mayor score primero
+        });
+        console.log("Sorted by affinity");
+      } else {
+        results.sort((a, b) => {
+          const timeA = a.createdAt?.toMillis?.() || 0;
+          const timeB = b.createdAt?.toMillis?.() || 0;
+          return timeB - timeA; // Más reciente primero
+        });
+        console.log("Sorted by date");
+      }
+      
+      return results;
+    }
+    
+    // Si estamos usando búsqueda por vectores, empezar con vectorResults
+    let results = [...vectorResults]; // Crear copia para no mutar el original
+    console.log("Starting with vectorResults:", results.length);
+    
+    // Log de los primeros resultados para debugging
+    if (results.length > 0) {
+      console.log("First result:", {
+        id: results[0].id,
+        nombre: results[0].nombre,
+        interesPrincipal: results[0].interesPrincipal,
+        lastLogin: results[0].lastLogin,
+        eventId: results[0].eventId
+      });
+    }
+    
+    // Aplicar filtro de interés si existe
+    if (interestFilter) {
+      const beforeFilter = results.length;
+      results = results.filter(a => a.interesPrincipal === interestFilter);
+      console.log(`After interest filter (${interestFilter}): ${beforeFilter} -> ${results.length}`);
+    }
+    
+    // Aplicar filtro de "solo hoy" si está activo
+    if (showOnlyToday) {
+      const beforeFilter = results.length;
+      const today = new Date().toISOString().split("T")[0];
+      results = results.filter(a => {
+        const lastLogin = a.lastLogin;
+        if (!lastLogin) {
+          console.log(`Filtering out ${a.nombre} - no lastLogin`);
+          return false;
+        }
+        const loginDate = new Date(lastLogin).toISOString().split("T")[0];
+        const matches = loginDate === today;
+        if (!matches) {
+          console.log(`Filtering out ${a.nombre} - lastLogin: ${loginDate}, today: ${today}`);
+        }
+        return matches;
+      });
+      console.log(`After showOnlyToday filter: ${beforeFilter} -> ${results.length}`);
+    }
+    
+    console.log("Final displayedAssistants:", results.length);
+    console.log("=== End useMemo ===");
+    return results;
+  }, [useVectorSearch, searchTerm, vectorResults, filteredAssistants, interestFilter, showOnlyToday, eventId, sortBy, affinityScores]);
+
+  const handleOpenModal = (assistant: Assistant) => {
+    setSelectedAssistant(assistant);
+    setModalOpened(true);
+  };
+
+  const handleConfirmMeeting = async (message: string) => {
+    if (!selectedAssistant) return;
+    
+    setLoadingId(selectedAssistant.id);
     try {
-      await sendMeetingRequest(assistant.id, assistant.telefono || "");
+      await sendMeetingRequest(selectedAssistant.id, selectedAssistant.telefono || "", null, {
+        contextNote: message || undefined,
+      });
+      
       showNotification({
         title: "Solicitud enviada",
-        message: `Solicitud enviada a ${assistant.nombre}, quedará en lista de pendientes por aceptar.`,
+        message: `Solicitud enviada a ${selectedAssistant.nombre}${message ? ' con tu mensaje personalizado' : ''}.`,
         color: "teal",
       });
+      
+      setModalOpened(false);
+      setSelectedAssistant(null);
     } catch {
       showNotification({
         title: "Error",
@@ -160,6 +376,28 @@ export default function AttendeesView({
   const hasSearch = !!searchTerm.trim();
 
   return (
+    <>
+      <style>
+        {`
+          @keyframes pulse {
+            0%, 100% {
+              box-shadow: 0 0 20px rgba(20, 184, 166, 0.4);
+            }
+            50% {
+              box-shadow: 0 0 30px rgba(20, 184, 166, 0.7);
+            }
+          }
+          
+          @keyframes fadeOut {
+            from {
+              opacity: 1;
+            }
+            to {
+              opacity: 0;
+            }
+          }
+        `}
+      </style>
     <Stack gap="md">
       {/* Filtros (estilo app) */}
       <Paper withBorder radius="lg" p="sm">
@@ -169,7 +407,15 @@ export default function AttendeesView({
               placeholder="Buscar por cualquier campo..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              leftSection={<IconSearch size={16} />}
+              leftSection={
+                isVectorSearching ? (
+                  <Loader size={16} />
+                ) : useVectorSearch ? (
+                  <IconSparkles size={16} style={{ color: "var(--mantine-color-blue-6)" }} />
+                ) : (
+                  <IconSearch size={16} />
+                )
+              }
               rightSection={
                 hasSearch ? (
                   <ActionIcon
@@ -198,15 +444,43 @@ export default function AttendeesView({
 
           <Grid.Col span={{ base: 12 }}>
             <Group justify="space-between" wrap="wrap">
-              <Button
-                variant={showOnlyToday ? "filled" : "light"}
-                color={theme.primaryColor}
-                size="xs"
-                leftSection={<IconCalendarCheck size={14} />}
-                onClick={() => setShowOnlyToday((v: boolean) => !v)}
-              >
-                {showOnlyToday ? "Solo conectados hoy" : "Todos"}
-              </Button>
+              <Group gap="xs">
+                <Button
+                  variant={showOnlyToday ? "filled" : "light"}
+                  color={theme.primaryColor}
+                  size="xs"
+                  leftSection={<IconCalendarCheck size={14} />}
+                  onClick={() => setShowOnlyToday((v: boolean) => !v)}
+                >
+                  {showOnlyToday ? "Solo conectados hoy" : "Todos"}
+                </Button>
+                {useVectorSearch && (
+                  <Badge size="sm" variant="light" color="blue" leftSection={<IconSparkles size={10} />}>
+                    Búsqueda inteligente
+                  </Badge>
+                )}
+              </Group>
+
+              <Group gap="xs">
+                <Button
+                  variant={sortBy === "affinity" ? "filled" : "light"}
+                  color="teal"
+                  size="xs"
+                  leftSection={<IconHeart size={14} />}
+                  onClick={() => setSortBy("affinity")}
+                >
+                  Por afinidad
+                </Button>
+                <Button
+                  variant={sortBy === "date" ? "filled" : "light"}
+                  color="gray"
+                  size="xs"
+                  leftSection={<IconCalendarCheck size={14} />}
+                  onClick={() => setSortBy("date")}
+                >
+                  Por fecha
+                </Button>
+              </Group>
 
               <Text size="sm" c="dimmed">
                 Máximo:{" "}
@@ -223,7 +497,7 @@ export default function AttendeesView({
       </Paper>
 
       {/* Alert oportunista */}
-      {filteredAssistants.length > 0 && filteredAssistants.length <= 10 && (
+      {displayedAssistants.length > 0 && displayedAssistants.length <= 10 && (
         <Alert
           color={theme.primaryColor}
           title="Aún estás entre los primeros"
@@ -231,23 +505,30 @@ export default function AttendeesView({
         >
           Solo hay{" "}
           <strong>
-            {filteredAssistants.length} asistente
-            {filteredAssistants.length !== 1 ? "s" : ""}
+            {displayedAssistants.length} asistente
+            {displayedAssistants.length !== 1 ? "s" : ""}
           </strong>{" "}
-          registrado{filteredAssistants.length !== 1 ? "s" : ""}. Aprovecha para
+          registrado{displayedAssistants.length !== 1 ? "s" : ""}. Aprovecha para
           conectar con los pioneros del evento.
         </Alert>
       )}
 
       {/* Grid */}
       <Grid gutter="sm">
-        {filteredAssistants.length > 0 ? (
-          filteredAssistants.map((assistant) => {
+        {displayedAssistants.length > 0 ? (
+          displayedAssistants.map((assistant) => {
             const isMine = !!myUid && assistant.id === myUid;
             const disabled =
               !solicitarReunionHabilitado ||
               loadingId === assistant.id ||
               isMine;
+
+            // Verificar si tiene similarity score (viene de búsqueda por vectores)
+            const hasSimilarity = typeof (assistant as any).similarity === 'number';
+            const similarityScore = hasSimilarity ? Math.round((assistant as any).similarity * 100) : null;
+
+            // Verificar si esta card debe ser resaltada (usando el estado temporal)
+            const isHighlighted = highlightedId === assistant.id;
 
             return (
               <Grid.Col
@@ -255,6 +536,7 @@ export default function AttendeesView({
                 key={assistant.id}
               >
                 <Card
+                  id={`assistant-card-${assistant.id}`}
                   withBorder
                   radius="xl"
                   padding="md"
@@ -263,8 +545,68 @@ export default function AttendeesView({
                     height: "100%",
                     display: "flex",
                     flexDirection: "column",
+                    position: "relative",
+                    border: isHighlighted ? "3px solid var(--mantine-color-teal-5)" : undefined,
+                    boxShadow: isHighlighted ? "0 0 20px rgba(20, 184, 166, 0.4)" : undefined,
+                    animation: isHighlighted ? "pulse 2s ease-in-out 3" : undefined,
                   }}
                 >
+                  {/* Badge de concordancia */}
+                  {hasSimilarity && (
+                    <Badge
+                      variant="gradient"
+                      gradient={{ from: 'blue', to: 'cyan', deg: 90 }}
+                      size="sm"
+                      radius="md"
+                      style={{
+                        position: "absolute",
+                        top: 10,
+                        right: 10,
+                        zIndex: 1,
+                      }}
+                    >
+                      {similarityScore}% match
+                    </Badge>
+                  )}
+
+                  {/* Badge de afinidad */}
+                  {!hasSimilarity && affinityScores[assistant.id] && affinityScores[assistant.id] > 0 && (
+                    <Badge
+                      variant="gradient"
+                      gradient={{ from: 'teal', to: 'green', deg: 90 }}
+                      size="sm"
+                      radius="md"
+                      leftSection={<IconHeart size={12} />}
+                      style={{
+                        position: "absolute",
+                        top: 10,
+                        right: 10,
+                        zIndex: 1,
+                      }}
+                    >
+                      {affinityScores[assistant.id]}% afinidad
+                    </Badge>
+                  )}
+
+                  {/* Badge NUEVO cuando está resaltado */}
+                  {isHighlighted && (
+                    <Badge
+                      variant="filled"
+                      color="teal"
+                      size="lg"
+                      radius="md"
+                      style={{
+                        position: "absolute",
+                        top: 10,
+                        left: 10,
+                        zIndex: 2,
+                        fontWeight: 700,
+                      }}
+                    >
+                      ¡NUEVO!
+                    </Badge>
+                  )}
+
                   {/* Header */}
                   <Group wrap="nowrap" align="center" gap="sm">
                     <Avatar
@@ -342,7 +684,7 @@ export default function AttendeesView({
                     size="sm"
                     fullWidth
                     color={theme.primaryColor}
-                    onClick={() => handleSendMeeting(assistant)}
+                    onClick={() => handleOpenModal(assistant)}
                     disabled={disabled}
                     loading={loadingId === assistant.id}
                   >
@@ -367,6 +709,20 @@ export default function AttendeesView({
           </Grid.Col>
         )}
       </Grid>
+
+      {/* Modal de solicitud de reunión */}
+      <MeetingRequestModal
+        opened={modalOpened}
+        recipientName={selectedAssistant?.nombre || ""}
+        recipientType="asistente"
+        onCancel={() => {
+          setModalOpened(false);
+          setSelectedAssistant(null);
+        }}
+        onConfirm={handleConfirmMeeting}
+        loading={loadingId === selectedAssistant?.id}
+      />
     </Stack>
+    </>
   );
 }

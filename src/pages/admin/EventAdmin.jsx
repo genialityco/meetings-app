@@ -138,39 +138,56 @@ const EventAdmin = () => {
       const {
         meetingDuration,
         breakTime,
-        startTime,
-        endTime,
         numTables,
-        breakBlocks = [],
+        dailyConfig,
+        eventDates,
+        eventDate,
+        // Fallback para eventos antiguos
+        startTime: globalStartTime,
+        endTime: globalEndTime,
+        breakBlocks: globalBreakBlocks = [],
       } = event.config;
-
-      const startMinutes = timeToMinutes(startTime);
-      const endMinutes = timeToMinutes(endTime);
-      const blockLength = meetingDuration + breakTime;
-      const totalSlots = Math.floor((endMinutes - startMinutes) / blockLength);
 
       let createdCount = 0;
 
-      for (let slot = 0; slot < totalSlots; slot++) {
-        const slotStart = startMinutes + slot * blockLength;
-        const slotEnd = slotStart + meetingDuration;
+      // Determinar los días a procesar
+      const daysToProcess = dailyConfig 
+        ? Object.entries(dailyConfig)
+        : eventDates?.length
+          ? eventDates.map(date => [date, { startTime: globalStartTime, endTime: globalEndTime, breakBlocks: globalBreakBlocks }])
+          : [[eventDate, { startTime: globalStartTime, endTime: globalEndTime, breakBlocks: globalBreakBlocks }]];
 
-        if (isWithinBreakBlock(slotStart, slotEnd, breakBlocks)) {
-          continue;
-        }
+      // Generar slots para cada día
+      for (const [date, dayConfig] of daysToProcess) {
+        const { startTime, endTime, breakBlocks = [] } = dayConfig;
+        
+        const startMinutes = timeToMinutes(startTime);
+        const endMinutes = timeToMinutes(endTime);
+        const blockLength = meetingDuration + breakTime;
+        const totalSlots = Math.floor((endMinutes - startMinutes) / blockLength);
 
-        const slotStartTime = minutesToTime(slotStart);
-        const slotEndTime = minutesToTime(slotEnd);
+        for (let slot = 0; slot < totalSlots; slot++) {
+          const slotStart = startMinutes + slot * blockLength;
+          const slotEnd = slotStart + meetingDuration;
 
-        for (let tableNumber = 1; tableNumber <= numTables; tableNumber++) {
-          const slotData = {
-            tableNumber,
-            startTime: slotStartTime,
-            endTime: slotEndTime,
-            available: true,
-          };
-          await addDoc(collection(db, "events", event.id, "agenda"), slotData);
-          createdCount++;
+          if (isWithinBreakBlock(slotStart, slotEnd, breakBlocks)) {
+            continue;
+          }
+
+          const slotStartTime = minutesToTime(slotStart);
+          const slotEndTime = minutesToTime(slotEnd);
+
+          for (let tableNumber = 1; tableNumber <= numTables; tableNumber++) {
+            const slotData = {
+              date, // ⭐ NUEVO: incluir fecha del slot
+              tableNumber,
+              startTime: slotStartTime,
+              endTime: slotEndTime,
+              available: true,
+            };
+            await addDoc(collection(db, "events", event.id, "agenda"), slotData);
+            createdCount++;
+          }
         }
       }
 
@@ -566,7 +583,7 @@ const EventAdmin = () => {
               Vendedores
             </Text>
             <Title order={3}>
-              {attendees.filter((a) => a.tipoAsistente.toLowerCase() === "vendedor").length}
+              {attendees.filter((a) => a.tipoAsistente?.toLowerCase() === "vendedor").length}
             </Title>
           </Card>
 
@@ -575,7 +592,7 @@ const EventAdmin = () => {
               Compradores
             </Text>
             <Title order={3}>
-              {attendees.filter((a) => a.tipoAsistente.toLowerCase() === "comprador").length}
+              {attendees.filter((a) => a.tipoAsistente?.toLowerCase() === "comprador").length}
             </Title>
           </Card>
         </SimpleGrid>
@@ -629,9 +646,7 @@ const EventAdmin = () => {
         <Tabs defaultValue="operacion" keepMounted={false}>
           <Tabs.List>
             <Tabs.Tab value="operacion">Operación</Tabs.Tab>
-            <Tabs.Tab value="agenda">Agenda</Tabs.Tab>
             <Tabs.Tab value="config">Configuración</Tabs.Tab>
-            <Tabs.Tab value="ia">IA</Tabs.Tab>
             <Tabs.Tab value="importexport">Import / Export</Tabs.Tab>
             <Tabs.Tab value="peligro" color="red">
               Peligro
@@ -670,70 +685,63 @@ const EventAdmin = () => {
             </Group>
           </Tabs.Panel>
 
-          <Tabs.Panel value="agenda" pt="md">
-            <Group gap="xs" wrap="wrap">
-              <Button
-                onClick={generateAgendaForEvent}
-                loading={actionLoading}
-                disabled={actionLoading}
-              >
-                Generar Agenda
-              </Button>
-
-              <Button
-                component={Link}
-                to={`/admin/event/${event.id}/agenda`}
-                loading={actionLoading}
-                disabled={actionLoading}
-                variant="light"
-              >
-                Ver Agenda
-              </Button>
-            </Group>
-          </Tabs.Panel>
-
           <Tabs.Panel value="config" pt="md">
-            <Group gap="xs" wrap="wrap">
-              <Button
-                onClick={() => setEditConfigModalOpened(true)}
-                loading={actionLoading}
-                disabled={actionLoading}
-              >
-                Editar Configuración
-              </Button>
+            <Stack gap="md">
+              <div>
+                <Text size="sm" fw={600} mb="xs">Configuración del evento</Text>
+                <Group gap="xs" wrap="wrap">
+                  <Button
+                    onClick={() => setEditConfigModalOpened(true)}
+                    loading={actionLoading}
+                    disabled={actionLoading}
+                  >
+                    Editar Configuración
+                  </Button>
 
-              <Button
-                onClick={() => setConfigureFieldsModalOpened(true)}
-                loading={actionLoading}
-                disabled={actionLoading}
-                variant="default"
-              >
-                Configurar campos
-              </Button>
+                  <Button
+                    onClick={() => setConfigureFieldsModalOpened(true)}
+                    loading={actionLoading}
+                    disabled={actionLoading}
+                    variant="default"
+                  >
+                    Configurar campos
+                  </Button>
 
-              <Button
-                onClick={() => setPoliciesModalOpened(true)}
-                loading={actionLoading}
-                disabled={actionLoading}
-                color="grape"
-                variant="default"
-              >
-                Configurar políticas
-              </Button>
-            </Group>
-          </Tabs.Panel>
+                  <Button
+                    onClick={() => setPoliciesModalOpened(true)}
+                    loading={actionLoading}
+                    disabled={actionLoading}
+                    color="grape"
+                    variant="default"
+                  >
+                    Configurar políticas
+                  </Button>
+                </Group>
+              </div>
 
-          <Tabs.Panel value="ia" pt="md">
-            <Group gap="xs" wrap="wrap">
-              <Button
-                component={Link}
-                to={`/admin/event/${event.id}/match`}
-                loading={actionLoading}
-                disabled={actionLoading}
-              >
-                Generar Matches IA
-              </Button>
-            </Group>
+              <div>
+                <Text size="sm" fw={600} mb="xs">Gestión de agenda</Text>
+                <Group gap="xs" wrap="wrap">
+                  <Button
+                    onClick={generateAgendaForEvent}
+                    loading={actionLoading}
+                    disabled={actionLoading}
+                  >
+                    Generar Agenda
+                  </Button>
+
+                  <Button
+                    component={Link}
+                    to={`/admin/event/${event.id}/agenda`}
+                    loading={actionLoading}
+                    disabled={actionLoading}
+                    variant="light"
+                  >
+                    Ver Agenda
+                  </Button>
+                </Group>
+              </div>
+            </Stack>
           </Tabs.Panel>
 
           <Tabs.Panel value="importexport" pt="md">

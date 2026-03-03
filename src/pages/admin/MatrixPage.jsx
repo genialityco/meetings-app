@@ -184,6 +184,7 @@ const MatrixPage = () => {
   const [globalMessage, setGlobalMessage] = useState("");
   const [userSearch, setUserSearch] = useState("");
   const [pendingMeetings, setPendingMeetings] = useState([]);
+  const [selectedDate, setSelectedDate] = useState(null);
 
   // Carga configuración evento
   useEffect(() => {
@@ -191,7 +192,15 @@ const MatrixPage = () => {
     (async () => {
       const ref = doc(db, "events", eventId);
       const snap = await getDoc(ref);
-      if (snap.exists()) setConfig(snap.data());
+      if (snap.exists()) {
+        const data = snap.data();
+        setConfig(data);
+        // Inicializar fecha seleccionada con la primera fecha del evento
+        const eventDates = data.config?.eventDates || (data.config?.eventDate ? [data.config.eventDate] : []);
+        if (eventDates.length > 0 && !selectedDate) {
+          setSelectedDate(eventDates[0]);
+        }
+      }
     })();
   }, [eventId]);
 
@@ -255,24 +264,33 @@ const MatrixPage = () => {
     });
   }, [eventId]);
 
-  // Memoize timeSlots
-  const timeSlots = useMemo(
-    () =>
-      config
-        ? generateTimeSlots(
-            config.config.startTime,
-            config.config.endTime,
-            config.config.meetingDuration,
-            config.config.breakTime
-          )
-        : [],
-    [config]
-  );
+  // Memoize timeSlots - usar configuración del día seleccionado
+  const timeSlots = useMemo(() => {
+    if (!config || !selectedDate) return [];
+    
+    const dayConfig = config.config.dailyConfig?.[selectedDate] || {
+      startTime: config.config.startTime,
+      endTime: config.config.endTime,
+    };
+    
+    return generateTimeSlots(
+      dayConfig.startTime,
+      dayConfig.endTime,
+      config.config.meetingDuration,
+      config.config.breakTime
+    );
+  }, [config, selectedDate]);
 
-  // Memoize matriz por mesas
+  // Memoize matriz por mesas - filtrar por fecha seleccionada
   const memoMatrix = useMemo(() => {
-  if (!config) return [];
-  const { numTables, meetingDuration, breakBlocks = [] } = config.config;
+  if (!config || !selectedDate) return [];
+  const { numTables, meetingDuration } = config.config;
+  
+  // Obtener breakBlocks del día seleccionado
+  const dayConfig = config.config.dailyConfig?.[selectedDate] || {
+    breakBlocks: config.config.breakBlocks || [],
+  };
+  const breakBlocks = dayConfig.breakBlocks || [];
 
   const baseMatrix = Array.from({ length: numTables }, () =>
     timeSlots.map((slot) => ({
@@ -283,10 +301,12 @@ const MatrixPage = () => {
     }))
   );
 
-  agenda.forEach((slot) => {
+  // Filtrar agenda por fecha
+  const agendaDelDia = agenda.filter(slot => !slot.date || slot.date === selectedDate);
+
+  agendaDelDia.forEach((slot) => {
     const tIdx = slot.tableNumber - 1;
     const sIdx = timeSlots.indexOf(slot.startTime);
-    // ✅ Añade validación para tIdx < numTables
     if (tIdx >= 0 && tIdx < numTables && sIdx >= 0) {
       baseMatrix[tIdx][sIdx] = {
         status: slot.available ? "available" : "occupied",
@@ -295,12 +315,14 @@ const MatrixPage = () => {
     }
   });
 
-  meetings.forEach((mtg) => {
+  // Filtrar reuniones por fecha
+  const meetingsDelDia = meetings.filter(mtg => !mtg.meetingDate || mtg.meetingDate === selectedDate);
+
+  meetingsDelDia.forEach((mtg) => {
     if (mtg.status !== "accepted" || !mtg.timeSlot) return;
     const [startTime] = mtg.timeSlot.split(" - ");
     const tIdx = Number(mtg.tableAssigned) - 1;
     const sIdx = timeSlots.indexOf(startTime);
-    // ✅ Añade validación para tIdx < numTables
     if (tIdx >= 0 && tIdx < numTables && sIdx >= 0) {
       baseMatrix[tIdx][sIdx] = {
         status: "accepted",
@@ -316,19 +338,28 @@ const MatrixPage = () => {
   });
 
   return baseMatrix;
-}, [config, agenda, meetings, participantsInfo, timeSlots]);
+}, [config, agenda, meetings, participantsInfo, timeSlots, selectedDate]);
 
-  // Memoize matriz por usuarios
+  // Memoize matriz por usuarios - filtrar por fecha seleccionada
   const memoMatrixUsuarios = useMemo(() => {
-    if (!config || asistentes.length === 0) return [];
-    const { meetingDuration, breakBlocks = [] } = config.config;
+    if (!config || asistentes.length === 0 || !selectedDate) return [];
+    const { meetingDuration } = config.config;
+    
+    // Obtener breakBlocks del día seleccionado
+    const dayConfig = config.config.dailyConfig?.[selectedDate] || {
+      breakBlocks: config.config.breakBlocks || [],
+    };
+    const breakBlocks = dayConfig.breakBlocks || [];
+
+    // Filtrar reuniones por fecha
+    const meetingsDelDia = meetings.filter(mtg => !mtg.meetingDate || mtg.meetingDate === selectedDate);
 
     return asistentes.map((user) => {
       const row = timeSlots.map((slot) => {
         if (slotOverlapsBreakBlock(slot, meetingDuration, breakBlocks)) {
           return { status: "break" };
         }
-        const mtg = meetings.find((m) => {
+        const mtg = meetingsDelDia.find((m) => {
           if (!m.timeSlot) return false;
           const [start] = m.timeSlot.split(" - ");
           return start === slot && m.participants.includes(user.id);
@@ -351,7 +382,7 @@ const MatrixPage = () => {
       });
       return { asistente: user, row };
     });
-  }, [config, asistentes, meetings, participantsInfo, timeSlots]);
+  }, [config, asistentes, meetings, participantsInfo, timeSlots, selectedDate]);
 
   // Filtrado usuarios
   const filteredMatrixUsuarios = useMemo(
@@ -412,16 +443,19 @@ const MatrixPage = () => {
       const requester = asistentes.find((a) => a.id === user1);
       const slotStr = `${slot.startTime} - ${slot.endTime}`;
       const mesa = slot.tableNumber;
+      const meetingDate = slot.date || selectedDate;
 
       if (receiver && requester) {
         // WhatsApp
         dashboard.sendMeetingAcceptedWhatsapp(receiver.telefono, requester, {
           timeSlot: slotStr,
           tableAssigned: mesa,
+          meetingDate: meetingDate,
         });
         dashboard.sendMeetingAcceptedWhatsapp(requester.telefono, receiver, {
           timeSlot: slotStr,
           tableAssigned: mesa,
+          meetingDate: meetingDate,
         });
         // SMS
         dashboard.sendSms(
@@ -519,15 +553,18 @@ const MatrixPage = () => {
       const receiver = asistentes.find((a) => a.id === user2);
       const requester = asistentes.find((a) => a.id === user1);
       const mesa = slot.tableNumber;
+      const meetingDate = slot.date || selectedDate;
 
       if (receiver && requester) {
         dashboard.sendMeetingAcceptedWhatsapp(receiver.telefono, requester, {
           timeSlot: nuevoSlotStr,
           tableAssigned: mesa,
+          meetingDate: meetingDate,
         });
         dashboard.sendMeetingAcceptedWhatsapp(requester.telefono, receiver, {
           timeSlot: nuevoSlotStr,
           tableAssigned: mesa,
+          meetingDate: meetingDate,
         });
         dashboard.sendSms(
           `¡Tu reunión ha sido actualizada!\nCon: ${requester.nombre}\nEmpresa: ${requester.empresa}\nHorario: ${nuevoSlotStr}\nMesa: ${mesa}`,
@@ -591,6 +628,7 @@ const MatrixPage = () => {
               {
                 timeSlot: cancelledMeeting.timeSlot,
                 tableAssigned: cancelledMeeting.tableAssigned,
+                meetingDate: cancelledMeeting.meetingDate || selectedDate,
               }
             );
             // // SMS
@@ -680,6 +718,7 @@ const MatrixPage = () => {
             // Notifica a ambas partes por WhatsApp y SMS
             const receiver = asistentes.find((a) => a.id === userId);
             const requester = asistentes.find((a) => a.id === requesterId);
+            const meetingDate = slotLiberado.date || selectedDate;
 
             if (receiver && requester) {
               console.log(
@@ -689,12 +728,20 @@ const MatrixPage = () => {
               dashboard.sendMeetingAcceptedWhatsapp(
                 receiver.telefono,
                 requester,
-                { timeSlot: slotStr, tableAssigned: slotLiberado.tableNumber }
+                { 
+                  timeSlot: slotStr, 
+                  tableAssigned: slotLiberado.tableNumber,
+                  meetingDate: meetingDate,
+                }
               );
               dashboard.sendMeetingAcceptedWhatsapp(
                 requester.telefono,
                 receiver,
-                { timeSlot: slotStr, tableAssigned: slotLiberado.tableNumber }
+                { 
+                  timeSlot: slotStr, 
+                  tableAssigned: slotLiberado.tableNumber,
+                  meetingDate: meetingDate,
+                }
               );
               // SMS
               dashboard.sendSms(
@@ -783,11 +830,43 @@ const MatrixPage = () => {
     }
   }
 
+  // Helper para formatear fecha
+  const formatDate = (dateStr) => {
+    const [year, month, day] = dateStr.split("-").map(Number);
+    const date = new Date(year, month - 1, day);
+    return date.toLocaleDateString("es-ES", { 
+      weekday: "short", 
+      day: "numeric", 
+      month: "short" 
+    });
+  };
+
+  // Obtener fechas del evento
+  const eventDates = config?.config?.eventDates || (config?.config?.eventDate ? [config.config.eventDate] : []);
+  const isMultiDay = eventDates.length > 1;
+
   return (
     <Container fluid>
       <Title order={2} mt="md" mb="md" align="center">
         Matriz Rueda de Negocios — Evento {config?.eventName || "Desconocido"}
       </Title>
+
+      {/* Selector de día para eventos multi-día */}
+      {isMultiDay && (
+        <Flex justify="center" mb="md">
+          <Select
+            label="Seleccionar día"
+            placeholder="Escoge un día"
+            data={eventDates.map((date) => ({
+              value: date,
+              label: formatDate(date),
+            }))}
+            value={selectedDate}
+            onChange={setSelectedDate}
+            style={{ width: 250 }}
+          />
+        </Flex>
+      )}
 
       <Tabs defaultValue="mesas">
         <Tabs.List>
