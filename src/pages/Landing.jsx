@@ -206,7 +206,7 @@ const Landing = () => {
       Highlight,
       TextAlign.configure({ types: ["heading", "paragraph"] }),
       Placeholder.configure({
-        placeholder: "Describe tu empresa, productos o servicios...",
+        placeholder: configuredDescriptionPlaceholder,
       }),
     ],
     content: "",
@@ -218,7 +218,7 @@ const Landing = () => {
         descripcion: plainText,
       }));
     },
-  });
+  }, [configuredDescriptionPlaceholder]);
 
   const getValueForField = useCallback(
     (fieldName) => {
@@ -680,7 +680,9 @@ const Landing = () => {
             <Box key={field.name}>
               <FileInput
                 label={field.label || "Foto de perfil"}
-                placeholder="Selecciona o toma una foto"
+                placeholder={
+                  field.placeholder || "Selecciona o toma una foto"
+                }
                 accept="image/png,image/jpeg"
                 inputProps={{ capture: "user" }}
                 value={null}
@@ -778,7 +780,7 @@ const Landing = () => {
             <Select
               key={field.name}
               label={field.label}
-              placeholder="Selecciona una opción"
+              placeholder={field.placeholder || "Selecciona una opción"}
               data={field.options || []}
               value={getValueForField(field.name)}
               onChange={(value) => {
@@ -809,7 +811,9 @@ const Landing = () => {
             <Box key={field.name}>
               <MultiSelect
                 label={field.label}
-                placeholder="Selecciona una o más opciones"
+                placeholder={
+                  field.placeholder || "Selecciona una o más opciones"
+                }
                 data={msOptions}
                 value={msValue}
                 onChange={(value) => {
@@ -873,7 +877,7 @@ const Landing = () => {
             <TextInput
               key={field.name}
               label={field.label}
-              placeholder="Solo números"
+              placeholder={field.placeholder || "Solo números"}
               value={getValueForField(field.name)}
               onChange={(e) => {
                 const onlyDigits = normalizeNit(e.target.value);
@@ -895,7 +899,7 @@ const Landing = () => {
             <Box key={field.name}>
               <FileInput
                 label={field.label || "Logo de empresa (opcional)"}
-                placeholder="Subir logo"
+                placeholder={field.placeholder || "Subir logo"}
                 accept="image/png,image/jpeg,image/webp"
                 value={companyLogoFile}
                 onChange={(file) => {
@@ -931,7 +935,7 @@ const Landing = () => {
           <TextInput
             key={field.name}
             label={field.label}
-            placeholder={field.label}
+            placeholder={field.placeholder || field.label}
             value={getValueForField(field.name)}
             onChange={(e) => {
               handleDynamicChange(field.name, e.target.value);
