@@ -646,9 +646,7 @@ const EventAdmin = () => {
         <Tabs defaultValue="operacion" keepMounted={false}>
           <Tabs.List>
             <Tabs.Tab value="operacion">Operación</Tabs.Tab>
-            <Tabs.Tab value="agenda">Agenda</Tabs.Tab>
             <Tabs.Tab value="config">Configuración</Tabs.Tab>
-            <Tabs.Tab value="ia">IA</Tabs.Tab>
             <Tabs.Tab value="importexport">Import / Export</Tabs.Tab>
             <Tabs.Tab value="peligro" color="red">
               Peligro
@@ -687,70 +685,63 @@ const EventAdmin = () => {
             </Group>
           </Tabs.Panel>
 
-          <Tabs.Panel value="agenda" pt="md">
-            <Group gap="xs" wrap="wrap">
-              <Button
-                onClick={generateAgendaForEvent}
-                loading={actionLoading}
-                disabled={actionLoading}
-              >
-                Generar Agenda
-              </Button>
-
-              <Button
-                component={Link}
-                to={`/admin/event/${event.id}/agenda`}
-                loading={actionLoading}
-                disabled={actionLoading}
-                variant="light"
-              >
-                Ver Agenda
-              </Button>
-            </Group>
-          </Tabs.Panel>
-
           <Tabs.Panel value="config" pt="md">
-            <Group gap="xs" wrap="wrap">
-              <Button
-                onClick={() => setEditConfigModalOpened(true)}
-                loading={actionLoading}
-                disabled={actionLoading}
-              >
-                Editar Configuración
-              </Button>
+            <Stack gap="md">
+              <div>
+                <Text size="sm" fw={600} mb="xs">Configuración del evento</Text>
+                <Group gap="xs" wrap="wrap">
+                  <Button
+                    onClick={() => setEditConfigModalOpened(true)}
+                    loading={actionLoading}
+                    disabled={actionLoading}
+                  >
+                    Editar Configuración
+                  </Button>
 
-              <Button
-                onClick={() => setConfigureFieldsModalOpened(true)}
-                loading={actionLoading}
-                disabled={actionLoading}
-                variant="default"
-              >
-                Configurar campos
-              </Button>
+                  <Button
+                    onClick={() => setConfigureFieldsModalOpened(true)}
+                    loading={actionLoading}
+                    disabled={actionLoading}
+                    variant="default"
+                  >
+                    Configurar campos
+                  </Button>
 
-              <Button
-                onClick={() => setPoliciesModalOpened(true)}
-                loading={actionLoading}
-                disabled={actionLoading}
-                color="grape"
-                variant="default"
-              >
-                Configurar políticas
-              </Button>
-            </Group>
-          </Tabs.Panel>
+                  <Button
+                    onClick={() => setPoliciesModalOpened(true)}
+                    loading={actionLoading}
+                    disabled={actionLoading}
+                    color="grape"
+                    variant="default"
+                  >
+                    Configurar políticas
+                  </Button>
+                </Group>
+              </div>
 
-          <Tabs.Panel value="ia" pt="md">
-            <Group gap="xs" wrap="wrap">
-              <Button
-                component={Link}
-                to={`/admin/event/${event.id}/match`}
-                loading={actionLoading}
-                disabled={actionLoading}
-              >
-                Generar Matches IA
-              </Button>
-            </Group>
+              <div>
+                <Text size="sm" fw={600} mb="xs">Gestión de agenda</Text>
+                <Group gap="xs" wrap="wrap">
+                  <Button
+                    onClick={generateAgendaForEvent}
+                    loading={actionLoading}
+                    disabled={actionLoading}
+                  >
+                    Generar Agenda
+                  </Button>
+
+                  <Button
+                    component={Link}
+                    to={`/admin/event/${event.id}/agenda`}
+                    loading={actionLoading}
+                    disabled={actionLoading}
+                    variant="light"
+                  >
+                    Ver Agenda
+                  </Button>
+                </Group>
+              </div>
+            </Stack>
           </Tabs.Panel>
 
           <Tabs.Panel value="importexport" pt="md">
