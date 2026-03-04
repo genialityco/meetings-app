@@ -1,4 +1,4 @@
-import { Card, Table, Button, Loader, Text, Group, Title, MultiSelect, Modal } from "@mantine/core";
+import { Card, Table, Button, Loader, Text, Group, Title, MultiSelect, Modal, Image } from "@mantine/core";
 import { collection, query, where, getDocs, deleteDoc, doc, addDoc, updateDoc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { useEffect, useRef, useState } from "react";
@@ -380,13 +380,31 @@ function parseFirestoreTimestamp(input) {
                   </Table.Td> */}
                   {fields
                     .filter((f) => shownFields.includes(f.name))
-                    .map((f) => (
-                      <Table.Td key={f.name}>
-                        {f.type === "select"
-                          ? f.options?.find((op) => op.value === a[f.name])?.label || a[f.name] || getValue(a, f.name)
-                          : getValue(a, f.name)}
-                      </Table.Td>
-                    ))}
+                    .map((f) => {
+                      const value = getValue(a, f.name);
+                      return (
+                        <Table.Td key={f.name}>
+                          {f.type === "image" || f.type === "photo" ? (
+                            value ? (
+                              <Image
+                                src={value}
+                                alt={f.label}
+                                width={60}
+                                height={60}
+                                fit="cover"
+                                radius="md"
+                              />
+                            ) : (
+                              <Text size="sm" c="dimmed">Sin imagen</Text>
+                            )
+                          ) : f.type === "select" ? (
+                            f.options?.find((op) => op.value === a[f.name])?.label || a[f.name] || value
+                          ) : (
+                            value
+                          )}
+                        </Table.Td>
+                      );
+                    })}
                   <Table.Td>
                     <Button
                       size="xs"
