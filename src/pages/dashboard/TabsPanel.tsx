@@ -119,10 +119,17 @@ export default function TabsPanel({
   return (
     <Stack mt="md">
     {isMobile ? (
-      <Tabs value={topView} onChange={(v) => v && setTopView(v)} variant="outline">
-        <Tabs.List style={{ flexWrap: "nowrap", overflowX: "auto" }}>
+      <Tabs value={topView} onChange={(v) => v && setTopView(v)} variant="pills">
+        <Tabs.List style={{ flexWrap: "nowrap", overflowX: "auto", gap: 4 }}>
           {viewOptions.map((o) => (
-            <Tabs.Tab key={o.value} value={o.value}>
+            <Tabs.Tab
+              key={o.value}
+              value={o.value}
+              style={(theme) => ({
+                fontWeight: topView === o.value ? 700 : 500,
+                transition: "background 0.15s",
+              })}
+            >
               {o.label}
             </Tabs.Tab>
           ))}
@@ -194,11 +201,12 @@ export default function TabsPanel({
       )}
 
       {topView === "activity" && (
-        <Tabs value={activityDefaultTab} onChange={(v) => setActivityDefaultTab(v || "reuniones")} radius="md">
+        <Tabs value={activityDefaultTab} onChange={(v) => setActivityDefaultTab(v || "reuniones")} variant="pills" radius="md">
           <Tabs.List grow>
             <Tabs.Tab
               value="reuniones"
               leftSection={<IconCalendarEvent size={16} />}
+              style={{ fontWeight: activityDefaultTab === "reuniones" ? 700 : 500, transition: "background 0.15s" }}
             >
               <Group gap={4} wrap="nowrap">
                 Reuniones
@@ -212,6 +220,7 @@ export default function TabsPanel({
             <Tabs.Tab
               value="solicitudes"
               leftSection={<IconInbox size={16} />}
+              style={{ fontWeight: activityDefaultTab === "solicitudes" ? 700 : 500, transition: "background 0.15s" }}
             >
               <Group gap={4} wrap="nowrap">
                 Solicitudes
@@ -226,6 +235,7 @@ export default function TabsPanel({
               <Tabs.Tab
                 value="mis-productos"
                 leftSection={<IconPackage size={16} />}
+                style={{ fontWeight: activityDefaultTab === "mis-productos" ? 700 : 500 }}
               >
                 Mis productos
               </Tabs.Tab>
@@ -233,6 +243,7 @@ export default function TabsPanel({
             <Tabs.Tab
               value="mi-empresa"
               leftSection={<IconBuilding size={16} />}
+              style={{ fontWeight: activityDefaultTab === "mi-empresa" ? 700 : 500 }}
             >
               Mi empresa
             </Tabs.Tab>
