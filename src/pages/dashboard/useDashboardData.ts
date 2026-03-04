@@ -681,6 +681,17 @@ export function useDashboardData(eventId?: string) {
     }
     
     try {
+      // Validar que el receptor exista en Firestore antes de crear la reunión
+      const receiverSnap = await getDoc(doc(db, "users", assistantId));
+      if (!receiverSnap.exists()) {
+        showNotification({
+          title: "Error",
+          message: "El asistente al que intentas enviar la solicitud ya no existe.",
+          color: "red",
+        });
+        return Promise.reject(new Error("Receiver not found"));
+      }
+
       const data: any = {
         eventId,
         requesterId: uid,

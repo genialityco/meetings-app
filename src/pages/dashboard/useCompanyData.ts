@@ -129,6 +129,17 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
         throw new Error("User data not found");
       }
 
+      // Validar que el receptor exista en Firestore antes de crear la reunión
+      const receiverSnap = await getDoc(doc(db, "users", receiverId));
+      if (!receiverSnap.exists()) {
+        showNotification({
+          title: "Error",
+          message: "El asistente al que intentas enviar la solicitud ya no existe.",
+          color: "red",
+        });
+        throw new Error("Receiver not found");
+      }
+
       const data: any = {
         eventId,
         requesterId: uid,
