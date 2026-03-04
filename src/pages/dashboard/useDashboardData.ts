@@ -704,7 +704,8 @@ export function useDashboardData(eventId?: string) {
         `\n*Opciones:*\n` +
         `✅ *Aceptar:* \n${acceptUrl}\n\n` +
         `❌ *Rechazar:* \n${rejectUrl}\n\n` +
-        `🔗 Ir al evento: \n${landingUrl}`;
+        `🔗 Ir al evento: \n${landingUrl}\n\n` +
+        `_⚠️ Si los enlaces no están activos, responde primero a este chat y luego haz clic en el enlace._`;
 
       // WhatsApp backend
       fetch(API_WP_URL, {

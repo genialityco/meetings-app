@@ -92,7 +92,9 @@ function RequestCard({
     return (
       <Card withBorder radius="xl" padding="md" shadow="sm">
         <Group justify="center" py="md">
-          <Text c="dimmed" size="sm">Cargando información...</Text>
+          <Text c="dimmed" size="sm">
+            Cargando información...
+          </Text>
         </Group>
       </Card>
     );
@@ -206,7 +208,7 @@ export default function RequestsTab({
       <Tabs.List grow>
         <Tabs.Tab value="pendientes">
           <Group gap={4} wrap="nowrap">
-            Pendientes
+            Pendientes por aceptar
             {pendingRequests.length > 0 && (
               <Badge size="sm" variant="filled" color="red" circle>
                 {pendingRequests.length}
@@ -214,17 +216,15 @@ export default function RequestsTab({
             )}
           </Group>
         </Tabs.Tab>
+        <Tabs.Tab value="enviadas">Enviadas ({sentRequests.length})</Tabs.Tab>
         <Tabs.Tab value="aceptadas">
           Aceptadas ({acceptedRequests.length})
         </Tabs.Tab>
-        <Tabs.Tab value="rechazadas">
-          Rechazadas ({rejectedRequests.length + sentRejectedRequests.length})
-        </Tabs.Tab>
-        <Tabs.Tab value="enviadas">
-          Enviadas ({sentRequests.length})
-        </Tabs.Tab>
         <Tabs.Tab value="taken">
           Otras solicitudes de la empresa ({takenRequests.length})
+        </Tabs.Tab>
+        <Tabs.Tab value="rechazadas">
+          Rechazadas ({rejectedRequests.length + sentRejectedRequests.length})
         </Tabs.Tab>
       </Tabs.List>
 
@@ -256,7 +256,9 @@ export default function RequestsTab({
                           size="compact-sm"
                           radius="md"
                           leftSection={<IconX size={14} />}
-                          onClick={() => updateMeetingStatus(request.id, "rejected")}
+                          onClick={() =>
+                            updateMeetingStatus(request.id, "rejected")
+                          }
                         >
                           Rechazar
                         </Button>
@@ -266,7 +268,9 @@ export default function RequestsTab({
                           size="compact-sm"
                           radius="md"
                           leftSection={<IconBrandWhatsapp size={14} />}
-                          onClick={() => sendWhatsAppMessage(requester as Assistant)}
+                          onClick={() =>
+                            sendWhatsAppMessage(requester as Assistant)
+                          }
                         >
                           WhatsApp
                         </Button>
@@ -302,7 +306,12 @@ export default function RequestsTab({
                     statusBadge={
                       <Group gap="xs">
                         {request.timeSlot && (
-                          <Badge variant="light" color={theme.primaryColor} radius="md" size="sm">
+                          <Badge
+                            variant="light"
+                            color={theme.primaryColor}
+                            radius="md"
+                            size="sm"
+                          >
                             <Group gap={4} wrap="nowrap">
                               <IconClock size={12} />
                               {request.timeSlot}
@@ -310,7 +319,12 @@ export default function RequestsTab({
                           </Badge>
                         )}
                         {request.tableAssigned && (
-                          <Badge variant="light" color="orange" radius="md" size="sm">
+                          <Badge
+                            variant="light"
+                            color="orange"
+                            radius="md"
+                            size="sm"
+                          >
                             <Group gap={4} wrap="nowrap">
                               <IconTable size={12} />
                               Mesa {request.tableAssigned}
@@ -372,15 +386,16 @@ export default function RequestsTab({
               </Grid.Col>
             );
           })}
-          {rejectedRequests.length === 0 && sentRejectedRequests.length === 0 && (
-            <Grid.Col span={12}>
-              <Paper withBorder radius="lg" p="lg">
-                <Text c="dimmed" ta="center">
-                  No tienes solicitudes rechazadas.
-                </Text>
-              </Paper>
-            </Grid.Col>
-          )}
+          {rejectedRequests.length === 0 &&
+            sentRejectedRequests.length === 0 && (
+              <Grid.Col span={12}>
+                <Paper withBorder radius="lg" p="lg">
+                  <Text c="dimmed" ta="center">
+                    No tienes solicitudes rechazadas.
+                  </Text>
+                </Paper>
+              </Grid.Col>
+            )}
         </Grid>
       </Tabs.Panel>
 

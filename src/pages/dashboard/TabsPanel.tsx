@@ -67,7 +67,7 @@ export default function TabsPanel({
   if (uiViews.attendees) viewOptions.push({ value: "attendees", label: "Asistentes" });
   if (uiViews.companies) viewOptions.push({ value: "companies", label: "Empresas" });
   if (uiViews.products) viewOptions.push({ value: "products", label: "Productos" });
-  viewOptions.push({ value: "activity", label: "Mi actividad" });
+  viewOptions.push({ value: "activity", label: "Mis reuniones" });
 
   const [topView, setTopView] = useState(viewOptions[0]?.value || "companies");
 
