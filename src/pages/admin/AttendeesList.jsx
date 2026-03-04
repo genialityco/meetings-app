@@ -1,5 +1,5 @@
 import { Card, Table, Button, Loader, Text, Group, Title, MultiSelect, Modal, Image } from "@mantine/core";
-import { collection, query, where, getDocs, deleteDoc, doc, addDoc, updateDoc } from "firebase/firestore";
+import { collection, query, where, getDocs, deleteDoc, doc, addDoc, updateDoc, writeBatch } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
@@ -46,6 +46,14 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
 
   const [deleteAllModal, setDeleteAllModal] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
+  const [deletingOne, setDeletingOne] = useState(false);
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState({
+    opened: false,
+    attendeeId: null,
+    attendeeName: "",
+    meetingCount: 0,
+    checking: false,
+  });
 
 function parseFirestoreTimestamp(input) {
   if (!input) return null;
@@ -99,24 +107,76 @@ function parseFirestoreTimestamp(input) {
     }
   };
 
-  const removeAttendee = async (attendeeId) => {
+  const getActiveMeetingsForUser = async (userId) => {
+    const meetingsRef = collection(db, "events", event.id, "meetings");
+    const [snap1, snap2] = await Promise.all([
+      getDocs(query(meetingsRef, where("requesterId", "==", userId), where("status", "in", ["pending", "accepted"]))),
+      getDocs(query(meetingsRef, where("receiverId", "==", userId), where("status", "in", ["pending", "accepted"]))),
+    ]);
+    const map = new Map();
+    [...snap1.docs, ...snap2.docs].forEach((d) => map.set(d.id, d));
+    return [...map.values()];
+  };
+
+  const initiateDeleteOne = async (attendeeId, attendeeName) => {
+    setDeleteConfirmModal({ opened: true, attendeeId, attendeeName, meetingCount: 0, checking: true });
     try {
-      await deleteDoc(doc(db, "users", attendeeId));
-      setGlobalMessage("Asistente eliminado correctamente.");
+      const meetings = await getActiveMeetingsForUser(attendeeId);
+      setDeleteConfirmModal((prev) => ({ ...prev, checking: false, meetingCount: meetings.length }));
+    } catch {
+      setDeleteConfirmModal({ opened: false, attendeeId: null, attendeeName: "", meetingCount: 0, checking: false });
+      setGlobalMessage("Error al verificar reuniones del asistente.");
+    }
+  };
+
+  const confirmDeleteOne = async () => {
+    const { attendeeId } = deleteConfirmModal;
+    setDeletingOne(true);
+    try {
+      const meetings = await getActiveMeetingsForUser(attendeeId);
+      const batch = writeBatch(db);
+      meetings.forEach((m) => batch.update(m.ref, { status: "cancelled" }));
+      batch.delete(doc(db, "users", attendeeId));
+      await batch.commit();
+      setGlobalMessage(`Asistente eliminado. ${meetings.length} reunión(es) cancelada(s).`);
       setAttendees((prev) => prev.filter((a) => a.id !== attendeeId));
-    } catch (error) {
+      setDeleteConfirmModal({ opened: false, attendeeId: null, attendeeName: "", meetingCount: 0, checking: false });
+    } catch {
       setGlobalMessage("Error al eliminar el asistente.");
+    } finally {
+      setDeletingOne(false);
     }
   };
 
   const handleDeleteAllAttendees = async () => {
     setDeletingAll(true);
     try {
-      // Solo IDs
       const ids = attendees.map((a) => a.id);
-      await Promise.all(ids.map((id) => deleteDoc(doc(db, "users", id))));
-      setGlobalMessage("Todos los asistentes fueron eliminados.");
-      setAttendees([]); // Limpiar lista local
+      // Gather all active meetings across all users (deduplicated)
+      const allMeetingArrays = await Promise.all(ids.map((id) => getActiveMeetingsForUser(id)));
+      const meetingMap = new Map();
+      allMeetingArrays.flat().forEach((m) => meetingMap.set(m.id, m));
+      const uniqueMeetings = [...meetingMap.values()];
+
+      // Build all ops: cancel meetings + delete users
+      const allOps = [
+        ...uniqueMeetings.map((m) => ({ type: "update", ref: m.ref, data: { status: "cancelled" } })),
+        ...ids.map((id) => ({ type: "delete", ref: doc(db, "users", id) })),
+      ];
+
+      // Firestore writeBatch limit is 500 ops; chunk to be safe
+      const CHUNK = 400;
+      for (let i = 0; i < allOps.length; i += CHUNK) {
+        const batch = writeBatch(db);
+        allOps.slice(i, i + CHUNK).forEach((op) => {
+          if (op.type === "update") batch.update(op.ref, op.data);
+          else batch.delete(op.ref);
+        });
+        await batch.commit();
+      }
+
+      setGlobalMessage(`Todos los asistentes eliminados. ${uniqueMeetings.length} reunión(es) cancelada(s).`);
+      setAttendees([]);
       setDeleteAllModal(false);
     } catch (err) {
       setGlobalMessage("Error al eliminar todos los asistentes.");
@@ -421,11 +481,7 @@ function parseFirestoreTimestamp(input) {
                     <Button
                       color="red"
                       size="xs"
-                      onClick={() => {
-                        if (window.confirm("¿Estás seguro que deseas eliminar este asistente?")) {
-                          removeAttendee(a.id);
-                        }
-                      }}
+                      onClick={() => initiateDeleteOne(a.id, a.nombre || a.id)}
                     >
                       Eliminar
                     </Button>
@@ -454,6 +510,50 @@ function parseFirestoreTimestamp(input) {
           }
         }}
       />
+      {/* Modal confirmación eliminación individual */}
+      <Modal
+        opened={deleteConfirmModal.opened}
+        onClose={() => setDeleteConfirmModal({ opened: false, attendeeId: null, attendeeName: "", meetingCount: 0, checking: false })}
+        title="Eliminar asistente"
+        centered
+      >
+        {deleteConfirmModal.checking ? (
+          <Group justify="center" py="md">
+            <Loader size="sm" />
+            <Text size="sm">Verificando reuniones activas...</Text>
+          </Group>
+        ) : (
+          <>
+            {deleteConfirmModal.meetingCount > 0 ? (
+              <Text>
+                El asistente <b>{deleteConfirmModal.attendeeName}</b> tiene{" "}
+                <b>{deleteConfirmModal.meetingCount} reunión(es) activa(s)</b>. Al eliminar, estas reuniones serán
+                canceladas automáticamente. ¿Deseas continuar?
+              </Text>
+            ) : (
+              <Text>
+                ¿Estás seguro que deseas eliminar a <b>{deleteConfirmModal.attendeeName}</b>? Esta acción es
+                irreversible.
+              </Text>
+            )}
+            <Group mt="md" justify="flex-end">
+              <Button
+                variant="default"
+                onClick={() =>
+                  setDeleteConfirmModal({ opened: false, attendeeId: null, attendeeName: "", meetingCount: 0, checking: false })
+                }
+                disabled={deletingOne}
+              >
+                Cancelar
+              </Button>
+              <Button color="red" onClick={confirmDeleteOne} loading={deletingOne}>
+                {deleteConfirmModal.meetingCount > 0 ? "Eliminar y cancelar reuniones" : "Eliminar"}
+              </Button>
+            </Group>
+          </>
+        )}
+      </Modal>
+
       <Modal
         opened={deleteAllModal}
         onClose={() => setDeleteAllModal(false)}
