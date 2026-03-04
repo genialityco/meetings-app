@@ -231,7 +231,9 @@ const MatrixPage = () => {
       const snap = await getDocs(
         query(collection(db, "users"), where("eventId", "==", eventId))
       );
-      setAsistentes(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      const loaded = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      console.log("[MatrixPage] Asistentes cargados:", loaded.length, loaded.map(a => a.id));
+      setAsistentes(loaded);
     })();
   }, [eventId]);
 
@@ -1024,6 +1026,7 @@ const MatrixPage = () => {
                           const requester = asistentes.find(
                             (a) => a.id === m.requesterId
                           );
+                          if (!requester) console.warn("[MatrixPage] requesterId no encontrado en asistentes:", m.requesterId, m);
                           return (
                             <Menu.Item key={m.id}>
                               <div>
