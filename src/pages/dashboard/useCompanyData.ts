@@ -11,6 +11,7 @@ import {
 import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
 import type { Company, Product } from "./types";
+import { showNotification } from "@mantine/notifications";
 
 const API_WP_URL = "https://apiwhatsapp.geniality.com.co/api/send";
 const CLIENT_ID = "genialitybussinesstest";
@@ -105,7 +106,28 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
       receiverPhone: string,
       context?: { productId?: string; companyId?: string | null; contextNote?: string },
     ) => {
-      if (!uid || !eventId) throw new Error("Missing uid/eventId");
+      // Validar que haya usuario logueado
+      if (!uid || !eventId) {
+        showNotification({
+          title: "Error",
+          message: "Debes iniciar sesión para enviar solicitudes de reunión",
+          color: "red",
+        });
+        throw new Error("No user logged in");
+      }
+      
+      // Validar que exista currentUser con datos
+      if (!currentUser?.data) {
+        showNotification({
+          title: "Error",
+          message: "No se encontró tu información de usuario. Redirigiendo al evento...",
+          color: "red",
+        });
+        setTimeout(() => {
+          window.location.href = `/event/${eventId}`;
+        }, 1500);
+        throw new Error("User data not found");
+      }
 
       const data: any = {
         eventId,
