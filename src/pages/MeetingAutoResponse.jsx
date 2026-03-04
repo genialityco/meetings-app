@@ -10,6 +10,7 @@ import {
   where,
   orderBy,
   getDocs,
+  runTransaction,
 } from "firebase/firestore";
 import { auth, db } from "../firebase/firebaseConfig";
 import { UserContext } from "../context/UserContext";
@@ -331,20 +332,111 @@ export default function MeetingAutoResponse() {
   }
 
   // --------------------------------------------------------
+  // Genera el lockId con el mismo formato que useDashboardData
+  // --------------------------------------------------------
+  function buildLockId(evId, userId, dateISO, start, end) {
+    const d = String(dateISO || "").replace(/-/g, "");
+    return `${evId}_${userId}_${d}_${start}-${end}`;
+  }
+
+  // --------------------------------------------------------
   // confirmWithSlot se dispara tras confirmar
   // --------------------------------------------------------
   async function confirmWithSlot(slot) {
     setConfirmLoading(true);
     try {
       const mtgRef = doc(db, "events", eventId, "meetings", meetingId);
-      await updateDoc(mtgRef, {
-        status: "accepted",
-        timeSlot: `${slot.startTime} - ${slot.endTime}`,
-        tableAssigned: slot.tableNumber.toString(),
-      });
-      await updateDoc(doc(db, "events", eventId, "agenda", slot.id), {
-        available: false,
-        meetingId,
+      const slotRef = doc(db, "events", eventId, "agenda", slot.id);
+
+      // Obtener la fecha del evento para los lockIds
+      const eventSnap = await getDoc(doc(db, "events", eventId));
+      const eventDateISO =
+        eventSnap.exists()
+          ? String(eventSnap.data()?.eventDate || "").trim() ||
+            new Date().toISOString().slice(0, 10)
+          : new Date().toISOString().slice(0, 10);
+
+      let requesterId, receiverId;
+
+      // TRANSACCIÓN: valida, crea locks, actualiza meeting y ocupa slot
+      await runTransaction(db, async (tx) => {
+        // 1. Validar que la reunión sigue pendiente
+        const mtgSnap = await tx.get(mtgRef);
+        if (!mtgSnap.exists()) throw new Error("La reunión no existe.");
+        const mtg = mtgSnap.data();
+
+        if (mtg.status !== "pending") {
+          throw new Error(
+            `Esta reunión ya fue ${
+              mtg.status === "accepted"
+                ? "aceptada"
+                : mtg.status === "rejected"
+                ? "rechazada"
+                : "procesada"
+            }.`
+          );
+        }
+
+        requesterId = mtg.requesterId;
+        receiverId = mtg.receiverId;
+
+        // 2. Validar que el slot sigue disponible
+        const sSnap = await tx.get(slotRef);
+        if (!sSnap.exists()) throw new Error("El horario seleccionado no existe.");
+        if (sSnap.data().available !== true)
+          throw new Error("Este horario ya fue tomado por otra persona. Por favor recarga la página y elige otro.");
+
+        // 3. Crear referencias de locks
+        const reqLockRef = doc(
+          db,
+          "locks",
+          buildLockId(eventId, requesterId, eventDateISO, slot.startTime, slot.endTime)
+        );
+        const recLockRef = doc(
+          db,
+          "locks",
+          buildLockId(eventId, receiverId, eventDateISO, slot.startTime, slot.endTime)
+        );
+
+        // 4. Verificar que ninguno tiene ya una reunión en ese horario
+        const [reqLockSnap, recLockSnap] = await Promise.all([
+          tx.get(reqLockRef),
+          tx.get(recLockRef),
+        ]);
+
+        if (reqLockSnap.exists())
+          throw new Error("El solicitante ya tiene una reunión en ese horario.");
+        if (recLockSnap.exists())
+          throw new Error("Ya tienes una reunión confirmada en ese horario. Elige otro.");
+
+        // 5. Escribir todo de forma atómica
+        tx.set(reqLockRef, {
+          eventId,
+          userId: requesterId,
+          meetingId,
+          date: eventDateISO,
+          start: slot.startTime,
+          end: slot.endTime,
+          createdAt: new Date(),
+        });
+        tx.set(recLockRef, {
+          eventId,
+          userId: receiverId,
+          meetingId,
+          date: eventDateISO,
+          start: slot.startTime,
+          end: slot.endTime,
+          createdAt: new Date(),
+        });
+        tx.update(mtgRef, {
+          status: "accepted",
+          timeSlot: `${slot.startTime} - ${slot.endTime}`,
+          tableAssigned: slot.tableNumber.toString(),
+          slotId: slot.id,
+          lockIds: [reqLockRef.id, recLockRef.id],
+          updatedAt: new Date(),
+        });
+        tx.update(slotRef, { available: false, meetingId });
       });
 
       const mtgData = (await getDoc(mtgRef)).data();
@@ -420,7 +512,18 @@ export default function MeetingAutoResponse() {
       setStatus("Reunión confirmada.");
     } catch (e) {
       console.error(e);
-      setStatus("Error al confirmar.");
+      // Mostrar el mensaje específico del error de transacción al usuario
+      const msg = e?.message || "";
+      if (
+        msg.includes("ya fue") ||
+        msg.includes("ya tienes") ||
+        msg.includes("ya fue tomado") ||
+        msg.includes("solicitante ya tiene")
+      ) {
+        setStatus(msg);
+      } else {
+        setStatus("Error al confirmar. Por favor intenta de nuevo.");
+      }
     } finally {
       setConfirmLoading(false);
       setTimeout(() => {

@@ -205,17 +205,14 @@ export default function RequestsTab({
 
   return (
     <Accordion defaultValue="pendientes" variant="separated" radius="md">
-
       {/* Pendientes */}
       <Accordion.Item value="pendientes">
         <Accordion.Control>
           <Group gap={8} wrap="nowrap">
             Pendientes por aceptar
-            {pendingRequests.length > 0 && (
-              <Badge size="sm" variant="filled" color="red" circle>
-                {pendingRequests.length}
-              </Badge>
-            )}
+            <Badge size="sm" variant="filled" color="red" circle>
+              {pendingRequests.length}
+            </Badge>
           </Group>
         </Accordion.Control>
         <Accordion.Panel>
@@ -284,9 +281,7 @@ export default function RequestsTab({
 
       {/* Enviadas */}
       <Accordion.Item value="enviadas">
-        <Accordion.Control>
-          Enviadas ({sentRequests.length})
-        </Accordion.Control>
+        <Accordion.Control>Solicitudes Enviadas ({sentRequests.length})</Accordion.Control>
         <Accordion.Panel>
           <Grid gutter="sm">
             {sentRequests.length > 0 ? (
@@ -298,7 +293,12 @@ export default function RequestsTab({
                       user={receiver}
                       request={request}
                       statusBadge={
-                        <Badge variant="light" color="blue" radius="md" size="sm">
+                        <Badge
+                          variant="light"
+                          color="blue"
+                          radius="md"
+                          size="sm"
+                        >
                           <Group gap={4} wrap="nowrap">
                             <IconSend size={12} />
                             Pendiente de respuesta
@@ -313,7 +313,9 @@ export default function RequestsTab({
                           radius="md"
                           fullWidth
                           leftSection={<IconX size={14} />}
-                          onClick={() => cancelSentMeeting(request.id, "cancel")}
+                          onClick={() =>
+                            cancelSentMeeting(request.id, "cancel")
+                          }
                         >
                           Cancelar solicitud
                         </Button>
@@ -413,7 +415,12 @@ export default function RequestsTab({
                       user={requester}
                       request={request}
                       statusBadge={
-                        <Badge variant="light" color="blue" radius="md" size="sm">
+                        <Badge
+                          variant="light"
+                          color="blue"
+                          radius="md"
+                          size="sm"
+                        >
                           <Group gap={4} wrap="nowrap">
                             <IconUsers size={12} />
                             Tomada por otro asistente
@@ -476,19 +483,19 @@ export default function RequestsTab({
                 </Grid.Col>
               );
             })}
-            {rejectedRequests.length === 0 && sentRejectedRequests.length === 0 && (
-              <Grid.Col span={12}>
-                <Paper withBorder radius="lg" p="lg">
-                  <Text c="dimmed" ta="center">
-                    No tienes solicitudes rechazadas.
-                  </Text>
-                </Paper>
-              </Grid.Col>
-            )}
+            {rejectedRequests.length === 0 &&
+              sentRejectedRequests.length === 0 && (
+                <Grid.Col span={12}>
+                  <Paper withBorder radius="lg" p="lg">
+                    <Text c="dimmed" ta="center">
+                      No tienes solicitudes rechazadas.
+                    </Text>
+                  </Paper>
+                </Grid.Col>
+              )}
           </Grid>
         </Accordion.Panel>
       </Accordion.Item>
-
     </Accordion>
   );
 }
