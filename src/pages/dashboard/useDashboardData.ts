@@ -267,7 +267,7 @@ export function useDashboardData(eventId?: string) {
   const [eventImage, setEventImage] = useState<string>("");
   const [dashboardLogo, setDashboardLogo] = useState<string>("");
   const [eventName, setEventName] = useState<string>("");
-  const [formFields, setFormFields] = useState([]);
+  const [formFields, setFormFields] = useState<any[]>([]);
   const [companyGroups, setCompanyGroups] = useState<any[]>([]);
   const [availableAsistents, setAvailableAsistents] = useState<Assistant[]>([]);
 
@@ -657,7 +657,29 @@ export function useDashboardData(eventId?: string) {
     groupId: string | null = null,
     context?: MeetingContext,
   ) => {
-    if (!uid || !eventId) return Promise.reject();
+    // Validar que haya usuario logueado
+    if (!uid || !eventId) {
+      showNotification({
+        title: "Error",
+        message: "Debes iniciar sesión para enviar solicitudes de reunión",
+        color: "red",
+      });
+      return Promise.reject(new Error("No user logged in"));
+    }
+    
+    // Validar que exista currentUser con datos
+    if (!currentUser?.data) {
+      showNotification({
+        title: "Error",
+        message: "No se encontró tu información de usuario. Redirigiendo al evento...",
+        color: "red",
+      });
+      setTimeout(() => {
+        window.location.href = `/event/${eventId}`;
+      }, 1500);
+      return Promise.reject(new Error("User data not found"));
+    }
+    
     try {
       const data: any = {
         eventId,
@@ -737,7 +759,7 @@ export function useDashboardData(eventId?: string) {
     }
   };
 
-  const cancelMeeting = async (meeting) => {
+  const cancelMeeting = async (meeting: Meeting) => {
     try {
       // 1. Leer datos completos de la reunión para obtener lockIds
       const mtgRef = doc(db, "events", meeting.eventId, "meetings", meeting.id);
@@ -750,7 +772,7 @@ export function useDashboardData(eventId?: string) {
 
       // 3. Libera el slot (si existe)
       const slotId = meeting.slotId || mtgData.slotId;
-      if (slotId) {
+      if (slotId && eventId) {
         await updateDoc(doc(db, "events", eventId, "agenda", slotId), {
           available: true,
           meetingId: null,
@@ -1055,6 +1077,8 @@ export function useDashboardData(eventId?: string) {
     tableAssigned: string,
   ) => {
     try {
+      if (!eventId) return;
+      
       // 1️⃣ Obtener los IDs de todos los asistentes del grupo
       const employees = companyGroups
         .filter(
@@ -1067,7 +1091,7 @@ export function useDashboardData(eventId?: string) {
       // 2️⃣ Buscar meetings aceptadas en el mismo slot con alguno de esos asistentes
       const meetingsSnap = await getDocs(
         query(
-          collection(db, "events", eventId!, "meetings"),
+          collection(db, "events", eventId, "meetings"),
           where("status", "==", "accepted"),
           where(
             "participants",
@@ -1169,6 +1193,8 @@ export function useDashboardData(eventId?: string) {
         });
 
       // Agenda de slots disponibles (agenda es por evento)
+      if (!eventId) throw new Error("Event ID is required");
+      
       const agSn = await getDocs(
         query(
           collection(db, "events", eventId, "agenda"),
