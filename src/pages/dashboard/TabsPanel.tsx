@@ -1,11 +1,9 @@
-import { Tabs, SegmentedControl, Stack, Badge, Group, Paper } from "@mantine/core";
-import { useState, useEffect, useRef } from "react";
+import { Tabs, SegmentedControl, Stack, Badge, Group } from "@mantine/core";
+import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import {
   IconCalendarEvent,
   IconInbox,
-  IconPackage,
-  IconBuilding,
 } from "@tabler/icons-react";
 import AttendeesView from "./AttendeesView";
 import CompaniesView from "./CompaniesView";
@@ -13,8 +11,6 @@ import ProductsView from "./ProductsView";
 import ChatbotTab from "./ChatbotTab";
 import MeetingsTab from "./MeetingsTab";
 import RequestsTab from "./RequestsTab";
-import MyProductsTab from "./MyProductsTab";
-import MyCompanyTab from "./MyCompanyTab";
 import { DEFAULT_POLICIES } from "./types";
 import { useMediaQuery } from "@mantine/hooks";
 
@@ -37,29 +33,7 @@ export default function TabsPanel({
   const cardFieldsConfig = policies.cardFieldsConfig || DEFAULT_POLICIES.cardFieldsConfig;
   const enableChatbot = import.meta.env.VITE_ENABLE_CHATBOT === "true"
 
-  // Política configurable: redirigir vendedor a productos en primer ingreso
-  const sellerRedirect = policies.sellerRedirectToProducts === true;
-  const userRole = dashboard.currentUser?.data?.tipoAsistente as string | undefined;
-  const uid = dashboard.uid as string | undefined;
-  const roleLower = userRole?.toLowerCase();
-  const isVendedor = sellerRedirect && roleLower === "vendedor";
-  const isComprador = sellerRedirect && roleLower === "comprador";
-
   const isMobile = useMediaQuery("(max-width: 48em)"); // ~768px
-
-  // DEBUG: verificar valores de la redirección
-  console.log("[TabsPanel DEBUG]", {
-    eventId,
-    uid,
-    sellerRedirectPolicy: policies.sellerRedirectToProducts,
-    sellerRedirect,
-    userRole,
-    tipoAsistenteRaw: dashboard.currentUser?.data?.tipoAsistente,
-    currentUserData: dashboard.currentUser?.data,
-    isVendedor,
-    isComprador,
-    policiesLoaded: dashboard.policies !== undefined,
-  });
 
   // Construir opciones de vista dinámicamente según configuración del evento
   const viewOptions: { value: string; label: string }[] = [];
@@ -79,23 +53,7 @@ export default function TabsPanel({
     }
   }, [validValues.join(",")]);
 
-  // Redirigir al vendedor a "Mi actividad > Mis productos" solo la primera vez
-  const redirectKey = eventId && uid ? `seller_redirect_${eventId}_${uid}` : null;
-  const redirectDone = useRef(false);
   const [activityDefaultTab, setActivityDefaultTab] = useState("reuniones");
-
-  useEffect(() => {
-    if (redirectDone.current) return;
-    if (!isVendedor || !redirectKey) return;
-    if (localStorage.getItem(redirectKey)) return;
-
-    // Datos cargados y es vendedor con política activa: redirigir
-    console.log("Redirigiendo vendedor a Mis productos por política sellerRedirectToProducts");
-    localStorage.setItem(redirectKey, "1");
-    redirectDone.current = true;
-    setTopView("activity");
-    setActivityDefaultTab("mis-productos");
-  }, [isVendedor, redirectKey]);
 
   // Navegación externa (ej: click en notificación)
   useEffect(() => {
@@ -231,22 +189,6 @@ export default function TabsPanel({
                 )}
               </Group>
             </Tabs.Tab>
-            {!isComprador && (
-              <Tabs.Tab
-                value="mis-productos"
-                leftSection={<IconPackage size={16} />}
-                style={{ fontWeight: activityDefaultTab === "mis-productos" ? 700 : 500 }}
-              >
-                Mis productos
-              </Tabs.Tab>
-            )}
-            <Tabs.Tab
-              value="mi-empresa"
-              leftSection={<IconBuilding size={16} />}
-              style={{ fontWeight: activityDefaultTab === "mi-empresa" ? 700 : 500 }}
-            >
-              Mi empresa
-            </Tabs.Tab>
           </Tabs.List>
 
           <Tabs.Panel value="reuniones" pt="md">
@@ -254,14 +196,6 @@ export default function TabsPanel({
           </Tabs.Panel>
           <Tabs.Panel value="solicitudes" pt="md">
             <RequestsTab {...dashboard} />
-          </Tabs.Panel>
-          {!isComprador && (
-            <Tabs.Panel value="mis-productos" pt="md">
-              <MyProductsTab {...dashboard} />
-            </Tabs.Panel>
-          )}
-          <Tabs.Panel value="mi-empresa" pt="md">
-            <MyCompanyTab {...dashboard} />
           </Tabs.Panel>
         </Tabs>
       )}
