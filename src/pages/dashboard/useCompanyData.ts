@@ -10,10 +10,9 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
-import type { Company, Product } from "./types";
-
-const API_WP_URL = "https://apiwhatsapp.geniality.com.co/api/send";
-const CLIENT_ID = "genialitybussinesstest";
+import type { Company, Product, EventPolicies, DEFAULT_POLICIES } from "./types";
+import { showNotification } from "@mantine/notifications";
+import { sendWhatsAppMessage as sendWhatsAppAPI } from "../../utils/whatsappService";
 
 export interface CompanyRepresentative {
   id: string;
@@ -40,6 +39,7 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
   const [eventImage, setEventImage] = useState("");
   const [dashboardLogo, setDashboardLogo] = useState("");
   const [loading, setLoading] = useState(true);
+  const [policies, setPolicies] = useState<EventPolicies>(DEFAULT_POLICIES);
 
   // 1. Event config (for theme + event info)
   useEffect(() => {
@@ -52,6 +52,7 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
         setEventName(data.eventName || "");
         setEventImage(data.eventImage || "");
         setDashboardLogo(data.dashboardLogo || "");
+        setPolicies({ ...DEFAULT_POLICIES, ...(data.config?.policies || {}) });
       }
     })();
   }, [eventId]);
@@ -105,7 +106,39 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
       receiverPhone: string,
       context?: { productId?: string; companyId?: string | null; contextNote?: string },
     ) => {
-      if (!uid || !eventId) throw new Error("Missing uid/eventId");
+      // Validar que haya usuario logueado
+      if (!uid || !eventId) {
+        showNotification({
+          title: "Error",
+          message: "Debes iniciar sesión para enviar solicitudes de reunión",
+          color: "red",
+        });
+        throw new Error("No user logged in");
+      }
+      
+      // Validar que exista currentUser con datos
+      if (!currentUser?.data) {
+        showNotification({
+          title: "Error",
+          message: "No se encontró tu información de usuario. Redirigiendo al evento...",
+          color: "red",
+        });
+        setTimeout(() => {
+          window.location.href = `/event/${eventId}`;
+        }, 1500);
+        throw new Error("User data not found");
+      }
+
+      // Validar que el receptor exista en Firestore antes de crear la reunión
+      const receiverSnap = await getDoc(doc(db, "users", receiverId));
+      if (!receiverSnap.exists()) {
+        showNotification({
+          title: "Error",
+          message: "El asistente al que intentas enviar la solicitud ya no existe.",
+          color: "red",
+        });
+        throw new Error("Receiver not found");
+      }
 
       const data: any = {
         eventId,
@@ -153,15 +186,22 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
         `❌ *Rechazar:* \n${rejectUrl}\n\n` +
         `🔗 Ir al evento: \n${landingUrl}`;
 
-      fetch(API_WP_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          clientId: CLIENT_ID,
-          phone: `57${receiverPhone.replace(/[^\d]/g, "")}`,
-          message,
-        }),
-      }).catch(() => {});
+      const whatsappApiVersion = policies.whatsappApiVersion || "v1";
+      await sendWhatsAppAPI({
+        apiVersion: whatsappApiVersion,
+        phone: receiverPhone.replace(/[^\d]/g, ""),
+        message,
+        metadata: {
+          eventName: eventName || "Evento",
+          requesterName: requester?.nombre || "",
+          requesterCompany: requester?.empresa || "",
+          requesterPosition: requester?.cargo || "",
+          requesterEmail: requester?.correo || "",
+          requesterPhone: requester?.telefono || "",
+          acceptUrl,
+          cancelUrl: rejectUrl,
+        },
+      });
 
       await addDoc(collection(db, "notifications"), {
         userId: receiverId,
@@ -172,7 +212,7 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
         type: "meeting_request",
       });
     },
-    [uid, eventId, currentUser, eventName],
+    [uid, eventId, currentUser, eventName, policies],
   );
 
   return {

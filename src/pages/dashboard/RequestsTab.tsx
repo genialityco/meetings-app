@@ -2,7 +2,7 @@
 "use client";
 
 import {
-  Tabs,
+  Accordion,
   Stack,
   Card,
   Text,
@@ -92,7 +92,9 @@ function RequestCard({
     return (
       <Card withBorder radius="xl" padding="md" shadow="sm">
         <Group justify="center" py="md">
-          <Text c="dimmed" size="sm">Cargando información...</Text>
+          <Text c="dimmed" size="sm">
+            Cargando información...
+          </Text>
         </Group>
       </Card>
     );
@@ -202,105 +204,156 @@ export default function RequestsTab({
   const findUser = (id: string) => assistants.find((u) => u.id === id);
 
   return (
-    <Tabs defaultValue="pendientes" radius="md">
-      <Tabs.List grow>
-        <Tabs.Tab value="pendientes">
-          <Group gap={4} wrap="nowrap">
-            Pendientes
-            {pendingRequests.length > 0 && (
-              <Badge size="sm" variant="filled" color="red" circle>
-                {pendingRequests.length}
-              </Badge>
-            )}
-          </Group>
-        </Tabs.Tab>
-        <Tabs.Tab value="aceptadas">
-          Aceptadas ({acceptedRequests.length})
-        </Tabs.Tab>
-        <Tabs.Tab value="rechazadas">
-          Rechazadas ({rejectedRequests.length + sentRejectedRequests.length})
-        </Tabs.Tab>
-        <Tabs.Tab value="enviadas">
-          Enviadas ({sentRequests.length})
-        </Tabs.Tab>
-        <Tabs.Tab value="taken">
-          Otras solicitudes de la empresa ({takenRequests.length})
-        </Tabs.Tab>
-      </Tabs.List>
-
+    <Accordion defaultValue="pendientes" variant="separated" radius="md">
       {/* Pendientes */}
-      <Tabs.Panel value="pendientes" pt="md">
-        <Grid gutter="sm">
-          {pendingRequests.length > 0 ? (
-            pendingRequests.map((request) => {
-              const requester = findUser(request.requesterId);
-              return (
-                <Grid.Col span={{ base: 12, sm: 6, lg: 4 }} key={request.id}>
-                  <RequestCard
-                    user={requester}
-                    request={request}
-                    actions={
-                      <Group grow gap="xs">
-                        <Button
-                          color="green"
-                          size="compact-sm"
+      <Accordion.Item value="pendientes">
+        <Accordion.Control>
+          <Group gap={8} wrap="nowrap">
+            Pendientes por aceptar
+            <Badge size="sm" variant="filled" color="red" circle>
+              {pendingRequests.length}
+            </Badge>
+          </Group>
+        </Accordion.Control>
+        <Accordion.Panel>
+          <Grid gutter="sm">
+            {pendingRequests.length > 0 ? (
+              pendingRequests.map((request) => {
+                const requester = findUser(request.requesterId);
+                return (
+                  <Grid.Col span={{ base: 12, sm: 6, lg: 4 }} key={request.id}>
+                    <RequestCard
+                      user={requester}
+                      request={request}
+                      actions={
+                        <Group grow gap="xs">
+                          <Button
+                            color="green"
+                            size="compact-sm"
+                            radius="md"
+                            leftSection={<IconCheck size={14} />}
+                            onClick={() => prepareSlotSelection(request.id)}
+                          >
+                            Aceptar
+                          </Button>
+                          <Button
+                            color="red"
+                            variant="light"
+                            size="compact-sm"
+                            radius="md"
+                            leftSection={<IconX size={14} />}
+                            onClick={() =>
+                              updateMeetingStatus(request.id, "rejected")
+                            }
+                          >
+                            Rechazar
+                          </Button>
+                          <Button
+                            variant="light"
+                            color="green"
+                            size="compact-sm"
+                            radius="md"
+                            leftSection={<IconBrandWhatsapp size={14} />}
+                            onClick={() =>
+                              sendWhatsAppMessage(requester as Assistant)
+                            }
+                          >
+                            WhatsApp
+                          </Button>
+                        </Group>
+                      }
+                    />
+                  </Grid.Col>
+                );
+              })
+            ) : (
+              <Grid.Col span={12}>
+                <Paper withBorder radius="lg" p="lg">
+                  <Text c="dimmed" ta="center">
+                    No tienes solicitudes de reunión pendientes.
+                  </Text>
+                </Paper>
+              </Grid.Col>
+            )}
+          </Grid>
+        </Accordion.Panel>
+      </Accordion.Item>
+
+      {/* Enviadas */}
+      <Accordion.Item value="enviadas">
+        <Accordion.Control>Solicitudes Enviadas ({sentRequests.length})</Accordion.Control>
+        <Accordion.Panel>
+          <Grid gutter="sm">
+            {sentRequests.length > 0 ? (
+              sentRequests.map((request) => {
+                const receiver = findUser(request.receiverId);
+                return (
+                  <Grid.Col span={{ base: 12, sm: 6, lg: 4 }} key={request.id}>
+                    <RequestCard
+                      user={receiver}
+                      request={request}
+                      statusBadge={
+                        <Badge
+                          variant="light"
+                          color="blue"
                           radius="md"
-                          leftSection={<IconCheck size={14} />}
-                          onClick={() => prepareSlotSelection(request.id)}
+                          size="sm"
                         >
-                          Aceptar
-                        </Button>
+                          <Group gap={4} wrap="nowrap">
+                            <IconSend size={12} />
+                            Pendiente de respuesta
+                          </Group>
+                        </Badge>
+                      }
+                      actions={
                         <Button
                           color="red"
                           variant="light"
                           size="compact-sm"
                           radius="md"
+                          fullWidth
                           leftSection={<IconX size={14} />}
-                          onClick={() => updateMeetingStatus(request.id, "rejected")}
+                          onClick={() =>
+                            cancelSentMeeting(request.id, "cancel")
+                          }
                         >
-                          Rechazar
+                          Cancelar solicitud
                         </Button>
-                        <Button
-                          variant="light"
-                          color="green"
-                          size="compact-sm"
-                          radius="md"
-                          leftSection={<IconBrandWhatsapp size={14} />}
-                          onClick={() => sendWhatsAppMessage(requester as Assistant)}
-                        >
-                          WhatsApp
-                        </Button>
-                      </Group>
-                    }
-                  />
-                </Grid.Col>
-              );
-            })
-          ) : (
-            <Grid.Col span={12}>
-              <Paper withBorder radius="lg" p="lg">
-                <Text c="dimmed" ta="center">
-                  No tienes solicitudes de reunión pendientes.
-                </Text>
-              </Paper>
-            </Grid.Col>
-          )}
-        </Grid>
-      </Tabs.Panel>
+                      }
+                    />
+                  </Grid.Col>
+                );
+              })
+            ) : (
+              <Grid.Col span={12}>
+                <Paper withBorder radius="lg" p="lg">
+                  <Text c="dimmed" ta="center">
+                    No tienes solicitudes enviadas pendientes.
+                  </Text>
+                </Paper>
+              </Grid.Col>
+            )}
+          </Grid>
+        </Accordion.Panel>
+      </Accordion.Item>
 
       {/* Aceptadas */}
-      <Tabs.Panel value="aceptadas" pt="md">
-        <Grid gutter="sm">
-          {acceptedRequests.length > 0 ? (
-            acceptedRequests.map((request) => {
-              const requester = findUser(request.requesterId);
-              return (
-                <Grid.Col span={{ base: 12, sm: 6, lg: 4 }} key={request.id}>
-                  <RequestCard
-                    user={requester}
-                    request={request}
-                    statusBadge={
-                      <Group gap="xs">
+      <Accordion.Item value="aceptadas">
+        <Accordion.Control>
+          Aceptadas ({acceptedRequests.length})
+        </Accordion.Control>
+        <Accordion.Panel>
+          <Grid gutter="sm">
+            {acceptedRequests.length > 0 ? (
+              acceptedRequests.map((request) => {
+                const requester = findUser(request.requesterId);
+                return (
+                  <Grid.Col span={{ base: 12, sm: 6, lg: 4 }} key={request.id}>
+                    <RequestCard
+                      user={requester}
+                      request={request}
+                      statusBadge={
+                        <Group gap="xs">
                         {request.meetingDate && (() => {
                           const [year, month, day] = request.meetingDate.split("-").map(Number);
                           const date = new Date(year, month - 1, day);
@@ -316,142 +369,104 @@ export default function RequestsTab({
                             </Badge>
                           );
                         })()}
-                        {request.timeSlot && (
-                          <Badge variant="light" color={theme.primaryColor} radius="md" size="sm">
-                            <Group gap={4} wrap="nowrap">
-                              <IconClock size={12} />
-                              {request.timeSlot}
-                            </Group>
-                          </Badge>
-                        )}
-                        {request.tableAssigned && (
-                          <Badge variant="light" color="orange" radius="md" size="sm">
-                            <Group gap={4} wrap="nowrap">
-                              <IconTable size={12} />
-                              Mesa {request.tableAssigned}
-                            </Group>
-                          </Badge>
-                        )}
-                      </Group>
-                    }
-                  />
-                </Grid.Col>
-              );
-            })
-          ) : (
-            <Grid.Col span={12}>
-              <Paper withBorder radius="lg" p="lg">
-                <Text c="dimmed" ta="center">
-                  No tienes solicitudes aceptadas.
-                </Text>
-              </Paper>
-            </Grid.Col>
-          )}
-        </Grid>
-      </Tabs.Panel>
-
-      {/* Rechazadas */}
-      <Tabs.Panel value="rechazadas" pt="md">
-        <Grid gutter="sm">
-          {/* Solicitudes que el usuario rechazó (él es receptor) */}
-          {rejectedRequests.map((request) => {
-            const requester = findUser(request.requesterId);
-            return (
-              <Grid.Col span={{ base: 12, sm: 6, lg: 4 }} key={request.id}>
-                <RequestCard
-                  user={requester}
-                  request={request}
-                  statusBadge={
-                    <Badge variant="light" color="red" radius="md" size="sm">
-                      Rechazaste la reunión
-                    </Badge>
-                  }
-                />
-              </Grid.Col>
-            );
-          })}
-          {/* Solicitudes que le rechazaron al usuario (él es solicitante) */}
-          {sentRejectedRequests.map((request) => {
-            const receiver = findUser(request.receiverId);
-            return (
-              <Grid.Col span={{ base: 12, sm: 6, lg: 4 }} key={request.id}>
-                <RequestCard
-                  user={receiver}
-                  request={request}
-                  statusBadge={
-                    <Badge variant="light" color="red" radius="md" size="sm">
-                      Tu solicitud fue rechazada
-                    </Badge>
-                  }
-                />
-              </Grid.Col>
-            );
-          })}
-          {rejectedRequests.length === 0 && sentRejectedRequests.length === 0 && (
-            <Grid.Col span={12}>
-              <Paper withBorder radius="lg" p="lg">
-                <Text c="dimmed" ta="center">
-                  No tienes solicitudes rechazadas.
-                </Text>
-              </Paper>
-            </Grid.Col>
-          )}
-        </Grid>
-      </Tabs.Panel>
-
-      {/* Enviadas */}
-      <Tabs.Panel value="enviadas" pt="md">
-        <Grid gutter="sm">
-          {sentRequests.length > 0 ? (
-            sentRequests.map((request) => {
-              const receiver = findUser(request.receiverId);
-              return (
-                <Grid.Col span={{ base: 12, sm: 6, lg: 4 }} key={request.id}>
-                  <RequestCard
-                    user={receiver}
-                    request={request}
-                    statusBadge={
-                      <Badge variant="light" color="blue" radius="md" size="sm">
-                        <Group gap={4} wrap="nowrap">
-                          <IconSend size={12} />
-                          Pendiente de respuesta
+                          {request.timeSlot && (
+                            <Badge
+                              variant="light"
+                              color={theme.primaryColor}
+                              radius="md"
+                              size="sm"
+                            >
+                              <Group gap={4} wrap="nowrap">
+                                <IconClock size={12} />
+                                {request.timeSlot}
+                              </Group>
+                            </Badge>
+                          )}
+                          {request.tableAssigned && (
+                            <Badge
+                              variant="light"
+                              color="orange"
+                              radius="md"
+                              size="sm"
+                            >
+                              <Group gap={4} wrap="nowrap">
+                                <IconTable size={12} />
+                                Mesa {request.tableAssigned}
+                              </Group>
+                            </Badge>
+                          )}
                         </Group>
-                      </Badge>
-                    }
-                    actions={
-                      <Button
-                        color="red"
-                        variant="light"
-                        size="compact-sm"
-                        radius="md"
-                        fullWidth
-                        leftSection={<IconX size={14} />}
-                        onClick={() => cancelSentMeeting(request.id, "cancel")}
-                      >
-                        Cancelar solicitud
-                      </Button>
-                    }
-                  />
-                </Grid.Col>
-              );
-            })
-          ) : (
-            <Grid.Col span={12}>
-              <Paper withBorder radius="lg" p="lg">
-                <Text c="dimmed" ta="center">
-                  No tienes solicitudes enviadas pendientes.
-                </Text>
-              </Paper>
-            </Grid.Col>
-          )}
-        </Grid>
-      </Tabs.Panel>
+                      }
+                    />
+                  </Grid.Col>
+                );
+              })
+            ) : (
+              <Grid.Col span={12}>
+                <Paper withBorder radius="lg" p="lg">
+                  <Text c="dimmed" ta="center">
+                    No tienes solicitudes aceptadas.
+                  </Text>
+                </Paper>
+              </Grid.Col>
+            )}
+          </Grid>
+        </Accordion.Panel>
+      </Accordion.Item>
 
       {/* Otras solicitudes de la empresa */}
-      <Tabs.Panel value="taken" pt="md">
-        <Grid gutter="sm">
-          {takenRequests.length > 0 ? (
-            takenRequests.map((request) => {
+      <Accordion.Item value="taken">
+        <Accordion.Control>
+          Otras solicitudes de la empresa ({takenRequests.length})
+        </Accordion.Control>
+        <Accordion.Panel>
+          <Grid gutter="sm">
+            {takenRequests.length > 0 ? (
+              takenRequests.map((request) => {
+                const requester = findUser(request.requesterId);
+                return (
+                  <Grid.Col span={{ base: 12, sm: 6, lg: 4 }} key={request.id}>
+                    <RequestCard
+                      user={requester}
+                      request={request}
+                      statusBadge={
+                        <Badge
+                          variant="light"
+                          color="blue"
+                          radius="md"
+                          size="sm"
+                        >
+                          <Group gap={4} wrap="nowrap">
+                            <IconUsers size={12} />
+                            Tomada por otro asistente
+                          </Group>
+                        </Badge>
+                      }
+                    />
+                  </Grid.Col>
+                );
+              })
+            ) : (
+              <Grid.Col span={12}>
+                <Paper withBorder radius="lg" p="lg">
+                  <Text c="dimmed" ta="center">
+                    No tienes solicitudes.
+                  </Text>
+                </Paper>
+              </Grid.Col>
+            )}
+          </Grid>
+        </Accordion.Panel>
+      </Accordion.Item>
+
+      {/* Rechazadas */}
+      <Accordion.Item value="rechazadas">
+        <Accordion.Control>
+          Rechazadas ({rejectedRequests.length + sentRejectedRequests.length})
+        </Accordion.Control>
+        <Accordion.Panel>
+          <Grid gutter="sm">
+            {rejectedRequests.map((request) => {
               const requester = findUser(request.requesterId);
               return (
                 <Grid.Col span={{ base: 12, sm: 6, lg: 4 }} key={request.id}>
@@ -459,28 +474,43 @@ export default function RequestsTab({
                     user={requester}
                     request={request}
                     statusBadge={
-                      <Badge variant="light" color="blue" radius="md" size="sm">
-                        <Group gap={4} wrap="nowrap">
-                          <IconUsers size={12} />
-                          Tomada por otro asistente
-                        </Group>
+                      <Badge variant="light" color="red" radius="md" size="sm">
+                        Rechazaste la reunión
                       </Badge>
                     }
                   />
                 </Grid.Col>
               );
-            })
-          ) : (
-            <Grid.Col span={12}>
-              <Paper withBorder radius="lg" p="lg">
-                <Text c="dimmed" ta="center">
-                  No tienes solicitudes.
-                </Text>
-              </Paper>
-            </Grid.Col>
-          )}
-        </Grid>
-      </Tabs.Panel>
-    </Tabs>
+            })}
+            {sentRejectedRequests.map((request) => {
+              const receiver = findUser(request.receiverId);
+              return (
+                <Grid.Col span={{ base: 12, sm: 6, lg: 4 }} key={request.id}>
+                  <RequestCard
+                    user={receiver}
+                    request={request}
+                    statusBadge={
+                      <Badge variant="light" color="red" radius="md" size="sm">
+                        Tu solicitud fue rechazada
+                      </Badge>
+                    }
+                  />
+                </Grid.Col>
+              );
+            })}
+            {rejectedRequests.length === 0 &&
+              sentRejectedRequests.length === 0 && (
+                <Grid.Col span={12}>
+                  <Paper withBorder radius="lg" p="lg">
+                    <Text c="dimmed" ta="center">
+                      No tienes solicitudes rechazadas.
+                    </Text>
+                  </Paper>
+                </Grid.Col>
+              )}
+          </Grid>
+        </Accordion.Panel>
+      </Accordion.Item>
+    </Accordion>
   );
 }

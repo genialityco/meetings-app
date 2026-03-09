@@ -1,11 +1,9 @@
-import { Tabs, SegmentedControl, Stack, Badge, Group, Paper } from "@mantine/core";
-import { useState, useEffect, useRef } from "react";
+import { Tabs, SegmentedControl, Stack, Badge, Group } from "@mantine/core";
+import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import {
   IconCalendarEvent,
   IconInbox,
-  IconPackage,
-  IconBuilding,
   IconCalendar,
 } from "@tabler/icons-react";
 import AttendeesView from "./AttendeesView";
@@ -14,8 +12,6 @@ import ProductsView from "./ProductsView";
 import ChatbotTab from "./ChatbotTab";
 import MeetingsTab from "./MeetingsTab";
 import RequestsTab from "./RequestsTab";
-import MyProductsTab from "./MyProductsTab";
-import MyCompanyTab from "./MyCompanyTab";
 import CalendarTab from "./CalendarTab";
 import MatchesTab from "./MatchesTab";
 import { DEFAULT_POLICIES } from "./types";
@@ -41,14 +37,6 @@ export default function TabsPanel({
   const uiViews = policies.uiViewsEnabled || DEFAULT_POLICIES.uiViewsEnabled;
   const cardFieldsConfig = policies.cardFieldsConfig || DEFAULT_POLICIES.cardFieldsConfig;
 
-  // Política configurable: redirigir vendedor a productos en primer ingreso
-  const sellerRedirect = policies.sellerRedirectToProducts === true;
-  const userRole = dashboard.currentUser?.data?.tipoAsistente as string | undefined;
-  const uid = dashboard.uid as string | undefined;
-  const roleLower = userRole?.toLowerCase();
-  const isVendedor = sellerRedirect && roleLower === "vendedor";
-  const isComprador = sellerRedirect && roleLower === "comprador";
-
   const isMobile = useMediaQuery("(max-width: 48em)"); // ~768px
 
   // Estado para mantener el highlightEntityId persistente
@@ -57,20 +45,6 @@ export default function TabsPanel({
     entityType?: "assistant" | "product" | "company";
   }>({});
 
-  // DEBUG: verificar valores de la redirección
-  console.log("[TabsPanel DEBUG]", {
-    eventId,
-    uid,
-    sellerRedirectPolicy: policies.sellerRedirectToProducts,
-    sellerRedirect,
-    userRole,
-    tipoAsistenteRaw: dashboard.currentUser?.data?.tipoAsistente,
-    currentUserData: dashboard.currentUser?.data,
-    isVendedor,
-    isComprador,
-    policiesLoaded: dashboard.policies !== undefined,
-  });
-
   // Construir opciones de vista dinámicamente según configuración del evento
   const viewOptions: { value: string; label: string }[] = [];
   if (uiViews.chatbot) viewOptions.push({ value: "chatbot", label: "Chatbot" });
@@ -78,7 +52,7 @@ export default function TabsPanel({
   if (uiViews.attendees) viewOptions.push({ value: "attendees", label: "Asistentes" });
   if (uiViews.companies) viewOptions.push({ value: "companies", label: "Empresas" });
   if (uiViews.products) viewOptions.push({ value: "products", label: "Productos" });
-  viewOptions.push({ value: "activity", label: "Mi actividad" });
+  viewOptions.push({ value: "activity", label: "Mis reuniones" });
 
   const [topView, setTopView] = useState(viewOptions[0]?.value || "companies");
 
@@ -90,23 +64,7 @@ export default function TabsPanel({
     }
   }, [validValues.join(",")]);
 
-  // Redirigir al vendedor a "Mi actividad > Mis productos" solo la primera vez
-  const redirectKey = eventId && uid ? `seller_redirect_${eventId}_${uid}` : null;
-  const redirectDone = useRef(false);
   const [activityDefaultTab, setActivityDefaultTab] = useState("agenda");
-
-  useEffect(() => {
-    if (redirectDone.current) return;
-    if (!isVendedor || !redirectKey) return;
-    if (localStorage.getItem(redirectKey)) return;
-
-    // Datos cargados y es vendedor con política activa: redirigir
-    console.log("Redirigiendo vendedor a Mis productos por política sellerRedirectToProducts");
-    localStorage.setItem(redirectKey, "1");
-    redirectDone.current = true;
-    setTopView("activity");
-    setActivityDefaultTab("mis-productos");
-  }, [isVendedor, redirectKey]);
 
   // Navegación externa (ej: click en notificación)
   useEffect(() => {
@@ -148,10 +106,17 @@ export default function TabsPanel({
   return (
     <Stack mt="md">
     {isMobile ? (
-      <Tabs value={topView} onChange={(v) => v && setTopView(v)} variant="outline">
-        <Tabs.List style={{ flexWrap: "nowrap", overflowX: "auto" }}>
+      <Tabs value={topView} onChange={(v) => v && setTopView(v)} variant="pills">
+        <Tabs.List style={{ flexWrap: "nowrap", overflowX: "auto", gap: 4 }}>
           {viewOptions.map((o) => (
-            <Tabs.Tab key={o.value} value={o.value}>
+            <Tabs.Tab
+              key={o.value}
+              value={o.value}
+              style={(theme) => ({
+                fontWeight: topView === o.value ? 700 : 500,
+                transition: "background 0.15s",
+              })}
+            >
               {o.label}
             </Tabs.Tab>
           ))}
@@ -249,7 +214,7 @@ export default function TabsPanel({
       )}
 
       {topView === "activity" && (
-        <Tabs value={activityDefaultTab} onChange={(v) => setActivityDefaultTab(v || "agenda")} radius="md">
+        <Tabs value={activityDefaultTab} onChange={(v) => setActivityDefaultTab(v || "agenda")} variant="pills" radius="md">
           <Tabs.List grow>
             <Tabs.Tab
               value="agenda"
@@ -260,6 +225,7 @@ export default function TabsPanel({
             <Tabs.Tab
               value="reuniones"
               leftSection={<IconCalendarEvent size={16} />}
+              style={{ fontWeight: activityDefaultTab === "reuniones" ? 700 : 500, transition: "background 0.15s" }}
             >
               <Group gap={4} wrap="nowrap">
                 Reuniones
@@ -273,6 +239,7 @@ export default function TabsPanel({
             <Tabs.Tab
               value="solicitudes"
               leftSection={<IconInbox size={16} />}
+              style={{ fontWeight: activityDefaultTab === "solicitudes" ? 700 : 500, transition: "background 0.15s" }}
             >
               <Group gap={4} wrap="nowrap">
                 Solicitudes
@@ -282,20 +249,6 @@ export default function TabsPanel({
                   </Badge>
                 )}
               </Group>
-            </Tabs.Tab>
-            {!isComprador && (
-              <Tabs.Tab
-                value="mis-productos"
-                leftSection={<IconPackage size={16} />}
-              >
-                Mis productos
-              </Tabs.Tab>
-            )}
-            <Tabs.Tab
-              value="mi-empresa"
-              leftSection={<IconBuilding size={16} />}
-            >
-              Mi empresa
             </Tabs.Tab>
           </Tabs.List>
 
@@ -316,14 +269,6 @@ export default function TabsPanel({
           </Tabs.Panel>
           <Tabs.Panel value="solicitudes" pt="md">
             <RequestsTab {...dashboard} />
-          </Tabs.Panel>
-          {!isComprador && (
-            <Tabs.Panel value="mis-productos" pt="md">
-              <MyProductsTab {...dashboard} />
-            </Tabs.Panel>
-          )}
-          <Tabs.Panel value="mi-empresa" pt="md">
-            <MyCompanyTab {...dashboard} />
           </Tabs.Panel>
         </Tabs>
       )}

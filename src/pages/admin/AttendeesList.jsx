@@ -1,5 +1,5 @@
 import { Card, Table, Button, Loader, Text, Group, Title, MultiSelect, Modal, Image, Tabs } from "@mantine/core";
-import { collection, query, where, getDocs, deleteDoc, doc, addDoc, updateDoc } from "firebase/firestore";
+import { collection, query, where, getDocs, deleteDoc, doc, addDoc, updateDoc, writeBatch } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
@@ -147,6 +147,14 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
 
   const [deleteAllModal, setDeleteAllModal] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
+  const [deletingOne, setDeletingOne] = useState(false);
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState({
+    opened: false,
+    attendeeId: null,
+    attendeeName: "",
+    meetingCount: 0,
+    checking: false,
+  });
 
 function parseFirestoreTimestamp(input) {
   if (!input) return null;
@@ -282,7 +290,8 @@ function parseFirestoreTimestamp(input) {
       await deleteDoc(doc(db, "users", attendeeId));
       setGlobalMessage("Asistente eliminado correctamente.");
       setAttendees((prev) => prev.filter((a) => a.id !== attendeeId));
-    } catch (error) {
+      setDeleteConfirmModal({ opened: false, attendeeId: null, attendeeName: "", meetingCount: 0, checking: false });
+    } catch {
       setGlobalMessage("Error al eliminar el asistente.");
     }
   };
@@ -310,11 +319,32 @@ function parseFirestoreTimestamp(input) {
   const handleDeleteAllAttendees = async () => {
     setDeletingAll(true);
     try {
-      // Solo IDs
       const ids = attendees.map((a) => a.id);
-      await Promise.all(ids.map((id) => deleteDoc(doc(db, "users", id))));
-      setGlobalMessage("Todos los asistentes fueron eliminados.");
-      setAttendees([]); // Limpiar lista local
+      // Gather all active meetings across all users (deduplicated)
+      const allMeetingArrays = await Promise.all(ids.map((id) => getActiveMeetingsForUser(id)));
+      const meetingMap = new Map();
+      allMeetingArrays.flat().forEach((m) => meetingMap.set(m.id, m));
+      const uniqueMeetings = [...meetingMap.values()];
+
+      // Build all ops: cancel meetings + delete users
+      const allOps = [
+        ...uniqueMeetings.map((m) => ({ type: "update", ref: m.ref, data: { status: "cancelled" } })),
+        ...ids.map((id) => ({ type: "delete", ref: doc(db, "users", id) })),
+      ];
+
+      // Firestore writeBatch limit is 500 ops; chunk to be safe
+      const CHUNK = 400;
+      for (let i = 0; i < allOps.length; i += CHUNK) {
+        const batch = writeBatch(db);
+        allOps.slice(i, i + CHUNK).forEach((op) => {
+          if (op.type === "update") batch.update(op.ref, op.data);
+          else batch.delete(op.ref);
+        });
+        await batch.commit();
+      }
+
+      setGlobalMessage(`Todos los asistentes eliminados. ${uniqueMeetings.length} reunión(es) cancelada(s).`);
+      setAttendees([]);
       setDeleteAllModal(false);
     } catch (err) {
       setGlobalMessage("Error al eliminar todos los asistentes.");
@@ -581,6 +611,17 @@ function parseFirestoreTimestamp(input) {
               />
             </Group>
           </Group>
+
+      <ImportWizard
+        opened={importWizardOpened}
+        onClose={() => setImportWizardOpened(false)}
+        columns={importColumns}
+        existingFields={fields}
+        onConfirmMapping={handleConfirmMapping}
+        onCreateField={handleCreateField}
+        creatingFieldFor={creatingFieldFor}
+        setCreatingFieldFor={setCreatingFieldFor}
+      />
 
           {loading ? (
             <Loader />

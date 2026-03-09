@@ -12,6 +12,8 @@ const MeetingAutoResponse = lazy(() => import("./pages/MeetingAutoResponse"));
 const EventAdmin = lazy(() => import("./pages/admin/EventAdmin"));
 const Dashboard = lazy(() => import("./pages/dashboard/Dashboard.tsx"));
 const CompanyLanding = lazy(() => import("./pages/dashboard/CompanyLanding.tsx"));
+const MyProductsPage = lazy(() => import("./pages/dashboard/MyProductsPage.tsx"));
+const MyCompanyPage = lazy(() => import("./pages/dashboard/MyCompanyPage.tsx"));
 const MatrixPage = lazy(() => import("./pages/admin/MatrixPage.jsx"));
 const EventMatchPage = lazy(() => import("./pages/admin/EventMatchPage.jsx"));
 const ImportMeetingsFromExcelPage = lazy(() => import("./pages/admin/ImportMeetingsFromExcelPage.jsx"));
@@ -30,6 +32,9 @@ const App = () => {
         <Route path="/dashboard/:eventId" element={<Dashboard />} />
         {/* Landing de empresa */}
         <Route path="/dashboard/:eventId/company/:companyNit" element={<CompanyLanding />} />
+        {/* Páginas de actividad del usuario */}
+        <Route path="/dashboard/:eventId/my-products" element={<MyProductsPage />} />
+        <Route path="/dashboard/:eventId/my-company" element={<MyCompanyPage />} />
         <Route path="/admin" element={<AdminPanel />} />
         <Route path="/matrix/:eventId" element={<MatrixPage />} />
         <Route

@@ -14,7 +14,7 @@ import {
   Alert,
   TextInput,
   Select,
-  Tooltip,
+  Popover,
   Menu,
   Button,
 } from "@mantine/core";
@@ -105,6 +105,35 @@ function ParticipantsChips({ participants }) {
         </Chip>
       ))}
     </Flex>
+  );
+}
+
+function ParticipantPopover({ width = 320, trigger, children }) {
+  const [opened, setOpened] = useState(false);
+  return (
+    <Popover
+      opened={opened}
+      onChange={setOpened}
+      width={width}
+      withArrow
+      withinPortal
+      closeOnClickOutside
+    >
+      <Popover.Target>
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpened((o) => !o);
+          }}
+          style={{ cursor: "pointer" }}
+        >
+          {trigger}
+        </div>
+      </Popover.Target>
+      <Popover.Dropdown onClick={(e) => e.stopPropagation()}>
+        {children}
+      </Popover.Dropdown>
+    </Popover>
   );
 }
 
@@ -240,7 +269,9 @@ const MatrixPage = () => {
       const snap = await getDocs(
         query(collection(db, "users"), where("eventId", "==", eventId))
       );
-      setAsistentes(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      const loaded = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      console.log("[MatrixPage] Asistentes cargados:", loaded.length, loaded.map(a => a.id));
+      setAsistentes(loaded);
     })();
   }, [eventId]);
 
@@ -963,54 +994,9 @@ const MatrixPage = () => {
                           <Table.Td>
                             <StatusBadge status={cell.status} />
                             {cell.status === "accepted" && (
-                              <Tooltip
-                                multiline
+                              <ParticipantPopover
                                 width={320}
-                                withArrow
-                                label={
-                                  <>
-                                    <b>Participantes:</b>
-                                    {cell.meetingData?.participants?.map(
-                                      (pid) => {
-                                        const info = participantsInfo[pid];
-                                        if (!info)
-                                          return <div key={pid}>{pid}</div>;
-                                        return (
-                                          <div
-                                            key={pid}
-                                            style={{ marginBottom: 6 }}
-                                          >
-                                            <b>
-                                              {info.empresa} ({info.nombre})
-                                            </b>
-                                            <div>
-                                              <span
-                                                style={{ color: "#6c6c6c" }}
-                                              >
-                                                Descripción:{" "}
-                                              </span>
-                                              {info.descripcion || (
-                                                <i>No especificada</i>
-                                              )}
-                                            </div>
-                                            <div>
-                                              <span
-                                                style={{ color: "#6c6c6c" }}
-                                              >
-                                                Necesidad:{" "}
-                                              </span>
-                                              {info.necesidad || (
-                                                <i>No especificada</i>
-                                              )}
-                                            </div>
-                                          </div>
-                                        );
-                                      }
-                                    )}
-                                  </>
-                                }
-                              >
-                                <div>
+                                trigger={
                                   <ParticipantsChips
                                     participants={cell.participants.map((pid) =>
                                       participantsInfo[pid]
@@ -1018,8 +1004,31 @@ const MatrixPage = () => {
                                         : pid
                                     )}
                                   />
-                                </div>
-                              </Tooltip>
+                                }
+                              >
+                                <b>Participantes:</b>
+                                {cell.meetingData?.participants?.map((pid) => {
+                                  const info = participantsInfo[pid];
+                                  if (!info) return <div key={pid}>{pid}</div>;
+                                  return (
+                                    <div key={pid} style={{ marginBottom: 6 }}>
+                                      <b>{info.empresa} ({info.nombre})</b>
+                                      <div>
+                                        <span style={{ color: "#6c6c6c" }}>Tel: </span>
+                                        {info.telefono || <i>No registrado</i>}
+                                      </div>
+                                      <div>
+                                        <span style={{ color: "#6c6c6c" }}>Descripción: </span>
+                                        {info.descripcion || <i>No especificada</i>}
+                                      </div>
+                                      <div>
+                                        <span style={{ color: "#6c6c6c" }}>Necesidad: </span>
+                                        {info.necesidad || <i>No especificada</i>}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </ParticipantPopover>
                             )}
                           </Table.Td>
                         </Table.Tr>
@@ -1103,6 +1112,7 @@ const MatrixPage = () => {
                           const requester = asistentes.find(
                             (a) => a.id === m.requesterId
                           );
+                          if (!requester) console.warn("[MatrixPage] requesterId no encontrado en asistentes:", m.requesterId, m);
                           return (
                             <Menu.Item key={m.id}>
                               <div>
@@ -1201,80 +1211,9 @@ const MatrixPage = () => {
                                   <Text size="xs" mb={2}>
                                     Mesa {cell.table}
                                   </Text>
-                                  <Tooltip
-                                    multiline
+                                  <ParticipantPopover
                                     width={340}
-                                    withArrow
-                                    label={
-                                      <div>
-                                        <div style={{ marginBottom: 12 }}>
-                                          <b>Usuario:</b>
-                                          <div>
-                                            <b>
-                                              {asistente.empresa} (
-                                              {asistente.nombre})
-                                            </b>
-                                          </div>
-                                          <div>
-                                            <span style={{ color: "#6c6c6c" }}>
-                                              Descripción:{" "}
-                                            </span>
-                                            {asistente.descripcion || (
-                                              <i>No especificada</i>
-                                            )}
-                                          </div>
-                                          <div>
-                                            <span style={{ color: "#6c6c6c" }}>
-                                              Necesidad:{" "}
-                                            </span>
-                                            {asistente.necesidad || (
-                                              <i>No especificada</i>
-                                            )}
-                                          </div>
-                                        </div>
-                                        <Divider my={4} />
-                                        <div>
-                                          <b>Contraparte:</b>
-                                          {cell.participants.map((pid) => {
-                                            const info = participantsInfo[pid];
-                                            if (!info)
-                                              return <div key={pid}>{pid}</div>;
-                                            return (
-                                              <div
-                                                key={pid}
-                                                style={{ marginBottom: 6 }}
-                                              >
-                                                <b>
-                                                  {info.empresa} ({info.nombre})
-                                                </b>
-                                                <div>
-                                                  <span
-                                                    style={{ color: "#6c6c6c" }}
-                                                  >
-                                                    Descripción:{" "}
-                                                  </span>
-                                                  {info.descripcion || (
-                                                    <i>No especificada</i>
-                                                  )}
-                                                </div>
-                                                <div>
-                                                  <span
-                                                    style={{ color: "#6c6c6c" }}
-                                                  >
-                                                    Necesidad:{" "}
-                                                  </span>
-                                                  {info.necesidad || (
-                                                    <i>No especificada</i>
-                                                  )}
-                                                </div>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-                                    }
-                                  >
-                                    <div>
+                                    trigger={
                                       <ParticipantsChips
                                         participants={[
                                           `${asistente.empresa} (${asistente.nombre})`,
@@ -1285,8 +1224,52 @@ const MatrixPage = () => {
                                           ),
                                         ]}
                                       />
+                                    }
+                                  >
+                                    <div style={{ marginBottom: 12 }}>
+                                      <b>Usuario:</b>
+                                      <div>
+                                        <b>{asistente.empresa} ({asistente.nombre})</b>
+                                      </div>
+                                      <div>
+                                        <span style={{ color: "#6c6c6c" }}>Tel: </span>
+                                        {asistente.telefono || <i>No registrado</i>}
+                                      </div>
+                                      <div>
+                                        <span style={{ color: "#6c6c6c" }}>Descripción: </span>
+                                        {asistente.descripcion || <i>No especificada</i>}
+                                      </div>
+                                      <div>
+                                        <span style={{ color: "#6c6c6c" }}>Necesidad: </span>
+                                        {asistente.necesidad || <i>No especificada</i>}
+                                      </div>
                                     </div>
-                                  </Tooltip>
+                                    <Divider my={4} />
+                                    <div>
+                                      <b>Contraparte:</b>
+                                      {cell.participants.map((pid) => {
+                                        const info = participantsInfo[pid];
+                                        if (!info) return <div key={pid}>{pid}</div>;
+                                        return (
+                                          <div key={pid} style={{ marginBottom: 6 }}>
+                                            <b>{info.empresa} ({info.nombre})</b>
+                                            <div>
+                                              <span style={{ color: "#6c6c6c" }}>Tel: </span>
+                                              {info.telefono || <i>No registrado</i>}
+                                            </div>
+                                            <div>
+                                              <span style={{ color: "#6c6c6c" }}>Descripción: </span>
+                                              {info.descripcion || <i>No especificada</i>}
+                                            </div>
+                                            <div>
+                                              <span style={{ color: "#6c6c6c" }}>Necesidad: </span>
+                                              {info.necesidad || <i>No especificada</i>}
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </ParticipantPopover>
                                 </>
                               )}
                             </Table.Td>

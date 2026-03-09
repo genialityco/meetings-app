@@ -1,4 +1,5 @@
 import { useState, useContext, useEffect, useCallback } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   Group,
   Avatar,
@@ -23,7 +24,7 @@ import {
   Grid,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
-import { IconEdit, IconLogout, IconChevronDown } from "@tabler/icons-react";
+import { IconEdit, IconLogout, IconChevronDown, IconPackage, IconBuilding } from "@tabler/icons-react";
 import { UserContext } from "../context/UserContext";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { doc, setDoc } from "firebase/firestore";
@@ -40,6 +41,7 @@ interface DashboardHeaderProps {
   onMarkAllRead?: () => void;
   formFields: any[];
   eventConfig?: any;
+  policies?: any;
 }
 
 const uploadProfilePicture = async (file: File, uid: string) => {
@@ -61,9 +63,16 @@ const DashboardHeader = ({
   onMarkAllRead,
   formFields,
   eventConfig,
+  policies,
 }: DashboardHeaderProps) => {
   const { currentUser, updateUser, logout } = useContext(UserContext);
+  const navigate = useNavigate();
+  const { eventId } = useParams();
   const uid = currentUser?.uid;
+
+  const sellerRedirect = policies?.sellerRedirectToProducts === true;
+  const roleLower = currentUser?.data?.tipoAsistente?.toLowerCase();
+  const isComprador = sellerRedirect && roleLower === "comprador";
   const data = currentUser?.data || {};
   const isMobile = useMediaQuery("(max-width: 600px)");
 
@@ -417,6 +426,22 @@ const DashboardHeader = ({
               >
                 Editar perfil
               </Menu.Item>
+              {eventId && !isComprador && (
+                <Menu.Item
+                  leftSection={<IconPackage size={16} />}
+                  onClick={() => navigate(`/dashboard/${eventId}/my-products`)}
+                >
+                  Mis productos
+                </Menu.Item>
+              )}
+              {eventId && (
+                <Menu.Item
+                  leftSection={<IconBuilding size={16} />}
+                  onClick={() => navigate(`/dashboard/${eventId}/my-company`)}
+                >
+                  Mi empresa
+                </Menu.Item>
+              )}
               <Menu.Divider />
               <Menu.Item
                 color="red"

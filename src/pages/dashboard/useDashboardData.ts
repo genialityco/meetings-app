@@ -21,9 +21,7 @@ import { showNotification } from "@mantine/notifications";
 import { serverTimestamp } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { storage } from "../../firebase/firebaseConfig";
-
-const API_WP_URL = "https://apiwhatsapp.geniality.com.co/api/send";
-const CLIENT_ID = "genialitybussinesstest";
+import { sendWhatsAppMessage as sendWhatsAppAPI } from "../../utils/whatsappService";
 
 type Product = {
   id: string;
@@ -137,6 +135,8 @@ async function sendMeetingAcceptedWhatsapp(
   meetingInfo: { timeSlot?: string; tableAssigned?: string; meetingDate?: string },
   eventName?: string,
   acceptedByName?: string,
+  whatsappApiVersion: "v1" | "v2" = "v1",
+  requesterData?: any,
 ) {
   if (!toPhone) return;
   const phone = toPhone.replace(/[^\d]/g, "");
@@ -170,15 +170,19 @@ async function sendMeetingAcceptedWhatsapp(
     `🪑 *Mesa:* ${meetingInfo.tableAssigned || ""}\n\n` +
     `¡Te esperamos!`;
 
-  await fetch(API_WP_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      clientId: CLIENT_ID,
-      phone: `57${phone}`,
-      message,
-    }),
-  }).catch(() => {});
+  await sendWhatsAppAPI({
+    apiVersion: whatsappApiVersion,
+    phone,
+    message,
+    metadata: {
+      eventName: eventName || "Evento",
+      requesterName: requesterData?.nombre || otherParticipant?.nombre || "",
+      requesterCompany: requesterData?.empresa || otherParticipant?.empresa || "",
+      requesterPosition: requesterData?.cargo || "",
+      requesterEmail: requesterData?.correo || "",
+      requesterPhone: requesterData?.telefono || "",
+    },
+  });
 }
 
 async function sendMeetingCancelledWhatsapp(
@@ -187,6 +191,7 @@ async function sendMeetingCancelledWhatsapp(
   meetingInfo: { timeSlot?: string; tableAssigned?: string; meetingDate?: string },
   eventName?: string,
   cancelledByName?: string,
+  whatsappApiVersion: "v1" | "v2" = "v1",
 ) {
   if (!toPhone) return;
   const phone = (toPhone || "").toString().replace(/[^\d]/g, "");
@@ -219,21 +224,23 @@ async function sendMeetingCancelledWhatsapp(
     `🕐 *Horario:* ${meetingInfo.timeSlot || ""}\n` +
     `🪑 *Mesa:* ${meetingInfo.tableAssigned || ""}\n`;
 
-  await fetch(API_WP_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      clientId: CLIENT_ID,
-      phone: `57${phone}`,
-      message,
-    }),
-  }).catch(() => {});
+  await sendWhatsAppAPI({
+    apiVersion: whatsappApiVersion,
+    phone,
+    message,
+    metadata: {
+      eventName: eventName || "Evento",
+      requesterName: otherParticipant?.nombre || "",
+      requesterCompany: otherParticipant?.empresa || "",
+    },
+  });
 }
 
 async function sendMeetingRejectedWhatsapp(
   toPhone: string,
   rejectedByParticipant: Assistant,
   eventName?: string,
+  whatsappApiVersion: "v1" | "v2" = "v1",
 ) {
   if (!toPhone) return;
   const phone = (toPhone || "").toString().replace(/[^\d]/g, "");
@@ -246,15 +253,16 @@ async function sendMeetingRejectedWhatsapp(
     `🏢 *Empresa:* ${rejectedByParticipant?.empresa || ""}\n\n` +
     `Puedes enviar solicitudes a otros participantes desde el dashboard del evento.`;
 
-  await fetch(API_WP_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      clientId: CLIENT_ID,
-      phone: `57${phone}`,
-      message,
-    }),
-  }).catch(() => {});
+  await sendWhatsAppAPI({
+    apiVersion: whatsappApiVersion,
+    phone,
+    message,
+    metadata: {
+      eventName: eventName || "Evento",
+      requesterName: rejectedByParticipant?.nombre || "",
+      requesterCompany: rejectedByParticipant?.empresa || "",
+    },
+  });
 }
 
 async function uploadProductImage(
@@ -299,7 +307,7 @@ export function useDashboardData(eventId?: string) {
   const [eventImage, setEventImage] = useState<string>("");
   const [dashboardLogo, setDashboardLogo] = useState<string>("");
   const [eventName, setEventName] = useState<string>("");
-  const [formFields, setFormFields] = useState([]);
+  const [formFields, setFormFields] = useState<any[]>([]);
   const [companyGroups, setCompanyGroups] = useState<any[]>([]);
   const [availableAsistents, setAvailableAsistents] = useState<Assistant[]>([]);
 
@@ -717,8 +725,41 @@ export function useDashboardData(eventId?: string) {
     groupId: string | null = null,
     context?: MeetingContext,
   ) => {
-    if (!uid || !eventId) return Promise.reject();
+    // Validar que haya usuario logueado
+    if (!uid || !eventId) {
+      showNotification({
+        title: "Error",
+        message: "Debes iniciar sesión para enviar solicitudes de reunión",
+        color: "red",
+      });
+      return Promise.reject(new Error("No user logged in"));
+    }
+    
+    // Validar que exista currentUser con datos
+    if (!currentUser?.data) {
+      showNotification({
+        title: "Error",
+        message: "No se encontró tu información de usuario. Redirigiendo al evento...",
+        color: "red",
+      });
+      setTimeout(() => {
+        window.location.href = `/event/${eventId}`;
+      }, 1500);
+      return Promise.reject(new Error("User data not found"));
+    }
+    
     try {
+      // Validar que el receptor exista en Firestore antes de crear la reunión
+      const receiverSnap = await getDoc(doc(db, "users", assistantId));
+      if (!receiverSnap.exists()) {
+        showNotification({
+          title: "Error",
+          message: "El asistente al que intentas enviar la solicitud ya no existe.",
+          color: "red",
+        });
+        return Promise.reject(new Error("Receiver not found"));
+      }
+
       const data: any = {
         eventId,
         requesterId: uid,
@@ -764,19 +805,26 @@ export function useDashboardData(eventId?: string) {
         `\n*Opciones:*\n` +
         `✅ *Aceptar:* \n${acceptUrl}\n\n` +
         `❌ *Rechazar:* \n${rejectUrl}\n\n` +
-        `🔗 Ir al evento: \n${landingUrl}`;
+        `🔗 Ir al evento: \n${landingUrl}\n\n` +
+        `_⚠️ Si los enlaces no están activos, responde primero a este chat y luego haz clic en el enlace._`;
 
-      // WhatsApp backend
-      fetch(API_WP_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          clientId: CLIENT_ID,
-
-          phone: `57${assistantPhone.replace(/[^\d]/g, "")}`,
-          message,
-        }),
-      }).catch(() => {});
+      // WhatsApp backend - usar API configurada en políticas
+      const whatsappApiVersion = policies.whatsappApiVersion || "v1";
+      await sendWhatsAppAPI({
+        apiVersion: whatsappApiVersion,
+        phone: assistantPhone.replace(/[^\d]/g, ""),
+        message,
+        metadata: {
+          eventName: eventName || "Evento",
+          requesterName: requester?.nombre || "",
+          requesterCompany: requester?.empresa || "",
+          requesterPosition: requester?.cargo || "",
+          requesterEmail: requester?.correo || "",
+          requesterPhone: requester?.telefono || "",
+          acceptUrl,
+          cancelUrl: rejectUrl,
+        },
+      });
 
       // Notificación en la app
       const notificationMessage = context?.contextNote
@@ -798,7 +846,7 @@ export function useDashboardData(eventId?: string) {
     }
   };
 
-  const cancelMeeting = async (meeting) => {
+  const cancelMeeting = async (meeting: Meeting) => {
     try {
       // 1. Leer datos completos de la reunión para obtener lockIds
       const mtgRef = doc(db, "events", meeting.eventId, "meetings", meeting.id);
@@ -811,7 +859,7 @@ export function useDashboardData(eventId?: string) {
 
       // 3. Libera el slot (si existe)
       const slotId = meeting.slotId || mtgData.slotId;
-      if (slotId) {
+      if (slotId && eventId) {
         await updateDoc(doc(db, "events", eventId, "agenda", slotId), {
           available: true,
           meetingId: null,
@@ -842,19 +890,20 @@ export function useDashboardData(eventId?: string) {
       const cancellerName = currentUser?.data?.nombre || "";
 
       // 7. Notifica a ambos por WhatsApp
+      const whatsappApiVersion = policies.whatsappApiVersion || "v1";
       if (requester?.telefono) {
         await sendMeetingCancelledWhatsapp(requester.telefono, receiver, {
           timeSlot: meeting.timeSlot,
           tableAssigned: meeting.tableAssigned,
           meetingDate: meeting.meetingDate,
-        }, eventName, cancellerName);
+        }, eventName, cancellerName, whatsappApiVersion);
       }
       if (receiver?.telefono) {
         await sendMeetingCancelledWhatsapp(receiver.telefono, requester, {
           timeSlot: meeting.timeSlot,
           tableAssigned: meeting.tableAssigned,
           meetingDate: meeting.meetingDate,
-        }, eventName, cancellerName);
+        }, eventName, cancellerName, whatsappApiVersion);
       }
 
       // 7. Notifica por la app
@@ -1021,6 +1070,7 @@ export function useDashboardData(eventId?: string) {
         // }
 
         // Enviar WhatsApp a ambos participantes
+        const whatsappApiVersion = policies.whatsappApiVersion || "v1";
         const accepterName = receiver?.nombre || "";
         if (requester && receiver) {
           await sendMeetingAcceptedWhatsapp(
@@ -1033,6 +1083,8 @@ export function useDashboardData(eventId?: string) {
             },
             eventName,
             accepterName,
+            whatsappApiVersion,
+            requester,
           );
           await sendMeetingAcceptedWhatsapp(
             receiver.telefono || "",
@@ -1044,6 +1096,8 @@ export function useDashboardData(eventId?: string) {
             },
             eventName,
             accepterName,
+            whatsappApiVersion,
+            receiver,
           );
         }
       } else {
@@ -1070,11 +1124,13 @@ export function useDashboardData(eventId?: string) {
         });
 
         // Enviar WhatsApp al solicitante informando del rechazo
+        const whatsappApiVersion = policies.whatsappApiVersion || "v1";
         if (requester?.telefono && receiver) {
           await sendMeetingRejectedWhatsapp(
             requester.telefono,
             receiver,
             eventName,
+            whatsappApiVersion,
           );
         }
       }
@@ -1122,6 +1178,8 @@ export function useDashboardData(eventId?: string) {
     tableAssigned: string,
   ) => {
     try {
+      if (!eventId) return;
+      
       // 1️⃣ Obtener los IDs de todos los asistentes del grupo
       const employees = companyGroups
         .filter(
@@ -1134,7 +1192,7 @@ export function useDashboardData(eventId?: string) {
       // 2️⃣ Buscar meetings aceptadas en el mismo slot con alguno de esos asistentes
       const meetingsSnap = await getDocs(
         query(
-          collection(db, "events", eventId!, "meetings"),
+          collection(db, "events", eventId, "meetings"),
           where("status", "==", "accepted"),
           where(
             "participants",
@@ -1250,6 +1308,8 @@ export function useDashboardData(eventId?: string) {
         });
 
       // Agenda de slots disponibles - FILTRAR POR FECHA
+      if (!eventId) throw new Error("Event ID is required");
+      
       let agendaQuery = query(
         collection(db, "events", eventId, "agenda"),
         where("available", "==", true),
@@ -1620,6 +1680,7 @@ export function useDashboardData(eventId?: string) {
       if (receiver?.telefono) await sendSms(smsMsg, receiver.telefono);
 
       // El receptor (uid actual) es quien acepta
+      const whatsappApiVersion = policies.whatsappApiVersion || "v1";
       const accepterName = receiver?.nombre || requester?.nombre || "";
 
       if (requester?.telefono) {
@@ -1627,14 +1688,14 @@ export function useDashboardData(eventId?: string) {
           timeSlot: `${slot.startTime} - ${slot.endTime}`,
           tableAssigned: slot.tableNumber,
           meetingDate: eventDateISO,
-        }, eventName, accepterName);
+        }, eventName, accepterName, whatsappApiVersion, requester);
       }
       if (receiver?.telefono) {
         await sendMeetingAcceptedWhatsapp(receiver.telefono, requester!, {
           timeSlot: `${slot.startTime} - ${slot.endTime}`,
           tableAssigned: slot.tableNumber,
           meetingDate: eventDateISO,
-        }, eventName, accepterName);
+        }, eventName, accepterName, whatsappApiVersion, receiver);
       }
 
       // 4) Cierra los modales y limpia estado

@@ -271,7 +271,23 @@ const handleFile = (e) => {
     setCreatedMeetings(0);
     setGlobalMessage("");
 
+    // Índice de IDs válidos para validación rápida
+    const validIds = new Set(attendees.map((a) => a.id));
+    let created = 0;
+    let skipped = 0;
+
     for (const { match, slot } of simResults.resultado) {
+      // Validar que ambos participantes existan en la base de datos
+      const compradorExiste = validIds.has(match.compradorId);
+      const vendedorExiste = validIds.has(match.vendedorId);
+      if (!compradorExiste || !vendedorExiste) {
+        console.warn(
+          `[ImportMeetings] Skipping meeting: compradorId=${match.compradorId} (${compradorExiste ? "ok" : "NOT FOUND"}), vendedorId=${match.vendedorId} (${vendedorExiste ? "ok" : "NOT FOUND"})`
+        );
+        skipped++;
+        continue;
+      }
+
       try {
         const meetingRef = await addDoc(
           collection(db, "events", eventId, "meetings"),
@@ -296,15 +312,15 @@ const handleFile = (e) => {
           available: false,
           meetingId: meetingRef.id,
         });
+        created++;
       } catch (e) {
         // Manejo de errores si falla
       }
     }
 
-    setGlobalMessage(
-      `¡Listo! Se crearon ${simResults.resultado.length} reuniones en agenda.`
-    );
-    setCreatedMeetings(simResults.resultado.length);
+    const skipMsg = skipped > 0 ? ` (${skipped} omitidas por IDs no encontrados en la base de datos — ver consola)` : "";
+    setGlobalMessage(`¡Listo! Se crearon ${created} reuniones en agenda.${skipMsg}`);
+    setCreatedMeetings(created);
     setLoading(false);
   };
 

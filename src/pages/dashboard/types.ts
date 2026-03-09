@@ -105,6 +105,8 @@ export interface EventPolicies {
     companies: boolean;
     products: boolean;
   };
+  /** Versión de la API de WhatsApp a usar */
+  whatsappApiVersion?: "v1" | "v2";
 }
 
 /** Empresa (events/{eventId}/companies/{nitNorm}) */
@@ -152,4 +154,5 @@ export const DEFAULT_POLICIES: EventPolicies = {
     companies: true, 
     products: true 
   },
+  whatsappApiVersion: "v1",
 };
