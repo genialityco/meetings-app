@@ -28,6 +28,26 @@ const getValue = (a, fieldName) => {
   return a[fieldName] ?? "";
 };
 
+// Resuelve el valor legible de un campo según su tipo (select, multiselect, etc.)
+const getDisplayValue = (attendee, field) => {
+  const raw = getValue(attendee, field.name);
+  if (field.type === "select") {
+    return field.options?.find((op) => op.value === raw)?.label || raw || "";
+  }
+  if (field.type === "multiselect") {
+    if (!Array.isArray(raw)) return raw ?? "";
+    const labels = raw.map((v) => {
+      if (v === "__otro__") {
+        const otroText = attendee[field.name + "_otro"];
+        return otroText ? `Otro: ${otroText}` : "Otro";
+      }
+      return field.options?.find((op) => op.value === v)?.label || v;
+    });
+    return labels.join(", ");
+  }
+  return raw ?? "";
+};
+
 // ------ MAIN COMPONENT ------
 const AttendeesList = ({ event, setGlobalMessage }) => {
   const fileInputRef = useRef();
@@ -296,7 +316,11 @@ function parseFirestoreTimestamp(input) {
 
   const wsData = [
     allFields.map((f) => f.label),
-    ...attendees.map((a) => allFields.map((f) => getValue(a, f.name))),
+    ...attendees.map((a) =>
+      allFields.map((f) =>
+        f.name === "id" ? a.id : getDisplayValue(a, f)
+      )
+    ),
   ];
 
   const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -441,13 +465,13 @@ function parseFirestoreTimestamp(input) {
                   {fields
                     .filter((f) => shownFields.includes(f.name))
                     .map((f) => {
-                      const value = getValue(a, f.name);
+                      const rawValue = getValue(a, f.name);
                       return (
                         <Table.Td key={f.name}>
                           {f.type === "image" || f.type === "photo" ? (
-                            value ? (
+                            rawValue ? (
                               <Image
-                                src={value}
+                                src={rawValue}
                                 alt={f.label}
                                 width={60}
                                 height={60}
@@ -457,10 +481,8 @@ function parseFirestoreTimestamp(input) {
                             ) : (
                               <Text size="sm" c="dimmed">Sin imagen</Text>
                             )
-                          ) : f.type === "select" ? (
-                            f.options?.find((op) => op.value === a[f.name])?.label || a[f.name] || value
                           ) : (
-                            value
+                            getDisplayValue(a, f)
                           )}
                         </Table.Td>
                       );
