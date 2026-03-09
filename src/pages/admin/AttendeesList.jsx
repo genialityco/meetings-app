@@ -125,6 +125,7 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
   const [attendees, setAttendees] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [products, setProducts] = useState([]);
+  const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(false);
 
   // -- IMPORT WIZARD STATE --
@@ -180,6 +181,7 @@ function parseFirestoreTimestamp(input) {
       fetchAttendees();
       fetchCompaniesCount();
       fetchProductsCount();
+      fetchMeetings();
     }
     // eslint-disable-next-line
   }, [event]);
@@ -274,6 +276,20 @@ function parseFirestoreTimestamp(input) {
       })));
     } catch (error) {
       console.log("Error al obtener conteo de productos:", error);
+    }
+  };
+
+  const fetchMeetings = async () => {
+    try {
+      const snapshot = await getDocs(collection(db, "events", event.id, "meetings"));
+      const list = snapshot.docs.map((docItem) => ({
+        id: docItem.id,
+        ...docItem.data(),
+      }));
+      setMeetings(list);
+      console.log("Reuniones cargadas:", list.length);
+    } catch (error) {
+      console.log("Error al obtener reuniones:", error);
     }
   };
 
@@ -429,20 +445,50 @@ function parseFirestoreTimestamp(input) {
 
   // Exporta SOLO los campos visibles
   const handleExportCurrentToExcel = () => {
-  const visibleFields = fields.filter((f) => shownFields.includes(f.name));
-  const allFields = [{ name: "id", label: "ID" }, ...visibleFields];
+    const visibleFields = fields.filter((f) => shownFields.includes(f.name));
+    const allFields = [
+      { name: "id", label: "ID" }, 
+      ...visibleFields,
+      { name: "citasPendientes", label: "Citas Pendientes" },
+      { name: "citasAceptadas", label: "Citas Aceptadas" },
+      { name: "citasRechazadas", label: "Citas Rechazadas" },
+      { name: "citasTotales", label: "Total Citas" },
+    ];
 
-  const wsData = [
-    allFields.map((f) => f.label),
-    ...attendees.map((a) => allFields.map((f) => getValue(a, f.name))),
-  ];
+    // Calcular conteos de citas por usuario
+    const getMeetingCounts = (userId) => {
+      const userMeetings = meetings.filter(m => 
+        m.participants?.includes(userId)
+      );
+      
+      const pending = userMeetings.filter(m => m.status === "pending").length;
+      const accepted = userMeetings.filter(m => m.status === "accepted").length;
+      const rejected = userMeetings.filter(m => m.status === "rejected").length;
+      const total = userMeetings.length;
+      
+      return { pending, accepted, rejected, total };
+    };
 
-  const ws = XLSX.utils.aoa_to_sheet(wsData);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Asistentes");
+    const wsData = [
+      allFields.map((f) => f.label),
+      ...attendees.map((a) => {
+        const counts = getMeetingCounts(a.id);
+        return [
+          ...allFields.slice(0, -4).map((f) => getValue(a, f.name)),
+          counts.pending,
+          counts.accepted,
+          counts.rejected,
+          counts.total,
+        ];
+      }),
+    ];
 
-  XLSX.writeFile(wb, `asistentes_${event?.eventName || event.id}.xlsx`);
-};
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Asistentes");
+
+    XLSX.writeFile(wb, `asistentes_${event?.eventName || event.id}.xlsx`);
+  };
   const exportCompradoresToExcel = () => {
     // Puedes ajustar estos campos según tu modelo
     const compradores = attendees.filter((a) => a.tipoAsistente === "comprador");
@@ -492,11 +538,46 @@ function parseFirestoreTimestamp(input) {
   const exportCompaniesToExcel = () => {
     if (companies.length === 0) return setGlobalMessage("No hay empresas.");
     const visibleFields = companyFields.filter((f) => shownCompanyFields.includes(f.name));
-    const allFields = [{ name: "id", label: "ID" }, ...visibleFields];
+    const allFields = [
+      { name: "id", label: "ID" }, 
+      ...visibleFields,
+      { name: "citasPendientes", label: "Citas Pendientes" },
+      { name: "citasAceptadas", label: "Citas Aceptadas" },
+      { name: "citasRechazadas", label: "Citas Rechazadas" },
+      { name: "citasTotales", label: "Total Citas" },
+    ];
+    
+    // Calcular conteos de citas por empresa (suma de todos sus usuarios)
+    const getCompanyMeetingCounts = (companyId) => {
+      const companyUsers = attendees.filter(a => 
+        a.companyId === companyId || a.company_nit === companyId
+      );
+      const userIds = companyUsers.map(u => u.id);
+      
+      const companyMeetings = meetings.filter(m => 
+        m.participants?.some(p => userIds.includes(p))
+      );
+      
+      const pending = companyMeetings.filter(m => m.status === "pending").length;
+      const accepted = companyMeetings.filter(m => m.status === "accepted").length;
+      const rejected = companyMeetings.filter(m => m.status === "rejected").length;
+      const total = companyMeetings.length;
+      
+      return { pending, accepted, rejected, total };
+    };
     
     const wsData = [
       allFields.map((f) => f.label),
-      ...companies.map((c) => allFields.map((f) => getValue(c, f.name))),
+      ...companies.map((c) => {
+        const counts = getCompanyMeetingCounts(c.id);
+        return [
+          ...allFields.slice(0, -4).map((f) => getValue(c, f.name)),
+          counts.pending,
+          counts.accepted,
+          counts.rejected,
+          counts.total,
+        ];
+      }),
     ];
     
     const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -509,11 +590,41 @@ function parseFirestoreTimestamp(input) {
   const exportProductsToExcel = () => {
     if (products.length === 0) return setGlobalMessage("No hay productos.");
     const visibleFields = productFields.filter((f) => shownProductFields.includes(f.name));
-    const allFields = [{ name: "id", label: "ID" }, ...visibleFields];
+    const allFields = [
+      { name: "id", label: "ID" }, 
+      ...visibleFields,
+      { name: "citasPendientes", label: "Citas Pendientes" },
+      { name: "citasAceptadas", label: "Citas Aceptadas" },
+      { name: "citasRechazadas", label: "Citas Rechazadas" },
+      { name: "citasTotales", label: "Total Citas" },
+    ];
+    
+    // Calcular conteos de citas relacionadas con el producto
+    const getProductMeetingCounts = (productId) => {
+      const productMeetings = meetings.filter(m => 
+        m.productId === productId
+      );
+      
+      const pending = productMeetings.filter(m => m.status === "pending").length;
+      const accepted = productMeetings.filter(m => m.status === "accepted").length;
+      const rejected = productMeetings.filter(m => m.status === "rejected").length;
+      const total = productMeetings.length;
+      
+      return { pending, accepted, rejected, total };
+    };
     
     const wsData = [
       allFields.map((f) => f.label),
-      ...products.map((p) => allFields.map((f) => getValue(p, f.name))),
+      ...products.map((p) => {
+        const counts = getProductMeetingCounts(p.id);
+        return [
+          ...allFields.slice(0, -4).map((f) => getValue(p, f.name)),
+          counts.pending,
+          counts.accepted,
+          counts.rejected,
+          counts.total,
+        ];
+      }),
     ];
     
     const ws = XLSX.utils.aoa_to_sheet(wsData);
