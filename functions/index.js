@@ -8,6 +8,9 @@ initializeApp();
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 const GEMINI_API_URL = defineSecret("GEMINI_API_URL");
 const DEFAULT_AI_MODEL = defineSecret("DEFAULT_AI_MODEL");
+const WHATSAPP_API_V1 = defineSecret("WHATSAPP_API_V1");
+const WHATSAPP_API_V2 = defineSecret("WHATSAPP_API_V2");
+const WHATSAPP_ACCOUNT_ID = defineSecret("WHATSAPP_ACCOUNT_ID");
 
 export const notifyMeetingsScheduled = onSchedule(
   {
@@ -15,6 +18,7 @@ export const notifyMeetingsScheduled = onSchedule(
     timeZone: "America/Bogota",
     memory: "256MiB",
     region: "us-central1",
+    secrets: [WHATSAPP_API_V1, WHATSAPP_API_V2, WHATSAPP_ACCOUNT_ID],
   },
   async () => {
     const db = getFirestore();
@@ -37,6 +41,10 @@ export const notifyMeetingsScheduled = onSchedule(
 
       const eventData = eventDoc.data();
       const eventDate = new Date(eventData.config.eventDate);
+      const whatsappApiVersion = eventData.config?.policies?.whatsappApiVersion || "v1";
+      
+      console.log(`📱 Usando WhatsApp API: ${whatsappApiVersion}`);
+
       const meetingsRef = eventRef.collection("meetings");
       const meetingsSnap = await meetingsRef.where("status", "==", "accepted").get();
 
@@ -86,22 +94,22 @@ Por favor diríjase a su mesa asignada (${meeting.tableAssigned}).`;
             console.log(`📲 Enviando WhatsApp a ${user.nombre} (${phone})...`);
 
             try {
-              const resp = await fetch("https://apiwhatsapp.geniality.com.co/api/send", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  clientId: "genialitybussiness",
-                  phone: `57${phone}`,
-                  message,
-                }),
-              });
+              const success = await sendWhatsAppMessage(
+                whatsappApiVersion,
+                phone,
+                message,
+                {
+                  eventName: eventData.eventName,
+                  requesterName: user.nombre,
+                  requesterCompany: user.empresa || user.company_razonSocial,
+                }
+              );
 
-              if (resp.ok) {
+              if (success) {
                 console.log(`✅ WhatsApp enviado a ${user.nombre}`);
                 notifications.push({ uid, phone, meetingId: doc.id });
               } else {
-                const errorText = await resp.text();
-                console.log(`❌ Error enviando WhatsApp:`, errorText);
+                console.log(`❌ Error enviando WhatsApp a ${user.nombre}`);
               }
             } catch (err) {
               console.error(`💥 Error en WhatsApp:`, err);
@@ -1435,3 +1443,71 @@ export const vectorizeDocuments = onRequest(
     }
   }
 );
+
+
+// ============================================================================
+// WHATSAPP FUNCTIONS
+// ============================================================================
+
+/**
+ * Envía un mensaje de WhatsApp usando la API configurada
+ * @param {string} apiVersion - "v1" o "v2"
+ * @param {string} phone - Número de teléfono (sin código de país)
+ * @param {string} message - Mensaje a enviar
+ * @param {object} metadata - Metadata adicional para API v2
+ * @returns {Promise<boolean>} - true si se envió correctamente
+ */
+async function sendWhatsAppMessage(apiVersion, phone, message, metadata = {}) {
+  try {
+    if (apiVersion === "v2") {
+      // API V2: Meeting Request
+      const response = await fetch(`${WHATSAPP_API_V2.value()}/api/send-meeting-request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: WHATSAPP_ACCOUNT_ID.value(),
+          to: `57${phone}`,
+          eventName: metadata.eventName || "Evento",
+          requesterName: metadata.requesterName || "Asistente",
+          requesterCompany: metadata.requesterCompany || "",
+          requesterPosition: metadata.requesterPosition || "",
+          requesterEmail: metadata.requesterEmail || "",
+          requesterPhone: metadata.requesterPhone || "",
+          message: message,
+          acceptUrl: metadata.acceptUrl || "",
+          cancelUrl: metadata.cancelUrl || "",
+        }),
+      });
+
+      if (response.ok) {
+        return true;
+      } else {
+        const errorText = await response.text();
+        console.error("WhatsApp API V2 error:", errorText);
+        return false;
+      }
+    } else {
+      // API V1: Simple (default)
+      const response = await fetch(WHATSAPP_API_V1.value(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId: "genialitybussiness",
+          phone: `57${phone}`,
+          message: message,
+        }),
+      });
+
+      if (response.ok) {
+        return true;
+      } else {
+        const errorText = await response.text();
+        console.error("WhatsApp API V1 error:", errorText);
+        return false;
+      }
+    }
+  } catch (error) {
+    console.error("sendWhatsAppMessage error:", error);
+    return false;
+  }
+}

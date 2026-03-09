@@ -21,9 +21,7 @@ import { showNotification } from "@mantine/notifications";
 import { serverTimestamp } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { storage } from "../../firebase/firebaseConfig";
-
-const API_WP_URL = "https://apiwhatsapp.geniality.com.co/api/send";
-const CLIENT_ID = "genialitybussinesstest";
+import { sendWhatsAppMessage as sendWhatsAppAPI } from "../../utils/whatsappService";
 
 type Product = {
   id: string;
@@ -137,6 +135,8 @@ async function sendMeetingAcceptedWhatsapp(
   meetingInfo: { timeSlot?: string; tableAssigned?: string },
   eventName?: string,
   acceptedByName?: string,
+  whatsappApiVersion: "v1" | "v2" = "v1",
+  requesterData?: any,
 ) {
   if (!toPhone) return;
   const phone = toPhone.replace(/[^\d]/g, "");
@@ -154,15 +154,19 @@ async function sendMeetingAcceptedWhatsapp(
     `🪑 *Mesa:* ${meetingInfo.tableAssigned || ""}\n\n` +
     `¡Te esperamos!`;
 
-  await fetch(API_WP_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      clientId: CLIENT_ID,
-      phone: `57${phone}`,
-      message,
-    }),
-  }).catch(() => {});
+  await sendWhatsAppAPI({
+    apiVersion: whatsappApiVersion,
+    phone,
+    message,
+    metadata: {
+      eventName: eventName || "Evento",
+      requesterName: requesterData?.nombre || otherParticipant?.nombre || "",
+      requesterCompany: requesterData?.empresa || otherParticipant?.empresa || "",
+      requesterPosition: requesterData?.cargo || "",
+      requesterEmail: requesterData?.correo || "",
+      requesterPhone: requesterData?.telefono || "",
+    },
+  });
 }
 
 async function sendMeetingCancelledWhatsapp(
@@ -171,6 +175,7 @@ async function sendMeetingCancelledWhatsapp(
   meetingInfo: { timeSlot?: string; tableAssigned?: string },
   eventName?: string,
   cancelledByName?: string,
+  whatsappApiVersion: "v1" | "v2" = "v1",
 ) {
   if (!toPhone) return;
   const phone = (toPhone || "").toString().replace(/[^\d]/g, "");
@@ -187,21 +192,23 @@ async function sendMeetingCancelledWhatsapp(
     `🕐 *Horario:* ${meetingInfo.timeSlot || ""}\n` +
     `🪑 *Mesa:* ${meetingInfo.tableAssigned || ""}\n`;
 
-  await fetch(API_WP_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      clientId: CLIENT_ID,
-      phone: `57${phone}`,
-      message,
-    }),
-  }).catch(() => {});
+  await sendWhatsAppAPI({
+    apiVersion: whatsappApiVersion,
+    phone,
+    message,
+    metadata: {
+      eventName: eventName || "Evento",
+      requesterName: otherParticipant?.nombre || "",
+      requesterCompany: otherParticipant?.empresa || "",
+    },
+  });
 }
 
 async function sendMeetingRejectedWhatsapp(
   toPhone: string,
   rejectedByParticipant: Assistant,
   eventName?: string,
+  whatsappApiVersion: "v1" | "v2" = "v1",
 ) {
   if (!toPhone) return;
   const phone = (toPhone || "").toString().replace(/[^\d]/g, "");
@@ -214,15 +221,16 @@ async function sendMeetingRejectedWhatsapp(
     `🏢 *Empresa:* ${rejectedByParticipant?.empresa || ""}\n\n` +
     `Puedes enviar solicitudes a otros participantes desde el dashboard del evento.`;
 
-  await fetch(API_WP_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      clientId: CLIENT_ID,
-      phone: `57${phone}`,
-      message,
-    }),
-  }).catch(() => {});
+  await sendWhatsAppAPI({
+    apiVersion: whatsappApiVersion,
+    phone,
+    message,
+    metadata: {
+      eventName: eventName || "Evento",
+      requesterName: rejectedByParticipant?.nombre || "",
+      requesterCompany: rejectedByParticipant?.empresa || "",
+    },
+  });
 }
 
 async function uploadProductImage(
@@ -740,17 +748,23 @@ export function useDashboardData(eventId?: string) {
         `🔗 Ir al evento: \n${landingUrl}\n\n` +
         `_⚠️ Si los enlaces no están activos, responde primero a este chat y luego haz clic en el enlace._`;
 
-      // WhatsApp backend
-      fetch(API_WP_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          clientId: CLIENT_ID,
-
-          phone: `57${assistantPhone.replace(/[^\d]/g, "")}`,
-          message,
-        }),
-      }).catch(() => {});
+      // WhatsApp backend - usar API configurada en políticas
+      const whatsappApiVersion = policies.whatsappApiVersion || "v1";
+      await sendWhatsAppAPI({
+        apiVersion: whatsappApiVersion,
+        phone: assistantPhone.replace(/[^\d]/g, ""),
+        message,
+        metadata: {
+          eventName: eventName || "Evento",
+          requesterName: requester?.nombre || "",
+          requesterCompany: requester?.empresa || "",
+          requesterPosition: requester?.cargo || "",
+          requesterEmail: requester?.correo || "",
+          requesterPhone: requester?.telefono || "",
+          acceptUrl,
+          cancelUrl: rejectUrl,
+        },
+      });
 
       // Notificación en la app
       await addDoc(collection(db, "notifications"), {
@@ -814,17 +828,18 @@ export function useDashboardData(eventId?: string) {
       const cancellerName = currentUser?.data?.nombre || "";
 
       // 7. Notifica a ambos por WhatsApp
+      const whatsappApiVersion = policies.whatsappApiVersion || "v1";
       if (requester?.telefono) {
         await sendMeetingCancelledWhatsapp(requester.telefono, receiver, {
           timeSlot: meeting.timeSlot,
           tableAssigned: meeting.tableAssigned,
-        }, eventName, cancellerName);
+        }, eventName, cancellerName, whatsappApiVersion);
       }
       if (receiver?.telefono) {
         await sendMeetingCancelledWhatsapp(receiver.telefono, requester, {
           timeSlot: meeting.timeSlot,
           tableAssigned: meeting.tableAssigned,
-        }, eventName, cancellerName);
+        }, eventName, cancellerName, whatsappApiVersion);
       }
 
       // 7. Notifica por la app
@@ -989,6 +1004,7 @@ export function useDashboardData(eventId?: string) {
         // }
 
         // Enviar WhatsApp a ambos participantes
+        const whatsappApiVersion = policies.whatsappApiVersion || "v1";
         const accepterName = receiver?.nombre || "";
         if (requester && receiver) {
           await sendMeetingAcceptedWhatsapp(
@@ -1000,6 +1016,8 @@ export function useDashboardData(eventId?: string) {
             },
             eventName,
             accepterName,
+            whatsappApiVersion,
+            requester,
           );
           await sendMeetingAcceptedWhatsapp(
             receiver.telefono || "",
@@ -1010,6 +1028,8 @@ export function useDashboardData(eventId?: string) {
             },
             eventName,
             accepterName,
+            whatsappApiVersion,
+            receiver,
           );
         }
       } else {
@@ -1036,11 +1056,13 @@ export function useDashboardData(eventId?: string) {
         });
 
         // Enviar WhatsApp al solicitante informando del rechazo
+        const whatsappApiVersion = policies.whatsappApiVersion || "v1";
         if (requester?.telefono && receiver) {
           await sendMeetingRejectedWhatsapp(
             requester.telefono,
             receiver,
             eventName,
+            whatsappApiVersion,
           );
         }
       }
@@ -1515,19 +1537,20 @@ export function useDashboardData(eventId?: string) {
       if (receiver?.telefono) await sendSms(smsMsg, receiver.telefono);
 
       // El receptor (uid actual) es quien acepta
+      const whatsappApiVersion = policies.whatsappApiVersion || "v1";
       const accepterName = receiver?.nombre || requester?.nombre || "";
 
       if (requester?.telefono) {
         await sendMeetingAcceptedWhatsapp(requester.telefono, receiver!, {
           timeSlot: slot.startTime,
           tableAssigned: slot.tableNumber,
-        }, eventName, accepterName);
+        }, eventName, accepterName, whatsappApiVersion, requester);
       }
       if (receiver?.telefono) {
         await sendMeetingAcceptedWhatsapp(receiver.telefono, requester!, {
           timeSlot: slot.startTime,
           tableAssigned: slot.tableNumber,
-        }, eventName, accepterName);
+        }, eventName, accepterName, whatsappApiVersion, receiver);
       }
 
       // 4) Cierra los modales y limpia estado
