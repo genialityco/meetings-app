@@ -349,10 +349,10 @@ export default function MeetingAutoResponse() {
       const slotRef = doc(db, "events", eventId, "agenda", slot.id);
 
       // Obtener la fecha del evento para los lockIds
-      const eventSnap = await getDoc(doc(db, "events", eventId));
+      const eventDocSnap = await getDoc(doc(db, "events", eventId));
       const eventDateISO =
-        eventSnap.exists()
-          ? String(eventSnap.data()?.eventDate || "").trim() ||
+        eventDocSnap.exists()
+          ? String(eventDocSnap.data()?.eventDate || "").trim() ||
             new Date().toISOString().slice(0, 10)
           : new Date().toISOString().slice(0, 10);
 
