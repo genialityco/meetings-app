@@ -460,11 +460,20 @@ function parseFirestoreTimestamp(input) {
   // Exporta SOLO los campos visibles
   const handleExportCurrentToExcel = () => {
   const visibleFields = fields.filter((f) => shownFields.includes(f.name));
-  const allFields = [{ name: "id", label: "ID" }, ...visibleFields];
+  const allFields = [
+    { name: "id", label: "ID" }, 
+    { name: "updatedAt", label: "Fecha de Registro" },
+    ...visibleFields
+  ];
 
   const wsData = [
     allFields.map((f) => f.label),
-    ...attendees.map((a) => allFields.map((f) => getValue(a, f.name))),
+    ...attendees.map((a) => allFields.map((f) => {
+      if (f.name === "createdAt") {
+        return parseFirestoreTimestamp(a.createdAt) || "";
+      }
+      return getValue(a, f.name);
+    })),
   ];
 
   const ws = XLSX.utils.aoa_to_sheet(wsData);

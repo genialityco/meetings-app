@@ -197,6 +197,15 @@ const Landing = () => {
   // AI description improvement state
   const [improvingDescription, setImprovingDescription] = useState(false);
 
+  const configuredDescriptionPlaceholder = useMemo(() => {
+    const descripcionField = (event?.config?.formFields || []).find(
+      (f) => f.name === "descripcion",
+    );
+    return (
+      descripcionField?.placeholder?.trim() ||
+      "Describe tu empresa, productos o servicios..."
+    );
+  }, [event?.config?.formFields]);
   // Editor tiptap
   const editor = useEditor({
     extensions: [

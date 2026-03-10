@@ -165,6 +165,10 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
       const rejectUrl = `${baseUrl}/meeting-response/${eventId}/${meetingId}/reject`;
       const landingUrl = `${baseUrl}/event/${eventId}`;
 
+      // Rutas sin base URL para API V2
+      const acceptPath = `/meeting-response/${eventId}/${meetingId}/accept`;
+      const rejectPath = `/meeting-response/${eventId}/${meetingId}/reject`;
+
       const contextLine = context?.contextNote
         ? `\n📋 *Mensaje:* ${context.contextNote}\n`
         : "";
@@ -190,7 +194,7 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
       await sendWhatsAppAPI({
         apiVersion: whatsappApiVersion,
         phone: receiverPhone.replace(/[^\d]/g, ""),
-        message,
+        message: context?.contextNote || message, // Usar contextNote si existe, sino el mensaje completo
         metadata: {
           eventName: eventName || "Evento",
           requesterName: requester?.nombre || "",
@@ -198,8 +202,8 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
           requesterPosition: requester?.cargo || "",
           requesterEmail: requester?.correo || "",
           requesterPhone: requester?.telefono || "",
-          acceptUrl,
-          cancelUrl: rejectUrl,
+          acceptUrl: acceptPath, // Solo la ruta
+          cancelUrl: rejectPath, // Solo la ruta
         },
       });
 

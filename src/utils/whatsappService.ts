@@ -35,6 +35,7 @@ interface SendWhatsAppOptions {
     requesterPhone?: string;
     acceptUrl?: string;
     cancelUrl?: string;
+    contextNote?: string;
   };
 }
 
@@ -55,6 +56,14 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
 
   try {
     if (apiVersion === "v2") {
+      // Limpiar las URLs quitando el primer slash
+      const cleanAcceptUrl = metadata.acceptUrl 
+        ? metadata.acceptUrl.replace(/^\//, '') 
+        : " ";
+      const cleanCancelUrl = metadata.cancelUrl 
+        ? metadata.cancelUrl.replace(/^\//, '') 
+        : " ";
+
       // API V2: Meeting Request
       const payload: WhatsAppV2Payload = {
         accountId: ACCOUNT_ID,
@@ -65,9 +74,9 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
         requesterPosition: metadata.requesterPosition || "Cargo",
         requesterEmail: metadata.requesterEmail || "Email",
         requesterPhone: metadata.requesterPhone || "Telefono",
-        message: "sdfsdf",
-        acceptUrl: metadata.acceptUrl || " ",
-        cancelUrl: metadata.cancelUrl || " ",
+        message: metadata.contextNote || message,
+        acceptUrl: cleanAcceptUrl,
+        cancelUrl: cleanCancelUrl,
       };
 
       const response = await fetch(`${API_V2_URL}/api/send-meeting-request`, {
