@@ -36,6 +36,7 @@ import {
   IconNote,
 } from "@tabler/icons-react";
 import { Assistant, Meeting } from "./types";
+import { trackEvent } from "../../utils/analytics";
 
 interface RequestsTabProps {
   pendingRequests: Meeting[];
@@ -232,7 +233,15 @@ export default function RequestsTab({
                             size="compact-sm"
                             radius="md"
                             leftSection={<IconCheck size={14} />}
-                            onClick={() => prepareSlotSelection(request.id)}
+                            onClick={() => {
+                              trackEvent({
+                                name: "meeting_accepted",
+                                params: {
+                                  meeting_id: request.id,
+                                },
+                              });
+                              prepareSlotSelection(request.id);
+                            }}
                           >
                             Aceptar
                           </Button>
@@ -242,9 +251,15 @@ export default function RequestsTab({
                             size="compact-sm"
                             radius="md"
                             leftSection={<IconX size={14} />}
-                            onClick={() =>
-                              updateMeetingStatus(request.id, "rejected")
-                            }
+                            onClick={() => {
+                              trackEvent({
+                                name: "meeting_rejected",
+                                params: {
+                                  meeting_id: request.id,
+                                },
+                              });
+                              updateMeetingStatus(request.id, "rejected");
+                            }}
                           >
                             Rechazar
                           </Button>
@@ -254,9 +269,15 @@ export default function RequestsTab({
                             size="compact-sm"
                             radius="md"
                             leftSection={<IconBrandWhatsapp size={14} />}
-                            onClick={() =>
-                              sendWhatsAppMessage(requester as Assistant)
-                            }
+                            onClick={() => {
+                              trackEvent({
+                                name: "whatsapp_sent",
+                                params: {
+                                  recipient_type: "meeting_requester",
+                                },
+                              });
+                              sendWhatsAppMessage(requester as Assistant);
+                            }}
                           >
                             WhatsApp
                           </Button>
@@ -313,9 +334,16 @@ export default function RequestsTab({
                           radius="md"
                           fullWidth
                           leftSection={<IconX size={14} />}
-                          onClick={() =>
-                            cancelSentMeeting(request.id, "cancel")
-                          }
+                          onClick={() => {
+                            trackEvent({
+                              name: "meeting_cancelled",
+                              params: {
+                                meeting_id: request.id,
+                                reason: "user_cancelled_sent_request",
+                              },
+                            });
+                            cancelSentMeeting(request.id, "cancel");
+                          }}
                         >
                           Cancelar solicitud
                         </Button>

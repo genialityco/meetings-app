@@ -12,8 +12,10 @@
     window.dataLayer = window.dataLayer || [];
     function gtag() { dataLayer.push(arguments); }
     gtag('js', new Date());
-
     gtag('config', 'G-Z1KJJSR2TN');
+    
+    // Exponer gtag globalmente para que esté disponible en toda la app
+    window.gtag = gtag;
   </script>
   <title>Geniality - Networking</title>
 </head>

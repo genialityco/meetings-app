@@ -1,4 +1,4 @@
-import { Card, Table, Button, Loader, Text, Group, Title, MultiSelect, Modal, Image, Tabs } from "@mantine/core";
+import { Card, Table, Button, Loader, Text, Group, Title, MultiSelect, Modal, Image, Tabs, Stack } from "@mantine/core";
 import { collection, query, where, getDocs, deleteDoc, doc, addDoc, updateDoc, writeBatch } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { useEffect, useRef, useState } from "react";
@@ -145,6 +145,16 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
   const [companyToEdit, setCompanyToEdit] = useState(null);
   const [editProductModalOpen, setEditProductModalOpen] = useState(false);
   const [productToEdit, setProductToEdit] = useState(null);
+
+  // Estado para edición inline
+  const [editingCell, setEditingCell] = useState(null); // { id, fieldName, value }
+  const [savingCell, setSavingCell] = useState(false);
+
+  // Estado para actualización masiva
+  const [updateWizardOpened, setUpdateWizardOpened] = useState(false);
+  const [updateColumns, setUpdateColumns] = useState([]);
+  const [updateRows, setUpdateRows] = useState([]);
+  const [updatingAttendees, setUpdatingAttendees] = useState(false);
 
   const [deleteAllModal, setDeleteAllModal] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
@@ -301,6 +311,162 @@ function parseFirestoreTimestamp(input) {
     }
   };
 
+  // Función para guardar edición inline
+  const handleSaveInlineEdit = async (itemId, fieldName, newValue, entityType) => {
+    setSavingCell(true);
+    try {
+      let docRef;
+      if (entityType === "users") {
+        docRef = doc(db, "users", itemId);
+      } else if (entityType === "companies") {
+        docRef = doc(db, "events", event.id, "companies", itemId);
+      } else if (entityType === "products") {
+        docRef = doc(db, "events", event.id, "products", itemId);
+      }
+
+      await updateDoc(docRef, { [fieldName]: newValue });
+      
+      // Actualizar estado local
+      if (entityType === "users") {
+        setAttendees(prev => prev.map(a => 
+          a.id === itemId ? { ...a, [fieldName]: newValue } : a
+        ));
+      } else if (entityType === "companies") {
+        setCompanies(prev => prev.map(c => 
+          c.id === itemId ? { ...c, [fieldName]: newValue } : c
+        ));
+      } else if (entityType === "products") {
+        setProducts(prev => prev.map(p => 
+          p.id === itemId ? { ...p, [fieldName]: newValue } : p
+        ));
+      }
+
+      setGlobalMessage("Campo actualizado correctamente.");
+      setEditingCell(null);
+    } catch (error) {
+      setGlobalMessage("Error al actualizar el campo.");
+      console.error("Error updating field:", error);
+    } finally {
+      setSavingCell(false);
+    }
+  };
+
+  // Componente de celda editable
+  const EditableCell = ({ item, field, entityType }) => {
+    const value = getValue(item, field.name);
+    const isEditing = editingCell?.id === item.id && editingCell?.fieldName === field.name;
+    
+    // No permitir edición de imágenes inline
+    if (field.type === "image" || field.type === "photo") {
+      return value ? (
+        <Image
+          src={value}
+          alt={field.label}
+          width={60}
+          height={60}
+          fit="cover"
+          radius="md"
+        />
+      ) : (
+        <Text size="sm" c="dimmed">Sin imagen</Text>
+      );
+    }
+
+    if (isEditing) {
+      return (
+        <Group gap="xs">
+          {field.type === "select" ? (
+            <select
+              value={editingCell.value}
+              onChange={(e) => setEditingCell({ ...editingCell, value: e.target.value })}
+              style={{ padding: "4px 8px", borderRadius: "4px", border: "1px solid #ced4da" }}
+              autoFocus
+            >
+              {field.options?.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          ) : field.type === "richtext" ? (
+            <textarea
+              value={editingCell.value}
+              onChange={(e) => setEditingCell({ ...editingCell, value: e.target.value })}
+              style={{ 
+                padding: "4px 8px", 
+                borderRadius: "4px", 
+                border: "1px solid #ced4da",
+                minWidth: "200px",
+                minHeight: "60px"
+              }}
+              autoFocus
+            />
+          ) : (
+            <input
+              type="text"
+              value={editingCell.value}
+              onChange={(e) => setEditingCell({ ...editingCell, value: e.target.value })}
+              style={{ padding: "4px 8px", borderRadius: "4px", border: "1px solid #ced4da", minWidth: "150px" }}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  handleSaveInlineEdit(item.id, field.name, editingCell.value, entityType);
+                } else if (e.key === "Escape") {
+                  setEditingCell(null);
+                }
+              }}
+            />
+          )}
+          <Button
+            size="xs"
+            onClick={() => handleSaveInlineEdit(item.id, field.name, editingCell.value, entityType)}
+            loading={savingCell}
+            color="green"
+          >
+            ✓
+          </Button>
+          <Button
+            size="xs"
+            variant="subtle"
+            onClick={() => setEditingCell(null)}
+            disabled={savingCell}
+            color="red"
+          >
+            ✕
+          </Button>
+        </Group>
+      );
+    }
+
+    return (
+      <div
+        onClick={() => setEditingCell({ id: item.id, fieldName: field.name, value: value || "" })}
+        style={{ 
+          cursor: "pointer", 
+          padding: "4px 8px",
+          borderRadius: "4px",
+          minHeight: "24px",
+          transition: "background-color 0.2s"
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f1f3f5"}
+        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+        title="Click para editar"
+      >
+        {field.type === "select" ? (
+          field.options?.find((op) => op.value === value)?.label || value || "-"
+        ) : field.type === "richtext" ? (
+          value ? (
+            <Text size="sm" lineClamp={2}>{value}</Text>
+          ) : (
+            <Text size="sm" c="dimmed">-</Text>
+          )
+        ) : (
+          value || "-"
+        )}
+      </div>
+    );
+  };
+
   const removeAttendee = async (attendeeId) => {
     try {
       await deleteDoc(doc(db, "users", attendeeId));
@@ -379,6 +545,116 @@ function parseFirestoreTimestamp(input) {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "PlantillaAsistentes");
     XLSX.writeFile(wb, "plantilla_asistentes.xlsx");
+  };
+
+  // Plantilla de Excel para actualización (incluye email como identificador)
+  const downloadUpdateTemplate = () => {
+    // Incluir email como primer campo obligatorio
+    const updateFields = [
+      { name: "correo", label: "Correo (Identificador)" },
+      ...fields.filter(f => f.name !== "correo")
+    ];
+    
+    const wsData = [
+      updateFields.map((f) => f.name),
+      updateFields.map((f, idx) => idx === 0 ? "usuario@ejemplo.com" : `Ejemplo ${idx}`),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "ActualizarAsistentes");
+    XLSX.writeFile(wb, "plantilla_actualizacion_asistentes.xlsx");
+  };
+
+  // Función para actualizar asistentes desde Excel
+  const handleUpdateFromExcel = async (file) => {
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data);
+    const ws = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+    
+    if (rows.length === 0) {
+      setGlobalMessage("El archivo está vacío.");
+      return;
+    }
+
+    // Verificar que tenga columna de correo
+    if (!rows[0].correo && !rows[0].email) {
+      setGlobalMessage("El archivo debe contener una columna 'correo' o 'email' para identificar usuarios.");
+      return;
+    }
+
+    setUpdateColumns(Object.keys(rows[0]));
+    setUpdateRows(rows);
+    setUpdateWizardOpened(true);
+  };
+
+  // Confirmar actualización masiva
+  const handleConfirmUpdate = async () => {
+    setUpdatingAttendees(true);
+    let updated = 0;
+    let notFound = 0;
+    let errors = 0;
+
+    try {
+      for (const row of updateRows) {
+        const email = row.correo || row.email;
+        if (!email) {
+          notFound++;
+          continue;
+        }
+
+        // Buscar usuario por email
+        const userQuery = query(
+          collection(db, "users"),
+          where("eventId", "==", event.id),
+          where("correo", "==", email)
+        );
+        const userSnapshot = await getDocs(userQuery);
+
+        if (userSnapshot.empty) {
+          console.log(`Usuario no encontrado: ${email}`);
+          notFound++;
+          continue;
+        }
+
+        // Preparar datos a actualizar (solo campos con valor)
+        const userId = userSnapshot.docs[0].id;
+        const updateData = {};
+        
+        for (const [key, value] of Object.entries(row)) {
+          // Saltar el email (identificador) y valores vacíos
+          if (key === "correo" || key === "email" || !value || String(value).trim() === "") {
+            continue;
+          }
+
+          // Detectar si es select y mapear el value
+          const fieldConfig = fields.find((f) => f.name === key);
+          if (fieldConfig?.type === "select" && value) {
+            const option = fieldConfig.options?.find(
+              (op) => String(op.label).toLowerCase().trim() === String(value).toLowerCase().trim()
+            );
+            updateData[key] = option?.value || value;
+          } else {
+            updateData[key] = value;
+          }
+        }
+
+        // Solo actualizar si hay campos para actualizar
+        if (Object.keys(updateData).length > 0) {
+          await updateDoc(doc(db, "users", userId), updateData);
+          updated++;
+        }
+      }
+
+      setGlobalMessage(`Actualización completada: ${updated} actualizados, ${notFound} no encontrados, ${errors} errores.`);
+      setUpdateWizardOpened(false);
+      fetchAttendees();
+    } catch (error) {
+      console.error("Error en actualización masiva:", error);
+      setGlobalMessage("Error durante la actualización masiva.");
+    } finally {
+      setUpdatingAttendees(false);
+    }
   };
 
   // Paso 1: Leer archivo Excel y mostrar wizard de mapeo
@@ -686,6 +962,9 @@ function parseFirestoreTimestamp(input) {
               <Button variant="outline" onClick={downloadAttendeesTemplate}>
                 Descargar Plantilla Excel
               </Button>
+              <Button variant="outline" color="cyan" onClick={downloadUpdateTemplate}>
+                Plantilla Actualización
+              </Button>
               <Button component="label" variant="outline">
                 Importar Excel
                 <input
@@ -696,6 +975,19 @@ function parseFirestoreTimestamp(input) {
                   onChange={async (e) => {
                     if (e.target.files[0]) {
                       await handleExcelFileSelected(e.target.files[0]);
+                    }
+                  }}
+                />
+              </Button>
+              <Button component="label" variant="outline" color="orange">
+                Actualizar desde Excel
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  style={{ display: "none" }}
+                  onChange={async (e) => {
+                    if (e.target.files[0]) {
+                      await handleUpdateFromExcel(e.target.files[0]);
                     }
                   }}
                 />
@@ -756,31 +1048,11 @@ function parseFirestoreTimestamp(input) {
                     <Table.Tr key={a.id}>
                       {fields
                         .filter((f) => shownFields.includes(f.name))
-                        .map((f) => {
-                          const value = getValue(a, f.name);
-                          return (
-                            <Table.Td key={f.name}>
-                              {f.type === "image" || f.type === "photo" ? (
-                                value ? (
-                                  <Image
-                                    src={value}
-                                    alt={f.label}
-                                    width={60}
-                                    height={60}
-                                    fit="cover"
-                                    radius="md"
-                                  />
-                                ) : (
-                                  <Text size="sm" c="dimmed">Sin imagen</Text>
-                                )
-                              ) : f.type === "select" ? (
-                                f.options?.find((op) => op.value === a[f.name])?.label || a[f.name] || value
-                              ) : (
-                                value
-                              )}
-                            </Table.Td>
-                          );
-                        })}
+                        .map((f) => (
+                          <Table.Td key={f.name}>
+                            <EditableCell item={a} field={f} entityType="users" />
+                          </Table.Td>
+                        ))}
                       <Table.Td>
                         <Button
                           size="xs"
@@ -858,37 +1130,11 @@ function parseFirestoreTimestamp(input) {
                     <Table.Tr key={c.id}>
                       {companyFields
                         .filter((f) => shownCompanyFields.includes(f.name))
-                        .map((f) => {
-                          const value = getValue(c, f.name);
-                          return (
-                            <Table.Td key={f.name}>
-                              {f.type === "image" || f.type === "photo" ? (
-                                value ? (
-                                  <Image
-                                    src={value}
-                                    alt={f.label}
-                                    width={60}
-                                    height={60}
-                                    fit="contain"
-                                    radius="md"
-                                  />
-                                ) : (
-                                  <Text size="sm" c="dimmed">Sin imagen</Text>
-                                )
-                              ) : f.type === "select" ? (
-                                f.options?.find((op) => op.value === c[f.name])?.label || c[f.name] || value
-                              ) : f.type === "richtext" ? (
-                                value ? (
-                                  <Text size="sm" lineClamp={2}>{value}</Text>
-                                ) : (
-                                  <Text size="sm" c="dimmed">-</Text>
-                                )
-                              ) : (
-                                value
-                              )}
-                            </Table.Td>
-                          );
-                        })}
+                        .map((f) => (
+                          <Table.Td key={f.name}>
+                            <EditableCell item={c} field={f} entityType="companies" />
+                          </Table.Td>
+                        ))}
                       <Table.Td>
                         <Button
                           size="xs"
@@ -966,39 +1212,11 @@ function parseFirestoreTimestamp(input) {
                     <Table.Tr key={p.id}>
                       {productFields
                         .filter((f) => shownProductFields.includes(f.name))
-                        .map((f) => {
-                          const value = getValue(p, f.name);
-                          return (
-                            <Table.Td key={f.name}>
-                              {f.type === "image" || f.type === "photo" || f.name === "images" || f.name === "imageUrl" ? (
-                                value ? (
-                                  <Image
-                                    src={value}
-                                    alt={f.label}
-                                    width={60}
-                                    height={60}
-                                    fit="cover"
-                                    radius="md"
-                                  />
-                                ) : (
-                                  <Text size="sm" c="dimmed">Sin imagen</Text>
-                                )
-                              ) : f.type === "select" ? (
-                                f.options?.find((op) => op.value === p[f.name])?.label || p[f.name] || value
-                              ) : f.type === "richtext" || f.name === "description" ? (
-                                value ? (
-                                  <Text size="sm" lineClamp={2}>{value}</Text>
-                                ) : (
-                                  <Text size="sm" c="dimmed">-</Text>
-                                )
-                              ) : f.name === "price" ? (
-                                value ? `$${value}` : "-"
-                              ) : (
-                                value || "-"
-                              )}
-                            </Table.Td>
-                          );
-                        })}
+                        .map((f) => (
+                          <Table.Td key={f.name}>
+                            <EditableCell item={p} field={f} entityType="products" />
+                          </Table.Td>
+                        ))}
                       <Table.Td>
                         <Button
                           size="xs"
@@ -1115,6 +1333,79 @@ function parseFirestoreTimestamp(input) {
             Eliminar todos
           </Button>
         </Group>
+      </Modal>
+
+      {/* Modal de confirmación de actualización masiva */}
+      <Modal
+        opened={updateWizardOpened}
+        onClose={() => !updatingAttendees && setUpdateWizardOpened(false)}
+        title="Actualizar asistentes desde Excel"
+        size="lg"
+        centered
+      >
+        <Stack gap="md">
+          <Text size="sm">
+            Se encontraron <b>{updateRows.length}</b> filas en el archivo Excel.
+          </Text>
+          <Text size="sm" c="dimmed">
+            Los asistentes se identificarán por su correo electrónico. Solo se actualizarán los campos que tengan valores en el Excel.
+          </Text>
+          
+          {updateRows.length > 0 && (
+            <div style={{ maxHeight: "300px", overflowY: "auto" }}>
+              <Table striped highlightOnHover>
+                <Table.Thead>
+                  <Table.Tr>
+                    {updateColumns.slice(0, 5).map((col) => (
+                      <Table.Th key={col}>{col}</Table.Th>
+                    ))}
+                    {updateColumns.length > 5 && <Table.Th>...</Table.Th>}
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {updateRows.slice(0, 5).map((row, idx) => (
+                    <Table.Tr key={idx}>
+                      {updateColumns.slice(0, 5).map((col) => (
+                        <Table.Td key={col}>
+                          <Text size="xs" lineClamp={1}>
+                            {row[col] || "-"}
+                          </Text>
+                        </Table.Td>
+                      ))}
+                      {updateColumns.length > 5 && <Table.Td>...</Table.Td>}
+                    </Table.Tr>
+                  ))}
+                  {updateRows.length > 5 && (
+                    <Table.Tr>
+                      <Table.Td colSpan={updateColumns.length > 5 ? 6 : updateColumns.length}>
+                        <Text size="xs" c="dimmed" ta="center">
+                          ... y {updateRows.length - 5} filas más
+                        </Text>
+                      </Table.Td>
+                    </Table.Tr>
+                  )}
+                </Table.Tbody>
+              </Table>
+            </div>
+          )}
+
+          <Group mt="md" position="apart">
+            <Button 
+              variant="default" 
+              onClick={() => setUpdateWizardOpened(false)} 
+              disabled={updatingAttendees}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              color="orange" 
+              onClick={handleConfirmUpdate} 
+              loading={updatingAttendees}
+            >
+              Actualizar {updateRows.length} asistentes
+            </Button>
+          </Group>
+        </Stack>
       </Modal>
     </Card>
   );

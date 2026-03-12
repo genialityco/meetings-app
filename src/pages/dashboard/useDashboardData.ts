@@ -22,6 +22,7 @@ import { serverTimestamp } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { storage } from "../../firebase/firebaseConfig";
 import { sendWhatsAppMessage as sendWhatsAppAPI } from "../../utils/whatsappService";
+import { meetingAnalytics, profileAnalytics, trackError, trackEvent } from "../../utils/analytics";
 
 type Product = {
   id: string;
@@ -141,6 +142,40 @@ async function sendMeetingAcceptedWhatsapp(
   if (!toPhone) return;
   const phone = toPhone.replace(/[^\d]/g, "");
   
+  // Si es API v2, usar el endpoint de confirmación
+  if (whatsappApiVersion === "v2") {
+    const { sendMeetingConfirmation } = await import("../../utils/whatsappService");
+    
+    // Formatear fecha si existe
+    let dateStr = "";
+    if (meetingInfo.meetingDate) {
+      const [year, month, day] = meetingInfo.meetingDate.split("-").map(Number);
+      const date = new Date(year, month - 1, day);
+      dateStr = date.toLocaleDateString("es-ES", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+      });
+    }
+    
+    const schedule = dateStr 
+      ? `${dateStr} - ${meetingInfo.timeSlot || ""}`
+      : meetingInfo.timeSlot || "";
+    
+    await sendMeetingConfirmation({
+      phone,
+      eventName: eventName || "Evento",
+      acceptedBy: acceptedByName || "El participante",
+      meetingWith: otherParticipant?.nombre || "Participante",
+      company: otherParticipant?.empresa || "Empresa",
+      schedule,
+      table: meetingInfo.tableAssigned || "N/A",
+    });
+    
+    return;
+  }
+  
+  // API v1: usar el método anterior
   // Formatear fecha si existe
   let dateStr = "";
   if (meetingInfo.meetingDate) {
@@ -843,9 +878,14 @@ export function useDashboardData(eventId?: string) {
         read: false,
         type: "meeting_request",
       });
+
+      // Trackear evento de analytics
+      meetingAnalytics.requestSent(assistantId, !!context?.contextNote);
+
       return Promise.resolve();
     } catch (e) {
       // console.error(e);
+      trackError(e instanceof Error ? e.message : String(e), 'useDashboardData.sendMeetingRequest');
       return Promise.reject(e);
     }
   };
@@ -928,9 +968,13 @@ export function useDashboardData(eventId?: string) {
         type: "meeting_cancelled",
       });
 
+      // Trackear evento de analytics
+      meetingAnalytics.cancelled(meeting.id, 'user_cancelled');
+
       return true; // <-- IMPORTANTE
     } catch (err) {
       console.error("Error en cancelMeeting:", err);
+      trackError(err instanceof Error ? err.message : String(err), 'useDashboardData.cancelMeeting');
       throw err; // <-- IMPORTANTE
     }
   };
@@ -1104,6 +1148,9 @@ export function useDashboardData(eventId?: string) {
             receiver,
           );
         }
+        
+        // Trackear evento de analytics
+        meetingAnalytics.accepted(meetingId);
       } else {
         // Rechazar reunión
         await updateDoc(mtgRef, { status: newStatus });
@@ -1137,9 +1184,13 @@ export function useDashboardData(eventId?: string) {
             whatsappApiVersion,
           );
         }
+        
+        // Trackear evento de analytics
+        meetingAnalytics.rejected(meetingId);
       }
     } catch (e) {
       // console.error(e);
+      trackError(e instanceof Error ? e.message : String(e), 'useDashboardData.updateMeetingStatus');
     }
   };
 

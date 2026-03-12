@@ -55,6 +55,7 @@ import { db } from "../firebase/firebaseConfig";
 import { storage } from "../firebase/firebaseConfig";
 import { UserContext } from "../context/UserContext";
 import { uploadCompanyLogo } from "../utils/companyStorage";
+import { trackEvent } from "../utils/analytics";
 
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
 
@@ -469,6 +470,15 @@ const Landing = () => {
       setLoginError("Por favor ingresa un correo válido.");
       return;
     }
+    
+    // Track login attempt
+    trackEvent({
+      name: "login",
+      params: {
+        method: "email",
+      },
+    });
+    
     setLoginLoading(true);
     try {
       const result = await loginByEmail(loginEmail.trim(), eventId);
@@ -542,6 +552,7 @@ const Landing = () => {
     setSaving(true);
     try {
       const uid = currentUser?.uid;
+      const isNewUser = !currentUser?.data?.createdAt;
 
       let dataToUpdate = {
         ...formValues,
@@ -658,6 +669,24 @@ const Landing = () => {
       }
 
       await updateUser(uid, dataToUpdate);
+      
+      // Track registration/update completion
+      if (isNewUser) {
+        trackEvent({
+          name: "sign_up",
+          params: {
+            method: "form",
+          },
+        });
+      } else {
+        trackEvent({
+          name: "profile_updated",
+          params: {
+            fields_updated: Object.keys(dataToUpdate),
+          },
+        });
+      }
+      
       navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
     } catch (error) {
       console.error("Error en el guardado:", error);

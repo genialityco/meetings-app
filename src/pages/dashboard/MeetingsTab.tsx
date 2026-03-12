@@ -53,6 +53,7 @@ import {
 import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
 import { showNotification } from "@mantine/notifications";
+import { trackEvent } from "../../utils/analytics";
 
 function InfoRow({
   icon,
@@ -198,6 +199,16 @@ export default function MeetingsTab({
 
   const handleCancelMeeting = async (meeting) => {
     if (!window.confirm("¿Seguro que deseas cancelar esta reunión?")) return;
+    
+    // Track meeting cancellation
+    trackEvent({
+      name: "meeting_cancelled",
+      params: {
+        meeting_id: meeting.id,
+        reason: "user_cancelled_accepted_meeting",
+      },
+    });
+    
     setCancellingId(meeting.id);
     try {
       const slotId = await findSlotIdForMeeting(

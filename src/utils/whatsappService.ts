@@ -22,6 +22,17 @@ interface WhatsAppV2Payload {
   cancelUrl?: string;
 }
 
+interface WhatsAppV2ConfirmationPayload {
+  accountId: string;
+  to: string;
+  eventName: string;
+  acceptedBy: string;
+  meetingWith: string;
+  company: string;
+  schedule: string;
+  table: string;
+}
+
 interface SendWhatsAppOptions {
   apiVersion: "v1" | "v2";
   phone: string;
@@ -74,7 +85,7 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
         requesterPosition: metadata.requesterPosition || "Cargo",
         requesterEmail: metadata.requesterEmail || "Email",
         requesterPhone: metadata.requesterPhone || "Telefono",
-        message: metadata.contextNote || message,
+        message: metadata.contextNote || "mensaje",
         acceptUrl: cleanAcceptUrl,
         cancelUrl: cleanCancelUrl,
       };
@@ -125,4 +136,52 @@ export function formatPhoneForWhatsApp(phone: string): string {
   }
   
   return digits;
+}
+
+/**
+ * Envía un mensaje de confirmación de reunión usando WhatsApp API V2
+ */
+export async function sendMeetingConfirmation(options: {
+  phone: string;
+  eventName: string;
+  acceptedBy: string;
+  meetingWith: string;
+  company: string;
+  schedule: string;
+  table: string;
+}): Promise<boolean> {
+  const { phone, eventName, acceptedBy, meetingWith, company, schedule, table } = options;
+
+  // Limpiar número de teléfono
+  const cleanPhone = phone.replace(/[^\d]/g, "");
+  const fullPhone = `57${cleanPhone}`;
+
+  try {
+    const payload: WhatsAppV2ConfirmationPayload = {
+      accountId: ACCOUNT_ID,
+      to: fullPhone,
+      eventName,
+      acceptedBy,
+      meetingWith,
+      company,
+      schedule,
+      table,
+    };
+
+    const response = await fetch(`${API_V2_URL}/api/send-meeting-confirmation`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      console.error("Error sending meeting confirmation:", await response.text());
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Error sending meeting confirmation:", error);
+    return false;
+  }
 }

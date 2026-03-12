@@ -13,6 +13,9 @@ const WHATSAPP_API_V1 = defineSecret("WHATSAPP_API_V1");
 const WHATSAPP_API_V2 = defineSecret("WHATSAPP_API_V2");
 const WHATSAPP_ACCOUNT_ID = defineSecret("WHATSAPP_ACCOUNT_ID");
 
+// Configuración: Campos a utilizar para generar el vector de embeddings
+const VECTOR_FIELDS = ["descripcion"];
+
 export const notifyMeetingsScheduled = onSchedule(
   {
     schedule: "every 5 minutes",
@@ -211,6 +214,359 @@ export const checkEmailAvailability = onRequest(
 
     } catch (error) {
       console.error("Error checking email availability:", error);
+      res.status(500).send({
+        error: "Internal server error",
+        details: error.message,
+      });
+    }
+  }
+);
+
+/**
+ * Función HTTP para regenerar vectores de embeddings y recalcular afinidad para usuarios de un evento
+ * Se ejecuta cuando se actualizan los campos de VECTOR_FIELDS
+ * 
+ * Uso: POST /regenerateVectorsForEvent
+ * Body: {
+ *   "eventId": "xxx",
+ *   "userId": "yyy" // Opcional: si se proporciona, solo regenera para ese usuario
+ * }
+ */
+export const regenerateVectorsForEvent = onRequest(
+  {
+    region: "us-central1",
+    memory: "1GiB",
+    timeoutSeconds: 540,
+    secrets: [GEMINI_API_KEY, GEMINI_API_URL, DEFAULT_AI_MODEL],
+  },
+  async (req, res) => {
+    // CORS headers
+    const origin = req.headers.origin || "*";
+    res.set({
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "POST,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type,Authorization",
+      "Access-Control-Allow-Credentials": "true",
+    });
+
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+
+    if (req.method !== "POST") {
+      res.status(405).send({ error: "Method not allowed" });
+      return;
+    }
+
+    const { eventId, userId } = req.body;
+
+    if (!eventId) {
+      res.status(400).send({ error: "Missing required field: eventId" });
+      return;
+    }
+
+    const db = getFirestore();
+
+    try {
+      console.log(`Starting vector regeneration and affinity recalculation for event ${eventId}${userId ? ` and user ${userId}` : ""}`);
+      console.log(`Using fields: ${VECTOR_FIELDS.join(", ")}`);
+
+      let usersToProcess = [];
+      let allEventUsers = [];
+
+      // Obtener todos los usuarios del evento (necesarios para calcular afinidad)
+      const allUsersSnap = await db.collection("users")
+        .where("eventId", "==", eventId)
+        .get();
+      
+      allEventUsers = allUsersSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      if (userId) {
+        // Regenerar solo para un usuario específico
+        const userDoc = await db.collection("users").doc(userId).get();
+        if (!userDoc.exists) {
+          res.status(404).send({ error: "User not found" });
+          return;
+        }
+        const userData = userDoc.data();
+        if (userData.eventId !== eventId) {
+          res.status(400).send({ error: "User does not belong to this event" });
+          return;
+        }
+        usersToProcess.push({ id: userDoc.id, ...userData });
+      } else {
+        // Regenerar para todos los usuarios del evento
+        usersToProcess = allEventUsers;
+      }
+
+      console.log(`Processing ${usersToProcess.length} users, total in event: ${allEventUsers.length}`);
+
+      let successCount = 0;
+      let errorCount = 0;
+      let affinityCount = 0;
+      let matchesCount = 0;
+      const errors = [];
+
+      // PASO 1: Regenerar vectores para los usuarios seleccionados
+      const updatedUsersWithVectors = [];
+      
+      for (const user of usersToProcess) {
+        try {
+          console.log(`Generating embedding for user ${user.id} (${user.nombre || "unknown"})`);
+          
+          // Generar nuevo embedding
+          const embeddingResult = await generateUserEmbedding(user);
+          
+          if (embeddingResult) {
+            // Actualizar el documento del usuario con el nuevo vector
+            await db.collection("users").doc(user.id).update({
+              vector: embeddingResult.vector,
+              condensedText: embeddingResult.condensedText,
+              vectorGeneratedAt: new Date(),
+              vectorFields: VECTOR_FIELDS, // Guardar qué campos se usaron
+            });
+            
+            // Guardar usuario actualizado con su nuevo vector
+            updatedUsersWithVectors.push({
+              ...user,
+              vector: embeddingResult.vector,
+              condensedText: embeddingResult.condensedText,
+            });
+            
+            console.log(`✅ Vector updated for user ${user.id}`);
+            successCount++;
+          } else {
+            console.warn(`⚠️ Failed to generate embedding for user ${user.id}`);
+            errorCount++;
+            errors.push({
+              userId: user.id,
+              userName: user.nombre || "unknown",
+              reason: "No data in configured fields"
+            });
+          }
+        } catch (error) {
+          console.error(`❌ Error processing user ${user.id}:`, error);
+          errorCount++;
+          errors.push({
+            userId: user.id,
+            userName: user.nombre || "unknown",
+            reason: error.message
+          });
+        }
+      }
+
+      console.log(`✅ Vector regeneration completed: ${successCount} success, ${errorCount} errors`);
+
+      // PASO 2: Recalcular afinidad para los usuarios actualizados
+      if (updatedUsersWithVectors.length > 0) {
+        console.log(`Starting affinity recalculation for ${updatedUsersWithVectors.length} users`);
+        
+        for (const updatedUser of updatedUsersWithVectors) {
+          try {
+            // Obtener otros usuarios del evento (excepto el usuario actual)
+            const otherUsers = allEventUsers.filter(u => u.id !== updatedUser.id);
+            
+            if (otherUsers.length === 0) {
+              console.log(`No other users to calculate affinity for user ${updatedUser.id}`);
+              continue;
+            }
+
+            let batch = db.batch();
+            let batchCount = 0;
+            const affinityResults = new Map();
+
+            // Calcular afinidad con cada otro usuario
+            for (const otherUser of otherUsers) {
+              // Generar embedding del otro usuario si no lo tiene
+              let otherUserEmbedding = otherUser.vector;
+              
+              if (!otherUserEmbedding) {
+                console.log(`Generating embedding for user ${otherUser.id}`);
+                const embeddingResult = await generateUserEmbedding(otherUser);
+                
+                if (embeddingResult) {
+                  otherUserEmbedding = embeddingResult.vector;
+                  // Actualizar el documento del usuario con el nuevo vector
+                  await db.collection("users").doc(otherUser.id).update({
+                    vector: embeddingResult.vector,
+                    condensedText: embeddingResult.condensedText,
+                    vectorGeneratedAt: new Date(),
+                  });
+                }
+              }
+              
+              // Calcular afinidad usando embeddings
+              const affinity = await calculateAffinityWithEmbeddings(
+                updatedUser, 
+                otherUser,
+                updatedUser.vector,
+                otherUserEmbedding
+              );
+              
+              // Guardar en cache
+              affinityResults.set(otherUser.id, affinity);
+
+              // Guardar afinidad del usuario actualizado hacia el otro (A -> B)
+              const affinityRefAtoB = db.collection("users")
+                .doc(updatedUser.id)
+                .collection("affinityScores")
+                .doc(otherUser.id);
+
+              batch.set(affinityRefAtoB, {
+                targetUserId: otherUser.id,
+                targetName: otherUser.nombre || "Sin nombre",
+                targetCompany: otherUser.empresa || otherUser.company_razonSocial || "Sin empresa",
+                score: affinity.score,
+                reasons: affinity.reasons,
+                aiGenerated: affinity.aiGenerated || false,
+                eventId: eventId,
+                calculatedAt: new Date(),
+              });
+
+              // Guardar el MISMO score en el otro usuario (B -> A) - simétrico
+              const affinityRefBtoA = db.collection("users")
+                .doc(otherUser.id)
+                .collection("affinityScores")
+                .doc(updatedUser.id);
+
+              batch.set(affinityRefBtoA, {
+                targetUserId: updatedUser.id,
+                targetName: updatedUser.nombre || "Sin nombre",
+                targetCompany: updatedUser.empresa || updatedUser.company_razonSocial || "Sin empresa",
+                score: affinity.score,
+                reasons: affinity.reasons,
+                aiGenerated: affinity.aiGenerated || false,
+                eventId: eventId,
+                calculatedAt: new Date(),
+              });
+
+              batchCount += 2;
+              affinityCount += 2;
+
+              // Commit cada 450 operaciones
+              if (batchCount >= 450) {
+                await batch.commit();
+                console.log(`Committed batch of ${batchCount} affinity scores`);
+                batch = db.batch();
+                batchCount = 0;
+              }
+            }
+
+            // Commit final de affinity scores
+            if (batchCount > 0) {
+              await batch.commit();
+              console.log(`Committed final batch of ${batchCount} affinity scores for user ${updatedUser.id}`);
+            }
+
+            // PASO 3: Actualizar matches para afinidades >= 89%
+            let matchesBatch = db.batch();
+            let matchesBatchCount = 0;
+
+            for (const otherUser of otherUsers) {
+              const affinity = affinityResults.get(otherUser.id);
+              
+              if (affinity && affinity.score >= 89) {
+                // Crear/actualizar match para el usuario actualizado (A -> B)
+                const matchRefA = db.collection("users")
+                  .doc(updatedUser.id)
+                  .collection("matches")
+                  .doc(otherUser.id);
+                
+                matchesBatch.set(matchRefA, {
+                  userId: otherUser.id,
+                  userName: otherUser.nombre || "Sin nombre",
+                  userCompany: otherUser.empresa || otherUser.company_razonSocial || "Sin empresa",
+                  userRole: otherUser.tipoAsistente || null,
+                  userInterest: otherUser.interesPrincipal || null,
+                  userPhoto: otherUser.photoURL || null,
+                  userEmail: otherUser.correo || null,
+                  userPhone: otherUser.telefono || null,
+                  userPosition: otherUser.cargo || null,
+                  userDescription: otherUser.descripcion || null,
+                  userNeed: otherUser.necesidad || null,
+                  affinityScore: affinity.score,
+                  reasons: affinity.reasons,
+                  aiGenerated: affinity.aiGenerated || false,
+                  status: "pending",
+                  eventId: eventId,
+                  createdAt: new Date(),
+                }, { merge: true }); // merge para no sobrescribir status si ya existe
+                
+                // Crear/actualizar match para el otro usuario (B -> A) - simétrico
+                const matchRefB = db.collection("users")
+                  .doc(otherUser.id)
+                  .collection("matches")
+                  .doc(updatedUser.id);
+                
+                matchesBatch.set(matchRefB, {
+                  userId: updatedUser.id,
+                  userName: updatedUser.nombre || "Sin nombre",
+                  userCompany: updatedUser.empresa || updatedUser.company_razonSocial || "Sin empresa",
+                  userRole: updatedUser.tipoAsistente || null,
+                  userInterest: updatedUser.interesPrincipal || null,
+                  userPhoto: updatedUser.photoURL || null,
+                  userEmail: updatedUser.correo || null,
+                  userPhone: updatedUser.telefono || null,
+                  userPosition: updatedUser.cargo || null,
+                  userDescription: updatedUser.descripcion || null,
+                  userNeed: updatedUser.necesidad || null,
+                  affinityScore: affinity.score,
+                  reasons: affinity.reasons,
+                  aiGenerated: affinity.aiGenerated || false,
+                  status: "pending",
+                  eventId: eventId,
+                  createdAt: new Date(),
+                }, { merge: true });
+                
+                matchesBatchCount += 2;
+                matchesCount += 2;
+                
+                // Commit cada 450 operaciones
+                if (matchesBatchCount >= 450) {
+                  await matchesBatch.commit();
+                  console.log(`Committed batch of ${matchesBatchCount} matches`);
+                  matchesBatch = db.batch();
+                  matchesBatchCount = 0;
+                }
+              }
+            }
+            
+            // Commit final de matches
+            if (matchesBatchCount > 0) {
+              await matchesBatch.commit();
+              console.log(`Committed final batch of ${matchesBatchCount} matches for user ${updatedUser.id}`);
+            }
+
+            console.log(`✅ Affinity recalculation completed for user ${updatedUser.id}`);
+
+          } catch (affinityError) {
+            console.error(`❌ Error calculating affinity for user ${updatedUser.id}:`, affinityError);
+          }
+        }
+
+        console.log(`✅ Affinity recalculation completed: ${affinityCount} scores, ${matchesCount} matches`);
+      }
+
+      res.status(200).send({
+        success: true,
+        message: `Vector regeneration and affinity recalculation completed for event ${eventId}`,
+        stats: {
+          total: usersToProcess.length,
+          vectorSuccess: successCount,
+          vectorErrors: errorCount,
+          affinityScores: affinityCount,
+          matchesCreated: matchesCount,
+        },
+        fields: VECTOR_FIELDS,
+        errors: errors.length > 0 ? errors : undefined,
+      });
+
+    } catch (error) {
+      console.error("Error regenerating vectors and affinity:", error);
       res.status(500).send({
         error: "Internal server error",
         details: error.message,
@@ -1962,23 +2318,56 @@ export const vectorizeDocuments = onRequest(
 
 /**
  * Función helper para generar embedding de un usuario
- * USA interesPrincipal, necesidad y descripcion condensados por IA
+ * USA los campos configurados en VECTOR_FIELDS
  */
 async function generateUserEmbedding(userData) {
   try {
-    // Concatenar necesidad y descripción directamente
-    const necesidad = userData.necesidad || "";
-    const descripcion = userData.descripcion || "";
+    // Concatenar los campos configurados en VECTOR_FIELDS
+    const textParts = VECTOR_FIELDS
+      .map(fieldName => userData[fieldName] || "")
+      .filter(Boolean);
     
-    const textToEmbed = [necesidad, descripcion]
-      .filter(Boolean)
-      .join(". ")
-      .trim();
+    // CASO ESPECIAL: Agregar campos custom según el tipo de asistente
+    const tipoAsistente = (userData.tipoAsistente || "").toLowerCase();
+    
+    if (tipoAsistente === "vendedor") {
+      // Para vendedores, agregar custom_qu_tipo_de_productos_o_se_2198
+      const customField = userData.custom_qu_tipo_de_productos_o_se_2198;
+      if (customField) {
+        if (Array.isArray(customField)) {
+          // Si es un array, unir los elementos
+          const customText = customField.filter(Boolean).join(", ");
+          if (customText) {
+            textParts.push(customText);
+          }
+        } else if (typeof customField === "string" && customField.trim()) {
+          textParts.push(customField);
+        }
+      }
+    } else if (tipoAsistente === "comprador") {
+      // Para compradores, agregar custom_qu_tipo_de_productos_o_se_8102
+      const customField = userData.custom_qu_tipo_de_productos_o_se_8102;
+      if (customField) {
+        if (Array.isArray(customField)) {
+          // Si es un array, unir los elementos
+          const customText = customField.filter(Boolean).join(", ");
+          if (customText) {
+            textParts.push(customText);
+          }
+        } else if (typeof customField === "string" && customField.trim()) {
+          textParts.push(customField);
+        }
+      }
+    }
+    
+    const textToEmbed = textParts.join(". ").trim();
     
     if (!textToEmbed || textToEmbed.length === 0) {
-      console.warn(`User ${userData.nombre || "unknown"} has no information to embed`);
+      console.warn(`User ${userData.nombre || "unknown"} has no information to embed from fields: ${VECTOR_FIELDS.join(", ")}`);
       return null;
     }
+    
+    console.log(`Generating embedding from fields: ${VECTOR_FIELDS.join(", ")}${tipoAsistente ? ` + custom fields for ${tipoAsistente}` : ""} for user ${userData.nombre || "unknown"}`);
     
     // Generar embedding usando Gemini
     const embedding = await generateEmbedding(textToEmbed);
@@ -2038,34 +2427,34 @@ async function calculateAffinityWithEmbeddings(userA, userB, vectorA = null, vec
     }
     
     // Aplicar castigo por interés principal incompatible
-    const interesA = (userA.interesPrincipal || "").toLowerCase().trim();
-    const interesB = (userB.interesPrincipal || "").toLowerCase().trim();
+    // const interesA = (userA.interesPrincipal || "").toLowerCase().trim();
+    // const interesB = (userB.interesPrincipal || "").toLowerCase().trim();
     
-    let interestPenalty = 1;
-    let interestReason = null;
+    // let interestPenalty = 1;
+    // let interestReason = null;
     
-    // Normalizar variaciones de texto
-    const normalizeInterest = (interest) => {
-      if (interest.includes("proveedor")) return "proveedores";
-      if (interest.includes("cliente")) return "clientes";
-      if (interest.includes("abierto")) return "abierto";
-      return interest;
-    };
+    // // Normalizar variaciones de texto
+    // const normalizeInterest = (interest) => {
+    //   if (interest.includes("proveedor")) return "proveedores";
+    //   if (interest.includes("cliente")) return "clientes";
+    //   if (interest.includes("abierto")) return "abierto";
+    //   return interest;
+    // };
     
-    const normalizedA = normalizeInterest(interesA);
-    const normalizedB = normalizeInterest(interesB);
+    // const normalizedA = normalizeInterest(interesA);
+    // const normalizedB = normalizeInterest(interesB);
     
-    // Castigar si ambos buscan lo mismo (proveedores con proveedores, clientes con clientes)
-    if (normalizedA === normalizedB && normalizedA !== "" && normalizedA !== "abierto") {
-      interestPenalty = 0.8; // Castigo del 40%
-      interestReason = `Mismo interés: ambos buscan ${normalizedA}`;
-    } else if (normalizedA !== normalizedB && normalizedA !== "abierto" && normalizedB !== "abierto") {
-      // Intereses complementarios (uno busca proveedores, otro clientes)
-      interestReason = "Intereses complementarios";
-    }
+    // // Castigar si ambos buscan lo mismo (proveedores con proveedores, clientes con clientes)
+    // if (normalizedA === normalizedB && normalizedA !== "" && normalizedA !== "abierto") {
+    //   interestPenalty = 0.8; // Castigo del 40%
+    //   interestReason = `Mismo interés: ambos buscan ${normalizedA}`;
+    // } else if (normalizedA !== normalizedB && normalizedA !== "abierto" && normalizedB !== "abierto") {
+    //   // Intereses complementarios (uno busca proveedores, otro clientes)
+    //   interestReason = "Intereses complementarios";
+    // }
     
     // Score final = similitud base * roleBoost * interestPenalty (máximo 1.0)
-    const finalScore = Math.min(1.0, baseSimilarity * roleBoost * interestPenalty);
+    const finalScore = Math.min(1.0, baseSimilarity * roleBoost );
     
     // Convertir a escala 0-100
     const score = Math.round(finalScore * 100);
@@ -2077,14 +2466,12 @@ async function calculateAffinityWithEmbeddings(userA, userB, vectorA = null, vec
       reasons.push(roleReason);
     }
     
-    if (interestReason) {
-      reasons.push(interestReason);
-    }
+ 
     
-    if (userA.interesPrincipal && userB.interesPrincipal && 
-        userA.interesPrincipal === userB.interesPrincipal) {
-      reasons.push("Mismo interés principal");
-    }
+    // if (userA.interesPrincipal && userB.interesPrincipal && 
+    //     userA.interesPrincipal === userB.interesPrincipal) {
+    //   reasons.push("Mismo interés principal");
+    // }
     
     if (finalScore >= 0.8) {
       reasons.push("Alta compatibilidad de perfiles");
@@ -2111,7 +2498,7 @@ async function calculateAffinityWithEmbeddings(userA, userB, vectorA = null, vec
       reasons.push(`${matchingKeywords.length} palabras clave coinciden`);
     }
     
-    console.log(`Embedding Affinity: ${userA.nombre} <-> ${userB.nombre} = ${score}% (base: ${(baseSimilarity * 100).toFixed(1)}%, role: ${(roleBoost * 100).toFixed(1)}%, interest: ${(interestPenalty * 100).toFixed(1)}%)`);
+    console.log(`Embedding Affinity: ${userA.nombre} <-> ${userB.nombre} = ${score}% (base: ${(baseSimilarity * 100).toFixed(1)}%, role: ${(roleBoost * 100).toFixed(1)}%)`);
     
     return {
       score,
@@ -2120,7 +2507,6 @@ async function calculateAffinityWithEmbeddings(userA, userB, vectorA = null, vec
       embeddingBased: true,
       baseSimilarity: Math.round(baseSimilarity * 100),
       roleBoost: Math.round(roleBoost * 100),
-      interestPenalty: Math.round(interestPenalty * 100),
     };
     
   } catch (error) {
@@ -3042,3 +3428,78 @@ export const generateOptimalMatches = onRequest(
     }
   }
 );
+// ============================================================================
+// WHATSAPP FUNCTIONS
+// ============================================================================
+
+/**
+ * Envía un mensaje de WhatsApp usando la API configurada
+ * @param {string} apiVersion - "v1" o "v2"
+ * @param {string} phone - Número de teléfono (sin código de país)
+ * @param {string} message - Mensaje a enviar
+ * @param {object} metadata - Metadata adicional para API v2
+ * @returns {Promise<boolean>} - true si se envió correctamente
+ */
+async function sendWhatsAppMessage(apiVersion, phone, message, metadata = {}) {
+  try {
+    if (apiVersion === "v2") {
+      // Limpiar las URLs quitando el primer slash
+      const cleanAcceptUrl = metadata.acceptUrl 
+        ? metadata.acceptUrl.replace(/^\//, '') 
+        : "";
+      const cleanCancelUrl = metadata.cancelUrl 
+        ? metadata.cancelUrl.replace(/^\//, '') 
+        : "";
+
+      // API V2: Meeting Request
+      const response = await fetch(`${WHATSAPP_API_V2.value()}/api/send-meeting-request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: WHATSAPP_ACCOUNT_ID.value(),
+          to: `57${phone}`,
+          eventName: metadata.eventName || "Evento",
+          requesterName: metadata.requesterName || "Asistente",
+          requesterCompany: metadata.requesterCompany || "",
+          requesterPosition: metadata.requesterPosition || "",
+          requesterEmail: metadata.requesterEmail || "",
+          requesterPhone: metadata.requesterPhone || "",
+          message: metadata.contextNote || message,
+          acceptUrl: cleanAcceptUrl,
+          cancelUrl: cleanCancelUrl,
+        }),
+      });
+
+      if (response.ok) {
+        return true;
+      } else {
+        const errorText = await response.text();
+        console.error("WhatsApp API V2 error:", errorText);
+        return false;
+      }
+    } else {
+      // API V1: Simple (default)
+      const response = await fetch(WHATSAPP_API_V1.value(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId: "genialitybussiness",
+          phone: `57${phone}`,
+          message: message,
+        }),
+      });
+
+      if (response.ok) {
+        return true;
+      } else {
+        const errorText = await response.text();
+        console.error("WhatsApp API V1 error:", errorText);
+        return false;
+      }
+    }
+  } catch (error) {
+    console.error("sendWhatsAppMessage error:", error);
+    return false;
+  }
+}
+

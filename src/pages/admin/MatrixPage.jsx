@@ -214,6 +214,7 @@ const MatrixPage = () => {
   const [userSearch, setUserSearch] = useState("");
   const [pendingMeetings, setPendingMeetings] = useState([]);
   const [selectedDate, setSelectedDate] = useState(null);
+  const [affinityScores, setAffinityScores] = useState({});
 
   // Carga configuración evento
   useEffect(() => {
@@ -294,6 +295,43 @@ const MatrixPage = () => {
       setPendingMeetings(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
   }, [eventId]);
+
+  // Cargar scores de afinidad de todos los usuarios
+  useEffect(() => {
+    if (!eventId || asistentes.length === 0) return;
+    
+    const loadAffinityScores = async () => {
+      const scores = {};
+      
+      // Cargar afinidad para cada usuario
+      for (const user of asistentes) {
+        try {
+          const affinitySnap = await getDocs(
+            collection(db, "users", user.id, "affinityScores")
+          );
+          
+          affinitySnap.docs.forEach((doc) => {
+            const data = doc.data();
+            if (data.targetUserId && typeof data.score === "number") {
+              // Crear clave única para el par de usuarios (ordenada para ser simétrica)
+              const key = [user.id, data.targetUserId].sort().join("_");
+              scores[key] = {
+                score: data.score,
+                reasons: data.reasons || [],
+              };
+            }
+          });
+        } catch (error) {
+          console.error(`Error loading affinity for user ${user.id}:`, error);
+        }
+      }
+      
+      setAffinityScores(scores);
+      console.log(`Loaded affinity scores for ${Object.keys(scores).length} user pairs`);
+    };
+    
+    loadAffinityScores();
+  }, [eventId, asistentes]);
 
   // Memoize timeSlots - usar configuración del día seleccionado
   const timeSlots = useMemo(() => {
@@ -872,6 +910,13 @@ const MatrixPage = () => {
     });
   };
 
+  // Helper para obtener score de afinidad entre dos usuarios
+  const getAffinityScore = (userId1, userId2) => {
+    if (!userId1 || !userId2) return null;
+    const key = [userId1, userId2].sort().join("_");
+    return affinityScores[key] || null;
+  };
+
   // Obtener fechas del evento
   const eventDates = config?.config?.eventDates || (config?.config?.eventDate ? [config.config.eventDate] : []);
   const isMultiDay = eventDates.length > 1;
@@ -1007,9 +1052,14 @@ const MatrixPage = () => {
                                 }
                               >
                                 <b>Participantes:</b>
-                                {cell.meetingData?.participants?.map((pid) => {
+                                {cell.meetingData?.participants?.map((pid, idx) => {
                                   const info = participantsInfo[pid];
                                   if (!info) return <div key={pid}>{pid}</div>;
+                                  
+                                  // Obtener afinidad entre los dos participantes
+                                  const otherPid = cell.meetingData.participants.find(p => p !== pid);
+                                  const affinity = otherPid ? getAffinityScore(pid, otherPid) : null;
+                                  
                                   return (
                                     <div key={pid} style={{ marginBottom: 6 }}>
                                       <b>{info.empresa} ({info.nombre})</b>
@@ -1025,6 +1075,18 @@ const MatrixPage = () => {
                                         <span style={{ color: "#6c6c6c" }}>Necesidad: </span>
                                         {info.necesidad || <i>No especificada</i>}
                                       </div>
+                                      {idx === 0 && affinity && (
+                                        <div style={{ marginTop: 8, padding: "6px 8px", backgroundColor: "#e7f5ff", borderRadius: 4 }}>
+                                          <span style={{ color: "#1971c2", fontWeight: 600 }}>
+                                            Afinidad: {affinity.score}%
+                                          </span>
+                                          {affinity.reasons && affinity.reasons.length > 0 && (
+                                            <div style={{ fontSize: 11, color: "#495057", marginTop: 4 }}>
+                                              {affinity.reasons.join(", ")}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })}
@@ -1250,6 +1312,10 @@ const MatrixPage = () => {
                                       {cell.participants.map((pid) => {
                                         const info = participantsInfo[pid];
                                         if (!info) return <div key={pid}>{pid}</div>;
+                                        
+                                        // Obtener afinidad entre el usuario y la contraparte
+                                        const affinity = getAffinityScore(asistente.id, pid);
+                                        
                                         return (
                                           <div key={pid} style={{ marginBottom: 6 }}>
                                             <b>{info.empresa} ({info.nombre})</b>
@@ -1265,6 +1331,18 @@ const MatrixPage = () => {
                                               <span style={{ color: "#6c6c6c" }}>Necesidad: </span>
                                               {info.necesidad || <i>No especificada</i>}
                                             </div>
+                                            {affinity && (
+                                              <div style={{ marginTop: 8, padding: "6px 8px", backgroundColor: "#e7f5ff", borderRadius: 4 }}>
+                                                <span style={{ color: "#1971c2", fontWeight: 600 }}>
+                                                  Afinidad: {affinity.score}%
+                                                </span>
+                                                {affinity.reasons && affinity.reasons.length > 0 && (
+                                                  <div style={{ fontSize: 11, color: "#495057", marginTop: 4 }}>
+                                                    {affinity.reasons.join(", ")}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            )}
                                           </div>
                                         );
                                       })}

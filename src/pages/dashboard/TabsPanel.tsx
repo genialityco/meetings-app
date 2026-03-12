@@ -16,6 +16,7 @@ import CalendarTab from "./CalendarTab";
 import MatchesTab from "./MatchesTab";
 import { DEFAULT_POLICIES } from "./types";
 import { useMediaQuery } from "@mantine/hooks";
+import { trackTabChange } from "../../utils/analytics";
 
 interface ViewRequest {
   view: string;
@@ -56,6 +57,12 @@ export default function TabsPanel({
 
   const [topView, setTopView] = useState(viewOptions[0]?.value || "companies");
 
+  // Función para cambiar vista principal con tracking
+  const handleTopViewChange = (newView: string) => {
+    trackTabChange(newView, topView);
+    setTopView(newView);
+  };
+
   // Si la vista activa ya no existe en las opciones (ej: chatbot deshabilitado), ir a la primera disponible
   const validValues = viewOptions.map((o) => o.value);
   useEffect(() => {
@@ -65,6 +72,12 @@ export default function TabsPanel({
   }, [validValues.join(",")]);
 
   const [activityDefaultTab, setActivityDefaultTab] = useState("agenda");
+
+  // Función para cambiar tab de actividad con tracking
+  const handleActivityTabChange = (newTab: string) => {
+    trackTabChange(`activity_${newTab}`, `activity_${activityDefaultTab}`);
+    setActivityDefaultTab(newTab);
+  };
 
   // Navegación externa (ej: click en notificación)
   useEffect(() => {
@@ -106,7 +119,7 @@ export default function TabsPanel({
   return (
     <Stack mt="md">
     {isMobile ? (
-      <Tabs value={topView} onChange={(v) => v && setTopView(v)} variant="pills">
+      <Tabs value={topView} onChange={(v) => v && handleTopViewChange(v)} variant="pills">
         <Tabs.List style={{ flexWrap: "nowrap", overflowX: "auto", gap: 4 }}>
           {viewOptions.map((o) => (
             <Tabs.Tab
@@ -125,7 +138,7 @@ export default function TabsPanel({
     ) : (
       <SegmentedControl
         value={topView}
-        onChange={setTopView}
+        onChange={handleTopViewChange}
         data={viewOptions}
         fullWidth
       />
@@ -214,7 +227,7 @@ export default function TabsPanel({
       )}
 
       {topView === "activity" && (
-        <Tabs value={activityDefaultTab} onChange={(v) => setActivityDefaultTab(v || "agenda")} variant="pills" radius="md">
+        <Tabs value={activityDefaultTab} onChange={(v) => v && handleActivityTabChange(v)} variant="pills" radius="md">
           <Tabs.List grow>
             <Tabs.Tab
               value="agenda"

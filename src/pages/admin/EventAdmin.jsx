@@ -410,6 +410,114 @@ const EventAdmin = () => {
     XLSX.writeFile(wb, `asistentes_${event?.eventName || eventId}.xlsx`);
   };
 
+  // Exportar toda la información de asistentes con subcolecciones a JSON
+  const exportAttendeesWithSubcollectionsToJSON = async () => {
+    try {
+      setActionLoading(true);
+      setGlobalMessage("Exportando datos completos...");
+
+      // Obtener todos los asistentes del evento
+      const usersQuery = query(
+        collection(db, "users"),
+        where("eventId", "==", eventId)
+      );
+      const usersSnap = await getDocs(usersQuery);
+
+      const asistentes = [];
+      const matches = [];
+
+      // Para cada asistente, obtener su información y affinityScores
+      for (const userDoc of usersSnap.docs) {
+        const rawUserData = userDoc.data();
+        
+        // Omitir el campo vector
+        const { vector, ...userDataWithoutVector } = rawUserData;
+        
+        // Agregar datos del asistente (sin subcolecciones)
+        asistentes.push({
+          id: userDoc.id,
+          ...userDataWithoutVector,
+        });
+
+        // Obtener affinityScores del usuario para construir matches
+        try {
+          const affinityScoresSnap = await getDocs(
+            collection(db, "users", userDoc.id, "affinityScores")
+          );
+          
+          if (!affinityScoresSnap.empty) {
+            affinityScoresSnap.docs.forEach((doc) => {
+              const affinityData = doc.data();
+              
+              // Crear entrada de match con los IDs de los usuarios y el score
+              matches.push({
+                userId1: userDoc.id,
+                userId2: affinityData.targetUserId || doc.id,
+                affinityScore: affinityData.score || 0,
+                reasons: affinityData.reasons || [],
+                aiGenerated: affinityData.aiGenerated || false,
+                calculatedAt: affinityData.calculatedAt?.toDate?.() || affinityData.calculatedAt || null,
+              });
+            });
+          }
+        } catch (err) {
+          console.log(`No affinityScores for user ${userDoc.id}`);
+        }
+      }
+
+      // Eliminar matches duplicados (ya que son simétricos)
+      // Mantener solo un match por par de usuarios
+      const uniqueMatches = [];
+      const seenPairs = new Set();
+      
+      matches.forEach((match) => {
+        // Crear clave única ordenada para el par
+        const pairKey = [match.userId1, match.userId2].sort().join('_');
+        
+        if (!seenPairs.has(pairKey)) {
+          seenPairs.add(pairKey);
+          uniqueMatches.push(match);
+        }
+      });
+
+      // Crear estructura final
+      const exportData = {
+        asistentes,
+        matches: uniqueMatches,
+        metadata: {
+          eventId,
+          eventName: event?.eventName || "Evento",
+          totalAsistentes: asistentes.length,
+          totalMatches: uniqueMatches.length,
+          exportDate: new Date().toISOString(),
+        },
+      };
+
+      // Crear el JSON y descargarlo
+      const jsonString = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonString], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `asistentes_matches_${event?.eventName || eventId}_${
+        new Date().toISOString().split("T")[0]
+      }.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      setGlobalMessage(
+        `Exportación completa: ${asistentes.length} asistentes, ${uniqueMatches.length} matches únicos.`
+      );
+    } catch (error) {
+      console.error("Error exportando a JSON:", error);
+      setGlobalMessage("Error al exportar datos completos.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const fetchMeetingsCounts = async () => {
     if (!eventId) return;
     setMeetingsCountLoading(true);
@@ -774,6 +882,16 @@ const EventAdmin = () => {
                 variant="default"
               >
                 Exportar asistentes a Excel
+              </Button>
+
+              <Button
+                onClick={exportAttendeesWithSubcollectionsToJSON}
+                loading={actionLoading}
+                disabled={actionLoading}
+                variant="outline"
+                color="blue"
+              >
+                Exportar asistentes completo (JSON)
               </Button>
             </Group>
           </Tabs.Panel>
