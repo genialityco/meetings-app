@@ -441,14 +441,15 @@ export default function MeetingAutoResponse() {
 
       const mtgData = (await getDoc(mtgRef)).data();
 
-      // Obtener datos de ambos participantes y nombre del evento
+      // Obtener datos de ambos participantes (reutilizar eventSnap de arriba)
       const requesterSnap = await getDoc(doc(db, "users", mtgData.requesterId));
       const receiverSnap = await getDoc(doc(db, "users", mtgData.receiverId));
       const requester = requesterSnap.exists() ? requesterSnap.data() : {};
       const receiver = receiverSnap.exists() ? receiverSnap.data() : {};
 
-      const eventSnap = await getDoc(doc(db, "events", eventId));
+      // Reutilizar eventSnap que ya fue declarado arriba
       const evName = eventSnap.exists() ? eventSnap.data().eventName || "" : "";
+      const eventConfig = eventSnap.exists() ? eventSnap.data().config || {} : {};
 
       // Notificación in-app
       await addDoc(collection(db, "notifications"), {
@@ -461,7 +462,6 @@ export default function MeetingAutoResponse() {
       });
 
       // Enviar WhatsApp a ambos participantes
-      const eventConfig = eventSnap.exists() ? eventSnap.data().config || {} : {};
       const whatsappApiVersion = eventConfig.policies?.whatsappApiVersion || "v1";
       const accepterName = receiver?.nombre || "";
       const meetingInfo = {
