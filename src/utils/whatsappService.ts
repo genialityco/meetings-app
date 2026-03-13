@@ -33,6 +33,25 @@ interface WhatsAppV2ConfirmationPayload {
   table: string;
 }
 
+interface WhatsAppV2CancellationPayload {
+  accountId: string;
+  to: string;
+  eventName: string;
+  meetingWith: string;
+  company: string;
+  day: string;
+  schedule: string;
+  table: string;
+}
+
+interface WhatsAppV2RejectionPayload {
+  accountId: string;
+  to: string;
+  eventName: string;
+  rejectedByName: string;
+  rejectedByCompany: string;
+}
+
 interface SendWhatsAppOptions {
   apiVersion: "v1" | "v2";
   phone: string;
@@ -53,7 +72,7 @@ interface SendWhatsAppOptions {
 const API_V1_URL = import.meta.env.VITE_WHATSAPP_API_V1 as string || "https://apiwhatsapp.geniality.com.co/api/send";
 const API_V2_URL = import.meta.env.VITE_WHATSAPP_API_V2 as string || "https://apiwhatsapp.geniality.com.co";
 const ACCOUNT_ID = import.meta.env.VITE_WHATSAPP_ACCOUNT_ID as string || "geniality";
-const CLIENT_ID = "genialitybussinesstest";
+const CLIENT_ID = "genialitybussinesstest1";
 
 /**
  * Envía un mensaje de WhatsApp usando la API configurada
@@ -85,7 +104,7 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
         requesterPosition: metadata.requesterPosition || "Cargo",
         requesterEmail: metadata.requesterEmail || "Email",
         requesterPhone: metadata.requesterPhone || "Telefono",
-        message: metadata.contextNote || "mensaje",
+        message: message, // Usar el message que se pasó (que ya viene con contextNote si aplica)
         acceptUrl: cleanAcceptUrl,
         cancelUrl: cleanCancelUrl,
       };
@@ -182,6 +201,96 @@ export async function sendMeetingConfirmation(options: {
     return true;
   } catch (error) {
     console.error("Error sending meeting confirmation:", error);
+    return false;
+  }
+}
+
+/**
+ * Envía un mensaje de cancelación de reunión usando WhatsApp API V2
+ */
+export async function sendMeetingCancellation(options: {
+  phone: string;
+  eventName: string;
+  meetingWith: string;
+  company: string;
+  day: string;
+  schedule: string;
+  table: string;
+}): Promise<boolean> {
+  const { phone, eventName, meetingWith, company, day, schedule, table } = options;
+
+  // Limpiar número de teléfono
+  const cleanPhone = phone.replace(/[^\d]/g, "");
+  const fullPhone = `57${cleanPhone}`;
+
+  try {
+    const payload: WhatsAppV2CancellationPayload = {
+      accountId: ACCOUNT_ID,
+      to: fullPhone,
+      eventName,
+      meetingWith,
+      company,
+      day,
+      schedule,
+      table,
+    };
+
+    const response = await fetch(`${API_V2_URL}/api/send-meeting-cancelled`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      console.error("Error sending meeting cancellation:", await response.text());
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Error sending meeting cancellation:", error);
+    return false;
+  }
+}
+
+/**
+ * Envía un mensaje de rechazo de reunión usando WhatsApp API V2
+ */
+export async function sendMeetingRejection(options: {
+  phone: string;
+  eventName: string;
+  rejectedByName: string;
+  rejectedByCompany: string;
+}): Promise<boolean> {
+  const { phone, eventName, rejectedByName, rejectedByCompany } = options;
+
+  // Limpiar número de teléfono
+  const cleanPhone = phone.replace(/[^\d]/g, "");
+  const fullPhone = `57${cleanPhone}`;
+
+  try {
+    const payload: WhatsAppV2RejectionPayload = {
+      accountId: ACCOUNT_ID,
+      to: fullPhone,
+      eventName,
+      rejectedByName,
+      rejectedByCompany,
+    };
+
+    const response = await fetch(`${API_V2_URL}/api/send-meeting-rejection`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      console.error("Error sending meeting rejection:", await response.text());
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Error sending meeting rejection:", error);
     return false;
   }
 }

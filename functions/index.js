@@ -14,7 +14,7 @@ const WHATSAPP_API_V2 = defineSecret("WHATSAPP_API_V2");
 const WHATSAPP_ACCOUNT_ID = defineSecret("WHATSAPP_ACCOUNT_ID");
 
 // Configuración: Campos a utilizar para generar el vector de embeddings
-const VECTOR_FIELDS = ["descripcion"];
+const VECTOR_FIELDS = [];
 
 export const notifyMeetingsScheduled = onSchedule(
   {
@@ -270,7 +270,7 @@ export const regenerateVectorsForEvent = onRequest(
 
     try {
       console.log(`Starting vector regeneration and affinity recalculation for event ${eventId}${userId ? ` and user ${userId}` : ""}`);
-      console.log(`Using fields: ${VECTOR_FIELDS.join(", ")}`);
+      
 
       let usersToProcess = [];
       let allEventUsers = [];
@@ -794,7 +794,18 @@ function cosineSimilarity(vecA, vecB) {
  */
 function searchByVectorSimilarity(queryVector, documents, topK = 10, threshold = 0.65) {
   const results = documents
-    .filter(doc => doc.vector && Array.isArray(doc.vector))
+    .filter(doc => {
+      // Filtro estricto: debe tener vector, ser array, tener elementos, y misma dimensión
+      if (!doc.vector) {
+        
+        return false;
+      }
+      if (doc?.vector.length !== queryVector?.length) {
+        console.log(`Skipping doc ${doc.id || 'unknown'}: vector dimension mismatch (${doc.vector.length} vs ${queryVector.length})`);
+        return false;
+      }
+      return true;
+    })
     .map(doc => {
       const similarity = cosineSimilarity(queryVector, doc.vector);
       return {
@@ -1903,6 +1914,7 @@ async function getEmbedding(text, apiKey, apiUrl, model) {
  * - category: "assistants" | "products" | "companies" (required)
  * - eventId: ID del evento (required)
  * - userId: ID del usuario que hace la búsqueda (optional, para filtros)
+ * - tipoAsistente: tipo del usuario que busca - "comprador" | "vendedor" (optional, para boost de roles complementarios)
  * - limit: número máximo de resultados (optional, default: 10)
  * - threshold: umbral mínimo de similitud 0-1 (optional, default: 0.35)
  */
@@ -1933,12 +1945,14 @@ export const vectorSearch = onRequest(
         res.status(405).send({ error: "Method not allowed" });
         return;
       }
+      console.log("Payload: ", req.body || {})
 
       const body = req.body || {};
       const text = body.text;
       const category = body.category;
       const eventId = body.eventId;
       const userId = body.userId || null;
+      const tipoAsistente = body.tipoAsistente?.toLowerCase() || null;
       const limit = body.limit || 10;
       const threshold = body.threshold || 0.35;
 
@@ -1949,6 +1963,7 @@ export const vectorSearch = onRequest(
         });
         return;
       }
+      console.log("tipo asistente: ", tipoAsistente)
 
       if (!["assistants", "products", "companies"].includes(category)) {
         res.status(400).send({ 
@@ -1992,6 +2007,41 @@ export const vectorSearch = onRequest(
 
           results = searchByVectorSimilarity(queryVector, allUsers, limit, threshold);
           
+          // Aplicar boost de rol si tipoAsistente está disponible
+          if (tipoAsistente && (tipoAsistente === "comprador" || tipoAsistente === "vendedor")) {
+            console.log(`Applying role boost for tipoAsistente: ${tipoAsistente}`);
+            
+            results = results.map(user => {
+              const userTipo = user.tipoAsistente?.toLowerCase();
+              const isComplementary = 
+                (tipoAsistente !== userTipo) 
+                
+              
+              if (isComplementary) {
+                const originalSimilarity = user.similarity;
+                const boostedSimilarity = Math.min(1.0, originalSimilarity * 1.25);
+                console.log(`Role boost applied: ${user.nombre} (${userTipo}) - ${originalSimilarity.toFixed(3)} -> ${boostedSimilarity.toFixed(3)}`);
+                
+                return {
+                  ...user,
+                  similarity: boostedSimilarity,
+                  originalSimilarity,
+                  roleBoostApplied: true,
+                };
+              }
+              
+              return {
+                ...user,
+                originalSimilarity: user.similarity,
+                roleBoostApplied: false,
+              };
+            });
+            
+            // Re-ordenar por similitud boosteada y limitar nuevamente
+            results.sort((a, b) => b.similarity - a.similarity);
+            results = results.slice(0, limit);
+          }
+          
           // Devolver todos los campos necesarios
           results = results.map(user => ({
             id: user.id,
@@ -2011,8 +2061,12 @@ export const vectorSearch = onRequest(
             companyId: user.companyId,
             nitNorm: user.nitNorm,
             eventId: user.eventId,
+            custom_qu_tipo_de_productos_o_se_8102:user?.custom_qu_tipo_de_productos_o_se_8102 || null,
+            custom_qu_tipo_de_productos_o_se_2198:user?.custom_qu_tipo_de_productos_o_se_2198 || null,
             lastLogin: user.lastLogin,
             similarity: user.similarity,
+            originalSimilarity: user.originalSimilarity,
+            roleBoostApplied: user.roleBoostApplied || false,
           }));
 
         } catch (err) {
@@ -2333,28 +2387,60 @@ async function generateUserEmbedding(userData) {
     if (tipoAsistente === "vendedor") {
       // Para vendedores, agregar custom_qu_tipo_de_productos_o_se_2198
       const customField = userData.custom_qu_tipo_de_productos_o_se_2198;
+      const customOtroField = userData.custom_qu_tipo_de_productos_o_se_2198_otro;
+      
       if (customField) {
         if (Array.isArray(customField)) {
-          // Si es un array, unir los elementos
-          const customText = customField.filter(Boolean).join(", ");
+          // Filtrar elementos válidos y procesar "__otro__"
+          let filteredItems = customField.filter(item => item && item !== "__otro__");
+          
+          // Si solo había "__otro__" en la lista, no generar embedding
+          if (customField.length > 0 && customField.every(item => item === "__otro__")) {
+            console.warn(`User ${userData.nombre || "unknown"} has only "__otro__" in custom field, skipping embedding generation`);
+            return null;
+          }
+          
+          // Si había "__otro__" y existe el campo _otro, agregarlo
+          if (customField.includes("__otro__") && customOtroField && typeof customOtroField === "string" && customOtroField.trim()) {
+            filteredItems.push(customOtroField.trim());
+          }
+          
+          // Unir los elementos filtrados
+          const customText = filteredItems.filter(Boolean).join(", ");
           if (customText) {
             textParts.push(customText);
           }
-        } else if (typeof customField === "string" && customField.trim()) {
+        } else if (typeof customField === "string" && customField.trim() && customField !== "__otro__") {
           textParts.push(customField);
         }
       }
     } else if (tipoAsistente === "comprador") {
       // Para compradores, agregar custom_qu_tipo_de_productos_o_se_8102
       const customField = userData.custom_qu_tipo_de_productos_o_se_8102;
+      const customOtroField = userData.custom_qu_tipo_de_productos_o_se_8102_otro;
+      
       if (customField) {
         if (Array.isArray(customField)) {
-          // Si es un array, unir los elementos
-          const customText = customField.filter(Boolean).join(", ");
+          // Filtrar elementos válidos y procesar "__otro__"
+          let filteredItems = customField.filter(item => item && item !== "__otro__");
+          
+          // Si solo había "__otro__" en la lista, no generar embedding
+          if (customField.length > 0 && customField.every(item => item === "__otro__")) {
+            console.warn(`User ${userData.nombre || "unknown"} has only "__otro__" in custom field, skipping embedding generation`);
+            return null;
+          }
+          
+          // Si había "__otro__" y existe el campo _otro, agregarlo
+          if (customField.includes("__otro__") && customOtroField && typeof customOtroField === "string" && customOtroField.trim()) {
+            filteredItems.push(customOtroField.trim());
+          }
+          
+          // Unir los elementos filtrados
+          const customText = filteredItems.filter(Boolean).join(", ");
           if (customText) {
             textParts.push(customText);
           }
-        } else if (typeof customField === "string" && customField.trim()) {
+        } else if (typeof customField === "string" && customField.trim() && customField !== "__otro__") {
           textParts.push(customField);
         }
       }
@@ -2402,9 +2488,17 @@ async function calculateAffinityWithEmbeddings(userA, userB, vectorA = null, vec
       embeddingB = resultB?.vector || null;
     }
     
+    // Si alguno de los dos no tiene vector, retornar score 0
     if (!embeddingA || !embeddingB) {
-      console.warn("Failed to generate embeddings, using fallback");
-      return calculateAffinityScoreFallback(userA, userB);
+      console.warn(`Cannot calculate affinity: ${!embeddingA ? userA.nombre : userB.nombre} has no vector. Returning score 0.`);
+      return {
+        score: 0,
+        reasons: ["Sin información suficiente para calcular afinidad"],
+        aiGenerated: false,
+        embeddingBased: false,
+        baseSimilarity: 0,
+        roleBoost: 0,
+      };
     }
     
     // Calcular similitud coseno base

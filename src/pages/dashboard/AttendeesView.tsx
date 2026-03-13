@@ -41,6 +41,10 @@ import type { Assistant } from "./types";
 import { useNavigate, useParams } from "react-router-dom";
 import MeetingRequestModal from "./MeetingRequestModal";
 
+interface MeetingContext {
+  contextNote?: string;
+}
+
 const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
 
 const FIELD_ICONS: Record<string, any> = {
@@ -62,10 +66,16 @@ function formatFieldValue(fieldName: string, data: any): string | null {
   if (raw == null) return null;
   if (Array.isArray(raw)) {
     const otroText = data[`${fieldName}_otro`];
-    const items = raw.map((v: string) =>
-      v === "__otro__" && otroText ? otroText : v,
-    );
-    return items.join(", ");
+    const items = raw
+      .filter((v: string) => v !== "__otro__") // Filtrar __otro__
+      .map((v: string) => v);
+    
+    // Si hay texto en el campo _otro, agregarlo
+    if (otroText && raw.includes("__otro__")) {
+      items.push(otroText);
+    }
+    
+    return items.length > 0 ? items.join(", ") : null;
   }
   return String(raw);
 }
@@ -210,11 +220,12 @@ export default function AttendeesView({
     // Debounce: esperar 500ms después de que el usuario deje de escribir
     const timeoutId = setTimeout(async () => {
       setIsVectorSearching(true);
-      
+      console.log("--------tipo: ",currentUser.tipoAsistente)
       try {
         const requestBody = {
           text: trimmed,
           category: "assistants",
+          tipoAsistente: currentUser.data?.tipoAsistente,
           eventId: eventId,
           userId: myUid,
           limit: 50,
@@ -539,9 +550,13 @@ export default function AttendeesView({
                   id={`assistant-card-${assistant.id}`}
                   withBorder
                   radius="xl"
-                  padding="md"
+                  
                   shadow="sm"
                   style={{
+                    paddingTop: "25px",
+                    paddingRight: "15px",
+                    paddingRottom: "15px",
+                    paddingLeft: "15px",
                     height: "100%",
                     display: "flex",
                     flexDirection: "column",
@@ -570,7 +585,7 @@ export default function AttendeesView({
                   )}
 
                   {/* Badge de afinidad */}
-                  {!hasSimilarity && affinityScores[assistant.id] && affinityScores[assistant.id] > 0 && (
+                  {!hasSimilarity  &&  (
                     <Badge
                       variant="gradient"
                       gradient={{ from: 'teal', to: 'green', deg: 90 }}

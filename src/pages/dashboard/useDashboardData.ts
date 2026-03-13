@@ -231,6 +231,36 @@ async function sendMeetingCancelledWhatsapp(
   if (!toPhone) return;
   const phone = (toPhone || "").toString().replace(/[^\d]/g, "");
   
+  // Si es API v2, usar el endpoint de cancelación
+  if (whatsappApiVersion === "v2") {
+    const { sendMeetingCancellation } = await import("../../utils/whatsappService");
+    
+    // Formatear fecha si existe
+    let dateStr = "";
+    if (meetingInfo.meetingDate) {
+      const [year, month, day] = meetingInfo.meetingDate.split("-").map(Number);
+      const date = new Date(year, month - 1, day);
+      dateStr = date.toLocaleDateString("es-ES", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+      });
+    }
+    
+    await sendMeetingCancellation({
+      phone,
+      eventName: eventName || "Evento",
+      meetingWith: otherParticipant?.nombre || "Participante",
+      company: otherParticipant?.empresa || "Empresa",
+      day: dateStr || "Fecha no especificada",
+      schedule: meetingInfo.timeSlot || "Horario no especificado",
+      table: meetingInfo.tableAssigned || "N/A",
+    });
+    
+    return;
+  }
+  
+  // API v1: usar el método anterior
   // Formatear fecha si existe
   let dateStr = "";
   if (meetingInfo.meetingDate) {
@@ -279,6 +309,22 @@ async function sendMeetingRejectedWhatsapp(
 ) {
   if (!toPhone) return;
   const phone = (toPhone || "").toString().replace(/[^\d]/g, "");
+  
+  // Si es API v2, usar el endpoint de rechazo
+  if (whatsappApiVersion === "v2") {
+    const { sendMeetingRejection } = await import("../../utils/whatsappService");
+    
+    await sendMeetingRejection({
+      phone,
+      eventName: eventName || "Evento",
+      rejectedByName: rejectedByParticipant?.nombre || "Un participante",
+      rejectedByCompany: rejectedByParticipant?.empresa || "Empresa",
+    });
+    
+    return;
+  }
+  
+  // API v1: usar el método anterior
   const eventLine = eventName ? `📌 *Evento:* ${eventName}\n` : "";
   const message =
     `😔 *Solicitud de reunión rechazada*\n\n` +
@@ -852,7 +898,7 @@ export function useDashboardData(eventId?: string) {
       await sendWhatsAppAPI({
         apiVersion: whatsappApiVersion,
         phone: assistantPhone.replace(/[^\d]/g, ""),
-        message: context?.contextNote || message, // Usar contextNote si existe, sino el mensaje completo
+        message: whatsappApiVersion === "v2" && context?.contextNote ? context.contextNote : message, // v2 usa contextNote, v1 usa mensaje completo
         metadata: {
           eventName: eventName || "Evento",
           requesterName: requester?.nombre || "",
@@ -862,6 +908,7 @@ export function useDashboardData(eventId?: string) {
           requesterPhone: requester?.telefono || "",
           acceptUrl: acceptPath, // Solo la ruta
           cancelUrl: rejectPath, // Solo la ruta
+          contextNote: context?.contextNote, // Agregar contextNote a metadata para v2
         },
       });
 

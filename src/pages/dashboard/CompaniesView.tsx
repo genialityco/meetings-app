@@ -491,8 +491,8 @@ export default function CompaniesView({
                       radius="md"
                       style={{
                         position: "absolute",
-                        top: 10,
-                        right: 10,
+                        top: 40,
+                        right: 16,
                         zIndex: 1,
                       }}
                     >
