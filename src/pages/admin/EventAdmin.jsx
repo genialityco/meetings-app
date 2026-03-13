@@ -15,6 +15,8 @@ import {
   Badge,
   Tabs,
   SimpleGrid,
+  Modal,
+  Table,
 } from "@mantine/core";
 import {
   doc,
@@ -51,6 +53,12 @@ const EventAdmin = () => {
   const [configureFieldsModalOpened, setConfigureFieldsModalOpened] =
     useState(false);
   const [policiesModalOpened, setPoliciesModalOpened] = useState(false);
+
+  // Estado para reuniones huérfanas
+  const [orphanedMeetingsModalOpened, setOrphanedMeetingsModalOpened] = useState(false);
+  const [orphanedMeetings, setOrphanedMeetings] = useState([]);
+  const [checkingOrphans, setCheckingOrphans] = useState(false);
+  const [deletingOrphan, setDeletingOrphan] = useState(null);
 
   const [meetingsCounts, setMeetingsCounts] = useState({
     aceptadas: 0,
@@ -544,6 +552,89 @@ const EventAdmin = () => {
     setMeetingsCountLoading(false);
   };
 
+  // Buscar reuniones con usuarios inexistentes
+  const checkOrphanedMeetings = async () => {
+    setCheckingOrphans(true);
+    try {
+      // Obtener todas las reuniones del evento
+      const meetingsRef = collection(db, "events", eventId, "meetings");
+      const meetingsSnap = await getDocs(meetingsRef);
+      
+      // Obtener todos los IDs de usuarios del evento
+      const usersQuery = query(collection(db, "users"), where("eventId", "==", eventId));
+      const usersSnap = await getDocs(usersQuery);
+      const userIds = new Set(usersSnap.docs.map(doc => doc.id));
+      
+      // Buscar reuniones con usuarios inexistentes
+      const orphaned = [];
+      meetingsSnap.forEach((doc) => {
+        const meeting = doc.data();
+        const receiverExists = userIds.has(meeting.receiverId);
+        const requesterExists = userIds.has(meeting.requesterId);
+        
+        if (!receiverExists || !requesterExists) {
+          orphaned.push({
+            id: doc.id,
+            ...meeting,
+            missingReceiver: !receiverExists,
+            missingRequester: !requesterExists,
+          });
+        }
+      });
+      
+      setOrphanedMeetings(orphaned);
+      setOrphanedMeetingsModalOpened(true);
+      
+      if (orphaned.length === 0) {
+        setGlobalMessage("No se encontraron reuniones con usuarios inexistentes.");
+      } else {
+        setGlobalMessage(`Se encontraron ${orphaned.length} reuniones con usuarios inexistentes.`);
+      }
+    } catch (error) {
+      console.error("Error checking orphaned meetings:", error);
+      setGlobalMessage("Error al buscar reuniones huérfanas.");
+    } finally {
+      setCheckingOrphans(false);
+    }
+  };
+
+  // Eliminar una reunión huérfana
+  const deleteOrphanedMeeting = async (meetingId) => {
+    setDeletingOrphan(meetingId);
+    try {
+      await deleteDoc(doc(db, "events", eventId, "meetings", meetingId));
+      setOrphanedMeetings(prev => prev.filter(m => m.id !== meetingId));
+      setGlobalMessage("Reunión eliminada correctamente.");
+      fetchMeetingsCounts(); // Actualizar contadores
+    } catch (error) {
+      console.error("Error deleting orphaned meeting:", error);
+      setGlobalMessage("Error al eliminar la reunión.");
+    } finally {
+      setDeletingOrphan(null);
+    }
+  };
+
+  // Eliminar todas las reuniones huérfanas
+  const deleteAllOrphanedMeetings = async () => {
+    if (!window.confirm(`¿Eliminar todas las ${orphanedMeetings.length} reuniones huérfanas?`)) return;
+    
+    setCheckingOrphans(true);
+    try {
+      for (const meeting of orphanedMeetings) {
+        await deleteDoc(doc(db, "events", eventId, "meetings", meeting.id));
+      }
+      setGlobalMessage(`${orphanedMeetings.length} reuniones eliminadas correctamente.`);
+      setOrphanedMeetings([]);
+      setOrphanedMeetingsModalOpened(false);
+      fetchMeetingsCounts(); // Actualizar contadores
+    } catch (error) {
+      console.error("Error deleting all orphaned meetings:", error);
+      setGlobalMessage("Error al eliminar las reuniones.");
+    } finally {
+      setCheckingOrphans(false);
+    }
+  };
+
   if (!event) {
     return (
       <Center mt="lg">
@@ -790,6 +881,47 @@ const EventAdmin = () => {
               >
                 Configurar políticas
               </Button>
+
+              <Button
+                onClick={async () => {
+                  if (!window.confirm("¿Regenerar vectores para todos los usuarios del evento? Esto puede tardar varios minutos.")) return;
+                  setActionLoading(true);
+                  try {
+                    const response = await fetch("https://regeneratevectorsforevent-6eaymlz5eq-uc.a.run.app", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ eventId: event.id }),
+                    });
+                    const data = await response.json();
+                    if (response.ok) {
+                      setGlobalMessage(`Vectores regenerados: ${data.vectorsRegenerated || 0} usuarios, ${data.affinityScoresUpdated || 0} afinidades, ${data.matchesCreated || 0} matches`);
+                    } else {
+                      setGlobalMessage(`Error: ${data.error || "No se pudieron regenerar los vectores"}`);
+                    }
+                  } catch (error) {
+                    console.error("Error regenerating vectors:", error);
+                    setGlobalMessage("Error al regenerar vectores del evento");
+                  } finally {
+                    setActionLoading(false);
+                  }
+                }}
+                loading={actionLoading}
+                disabled={actionLoading}
+                color="blue"
+                variant="light"
+              >
+                Regenerar Vectores Evento
+              </Button>
+
+              <Button
+                onClick={checkOrphanedMeetings}
+                loading={checkingOrphans}
+                disabled={checkingOrphans || actionLoading}
+                color="orange"
+                variant="light"
+              >
+                Buscar Reuniones Huérfanas
+              </Button>
             </Group>
           </Tabs.Panel>
 
@@ -972,6 +1104,113 @@ const EventAdmin = () => {
         refreshEvents={fetchEvent}
         setGlobalMessage={setGlobalMessage}
       />
+
+      {/* Modal de reuniones huérfanas */}
+      <Modal
+        opened={orphanedMeetingsModalOpened}
+        onClose={() => setOrphanedMeetingsModalOpened(false)}
+        title="Reuniones con Usuarios Inexistentes"
+        size="xl"
+        centered
+      >
+        <Stack gap="md">
+          {orphanedMeetings.length === 0 ? (
+            <Text c="dimmed">No se encontraron reuniones con usuarios inexistentes.</Text>
+          ) : (
+            <>
+              <Group justify="space-between">
+                <Text size="sm">
+                  Se encontraron <strong>{orphanedMeetings.length}</strong> reuniones con usuarios que ya no existen.
+                </Text>
+                <Button
+                  color="red"
+                  size="sm"
+                  onClick={deleteAllOrphanedMeetings}
+                  loading={checkingOrphans}
+                >
+                  Eliminar Todas
+                </Button>
+              </Group>
+
+              <Table.ScrollContainer minWidth={500}>
+                <Table striped highlightOnHover>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>ID Reunión</Table.Th>
+                      <Table.Th>Solicitante</Table.Th>
+                      <Table.Th>Receptor</Table.Th>
+                      <Table.Th>Estado</Table.Th>
+                      <Table.Th>Problema</Table.Th>
+                      <Table.Th>Acciones</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {orphanedMeetings.map((meeting) => (
+                      <Table.Tr key={meeting.id}>
+                        <Table.Td>
+                          <Text size="xs" style={{ fontFamily: 'monospace' }}>
+                            {meeting.id.substring(0, 8)}...
+                          </Text>
+                        </Table.Td>
+                        <Table.Td>
+                          <Text size="xs" style={{ fontFamily: 'monospace' }}>
+                            {meeting.requesterId}
+                          </Text>
+                        </Table.Td>
+                        <Table.Td>
+                          <Text size="xs" style={{ fontFamily: 'monospace' }}>
+                            {meeting.receiverId}
+                          </Text>
+                        </Table.Td>
+                        <Table.Td>
+                          <Badge
+                            color={
+                              meeting.status === "accepted"
+                                ? "green"
+                                : meeting.status === "rejected"
+                                  ? "red"
+                                  : "yellow"
+                            }
+                            size="sm"
+                          >
+                            {meeting.status}
+                          </Badge>
+                        </Table.Td>
+                        <Table.Td>
+                          <Stack gap={4}>
+                            {meeting.missingRequester && (
+                              <Badge color="red" size="xs" variant="light">
+                                Solicitante no existe
+                              </Badge>
+                            )}
+                            {meeting.missingReceiver && (
+                              <Badge color="red" size="xs" variant="light">
+                                Receptor no existe
+                              </Badge>
+                            )}
+                          </Stack>
+                        </Table.Td>
+                        <Table.Td>
+                          <Button
+                            size="xs"
+                            color="red"
+                            variant="light"
+                            onClick={() => deleteOrphanedMeeting(meeting.id)}
+                            loading={deletingOrphan === meeting.id}
+                            disabled={deletingOrphan !== null}
+                          >
+                            Eliminar
+                          </Button>
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
+            </>
+          )}
+        </Stack>
+      </Modal>
     </Container>
   );
 };

@@ -1,9 +1,10 @@
-import { Card, Table, Button, Loader, Text, Group, Title, MultiSelect, Modal, Image, Tabs, Stack } from "@mantine/core";
+import { Card, Table, Button, Loader, Text, Group, Title, MultiSelect, Modal, Image, Tabs, Stack, TextInput } from "@mantine/core";
 import { collection, query, where, getDocs, deleteDoc, doc, addDoc, updateDoc, writeBatch } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import * as XLSX from "xlsx";
+import { IconSearch, IconX } from "@tabler/icons-react";
 import ModalEditAttendee from "./ModalEditAttendee";
 import ImportWizard from "./ImportWizard";
 
@@ -145,6 +146,12 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
   const [companyToEdit, setCompanyToEdit] = useState(null);
   const [editProductModalOpen, setEditProductModalOpen] = useState(false);
   const [productToEdit, setProductToEdit] = useState(null);
+
+  // Estado para búsqueda por ID
+  const [searchId, setSearchId] = useState("");
+
+  // Estado para regeneración de vectores
+  const [regeneratingVector, setRegeneratingVector] = useState(null);
 
   // Estado para edición inline
   const [editingCell, setEditingCell] = useState(null); // { id, fieldName, value }
@@ -939,6 +946,37 @@ function parseFirestoreTimestamp(input) {
     XLSX.writeFile(wb, `productos_${event?.eventName || event.id}.xlsx`);
   };
 
+  // Filtrar asistentes por ID
+  const filteredAttendees = searchId.trim() 
+    ? attendees.filter(a => a.id.toLowerCase().includes(searchId.toLowerCase().trim()))
+    : attendees;
+
+  // Función para regenerar vectores de un usuario
+  const handleRegenerateUserVector = async (userId) => {
+    setRegeneratingVector(userId);
+    try {
+      const response = await fetch("https://regeneratevectorsforevent-6eaymlz5eq-uc.a.run.app", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          eventId: event.id,
+          userId: userId 
+        }),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setGlobalMessage(`Vector regenerado: ${data.vectorsRegenerated || 0} usuario, ${data.affinityScoresUpdated || 0} afinidades, ${data.matchesCreated || 0} matches`);
+      } else {
+        setGlobalMessage(`Error: ${data.error || "No se pudo regenerar el vector"}`);
+      }
+    } catch (error) {
+      console.error("Error regenerating user vector:", error);
+      setGlobalMessage("Error al regenerar vector del usuario");
+    } finally {
+      setRegeneratingVector(null);
+    }
+  };
+
   return (
     <Card shadow="sm" p="lg" withBorder mt="md">
       <Tabs value={activeTab} onChange={setActiveTab}>
@@ -1015,6 +1053,31 @@ function parseFirestoreTimestamp(input) {
             </Group>
           </Group>
 
+          {/* Campo de búsqueda por ID */}
+          <Group mb="md">
+            <TextInput
+              placeholder="Buscar por ID..."
+              value={searchId}
+              onChange={(e) => setSearchId(e.target.value)}
+              leftSection={<IconSearch size={16} />}
+              rightSection={
+                searchId ? (
+                  <IconX
+                    size={16}
+                    style={{ cursor: "pointer" }}
+                    onClick={() => setSearchId("")}
+                  />
+                ) : null
+              }
+              style={{ width: 300 }}
+            />
+            {searchId && (
+              <Text size="sm" c="dimmed">
+                Mostrando {filteredAttendees.length} de {attendees.length} asistentes
+              </Text>
+            )}
+          </Group>
+
       <ImportWizard
         opened={importWizardOpened}
         onClose={() => setImportWizardOpened(false)}
@@ -1028,8 +1091,12 @@ function parseFirestoreTimestamp(input) {
 
           {loading ? (
             <Loader />
-          ) : attendees.length === 0 ? (
-            <Text>No hay asistentes registrados para este evento.</Text>
+          ) : filteredAttendees.length === 0 ? (
+            <Text>
+              {searchId 
+                ? `No se encontraron asistentes con ID que contenga "${searchId}"`
+                : "No hay asistentes registrados para este evento."}
+            </Text>
           ) : (
             <Table.ScrollContainer>
               <Table>
@@ -1044,7 +1111,7 @@ function parseFirestoreTimestamp(input) {
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
-                  {attendees.map((a) => (
+                  {filteredAttendees.map((a) => (
                     <Table.Tr key={a.id}>
                       {fields
                         .filter((f) => shownFields.includes(f.name))
@@ -1065,6 +1132,18 @@ function parseFirestoreTimestamp(input) {
                           style={{ marginRight: 8 }}
                         >
                           Editar
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          color="cyan"
+                          onClick={() => handleRegenerateUserVector(a.id)}
+                          loading={regeneratingVector === a.id}
+                          disabled={regeneratingVector !== null}
+                          style={{ marginRight: 8 }}
+                          title="Regenerar vector y recalcular afinidades"
+                        >
+                          Regenerar Vector
                         </Button>
                         <Button
                           color="red"
