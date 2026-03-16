@@ -45,6 +45,7 @@ export default function EventPoliciesModal({
   const [companyCardFields, setCompanyCardFields] = useState<string[]>(
     DEFAULT_POLICIES.cardFieldsConfig!.companyCard
   );
+  const [whatsappApiVersion, setWhatsappApiVersion] = useState<"v1" | "v2">("v1");
 
   // Empresas y asignación de mesas fijas
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -66,6 +67,7 @@ export default function EventPoliciesModal({
     setCompanyCardFields(
       p.cardFieldsConfig?.companyCard ?? DEFAULT_POLICIES.cardFieldsConfig!.companyCard
     );
+    setWhatsappApiVersion(p.whatsappApiVersion ?? "v1");
   }, [event]);
 
   // Cargar empresas cuando se abre el modal y tableMode es "fixed"
@@ -134,6 +136,7 @@ export default function EventPoliciesModal({
                 companyCard: companyCardFields,
               },
               uiViewsEnabled: uiViews,
+              whatsappApiVersion,
             },
           },
         },
@@ -263,6 +266,17 @@ export default function EventPoliciesModal({
           onChange={(v) => setSchedulingMode((v as EventPolicies["schedulingMode"]) ?? "manual")}
         />
 
+        <Select
+          label="API de WhatsApp"
+          description="Selecciona qué versión de la API usar para notificaciones"
+          data={[
+            { value: "v1", label: "API V1 (Geniality Simple)" },
+            { value: "v2", label: "API V2 (Meeting Request)" },
+          ]}
+          value={whatsappApiVersion}
+          onChange={(v) => setWhatsappApiVersion((v as "v1" | "v2") ?? "v1")}
+        />
+
         <Divider label="Vistas habilitadas en el dashboard" labelPosition="left" />
         <Text size="sm" c="dimmed">
           Controla qué pestañas de exploración ven los asistentes en su dashboard.
@@ -273,6 +287,13 @@ export default function EventPoliciesModal({
           checked={uiViews.chatbot}
           onChange={(e) =>
             setUiViews((prev) => ({ ...prev, chatbot: e.currentTarget.checked }))
+          }
+        />
+        <Switch
+          label="Matches (sugerencias de alta afinidad)"
+          checked={uiViews.matches}
+          onChange={(e) =>
+            setUiViews((prev) => ({ ...prev, matches: e.currentTarget.checked }))
           }
         />
         <Switch

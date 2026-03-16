@@ -1,29 +1,120 @@
-import { Card, Table, Button, Loader, Text, Group, Title, MultiSelect, Modal, Image } from "@mantine/core";
+import { Card, Table, Button, Loader, Text, Group, Title, MultiSelect, Modal, Image, Tabs, Stack, TextInput } from "@mantine/core";
 import { collection, query, where, getDocs, deleteDoc, doc, addDoc, updateDoc, writeBatch } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import * as XLSX from "xlsx";
+import { IconSearch, IconX } from "@tabler/icons-react";
 import ModalEditAttendee from "./ModalEditAttendee";
 import ImportWizard from "./ImportWizard";
 
 // Utilidad para obtener campos configurados para el evento (omite foto y consentimiento)
-const getEventTableFields = (event) => {
-  if (!event?.config?.formFields) return [];
-  return event.config.formFields
-    .filter((f) => !["photo", "aceptaTratamiento"].includes(f.name))
-    .map((f) => ({
-      name: f.name,
-      label: f.label || f.name,
-      type: f.type,
-      options: f.options,
-    }));
+const getEventTableFields = (event, entityType = "users") => {
+  let configKey = "formFields";
+  let defaultFields = [];
+  
+  if (entityType === "companies") {
+    configKey = "companyFields";
+    // Campos por defecto para empresas si no están configurados
+    defaultFields = [
+      { name: "logoUrl", label: "Logo", type: "image" },
+      { name: "nit", label: "NIT", type: "text" },
+      { name: "razonSocial", label: "Razón Social", type: "text" },
+      { name: "descripcion", label: "Descripción", type: "richtext" },
+      { name: "custom_por_favor_indique_el_tama_2641", label: "Tamaño empresa", type: "text" },
+      { name: "custom_instagram_508", label: "Instagram", type: "text" },
+      { name: "custom_facebook_6790", label: "Facebook", type: "text" },
+      { name: "custom_pgina_web_4455", label: "Página web", type: "text" },
+    ];
+  } else if (entityType === "products") {
+    configKey = "productFields";
+    // Campos por defecto para productos si no están configurados
+    defaultFields = [
+      { name: "imageUrl", label: "Imagen", type: "image" },
+      { name: "title", label: "Título", type: "text" },
+      { name: "description", label: "Descripción", type: "richtext" },
+      { name: "category", label: "Categoría", type: "text" },
+      { name: "ownerCompany", label: "Empresa", type: "text" },
+      { name: "ownerName", label: "Propietario", type: "text" },
+      { name: "ownerPhone", label: "Teléfono", type: "text" },
+    ];
+  }
+  
+  // Si hay campos específicos configurados, usarlos
+  if (event?.config?.[configKey] && event.config[configKey].length > 0) {
+    return event.config[configKey]
+      .filter((f) => !["photo", "aceptaTratamiento"].includes(f.name))
+      .map((f) => ({
+        name: f.name,
+        label: f.label || f.name,
+        type: f.type,
+        options: f.options,
+      }));
+  }
+  
+  // Para empresas, extraer campos relevantes de formFields si existen
+  if (entityType === "companies" && event?.config?.formFields) {
+    const companyRelatedFields = event.config.formFields.filter(f => 
+      f.name.startsWith("company_") || 
+      f.name === "descripcion" ||
+      f.name === "logoUrl" ||
+      f.name === "nitNorm" ||
+      f.name === "razonSocial" ||
+      f.name.includes("instagram") ||
+      f.name.includes("facebook") ||
+      f.name.includes("web") ||
+      f.name.includes("tama")
+    ).map((f) => {
+      let fieldName = f.name.replace("company_", "");
+      // Mapear company_nit a nit para que getValue lo encuentre
+      if (fieldName === "nit") {
+        fieldName = "nit";
+      }
+      return {
+        name: fieldName,
+        label: f.label || f.name,
+        type: f.type === "file" ? "image" : f.type,
+        options: f.options,
+      };
+    });
+    
+    if (companyRelatedFields.length > 0) {
+      // Agregar campos adicionales que están en el documento de empresa
+      const additionalFields = [
+        { name: "logoUrl", label: "Logo", type: "image" },
+        { name: "nit", label: "NIT", type: "text" },
+        { name: "razonSocial", label: "Razón Social", type: "text" },
+      ];
+      
+      // Combinar y eliminar duplicados
+      const allFields = [...additionalFields, ...companyRelatedFields];
+      const uniqueFields = allFields.filter((field, index, self) =>
+        index === self.findIndex((f) => f.name === field.name)
+      );
+      
+      return uniqueFields;
+    }
+  }
+  
+  return defaultFields;
 };
 
 const getValue = (a, fieldName) => {
   if (fieldName.startsWith("contacto.")) {
     const key = fieldName.split(".")[1];
     return a.contacto?.[key] || "";
+  }
+  // Caso especial para imágenes de productos (puede ser array o string)
+  if (fieldName === "images" && Array.isArray(a.images)) {
+    return a.images[0] || "";
+  }
+  // Caso especial para imageUrl de productos
+  if (fieldName === "imageUrl") {
+    return a.imageUrl || (Array.isArray(a.images) ? a.images[0] : "") || "";
+  }
+  // Caso especial para NIT de empresa (puede estar como nit, nitNorm o id)
+  if (fieldName === "nit") {
+    return a.nit || a.nitNorm || a.id || "";
   }
   return a[fieldName] ?? "";
 };
@@ -51,18 +142,46 @@ const getDisplayValue = (attendee, field) => {
 // ------ MAIN COMPONENT ------
 const AttendeesList = ({ event, setGlobalMessage }) => {
   const fileInputRef = useRef();
+  const [activeTab, setActiveTab] = useState("asistentes");
   const [attendees, setAttendees] = useState([]);
+  const [companies, setCompanies] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(false);
 
   // -- IMPORT WIZARD STATE --
   const [importWizardOpened, setImportWizardOpened] = useState(false);
   const [importColumns, setImportColumns] = useState([]);
   const [importRows, setImportRows] = useState([]);
-  const [fields, setFields] = useState(getEventTableFields(event)); // campos configurados
+  const [fields, setFields] = useState(getEventTableFields(event, "users"));
+  const [companyFields, setCompanyFields] = useState(getEventTableFields(event, "companies"));
+  const [productFields, setProductFields] = useState(getEventTableFields(event, "products"));
   const [shownFields, setShownFields] = useState(fields.map((f) => f.name));
+  const [shownCompanyFields, setShownCompanyFields] = useState(companyFields.map((f) => f.name));
+  const [shownProductFields, setShownProductFields] = useState(productFields.map((f) => f.name));
   const [creatingFieldFor, setCreatingFieldFor] = useState(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [attendeeToEdit, setAttendeeToEdit] = useState(null);
+  const [editCompanyModalOpen, setEditCompanyModalOpen] = useState(false);
+  const [companyToEdit, setCompanyToEdit] = useState(null);
+  const [editProductModalOpen, setEditProductModalOpen] = useState(false);
+  const [productToEdit, setProductToEdit] = useState(null);
+
+  // Estado para búsqueda por ID
+  const [searchId, setSearchId] = useState("");
+
+  // Estado para regeneración de vectores
+  const [regeneratingVector, setRegeneratingVector] = useState(null);
+
+  // Estado para edición inline
+  const [editingCell, setEditingCell] = useState(null); // { id, fieldName, value }
+  const [savingCell, setSavingCell] = useState(false);
+
+  // Estado para actualización masiva
+  const [updateWizardOpened, setUpdateWizardOpened] = useState(false);
+  const [updateColumns, setUpdateColumns] = useState([]);
+  const [updateRows, setUpdateRows] = useState([]);
+  const [updatingAttendees, setUpdatingAttendees] = useState(false);
 
   const [deleteAllModal, setDeleteAllModal] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
@@ -93,15 +212,33 @@ function parseFirestoreTimestamp(input) {
 
 
   useEffect(() => {
-    setFields(getEventTableFields(event));
-    setShownFields(getEventTableFields(event).map((f) => f.name));
+    setFields(getEventTableFields(event, "users"));
+    setShownFields(getEventTableFields(event, "users").map((f) => f.name));
+    setCompanyFields(getEventTableFields(event, "companies"));
+    setShownCompanyFields(getEventTableFields(event, "companies").map((f) => f.name));
+    setProductFields(getEventTableFields(event, "products"));
+    setShownProductFields(getEventTableFields(event, "products").map((f) => f.name));
     // eslint-disable-next-line
-  }, [event?.config?.formFields]);
+  }, [event?.config?.formFields, event?.config?.companyFields, event?.config?.productFields]);
 
   useEffect(() => {
-    if (event) fetchAttendees();
+    if (event) {
+      fetchAttendees();
+      fetchCompaniesCount();
+      fetchProductsCount();
+      fetchMeetings();
+    }
     // eslint-disable-next-line
   }, [event]);
+
+  useEffect(() => {
+    if (event && activeTab === "empresas" && companies.length === 0) {
+      fetchCompanies();
+    } else if (event && activeTab === "productos" && products.length === 0) {
+      fetchProducts();
+    }
+    // eslint-disable-next-line
+  }, [activeTab]);
 
   const fetchAttendees = async () => {
     try {
@@ -114,7 +251,7 @@ function parseFirestoreTimestamp(input) {
         return {
           id: docItem.id,
           ...docItem.data(),
-          lastConnectionFormatted: formatted, // Formatear fecha
+          lastConnectionFormatted: formatted,
         };
       });
       setAttendees(list);
@@ -127,44 +264,264 @@ function parseFirestoreTimestamp(input) {
     }
   };
 
-  const getActiveMeetingsForUser = async (userId) => {
-    const meetingsRef = collection(db, "events", event.id, "meetings");
-    const [snap1, snap2] = await Promise.all([
-      getDocs(query(meetingsRef, where("requesterId", "==", userId), where("status", "in", ["pending", "accepted"]))),
-      getDocs(query(meetingsRef, where("receiverId", "==", userId), where("status", "in", ["pending", "accepted"]))),
-    ]);
-    const map = new Map();
-    [...snap1.docs, ...snap2.docs].forEach((d) => map.set(d.id, d));
-    return [...map.values()];
-  };
-
-  const initiateDeleteOne = async (attendeeId, attendeeName) => {
-    setDeleteConfirmModal({ opened: true, attendeeId, attendeeName, meetingCount: 0, checking: true });
+  const fetchCompanies = async () => {
     try {
-      const meetings = await getActiveMeetingsForUser(attendeeId);
-      setDeleteConfirmModal((prev) => ({ ...prev, checking: false, meetingCount: meetings.length }));
-    } catch {
-      setDeleteConfirmModal({ opened: false, attendeeId: null, attendeeName: "", meetingCount: 0, checking: false });
-      setGlobalMessage("Error al verificar reuniones del asistente.");
+      setLoading(true);
+      const snapshot = await getDocs(collection(db, "events", event.id, "companies"));
+      const list = snapshot.docs.map((docItem) => ({
+        id: docItem.id,
+        ...docItem.data(),
+      }));
+      setCompanies(list);
+      console.log("Empresas:", list);
+    } catch (error) {
+      setGlobalMessage("Error al obtener empresas.");
+      console.log("Error al obtener empresas:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const confirmDeleteOne = async () => {
-    const { attendeeId } = deleteConfirmModal;
-    setDeletingOne(true);
+  const fetchCompaniesCount = async () => {
     try {
-      const meetings = await getActiveMeetingsForUser(attendeeId);
-      const batch = writeBatch(db);
-      meetings.forEach((m) => batch.update(m.ref, { status: "cancelled" }));
-      batch.delete(doc(db, "users", attendeeId));
-      await batch.commit();
-      setGlobalMessage(`Asistente eliminado. ${meetings.length} reunión(es) cancelada(s).`);
+      const snapshot = await getDocs(collection(db, "events", event.id, "companies"));
+      setCompanies(snapshot.docs.map((docItem) => ({
+        id: docItem.id,
+        ...docItem.data(),
+      })));
+    } catch (error) {
+      console.log("Error al obtener conteo de empresas:", error);
+    }
+  };
+
+  const fetchProducts = async () => {
+    try {
+      setLoading(true);
+      const snapshot = await getDocs(collection(db, "events", event.id, "products"));
+      const list = snapshot.docs.map((docItem) => ({
+        id: docItem.id,
+        ...docItem.data(),
+      }));
+      setProducts(list);
+      console.log("Productos:", list);
+    } catch (error) {
+      setGlobalMessage("Error al obtener productos.");
+      console.log("Error al obtener productos:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchProductsCount = async () => {
+    try {
+      const snapshot = await getDocs(collection(db, "events", event.id, "products"));
+      setProducts(snapshot.docs.map((docItem) => ({
+        id: docItem.id,
+        ...docItem.data(),
+      })));
+    } catch (error) {
+      console.log("Error al obtener conteo de productos:", error);
+    }
+  };
+
+  const fetchMeetings = async () => {
+    try {
+      const snapshot = await getDocs(collection(db, "events", event.id, "meetings"));
+      const list = snapshot.docs.map((docItem) => ({
+        id: docItem.id,
+        ...docItem.data(),
+      }));
+      setMeetings(list);
+      console.log("Reuniones cargadas:", list.length);
+    } catch (error) {
+      console.log("Error al obtener reuniones:", error);
+    }
+  };
+
+  // Función para guardar edición inline
+  const handleSaveInlineEdit = async (itemId, fieldName, newValue, entityType) => {
+    setSavingCell(true);
+    try {
+      let docRef;
+      if (entityType === "users") {
+        docRef = doc(db, "users", itemId);
+      } else if (entityType === "companies") {
+        docRef = doc(db, "events", event.id, "companies", itemId);
+      } else if (entityType === "products") {
+        docRef = doc(db, "events", event.id, "products", itemId);
+      }
+
+      await updateDoc(docRef, { [fieldName]: newValue });
+      
+      // Actualizar estado local
+      if (entityType === "users") {
+        setAttendees(prev => prev.map(a => 
+          a.id === itemId ? { ...a, [fieldName]: newValue } : a
+        ));
+      } else if (entityType === "companies") {
+        setCompanies(prev => prev.map(c => 
+          c.id === itemId ? { ...c, [fieldName]: newValue } : c
+        ));
+      } else if (entityType === "products") {
+        setProducts(prev => prev.map(p => 
+          p.id === itemId ? { ...p, [fieldName]: newValue } : p
+        ));
+      }
+
+      setGlobalMessage("Campo actualizado correctamente.");
+      setEditingCell(null);
+    } catch (error) {
+      setGlobalMessage("Error al actualizar el campo.");
+      console.error("Error updating field:", error);
+    } finally {
+      setSavingCell(false);
+    }
+  };
+
+  // Componente de celda editable
+  const EditableCell = ({ item, field, entityType }) => {
+    const value = getValue(item, field.name);
+    const isEditing = editingCell?.id === item.id && editingCell?.fieldName === field.name;
+    
+    // No permitir edición de imágenes inline
+    if (field.type === "image" || field.type === "photo") {
+      return value ? (
+        <Image
+          src={value}
+          alt={field.label}
+          width={60}
+          height={60}
+          fit="cover"
+          radius="md"
+        />
+      ) : (
+        <Text size="sm" c="dimmed">Sin imagen</Text>
+      );
+    }
+
+    if (isEditing) {
+      return (
+        <Group gap="xs">
+          {field.type === "select" ? (
+            <select
+              value={editingCell.value}
+              onChange={(e) => setEditingCell({ ...editingCell, value: e.target.value })}
+              style={{ padding: "4px 8px", borderRadius: "4px", border: "1px solid #ced4da" }}
+              autoFocus
+            >
+              {field.options?.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          ) : field.type === "richtext" ? (
+            <textarea
+              value={editingCell.value}
+              onChange={(e) => setEditingCell({ ...editingCell, value: e.target.value })}
+              style={{ 
+                padding: "4px 8px", 
+                borderRadius: "4px", 
+                border: "1px solid #ced4da",
+                minWidth: "200px",
+                minHeight: "60px"
+              }}
+              autoFocus
+            />
+          ) : (
+            <input
+              type="text"
+              value={editingCell.value}
+              onChange={(e) => setEditingCell({ ...editingCell, value: e.target.value })}
+              style={{ padding: "4px 8px", borderRadius: "4px", border: "1px solid #ced4da", minWidth: "150px" }}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  handleSaveInlineEdit(item.id, field.name, editingCell.value, entityType);
+                } else if (e.key === "Escape") {
+                  setEditingCell(null);
+                }
+              }}
+            />
+          )}
+          <Button
+            size="xs"
+            onClick={() => handleSaveInlineEdit(item.id, field.name, editingCell.value, entityType)}
+            loading={savingCell}
+            color="green"
+          >
+            ✓
+          </Button>
+          <Button
+            size="xs"
+            variant="subtle"
+            onClick={() => setEditingCell(null)}
+            disabled={savingCell}
+            color="red"
+          >
+            ✕
+          </Button>
+        </Group>
+      );
+    }
+
+    return (
+      <div
+        onClick={() => setEditingCell({ id: item.id, fieldName: field.name, value: value || "" })}
+        style={{ 
+          cursor: "pointer", 
+          padding: "4px 8px",
+          borderRadius: "4px",
+          minHeight: "24px",
+          transition: "background-color 0.2s"
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f1f3f5"}
+        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+        title="Click para editar"
+      >
+        {field.type === "select" ? (
+          field.options?.find((op) => op.value === value)?.label || value || "-"
+        ) : field.type === "richtext" ? (
+          value ? (
+            <Text size="sm" lineClamp={2}>{value}</Text>
+          ) : (
+            <Text size="sm" c="dimmed">-</Text>
+          )
+        ) : (
+          value || "-"
+        )}
+      </div>
+    );
+  };
+
+  const removeAttendee = async (attendeeId) => {
+    try {
+      await deleteDoc(doc(db, "users", attendeeId));
+      setGlobalMessage("Asistente eliminado correctamente.");
       setAttendees((prev) => prev.filter((a) => a.id !== attendeeId));
       setDeleteConfirmModal({ opened: false, attendeeId: null, attendeeName: "", meetingCount: 0, checking: false });
     } catch {
       setGlobalMessage("Error al eliminar el asistente.");
-    } finally {
-      setDeletingOne(false);
+    }
+  };
+
+  const removeCompany = async (companyId) => {
+    try {
+      await deleteDoc(doc(db, "events", event.id, "companies", companyId));
+      setGlobalMessage("Empresa eliminada correctamente.");
+      setCompanies((prev) => prev.filter((c) => c.id !== companyId));
+    } catch (error) {
+      setGlobalMessage("Error al eliminar la empresa.");
+    }
+  };
+
+  const removeProduct = async (productId) => {
+    try {
+      await deleteDoc(doc(db, "events", event.id, "products", productId));
+      setGlobalMessage("Producto eliminado correctamente.");
+      setProducts((prev) => prev.filter((p) => p.id !== productId));
+    } catch (error) {
+      setGlobalMessage("Error al eliminar el producto.");
     }
   };
 
@@ -215,6 +572,116 @@ function parseFirestoreTimestamp(input) {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "PlantillaAsistentes");
     XLSX.writeFile(wb, "plantilla_asistentes.xlsx");
+  };
+
+  // Plantilla de Excel para actualización (incluye email como identificador)
+  const downloadUpdateTemplate = () => {
+    // Incluir email como primer campo obligatorio
+    const updateFields = [
+      { name: "correo", label: "Correo (Identificador)" },
+      ...fields.filter(f => f.name !== "correo")
+    ];
+    
+    const wsData = [
+      updateFields.map((f) => f.name),
+      updateFields.map((f, idx) => idx === 0 ? "usuario@ejemplo.com" : `Ejemplo ${idx}`),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "ActualizarAsistentes");
+    XLSX.writeFile(wb, "plantilla_actualizacion_asistentes.xlsx");
+  };
+
+  // Función para actualizar asistentes desde Excel
+  const handleUpdateFromExcel = async (file) => {
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data);
+    const ws = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+    
+    if (rows.length === 0) {
+      setGlobalMessage("El archivo está vacío.");
+      return;
+    }
+
+    // Verificar que tenga columna de correo
+    if (!rows[0].correo && !rows[0].email) {
+      setGlobalMessage("El archivo debe contener una columna 'correo' o 'email' para identificar usuarios.");
+      return;
+    }
+
+    setUpdateColumns(Object.keys(rows[0]));
+    setUpdateRows(rows);
+    setUpdateWizardOpened(true);
+  };
+
+  // Confirmar actualización masiva
+  const handleConfirmUpdate = async () => {
+    setUpdatingAttendees(true);
+    let updated = 0;
+    let notFound = 0;
+    let errors = 0;
+
+    try {
+      for (const row of updateRows) {
+        const email = row.correo || row.email;
+        if (!email) {
+          notFound++;
+          continue;
+        }
+
+        // Buscar usuario por email
+        const userQuery = query(
+          collection(db, "users"),
+          where("eventId", "==", event.id),
+          where("correo", "==", email)
+        );
+        const userSnapshot = await getDocs(userQuery);
+
+        if (userSnapshot.empty) {
+          console.log(`Usuario no encontrado: ${email}`);
+          notFound++;
+          continue;
+        }
+
+        // Preparar datos a actualizar (solo campos con valor)
+        const userId = userSnapshot.docs[0].id;
+        const updateData = {};
+        
+        for (const [key, value] of Object.entries(row)) {
+          // Saltar el email (identificador) y valores vacíos
+          if (key === "correo" || key === "email" || !value || String(value).trim() === "") {
+            continue;
+          }
+
+          // Detectar si es select y mapear el value
+          const fieldConfig = fields.find((f) => f.name === key);
+          if (fieldConfig?.type === "select" && value) {
+            const option = fieldConfig.options?.find(
+              (op) => String(op.label).toLowerCase().trim() === String(value).toLowerCase().trim()
+            );
+            updateData[key] = option?.value || value;
+          } else {
+            updateData[key] = value;
+          }
+        }
+
+        // Solo actualizar si hay campos para actualizar
+        if (Object.keys(updateData).length > 0) {
+          await updateDoc(doc(db, "users", userId), updateData);
+          updated++;
+        }
+      }
+
+      setGlobalMessage(`Actualización completada: ${updated} actualizados, ${notFound} no encontrados, ${errors} errores.`);
+      setUpdateWizardOpened(false);
+      fetchAttendees();
+    } catch (error) {
+      console.error("Error en actualización masiva:", error);
+      setGlobalMessage("Error durante la actualización masiva.");
+    } finally {
+      setUpdatingAttendees(false);
+    }
   };
 
   // Paso 1: Leer archivo Excel y mostrar wizard de mapeo
@@ -311,24 +778,50 @@ function parseFirestoreTimestamp(input) {
 
   // Exporta SOLO los campos visibles
   const handleExportCurrentToExcel = () => {
-  const visibleFields = fields.filter((f) => shownFields.includes(f.name));
-  const allFields = [{ name: "id", label: "ID" }, ...visibleFields];
+    const visibleFields = fields.filter((f) => shownFields.includes(f.name));
+    const allFields = [
+      { name: "id", label: "ID" }, 
+      ...visibleFields,
+      { name: "citasPendientes", label: "Citas Pendientes" },
+      { name: "citasAceptadas", label: "Citas Aceptadas" },
+      { name: "citasRechazadas", label: "Citas Rechazadas" },
+      { name: "citasTotales", label: "Total Citas" },
+    ];
 
-  const wsData = [
-    allFields.map((f) => f.label),
-    ...attendees.map((a) =>
-      allFields.map((f) =>
-        f.name === "id" ? a.id : getDisplayValue(a, f)
-      )
-    ),
-  ];
+    // Calcular conteos de citas por usuario
+    const getMeetingCounts = (userId) => {
+      const userMeetings = meetings.filter(m => 
+        m.participants?.includes(userId)
+      );
+      
+      const pending = userMeetings.filter(m => m.status === "pending").length;
+      const accepted = userMeetings.filter(m => m.status === "accepted").length;
+      const rejected = userMeetings.filter(m => m.status === "rejected").length;
+      const total = userMeetings.length;
+      
+      return { pending, accepted, rejected, total };
+    };
 
-  const ws = XLSX.utils.aoa_to_sheet(wsData);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Asistentes");
+    const wsData = [
+      allFields.map((f) => f.label),
+      ...attendees.map((a) => {
+        const counts = getMeetingCounts(a.id);
+        return [
+          ...allFields.slice(0, -4).map((f) => getValue(a, f.name)),
+          counts.pending,
+          counts.accepted,
+          counts.rejected,
+          counts.total,
+        ];
+      }),
+    ];
 
-  XLSX.writeFile(wb, `asistentes_${event?.eventName || event.id}.xlsx`);
-};
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Asistentes");
+
+    XLSX.writeFile(wb, `asistentes_${event?.eventName || event.id}.xlsx`);
+  };
   const exportCompradoresToExcel = () => {
     // Puedes ajustar estos campos según tu modelo
     const compradores = attendees.filter((a) => a.tipoAsistente === "comprador");
@@ -374,56 +867,236 @@ function parseFirestoreTimestamp(input) {
     XLSX.writeFile(wb, "vendedores_evento_final.xlsx");
   };
 
+  // Exportar empresas a Excel
+  const exportCompaniesToExcel = () => {
+    if (companies.length === 0) return setGlobalMessage("No hay empresas.");
+    const visibleFields = companyFields.filter((f) => shownCompanyFields.includes(f.name));
+    const allFields = [
+      { name: "id", label: "ID" }, 
+      ...visibleFields,
+      { name: "citasPendientes", label: "Citas Pendientes" },
+      { name: "citasAceptadas", label: "Citas Aceptadas" },
+      { name: "citasRechazadas", label: "Citas Rechazadas" },
+      { name: "citasTotales", label: "Total Citas" },
+    ];
+    
+    // Calcular conteos de citas por empresa (suma de todos sus usuarios)
+    const getCompanyMeetingCounts = (companyId) => {
+      const companyUsers = attendees.filter(a => 
+        a.companyId === companyId || a.company_nit === companyId
+      );
+      const userIds = companyUsers.map(u => u.id);
+      
+      const companyMeetings = meetings.filter(m => 
+        m.participants?.some(p => userIds.includes(p))
+      );
+      
+      const pending = companyMeetings.filter(m => m.status === "pending").length;
+      const accepted = companyMeetings.filter(m => m.status === "accepted").length;
+      const rejected = companyMeetings.filter(m => m.status === "rejected").length;
+      const total = companyMeetings.length;
+      
+      return { pending, accepted, rejected, total };
+    };
+    
+    const wsData = [
+      allFields.map((f) => f.label),
+      ...companies.map((c) => {
+        const counts = getCompanyMeetingCounts(c.id);
+        return [
+          ...allFields.slice(0, -4).map((f) => getValue(c, f.name)),
+          counts.pending,
+          counts.accepted,
+          counts.rejected,
+          counts.total,
+        ];
+      }),
+    ];
+    
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Empresas");
+    XLSX.writeFile(wb, `empresas_${event?.eventName || event.id}.xlsx`);
+  };
+
+  // Exportar productos a Excel
+  const exportProductsToExcel = () => {
+    if (products.length === 0) return setGlobalMessage("No hay productos.");
+    const visibleFields = productFields.filter((f) => shownProductFields.includes(f.name));
+    const allFields = [
+      { name: "id", label: "ID" }, 
+      ...visibleFields,
+      { name: "citasPendientes", label: "Citas Pendientes" },
+      { name: "citasAceptadas", label: "Citas Aceptadas" },
+      { name: "citasRechazadas", label: "Citas Rechazadas" },
+      { name: "citasTotales", label: "Total Citas" },
+    ];
+    
+    // Calcular conteos de citas relacionadas con el producto
+    const getProductMeetingCounts = (productId) => {
+      const productMeetings = meetings.filter(m => 
+        m.productId === productId
+      );
+      
+      const pending = productMeetings.filter(m => m.status === "pending").length;
+      const accepted = productMeetings.filter(m => m.status === "accepted").length;
+      const rejected = productMeetings.filter(m => m.status === "rejected").length;
+      const total = productMeetings.length;
+      
+      return { pending, accepted, rejected, total };
+    };
+    
+    const wsData = [
+      allFields.map((f) => f.label),
+      ...products.map((p) => {
+        const counts = getProductMeetingCounts(p.id);
+        return [
+          ...allFields.slice(0, -4).map((f) => getValue(p, f.name)),
+          counts.pending,
+          counts.accepted,
+          counts.rejected,
+          counts.total,
+        ];
+      }),
+    ];
+    
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Productos");
+    XLSX.writeFile(wb, `productos_${event?.eventName || event.id}.xlsx`);
+  };
+
+  // Filtrar asistentes por ID
+  const filteredAttendees = searchId.trim() 
+    ? attendees.filter(a => a.id.toLowerCase().includes(searchId.toLowerCase().trim()))
+    : attendees;
+
+  // Función para regenerar vectores de un usuario
+  const handleRegenerateUserVector = async (userId) => {
+    setRegeneratingVector(userId);
+    try {
+      const response = await fetch("https://regeneratevectorsforevent-6eaymlz5eq-uc.a.run.app", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          eventId: event.id,
+          userId: userId 
+        }),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setGlobalMessage(`Vector regenerado: ${data.vectorsRegenerated || 0} usuario, ${data.affinityScoresUpdated || 0} afinidades, ${data.matchesCreated || 0} matches`);
+      } else {
+        setGlobalMessage(`Error: ${data.error || "No se pudo regenerar el vector"}`);
+      }
+    } catch (error) {
+      console.error("Error regenerating user vector:", error);
+      setGlobalMessage("Error al regenerar vector del usuario");
+    } finally {
+      setRegeneratingVector(null);
+    }
+  };
+
   return (
     <Card shadow="sm" p="lg" withBorder mt="md">
-      <Group position="apart" mb="md">
-        <Title order={5}>Asistentes del evento</Title>
-        <Group>
-          <Button variant="outline" onClick={downloadAttendeesTemplate}>
-            Descargar Plantilla Excel
-          </Button>
-          <Button component="label" variant="outline">
-            Importar Excel
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              style={{ display: "none" }}
-              onChange={async (e) => {
-                if (e.target.files[0]) {
-                  await handleExcelFileSelected(e.target.files[0]);
-                }
-              }}
+      <Tabs value={activeTab} onChange={setActiveTab}>
+        <Tabs.List mb="md">
+          <Tabs.Tab value="asistentes">
+            Asistentes ({attendees.length})
+          </Tabs.Tab>
+          <Tabs.Tab value="empresas">
+            Empresas ({companies.length})
+          </Tabs.Tab>
+          <Tabs.Tab value="productos">
+            Productos ({products.length})
+          </Tabs.Tab>
+        </Tabs.List>
+
+        {/* TAB ASISTENTES */}
+        <Tabs.Panel value="asistentes">
+          <Group position="apart" mb="md">
+            <Title order={5}>Asistentes del evento</Title>
+            <Group>
+              <Button variant="outline" onClick={downloadAttendeesTemplate}>
+                Descargar Plantilla Excel
+              </Button>
+              <Button variant="outline" color="cyan" onClick={downloadUpdateTemplate}>
+                Plantilla Actualización
+              </Button>
+              <Button component="label" variant="outline">
+                Importar Excel
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  style={{ display: "none" }}
+                  onChange={async (e) => {
+                    if (e.target.files[0]) {
+                      await handleExcelFileSelected(e.target.files[0]);
+                    }
+                  }}
+                />
+              </Button>
+              <Button component="label" variant="outline" color="orange">
+                Actualizar desde Excel
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  style={{ display: "none" }}
+                  onChange={async (e) => {
+                    if (e.target.files[0]) {
+                      await handleUpdateFromExcel(e.target.files[0]);
+                    }
+                  }}
+                />
+              </Button>
+              <Button onClick={handleExportCurrentToExcel}>Exportar todos a Excel</Button>
+              <Button variant="outline" color="indigo" onClick={exportCompradoresToExcel}>
+                Exportar compradores
+              </Button>
+              <Button variant="outline" color="orange" onClick={exportVendedoresToExcel}>
+                Exportar vendedores
+              </Button>
+              <MultiSelect
+                data={fields.map((f) => ({
+                  value: f.name,
+                  label: f.label,
+                }))}
+                value={shownFields}
+                onChange={setShownFields}
+                clearable={false}
+                searchable
+                placeholder="Columnas a mostrar"
+                style={{ minWidth: 220 }}
+                nothingFound="Sin campos"
+              />
+            </Group>
+          </Group>
+
+          {/* Campo de búsqueda por ID */}
+          <Group mb="md">
+            <TextInput
+              placeholder="Buscar por ID..."
+              value={searchId}
+              onChange={(e) => setSearchId(e.target.value)}
+              leftSection={<IconSearch size={16} />}
+              rightSection={
+                searchId ? (
+                  <IconX
+                    size={16}
+                    style={{ cursor: "pointer" }}
+                    onClick={() => setSearchId("")}
+                  />
+                ) : null
+              }
+              style={{ width: 300 }}
             />
-          </Button>
-          <Button onClick={handleExportCurrentToExcel}>Exportar todos a Excel (solo columnas visibles)</Button>
-          <Button variant="outline" color="indigo" onClick={exportCompradoresToExcel}>
-            Exportar compradores (Excel)
-          </Button>
-          <Button variant="outline" color="orange" onClick={exportVendedoresToExcel}>
-            Exportar vendedores (Excel)
-          </Button>
-          {attendees.length > 0 && (
-            <Button color="red" variant="outline" onClick={() => setDeleteAllModal(true)} loading={deletingAll}>
-              Eliminar TODOS
-            </Button>
-          )}
-          {/* Selección de columnas */}
-          <MultiSelect
-            data={fields.map((f) => ({
-              value: f.name,
-              label: f.label,
-            }))}
-            value={shownFields}
-            onChange={setShownFields}
-            clearable={false}
-            searchable
-            placeholder="Columnas a mostrar"
-            style={{ minWidth: 220 }}
-            nothingFound="Sin campos"
-          />
-        </Group>
-      </Group>
+            {searchId && (
+              <Text size="sm" c="dimmed">
+                Mostrando {filteredAttendees.length} de {attendees.length} asistentes
+              </Text>
+            )}
+          </Group>
 
       <ImportWizard
         opened={importWizardOpened}
@@ -436,91 +1109,264 @@ function parseFirestoreTimestamp(input) {
         setCreatingFieldFor={setCreatingFieldFor}
       />
 
-      {loading ? (
-        <Loader />
-      ) : attendees.length === 0 ? (
-        <Text>No hay asistentes registrados para este evento.</Text>
-      ) : (
-        <Table.ScrollContainer>
-          <Table>
-            <Table.Thead>
-              <Table.Th>ID</Table.Th>
-              <Table.Tr>
-                {fields
-                  .filter((f) => shownFields.includes(f.name))
-                  .map((f) => (
-                    <Table.Th key={f.name}>{f.label}</Table.Th>
+          {loading ? (
+            <Loader />
+          ) : filteredAttendees.length === 0 ? (
+            <Text>
+              {searchId 
+                ? `No se encontraron asistentes con ID que contenga "${searchId}"`
+                : "No hay asistentes registrados para este evento."}
+            </Text>
+          ) : (
+            <Table.ScrollContainer>
+              <Table>
+                <Table.Thead>
+                  <Table.Tr>
+                    {fields
+                      .filter((f) => shownFields.includes(f.name))
+                      .map((f) => (
+                        <Table.Th key={f.name}>{f.label}</Table.Th>
+                      ))}
+                    <Table.Th>Acciones</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {filteredAttendees.map((a) => (
+                    <Table.Tr key={a.id}>
+                      {fields
+                        .filter((f) => shownFields.includes(f.name))
+                        .map((f) => (
+                          <Table.Td key={f.name}>
+                            <EditableCell item={a} field={f} entityType="users" />
+                          </Table.Td>
+                        ))}
+                      <Table.Td>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          color="blue"
+                          onClick={() => {
+                            setAttendeeToEdit(a);
+                            setEditModalOpen(true);
+                          }}
+                          style={{ marginRight: 8 }}
+                        >
+                          Editar
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          color="cyan"
+                          onClick={() => handleRegenerateUserVector(a.id)}
+                          loading={regeneratingVector === a.id}
+                          disabled={regeneratingVector !== null}
+                          style={{ marginRight: 8 }}
+                          title="Regenerar vector y recalcular afinidades"
+                        >
+                          Regenerar Vector
+                        </Button>
+                        <Button
+                          color="red"
+                          size="xs"
+                          onClick={() => {
+                            if (window.confirm("¿Estás seguro que deseas eliminar este asistente?")) {
+                              removeAttendee(a.id);
+                            }
+                          }}
+                        >
+                          Eliminar
+                        </Button>
+                      </Table.Td>
+                    </Table.Tr>
                   ))}
-                <Table.Th>Acciones</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {attendees.map((a) => (
-                <Table.Tr key={a.id}>
-                  {/* <Table.Td
-                    style={{ fontFamily: "monospace", fontSize: "0.85em" }}
-                  >
-                    {a.id}
-                  </Table.Td> */}
-                  {fields
-                    .filter((f) => shownFields.includes(f.name))
-                    .map((f) => {
-                      const rawValue = getValue(a, f.name);
-                      return (
-                        <Table.Td key={f.name}>
-                          {f.type === "image" || f.type === "photo" ? (
-                            rawValue ? (
-                              <Image
-                                src={rawValue}
-                                alt={f.label}
-                                width={60}
-                                height={60}
-                                fit="cover"
-                                radius="md"
-                              />
-                            ) : (
-                              <Text size="sm" c="dimmed">Sin imagen</Text>
-                            )
-                          ) : (
-                            getDisplayValue(a, f)
-                          )}
-                        </Table.Td>
-                      );
-                    })}
-                  <Table.Td>
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      color="blue"
-                      onClick={() => {
-                        setAttendeeToEdit(a);
-                        setEditModalOpen(true);
-                      }}
-                      style={{ marginRight: 8 }}
-                    >
-                      Editar
-                    </Button>
-                    <Button
-                      color="red"
-                      size="xs"
-                      onClick={() => initiateDeleteOne(a.id, a.nombre || a.id)}
-                    >
-                      Eliminar
-                    </Button>
-                  </Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
-      )}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+          )}
+        </Tabs.Panel>
+
+        {/* TAB EMPRESAS */}
+        <Tabs.Panel value="empresas">
+          <Group position="apart" mb="md">
+            <Title order={5}>Empresas del evento</Title>
+            <Group>
+              <Button onClick={exportCompaniesToExcel}>Exportar a Excel</Button>
+              <MultiSelect
+                data={companyFields.map((f) => ({
+                  value: f.name,
+                  label: f.label,
+                }))}
+                value={shownCompanyFields}
+                onChange={setShownCompanyFields}
+                clearable={false}
+                searchable
+                placeholder="Columnas a mostrar"
+                style={{ minWidth: 220 }}
+                nothingFound="Sin campos"
+              />
+            </Group>
+          </Group>
+
+          {loading ? (
+            <Loader />
+          ) : companies.length === 0 ? (
+            <Text>No hay empresas registradas para este evento.</Text>
+          ) : (
+            <Table.ScrollContainer>
+              <Table>
+                <Table.Thead>
+                  <Table.Tr>
+                    {companyFields
+                      .filter((f) => shownCompanyFields.includes(f.name))
+                      .map((f) => (
+                        <Table.Th key={f.name}>{f.label}</Table.Th>
+                      ))}
+                    <Table.Th>Acciones</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {companies.map((c) => (
+                    <Table.Tr key={c.id}>
+                      {companyFields
+                        .filter((f) => shownCompanyFields.includes(f.name))
+                        .map((f) => (
+                          <Table.Td key={f.name}>
+                            <EditableCell item={c} field={f} entityType="companies" />
+                          </Table.Td>
+                        ))}
+                      <Table.Td>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          color="blue"
+                          onClick={() => {
+                            setCompanyToEdit(c);
+                            setEditCompanyModalOpen(true);
+                          }}
+                          style={{ marginRight: 8 }}
+                        >
+                          Editar
+                        </Button>
+                        <Button
+                          color="red"
+                          size="xs"
+                          onClick={() => {
+                            if (window.confirm("¿Estás seguro que deseas eliminar esta empresa?")) {
+                              removeCompany(c.id);
+                            }
+                          }}
+                        >
+                          Eliminar
+                        </Button>
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+          )}
+        </Tabs.Panel>
+
+        {/* TAB PRODUCTOS */}
+        <Tabs.Panel value="productos">
+          <Group position="apart" mb="md">
+            <Title order={5}>Productos del evento</Title>
+            <Group>
+              <Button onClick={exportProductsToExcel}>Exportar a Excel</Button>
+              <MultiSelect
+                data={productFields.map((f) => ({
+                  value: f.name,
+                  label: f.label,
+                }))}
+                value={shownProductFields}
+                onChange={setShownProductFields}
+                clearable={false}
+                searchable
+                placeholder="Columnas a mostrar"
+                style={{ minWidth: 220 }}
+                nothingFound="Sin campos"
+              />
+            </Group>
+          </Group>
+
+          {loading ? (
+            <Loader />
+          ) : products.length === 0 ? (
+            <Text>No hay productos registrados para este evento.</Text>
+          ) : (
+            <Table.ScrollContainer>
+              <Table>
+                <Table.Thead>
+                  <Table.Tr>
+                    {productFields
+                      .filter((f) => shownProductFields.includes(f.name))
+                      .map((f) => (
+                        <Table.Th key={f.name}>{f.label}</Table.Th>
+                      ))}
+                    <Table.Th>Acciones</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {products.map((p) => (
+                    <Table.Tr key={p.id}>
+                      {productFields
+                        .filter((f) => shownProductFields.includes(f.name))
+                        .map((f) => (
+                          <Table.Td key={f.name}>
+                            <EditableCell item={p} field={f} entityType="products" />
+                          </Table.Td>
+                        ))}
+                      <Table.Td>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          color="blue"
+                          onClick={() => {
+                            setProductToEdit(p);
+                            setEditProductModalOpen(true);
+                          }}
+                          style={{ marginRight: 8 }}
+                        >
+                          Editar
+                        </Button>
+                        <Button
+                          color="red"
+                          size="xs"
+                          onClick={() => {
+                            if (window.confirm("¿Estás seguro que deseas eliminar este producto?")) {
+                              removeProduct(p.id);
+                            }
+                          }}
+                        >
+                          Eliminar
+                        </Button>
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+          )}
+        </Tabs.Panel>
+      </Tabs>
+
+      <ImportWizard
+        opened={importWizardOpened}
+        onClose={() => setImportWizardOpened(false)}
+        columns={importColumns}
+        existingFields={fields}
+        onConfirmMapping={handleConfirmMapping}
+        onCreateField={handleCreateField}
+        creatingFieldFor={creatingFieldFor}
+        setCreatingFieldFor={setCreatingFieldFor}
+      />
+
       <ModalEditAttendee
         opened={editModalOpen}
         onClose={() => setEditModalOpen(false)}
         attendee={attendeeToEdit}
         fields={fields}
         onSave={async (updated) => {
-          // Guarda en Firestore
           const id = updated.id;
           const { id: _id, ...toSave } = updated;
           try {
@@ -532,49 +1378,42 @@ function parseFirestoreTimestamp(input) {
           }
         }}
       />
-      {/* Modal confirmación eliminación individual */}
-      <Modal
-        opened={deleteConfirmModal.opened}
-        onClose={() => setDeleteConfirmModal({ opened: false, attendeeId: null, attendeeName: "", meetingCount: 0, checking: false })}
-        title="Eliminar asistente"
-        centered
-      >
-        {deleteConfirmModal.checking ? (
-          <Group justify="center" py="md">
-            <Loader size="sm" />
-            <Text size="sm">Verificando reuniones activas...</Text>
-          </Group>
-        ) : (
-          <>
-            {deleteConfirmModal.meetingCount > 0 ? (
-              <Text>
-                El asistente <b>{deleteConfirmModal.attendeeName}</b> tiene{" "}
-                <b>{deleteConfirmModal.meetingCount} reunión(es) activa(s)</b>. Al eliminar, estas reuniones serán
-                canceladas automáticamente. ¿Deseas continuar?
-              </Text>
-            ) : (
-              <Text>
-                ¿Estás seguro que deseas eliminar a <b>{deleteConfirmModal.attendeeName}</b>? Esta acción es
-                irreversible.
-              </Text>
-            )}
-            <Group mt="md" justify="flex-end">
-              <Button
-                variant="default"
-                onClick={() =>
-                  setDeleteConfirmModal({ opened: false, attendeeId: null, attendeeName: "", meetingCount: 0, checking: false })
-                }
-                disabled={deletingOne}
-              >
-                Cancelar
-              </Button>
-              <Button color="red" onClick={confirmDeleteOne} loading={deletingOne}>
-                {deleteConfirmModal.meetingCount > 0 ? "Eliminar y cancelar reuniones" : "Eliminar"}
-              </Button>
-            </Group>
-          </>
-        )}
-      </Modal>
+
+      <ModalEditAttendee
+        opened={editCompanyModalOpen}
+        onClose={() => setEditCompanyModalOpen(false)}
+        attendee={companyToEdit}
+        fields={companyFields}
+        onSave={async (updated) => {
+          const id = updated.id;
+          const { id: _id, ...toSave } = updated;
+          try {
+            await updateDoc(doc(db, "events", event.id, "companies", id), toSave);
+            setGlobalMessage("Empresa actualizada correctamente.");
+            fetchCompanies();
+          } catch (err) {
+            setGlobalMessage("Error al actualizar la empresa.");
+          }
+        }}
+      />
+
+      <ModalEditAttendee
+        opened={editProductModalOpen}
+        onClose={() => setEditProductModalOpen(false)}
+        attendee={productToEdit}
+        fields={productFields}
+        onSave={async (updated) => {
+          const id = updated.id;
+          const { id: _id, ...toSave } = updated;
+          try {
+            await updateDoc(doc(db, "events", event.id, "products", id), toSave);
+            setGlobalMessage("Producto actualizado correctamente.");
+            fetchProducts();
+          } catch (err) {
+            setGlobalMessage("Error al actualizar el producto.");
+          }
+        }}
+      />
 
       <Modal
         opened={deleteAllModal}
@@ -593,6 +1432,79 @@ function parseFirestoreTimestamp(input) {
             Eliminar todos
           </Button>
         </Group>
+      </Modal>
+
+      {/* Modal de confirmación de actualización masiva */}
+      <Modal
+        opened={updateWizardOpened}
+        onClose={() => !updatingAttendees && setUpdateWizardOpened(false)}
+        title="Actualizar asistentes desde Excel"
+        size="lg"
+        centered
+      >
+        <Stack gap="md">
+          <Text size="sm">
+            Se encontraron <b>{updateRows.length}</b> filas en el archivo Excel.
+          </Text>
+          <Text size="sm" c="dimmed">
+            Los asistentes se identificarán por su correo electrónico. Solo se actualizarán los campos que tengan valores en el Excel.
+          </Text>
+          
+          {updateRows.length > 0 && (
+            <div style={{ maxHeight: "300px", overflowY: "auto" }}>
+              <Table striped highlightOnHover>
+                <Table.Thead>
+                  <Table.Tr>
+                    {updateColumns.slice(0, 5).map((col) => (
+                      <Table.Th key={col}>{col}</Table.Th>
+                    ))}
+                    {updateColumns.length > 5 && <Table.Th>...</Table.Th>}
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {updateRows.slice(0, 5).map((row, idx) => (
+                    <Table.Tr key={idx}>
+                      {updateColumns.slice(0, 5).map((col) => (
+                        <Table.Td key={col}>
+                          <Text size="xs" lineClamp={1}>
+                            {row[col] || "-"}
+                          </Text>
+                        </Table.Td>
+                      ))}
+                      {updateColumns.length > 5 && <Table.Td>...</Table.Td>}
+                    </Table.Tr>
+                  ))}
+                  {updateRows.length > 5 && (
+                    <Table.Tr>
+                      <Table.Td colSpan={updateColumns.length > 5 ? 6 : updateColumns.length}>
+                        <Text size="xs" c="dimmed" ta="center">
+                          ... y {updateRows.length - 5} filas más
+                        </Text>
+                      </Table.Td>
+                    </Table.Tr>
+                  )}
+                </Table.Tbody>
+              </Table>
+            </div>
+          )}
+
+          <Group mt="md" position="apart">
+            <Button 
+              variant="default" 
+              onClick={() => setUpdateWizardOpened(false)} 
+              disabled={updatingAttendees}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              color="orange" 
+              onClick={handleConfirmUpdate} 
+              loading={updatingAttendees}
+            >
+              Actualizar {updateRows.length} asistentes
+            </Button>
+          </Group>
+        </Stack>
       </Modal>
     </Card>
   );

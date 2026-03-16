@@ -169,6 +169,24 @@ const DashboardHeader = ({
       // Clean contacto if present
       if (dataToUpdate.contacto) delete dataToUpdate.contacto;
 
+      // Check if networking fields were modified
+      const steps = eventConfig?.registrationForm?.steps || [];
+      const networkingStep = steps.find((s: any) => s.id === "networking");
+      const networkingFields = networkingStep?.fields || [];
+      
+      let networkingFieldsModified = false;
+      if (networkingFields.length > 0) {
+        for (const fieldName of networkingFields) {
+          const oldValue = currentUser?.data?.[fieldName];
+          const newValue = dataToUpdate[fieldName];
+          if (oldValue !== newValue) {
+            networkingFieldsModified = true;
+            console.log(`Networking field modified: ${fieldName}`);
+            break;
+          }
+        }
+      }
+
       dataToUpdate.updatedAt = new Date().toISOString();
       await updateUser(uid, dataToUpdate);
 
@@ -176,7 +194,6 @@ const DashboardHeader = ({
       // Include all fields from the company step dynamically
       const eventId = dataToUpdate.eventId || currentUser?.data?.eventId;
       if (eventId && nitNorm) {
-        const steps = eventConfig?.registrationForm?.steps || [];
         const companyStep = steps.find((s: any) =>
           (s.fields || []).includes("company_nit")
         );
@@ -204,6 +221,35 @@ const DashboardHeader = ({
         );
       }
 
+      // Regenerate vector if networking fields were modified
+      if (networkingFieldsModified && eventId) {
+        console.log("Regenerating vector for user due to networking field changes");
+        try {
+          const response = await fetch(
+            "https://regeneratevectorsforevent-6eaymlz5eq-uc.a.run.app",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                eventId,
+                userId: uid,
+              }),
+            }
+          );
+
+          if (!response.ok) {
+            console.error("Failed to regenerate vector:", await response.text());
+          } else {
+            console.log("Vector regenerated successfully");
+          }
+        } catch (vectorError) {
+          console.error("Error calling regenerateVectorsForEvent:", vectorError);
+          // No mostramos error al usuario, es un proceso en segundo plano
+        }
+      }
+
       showNotification({
         title: "Perfil actualizado",
         message: "Tus datos fueron guardados correctamente.",
@@ -220,7 +266,7 @@ const DashboardHeader = ({
     } finally {
       setSaving(false);
     }
-  }, [uid, editData, updateUser]);
+  }, [uid, editData, updateUser, currentUser, eventConfig]);
 
   const handleLogout = useCallback(() => {
     logout();

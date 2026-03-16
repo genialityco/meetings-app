@@ -10,11 +10,9 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
-import type { Company, Product } from "./types";
+import type { Company, Product, EventPolicies, DEFAULT_POLICIES } from "./types";
 import { showNotification } from "@mantine/notifications";
-
-const API_WP_URL = "https://apiwhatsapp.geniality.com.co/api/send";
-const CLIENT_ID = "genialitybussinesstest";
+import { sendWhatsAppMessage as sendWhatsAppAPI } from "../../utils/whatsappService";
 
 export interface CompanyRepresentative {
   id: string;
@@ -41,6 +39,7 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
   const [eventImage, setEventImage] = useState("");
   const [dashboardLogo, setDashboardLogo] = useState("");
   const [loading, setLoading] = useState(true);
+  const [policies, setPolicies] = useState<EventPolicies>(DEFAULT_POLICIES);
 
   // 1. Event config (for theme + event info)
   useEffect(() => {
@@ -53,6 +52,7 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
         setEventName(data.eventName || "");
         setEventImage(data.eventImage || "");
         setDashboardLogo(data.dashboardLogo || "");
+        setPolicies({ ...DEFAULT_POLICIES, ...(data.config?.policies || {}) });
       }
     })();
   }, [eventId]);
@@ -165,8 +165,12 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
       const rejectUrl = `${baseUrl}/meeting-response/${eventId}/${meetingId}/reject`;
       const landingUrl = `${baseUrl}/event/${eventId}`;
 
+      // Rutas sin base URL para API V2
+      const acceptPath = `/meeting-response/${eventId}/${meetingId}/accept`;
+      const rejectPath = `/meeting-response/${eventId}/${meetingId}/reject`;
+
       const contextLine = context?.contextNote
-        ? `\n📋 *Contexto:* ${context.contextNote}\n`
+        ? `\n📋 *Mensaje:* ${context.contextNote}\n`
         : "";
 
       const eventLine = eventName ? `📌 *Evento:* ${eventName}\n\n` : "";
@@ -186,15 +190,22 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
         `❌ *Rechazar:* \n${rejectUrl}\n\n` +
         `🔗 Ir al evento: \n${landingUrl}`;
 
-      fetch(API_WP_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          clientId: CLIENT_ID,
-          phone: `57${receiverPhone.replace(/[^\d]/g, "")}`,
-          message,
-        }),
-      }).catch(() => {});
+      const whatsappApiVersion = policies.whatsappApiVersion || "v1";
+      await sendWhatsAppAPI({
+        apiVersion: whatsappApiVersion,
+        phone: receiverPhone.replace(/[^\d]/g, ""),
+        message: context?.contextNote || message, // Usar contextNote si existe, sino el mensaje completo
+        metadata: {
+          eventName: eventName || "Evento",
+          requesterName: requester?.nombre || "",
+          requesterCompany: requester?.empresa || "",
+          requesterPosition: requester?.cargo || "",
+          requesterEmail: requester?.correo || "",
+          requesterPhone: requester?.telefono || "",
+          acceptUrl: acceptPath, // Solo la ruta
+          cancelUrl: rejectPath, // Solo la ruta
+        },
+      });
 
       await addDoc(collection(db, "notifications"), {
         userId: receiverId,
@@ -205,7 +216,7 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
         type: "meeting_request",
       });
     },
-    [uid, eventId, currentUser, eventName],
+    [uid, eventId, currentUser, eventName, policies],
   );
 
   return {

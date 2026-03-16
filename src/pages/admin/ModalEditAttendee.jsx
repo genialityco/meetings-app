@@ -1,4 +1,4 @@
-import { Modal, Stack, TextInput, Select, Checkbox, Button } from "@mantine/core";
+import { Modal, Stack, TextInput, Textarea, Select, Checkbox, Button } from "@mantine/core";
 import { useEffect, useState } from "react";
 
 const ModalEditAttendee = ({
@@ -60,7 +60,22 @@ const ModalEditAttendee = ({
               />
             );
           }
-          // text/richtext por defecto
+          // Usar Textarea para descripcion o richtext
+          if (f.name === "descripcion" || f.type === "richtext") {
+            return (
+              <Textarea
+                key={f.name}
+                label={f.label}
+                value={values[f.name] || ""}
+                onChange={(e) => handleChange(f.name, e.currentTarget.value)}
+                required={f.required}
+                minRows={4}
+                maxRows={8}
+                autosize
+              />
+            );
+          }
+          // text por defecto
           return (
             <TextInput
               key={f.name}

@@ -15,6 +15,8 @@ import {
   Badge,
   Tabs,
   SimpleGrid,
+  Modal,
+  Table,
 } from "@mantine/core";
 import {
   doc,
@@ -51,6 +53,12 @@ const EventAdmin = () => {
   const [configureFieldsModalOpened, setConfigureFieldsModalOpened] =
     useState(false);
   const [policiesModalOpened, setPoliciesModalOpened] = useState(false);
+
+  // Estado para reuniones huérfanas
+  const [orphanedMeetingsModalOpened, setOrphanedMeetingsModalOpened] = useState(false);
+  const [orphanedMeetings, setOrphanedMeetings] = useState([]);
+  const [checkingOrphans, setCheckingOrphans] = useState(false);
+  const [deletingOrphan, setDeletingOrphan] = useState(null);
 
   const [meetingsCounts, setMeetingsCounts] = useState({
     aceptadas: 0,
@@ -138,39 +146,56 @@ const EventAdmin = () => {
       const {
         meetingDuration,
         breakTime,
-        startTime,
-        endTime,
         numTables,
-        breakBlocks = [],
+        dailyConfig,
+        eventDates,
+        eventDate,
+        // Fallback para eventos antiguos
+        startTime: globalStartTime,
+        endTime: globalEndTime,
+        breakBlocks: globalBreakBlocks = [],
       } = event.config;
-
-      const startMinutes = timeToMinutes(startTime);
-      const endMinutes = timeToMinutes(endTime);
-      const blockLength = meetingDuration + breakTime;
-      const totalSlots = Math.floor((endMinutes - startMinutes) / blockLength);
 
       let createdCount = 0;
 
-      for (let slot = 0; slot < totalSlots; slot++) {
-        const slotStart = startMinutes + slot * blockLength;
-        const slotEnd = slotStart + meetingDuration;
+      // Determinar los días a procesar
+      const daysToProcess = dailyConfig 
+        ? Object.entries(dailyConfig)
+        : eventDates?.length
+          ? eventDates.map(date => [date, { startTime: globalStartTime, endTime: globalEndTime, breakBlocks: globalBreakBlocks }])
+          : [[eventDate, { startTime: globalStartTime, endTime: globalEndTime, breakBlocks: globalBreakBlocks }]];
 
-        if (isWithinBreakBlock(slotStart, slotEnd, breakBlocks)) {
-          continue;
-        }
+      // Generar slots para cada día
+      for (const [date, dayConfig] of daysToProcess) {
+        const { startTime, endTime, breakBlocks = [] } = dayConfig;
+        
+        const startMinutes = timeToMinutes(startTime);
+        const endMinutes = timeToMinutes(endTime);
+        const blockLength = meetingDuration + breakTime;
+        const totalSlots = Math.floor((endMinutes - startMinutes) / blockLength);
 
-        const slotStartTime = minutesToTime(slotStart);
-        const slotEndTime = minutesToTime(slotEnd);
+        for (let slot = 0; slot < totalSlots; slot++) {
+          const slotStart = startMinutes + slot * blockLength;
+          const slotEnd = slotStart + meetingDuration;
 
-        for (let tableNumber = 1; tableNumber <= numTables; tableNumber++) {
-          const slotData = {
-            tableNumber,
-            startTime: slotStartTime,
-            endTime: slotEndTime,
-            available: true,
-          };
-          await addDoc(collection(db, "events", event.id, "agenda"), slotData);
-          createdCount++;
+          if (isWithinBreakBlock(slotStart, slotEnd, breakBlocks)) {
+            continue;
+          }
+
+          const slotStartTime = minutesToTime(slotStart);
+          const slotEndTime = minutesToTime(slotEnd);
+
+          for (let tableNumber = 1; tableNumber <= numTables; tableNumber++) {
+            const slotData = {
+              date, // ⭐ NUEVO: incluir fecha del slot
+              tableNumber,
+              startTime: slotStartTime,
+              endTime: slotEndTime,
+              available: true,
+            };
+            await addDoc(collection(db, "events", event.id, "agenda"), slotData);
+            createdCount++;
+          }
         }
       }
 
@@ -393,6 +418,114 @@ const EventAdmin = () => {
     XLSX.writeFile(wb, `asistentes_${event?.eventName || eventId}.xlsx`);
   };
 
+  // Exportar toda la información de asistentes con subcolecciones a JSON
+  const exportAttendeesWithSubcollectionsToJSON = async () => {
+    try {
+      setActionLoading(true);
+      setGlobalMessage("Exportando datos completos...");
+
+      // Obtener todos los asistentes del evento
+      const usersQuery = query(
+        collection(db, "users"),
+        where("eventId", "==", eventId)
+      );
+      const usersSnap = await getDocs(usersQuery);
+
+      const asistentes = [];
+      const matches = [];
+
+      // Para cada asistente, obtener su información y affinityScores
+      for (const userDoc of usersSnap.docs) {
+        const rawUserData = userDoc.data();
+        
+        // Omitir el campo vector
+        const { vector, ...userDataWithoutVector } = rawUserData;
+        
+        // Agregar datos del asistente (sin subcolecciones)
+        asistentes.push({
+          id: userDoc.id,
+          ...userDataWithoutVector,
+        });
+
+        // Obtener affinityScores del usuario para construir matches
+        try {
+          const affinityScoresSnap = await getDocs(
+            collection(db, "users", userDoc.id, "affinityScores")
+          );
+          
+          if (!affinityScoresSnap.empty) {
+            affinityScoresSnap.docs.forEach((doc) => {
+              const affinityData = doc.data();
+              
+              // Crear entrada de match con los IDs de los usuarios y el score
+              matches.push({
+                userId1: userDoc.id,
+                userId2: affinityData.targetUserId || doc.id,
+                affinityScore: affinityData.score || 0,
+                reasons: affinityData.reasons || [],
+                aiGenerated: affinityData.aiGenerated || false,
+                calculatedAt: affinityData.calculatedAt?.toDate?.() || affinityData.calculatedAt || null,
+              });
+            });
+          }
+        } catch (err) {
+          console.log(`No affinityScores for user ${userDoc.id}`);
+        }
+      }
+
+      // Eliminar matches duplicados (ya que son simétricos)
+      // Mantener solo un match por par de usuarios
+      const uniqueMatches = [];
+      const seenPairs = new Set();
+      
+      matches.forEach((match) => {
+        // Crear clave única ordenada para el par
+        const pairKey = [match.userId1, match.userId2].sort().join('_');
+        
+        if (!seenPairs.has(pairKey)) {
+          seenPairs.add(pairKey);
+          uniqueMatches.push(match);
+        }
+      });
+
+      // Crear estructura final
+      const exportData = {
+        asistentes,
+        matches: uniqueMatches,
+        metadata: {
+          eventId,
+          eventName: event?.eventName || "Evento",
+          totalAsistentes: asistentes.length,
+          totalMatches: uniqueMatches.length,
+          exportDate: new Date().toISOString(),
+        },
+      };
+
+      // Crear el JSON y descargarlo
+      const jsonString = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonString], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `asistentes_matches_${event?.eventName || eventId}_${
+        new Date().toISOString().split("T")[0]
+      }.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      setGlobalMessage(
+        `Exportación completa: ${asistentes.length} asistentes, ${uniqueMatches.length} matches únicos.`
+      );
+    } catch (error) {
+      console.error("Error exportando a JSON:", error);
+      setGlobalMessage("Error al exportar datos completos.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const fetchMeetingsCounts = async () => {
     if (!eventId) return;
     setMeetingsCountLoading(true);
@@ -417,6 +550,89 @@ const EventAdmin = () => {
       setMeetingsCounts({ aceptadas: 0, pendientes: 0, rechazadas: 0 });
     }
     setMeetingsCountLoading(false);
+  };
+
+  // Buscar reuniones con usuarios inexistentes
+  const checkOrphanedMeetings = async () => {
+    setCheckingOrphans(true);
+    try {
+      // Obtener todas las reuniones del evento
+      const meetingsRef = collection(db, "events", eventId, "meetings");
+      const meetingsSnap = await getDocs(meetingsRef);
+      
+      // Obtener todos los IDs de usuarios del evento
+      const usersQuery = query(collection(db, "users"), where("eventId", "==", eventId));
+      const usersSnap = await getDocs(usersQuery);
+      const userIds = new Set(usersSnap.docs.map(doc => doc.id));
+      
+      // Buscar reuniones con usuarios inexistentes
+      const orphaned = [];
+      meetingsSnap.forEach((doc) => {
+        const meeting = doc.data();
+        const receiverExists = userIds.has(meeting.receiverId);
+        const requesterExists = userIds.has(meeting.requesterId);
+        
+        if (!receiverExists || !requesterExists) {
+          orphaned.push({
+            id: doc.id,
+            ...meeting,
+            missingReceiver: !receiverExists,
+            missingRequester: !requesterExists,
+          });
+        }
+      });
+      
+      setOrphanedMeetings(orphaned);
+      setOrphanedMeetingsModalOpened(true);
+      
+      if (orphaned.length === 0) {
+        setGlobalMessage("No se encontraron reuniones con usuarios inexistentes.");
+      } else {
+        setGlobalMessage(`Se encontraron ${orphaned.length} reuniones con usuarios inexistentes.`);
+      }
+    } catch (error) {
+      console.error("Error checking orphaned meetings:", error);
+      setGlobalMessage("Error al buscar reuniones huérfanas.");
+    } finally {
+      setCheckingOrphans(false);
+    }
+  };
+
+  // Eliminar una reunión huérfana
+  const deleteOrphanedMeeting = async (meetingId) => {
+    setDeletingOrphan(meetingId);
+    try {
+      await deleteDoc(doc(db, "events", eventId, "meetings", meetingId));
+      setOrphanedMeetings(prev => prev.filter(m => m.id !== meetingId));
+      setGlobalMessage("Reunión eliminada correctamente.");
+      fetchMeetingsCounts(); // Actualizar contadores
+    } catch (error) {
+      console.error("Error deleting orphaned meeting:", error);
+      setGlobalMessage("Error al eliminar la reunión.");
+    } finally {
+      setDeletingOrphan(null);
+    }
+  };
+
+  // Eliminar todas las reuniones huérfanas
+  const deleteAllOrphanedMeetings = async () => {
+    if (!window.confirm(`¿Eliminar todas las ${orphanedMeetings.length} reuniones huérfanas?`)) return;
+    
+    setCheckingOrphans(true);
+    try {
+      for (const meeting of orphanedMeetings) {
+        await deleteDoc(doc(db, "events", eventId, "meetings", meeting.id));
+      }
+      setGlobalMessage(`${orphanedMeetings.length} reuniones eliminadas correctamente.`);
+      setOrphanedMeetings([]);
+      setOrphanedMeetingsModalOpened(false);
+      fetchMeetingsCounts(); // Actualizar contadores
+    } catch (error) {
+      console.error("Error deleting all orphaned meetings:", error);
+      setGlobalMessage("Error al eliminar las reuniones.");
+    } finally {
+      setCheckingOrphans(false);
+    }
   };
 
   if (!event) {
@@ -566,7 +782,7 @@ const EventAdmin = () => {
               Vendedores
             </Text>
             <Title order={3}>
-              {attendees.filter((a) => a.tipoAsistente.toLowerCase() === "vendedor").length}
+              {attendees.filter((a) => a.tipoAsistente?.toLowerCase() === "vendedor").length}
             </Title>
           </Card>
 
@@ -575,7 +791,7 @@ const EventAdmin = () => {
               Compradores
             </Text>
             <Title order={3}>
-              {attendees.filter((a) => a.tipoAsistente.toLowerCase() === "comprador").length}
+              {attendees.filter((a) => a.tipoAsistente?.toLowerCase() === "comprador").length}
             </Title>
           </Card>
         </SimpleGrid>
@@ -629,9 +845,7 @@ const EventAdmin = () => {
         <Tabs defaultValue="operacion" keepMounted={false}>
           <Tabs.List>
             <Tabs.Tab value="operacion">Operación</Tabs.Tab>
-            <Tabs.Tab value="agenda">Agenda</Tabs.Tab>
             <Tabs.Tab value="config">Configuración</Tabs.Tab>
-            <Tabs.Tab value="ia">IA</Tabs.Tab>
             <Tabs.Tab value="importexport">Import / Export</Tabs.Tab>
             <Tabs.Tab value="peligro" color="red">
               Peligro
@@ -667,73 +881,107 @@ const EventAdmin = () => {
               >
                 Configurar políticas
               </Button>
-            </Group>
-          </Tabs.Panel>
 
-          <Tabs.Panel value="agenda" pt="md">
-            <Group gap="xs" wrap="wrap">
               <Button
-                onClick={generateAgendaForEvent}
+                onClick={async () => {
+                  if (!window.confirm("¿Regenerar vectores para todos los usuarios del evento? Esto puede tardar varios minutos.")) return;
+                  setActionLoading(true);
+                  try {
+                    const response = await fetch("https://regeneratevectorsforevent-6eaymlz5eq-uc.a.run.app", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ eventId: event.id }),
+                    });
+                    const data = await response.json();
+                    if (response.ok) {
+                      setGlobalMessage(`Vectores regenerados: ${data.vectorsRegenerated || 0} usuarios, ${data.affinityScoresUpdated || 0} afinidades, ${data.matchesCreated || 0} matches`);
+                    } else {
+                      setGlobalMessage(`Error: ${data.error || "No se pudieron regenerar los vectores"}`);
+                    }
+                  } catch (error) {
+                    console.error("Error regenerating vectors:", error);
+                    setGlobalMessage("Error al regenerar vectores del evento");
+                  } finally {
+                    setActionLoading(false);
+                  }
+                }}
                 loading={actionLoading}
                 disabled={actionLoading}
+                color="blue"
+                variant="light"
               >
-                Generar Agenda
+                Regenerar Vectores Evento
               </Button>
 
               <Button
-                component={Link}
-                to={`/admin/event/${event.id}/agenda`}
-                loading={actionLoading}
-                disabled={actionLoading}
+                onClick={checkOrphanedMeetings}
+                loading={checkingOrphans}
+                disabled={checkingOrphans || actionLoading}
+                color="orange"
                 variant="light"
               >
-                Ver Agenda
+                Buscar Reuniones Huérfanas
               </Button>
             </Group>
           </Tabs.Panel>
 
           <Tabs.Panel value="config" pt="md">
-            <Group gap="xs" wrap="wrap">
-              <Button
-                onClick={() => setEditConfigModalOpened(true)}
-                loading={actionLoading}
-                disabled={actionLoading}
-              >
-                Editar Configuración
-              </Button>
+            <Stack gap="md">
+              <div>
+                <Text size="sm" fw={600} mb="xs">Configuración del evento</Text>
+                <Group gap="xs" wrap="wrap">
+                  <Button
+                    onClick={() => setEditConfigModalOpened(true)}
+                    loading={actionLoading}
+                    disabled={actionLoading}
+                  >
+                    Editar Configuración
+                  </Button>
 
-              <Button
-                onClick={() => setConfigureFieldsModalOpened(true)}
-                loading={actionLoading}
-                disabled={actionLoading}
-                variant="default"
-              >
-                Configurar campos
-              </Button>
+                  <Button
+                    onClick={() => setConfigureFieldsModalOpened(true)}
+                    loading={actionLoading}
+                    disabled={actionLoading}
+                    variant="default"
+                  >
+                    Configurar campos
+                  </Button>
 
-              <Button
-                onClick={() => setPoliciesModalOpened(true)}
-                loading={actionLoading}
-                disabled={actionLoading}
-                color="grape"
-                variant="default"
-              >
-                Configurar políticas
-              </Button>
-            </Group>
-          </Tabs.Panel>
+                  <Button
+                    onClick={() => setPoliciesModalOpened(true)}
+                    loading={actionLoading}
+                    disabled={actionLoading}
+                    color="grape"
+                    variant="default"
+                  >
+                    Configurar políticas
+                  </Button>
+                </Group>
+              </div>
 
-          <Tabs.Panel value="ia" pt="md">
-            <Group gap="xs" wrap="wrap">
-              <Button
-                component={Link}
-                to={`/admin/event/${event.id}/match`}
-                loading={actionLoading}
-                disabled={actionLoading}
-              >
-                Generar Matches IA
-              </Button>
-            </Group>
+              <div>
+                <Text size="sm" fw={600} mb="xs">Gestión de agenda</Text>
+                <Group gap="xs" wrap="wrap">
+                  <Button
+                    onClick={generateAgendaForEvent}
+                    loading={actionLoading}
+                    disabled={actionLoading}
+                  >
+                    Generar Agenda
+                  </Button>
+
+                  <Button
+                    component={Link}
+                    to={`/admin/event/${event.id}/agenda`}
+                    loading={actionLoading}
+                    disabled={actionLoading}
+                    variant="light"
+                  >
+                    Ver Agenda
+                  </Button>
+                </Group>
+              </div>
+            </Stack>
           </Tabs.Panel>
 
           <Tabs.Panel value="importexport" pt="md">
@@ -766,6 +1014,16 @@ const EventAdmin = () => {
                 variant="default"
               >
                 Exportar asistentes a Excel
+              </Button>
+
+              <Button
+                onClick={exportAttendeesWithSubcollectionsToJSON}
+                loading={actionLoading}
+                disabled={actionLoading}
+                variant="outline"
+                color="blue"
+              >
+                Exportar asistentes completo (JSON)
               </Button>
             </Group>
           </Tabs.Panel>
@@ -846,6 +1104,113 @@ const EventAdmin = () => {
         refreshEvents={fetchEvent}
         setGlobalMessage={setGlobalMessage}
       />
+
+      {/* Modal de reuniones huérfanas */}
+      <Modal
+        opened={orphanedMeetingsModalOpened}
+        onClose={() => setOrphanedMeetingsModalOpened(false)}
+        title="Reuniones con Usuarios Inexistentes"
+        size="xl"
+        centered
+      >
+        <Stack gap="md">
+          {orphanedMeetings.length === 0 ? (
+            <Text c="dimmed">No se encontraron reuniones con usuarios inexistentes.</Text>
+          ) : (
+            <>
+              <Group justify="space-between">
+                <Text size="sm">
+                  Se encontraron <strong>{orphanedMeetings.length}</strong> reuniones con usuarios que ya no existen.
+                </Text>
+                <Button
+                  color="red"
+                  size="sm"
+                  onClick={deleteAllOrphanedMeetings}
+                  loading={checkingOrphans}
+                >
+                  Eliminar Todas
+                </Button>
+              </Group>
+
+              <Table.ScrollContainer minWidth={500}>
+                <Table striped highlightOnHover>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>ID Reunión</Table.Th>
+                      <Table.Th>Solicitante</Table.Th>
+                      <Table.Th>Receptor</Table.Th>
+                      <Table.Th>Estado</Table.Th>
+                      <Table.Th>Problema</Table.Th>
+                      <Table.Th>Acciones</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {orphanedMeetings.map((meeting) => (
+                      <Table.Tr key={meeting.id}>
+                        <Table.Td>
+                          <Text size="xs" style={{ fontFamily: 'monospace' }}>
+                            {meeting.id.substring(0, 8)}...
+                          </Text>
+                        </Table.Td>
+                        <Table.Td>
+                          <Text size="xs" style={{ fontFamily: 'monospace' }}>
+                            {meeting.requesterId}
+                          </Text>
+                        </Table.Td>
+                        <Table.Td>
+                          <Text size="xs" style={{ fontFamily: 'monospace' }}>
+                            {meeting.receiverId}
+                          </Text>
+                        </Table.Td>
+                        <Table.Td>
+                          <Badge
+                            color={
+                              meeting.status === "accepted"
+                                ? "green"
+                                : meeting.status === "rejected"
+                                  ? "red"
+                                  : "yellow"
+                            }
+                            size="sm"
+                          >
+                            {meeting.status}
+                          </Badge>
+                        </Table.Td>
+                        <Table.Td>
+                          <Stack gap={4}>
+                            {meeting.missingRequester && (
+                              <Badge color="red" size="xs" variant="light">
+                                Solicitante no existe
+                              </Badge>
+                            )}
+                            {meeting.missingReceiver && (
+                              <Badge color="red" size="xs" variant="light">
+                                Receptor no existe
+                              </Badge>
+                            )}
+                          </Stack>
+                        </Table.Td>
+                        <Table.Td>
+                          <Button
+                            size="xs"
+                            color="red"
+                            variant="light"
+                            onClick={() => deleteOrphanedMeeting(meeting.id)}
+                            loading={deletingOrphan === meeting.id}
+                            disabled={deletingOrphan !== null}
+                          >
+                            Eliminar
+                          </Button>
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
+            </>
+          )}
+        </Stack>
+      </Modal>
     </Container>
   );
 };

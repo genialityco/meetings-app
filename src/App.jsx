@@ -1,6 +1,7 @@
 import { Suspense, lazy } from "react";
 import { Routes, Route } from "react-router-dom";
 import { LoadingOverlay } from "@mantine/core";
+import { usePageTracking } from "./hooks/usePageTracking";
 
 // Eager: landing page (ruta más visitada)
 import Landing from "./pages/Landing";
@@ -21,6 +22,9 @@ const AgendaAdminPanel = lazy(() => import("./pages/admin/AgendaAdminPanel.jsx")
 const MeetingSurveys = lazy(() => import("./pages/admin/MeetingSurveys.jsx"));
 
 const App = () => {
+  // Trackear automáticamente todas las vistas de página
+  usePageTracking();
+
   return (
     <Suspense fallback={<LoadingOverlay visible />}>
       <Routes>
