@@ -9,6 +9,7 @@ import {
   addDoc,
   updateDoc,
   doc,
+  getDoc,
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import {
@@ -142,6 +143,8 @@ const ImportMeetingsFromExcelPage = () => {
   const { eventId } = useParams();
 
   // --- Estado compartido ---
+  const [event, setEvent] = useState(null);
+  const [selectedDate, setSelectedDate] = useState("");
   const [attendees, setAttendees] = useState([]);
   const [agenda, setAgenda] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -165,6 +168,15 @@ const ImportMeetingsFromExcelPage = () => {
     if (!eventId) return;
     const fetchAll = async () => {
       setLoading(true);
+      // Cargar evento
+      const eventSnap = await getDoc(doc(db, "events", eventId));
+      if (eventSnap.exists()) {
+        const eventData = { id: eventSnap.id, ...eventSnap.data() };
+        setEvent(eventData);
+        // Inicializar fecha seleccionada con la primera fecha del evento
+        const dates = eventData.config?.eventDates || (eventData.config?.eventDate ? [eventData.config.eventDate] : []);
+        if (dates.length > 0) setSelectedDate(dates[0]);
+      }
       const snap = await getDocs(
         query(collection(db, "users"), where("eventId", "==", eventId))
       );
@@ -302,6 +314,7 @@ const ImportMeetingsFromExcelPage = () => {
             createdAt: new Date(),
             timeSlot: `${slot.startTime} - ${slot.endTime}`,
             tableAssigned: slot.tableNumber?.toString(),
+            meetingDate: selectedDate || null,
             participants: [match.compradorId, match.vendedorId],
             motivoMatch: "Compatibilidad IA",
             razonMatch: `Score: ${match.matchScore}`,
@@ -436,6 +449,7 @@ const ImportMeetingsFromExcelPage = () => {
             createdAt: new Date(),
             timeSlot: `${slot.startTime} - ${slot.endTime}`,
             tableAssigned: String(slot.tableNumber),
+            meetingDate: selectedDate || null,
             participants: [record.comprador_id, record.vendedor_id],
             motivoMatch: "Compatibilidad IA",
             razonMatch: `Afinidad: ${record.afinidad}`,
@@ -460,6 +474,15 @@ const ImportMeetingsFromExcelPage = () => {
   };
 
   // ─── COMPUTED ──────────────────────────────────────────────────────────────
+
+  // Fechas del evento
+  const eventDates = event?.config?.eventDates || (event?.config?.eventDate ? [event.config.eventDate] : []);
+  const isMultiDay = eventDates.length > 1;
+
+  const formatDate = (dateStr) => {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString("es-ES", { weekday: "short", day: "numeric", month: "short" });
+  };
 
   // Excel
   const compradoresUnicos = Array.from(new Set(matches.map((m) => m.compradorId)));
@@ -541,6 +564,24 @@ const ImportMeetingsFromExcelPage = () => {
         </Button>
         <Title order={2}>Importar reuniones</Title>
       </Group>
+
+      {/* Selector de fecha */}
+      {isMultiDay ? (
+        <Card withBorder shadow="sm" p="sm" mb="md" style={{ maxWidth: 320 }}>
+          <Text size="sm" fw={600} mb={6}>Fecha de las reuniones a importar</Text>
+          <Select
+            data={eventDates.map((d) => ({ value: d, label: `${formatDate(d)} (${d})` }))}
+            value={selectedDate}
+            onChange={setSelectedDate}
+            placeholder="Seleccionar día"
+            withinPortal
+          />
+        </Card>
+      ) : selectedDate ? (
+        <Text size="sm" c="dimmed" mb="md">
+          Fecha del evento: <b>{selectedDate}</b>
+        </Text>
+      ) : null}
 
       {loading && <Loader mb="md" />}
 
