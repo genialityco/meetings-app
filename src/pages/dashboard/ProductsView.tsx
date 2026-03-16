@@ -325,7 +325,7 @@ export default function ProductsView({
           )}
 
           {/* Badge de afinidad del dueño */}
-          {!hasSimilarity && p.ownerUserId && affinityScores[p.ownerUserId] && affinityScores[p.ownerUserId] > 0 && (
+          {/* {!hasSimilarity && p.ownerUserId && affinityScores[p.ownerUserId] && affinityScores[p.ownerUserId] > 0 && (
             <Badge
               variant="gradient"
               gradient={{ from: 'teal', to: 'green', deg: 90 }}
@@ -340,7 +340,7 @@ export default function ProductsView({
             >
               {affinityScores[p.ownerUserId]}% afinidad
             </Badge>
-          )}
+          )} */}
 
           {/* Badge NUEVO cuando está resaltado */}
           {isHighlighted && (
