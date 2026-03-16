@@ -1181,16 +1181,18 @@ const MatrixPage = () => {
                   shadow="md"
                   radius="lg"
                   style={{
-                    minWidth: 300,
-                    maxWidth: 400,
+                    minWidth: 360,
+                    maxWidth: 480,
                     margin: "0 16px 16px 0",
-                    background: "#f8fafc",
+                    background: "#f9fafb",
                     border: "1px solid #e5e7eb",
+                    boxShadow: "0 2px 12px #0001",
                   }}
                 >
-                  <Title order={5} align="center" mb="xs">
-                    {asistente.nombre} ({asistente.empresa})
+                  <Title order={5} ta="center" mb={4} style={{ letterSpacing: 0.5 }}>
+                    {asistente.empresa}
                   </Title>
+                  <Text size="xs" c="dimmed" ta="center" mb="xs">{asistente.nombre}</Text>
 
                   <Menu withinPortal position="bottom-start">
                     <Menu.Target>
@@ -1199,58 +1201,37 @@ const MatrixPage = () => {
                         size="xs"
                         color="yellow"
                         mb="sm"
-                        disabled={
-                          !pendingMeetings.some(
-                            (m) => m.receiverId === asistente.id
-                          )
-                        }
+                        disabled={!pendingMeetings.some((m) => m.receiverId === asistente.id)}
                       >
-                        Solicitudes pendientes (
-                        {
-                          pendingMeetings.filter(
-                            (m) => m.receiverId === asistente.id
-                          ).length
-                        }
-                        )
+                        Solicitudes pendientes ({pendingMeetings.filter((m) => m.receiverId === asistente.id).length})
                       </Button>
                     </Menu.Target>
                     <Menu.Dropdown>
                       {pendingMeetings
                         .filter((m) => m.receiverId === asistente.id)
                         .map((m) => {
-                          const requester = asistentes.find(
-                            (a) => a.id === m.requesterId
-                          );
-                          if (!requester) console.warn("[MatrixPage] requesterId no encontrado en asistentes:", m.requesterId, m);
+                          const requester = asistentes.find((a) => a.id === m.requesterId);
                           return (
                             <Menu.Item key={m.id}>
                               <div>
-                                <b>
-                                  {requester
-                                    ? `${requester.empresa} (${requester.nombre})`
-                                    : m.requesterId}
-                                </b>
-                                <div style={{ fontSize: 11, color: "#777" }}>
-                                  {m.timeSlot || "Sin horario"}
-                                </div>
+                                <b>{requester ? `${requester.empresa} (${requester.nombre})` : m.requesterId}</b>
+                                <div style={{ fontSize: 11, color: "#777" }}>{m.timeSlot || "Sin horario"}</div>
                               </div>
                             </Menu.Item>
                           );
                         })}
-                      {pendingMeetings.filter(
-                        (m) => m.receiverId === asistente.id
-                      ).length === 0 && (
+                      {pendingMeetings.filter((m) => m.receiverId === asistente.id).length === 0 && (
                         <Menu.Item disabled>No hay pendientes</Menu.Item>
                       )}
                     </Menu.Dropdown>
                   </Menu>
 
                   <Divider mb="sm" />
-                  <Table striped highlightOnHover>
+                  <Table striped highlightOnHover horizontalSpacing="md" verticalSpacing={10} style={{ borderRadius: 12, overflow: "hidden" }}>
                     <Table.Thead>
                       <Table.Tr>
-                        <Table.Th>Hora</Table.Th>
-                        <Table.Th>Detalle</Table.Th>
+                        <Table.Th style={{ fontSize: 12, color: "#6b7280", fontWeight: 600, width: 90 }}>Hora</Table.Th>
+                        <Table.Th style={{ fontSize: 12, color: "#6b7280", fontWeight: 600 }}>Estado / Contraparte</Table.Th>
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
@@ -1261,37 +1242,20 @@ const MatrixPage = () => {
                             key={i}
                             style={{
                               backgroundColor: getColor(cell.status),
-                              cursor:
-                                cell.status === "available"
-                                  ? "pointer"
-                                  : cell.status === "accepted"
-                                  ? "pointer"
-                                  : "default",
+                              cursor: cell.status === "available" || cell.status === "accepted" ? "pointer" : "default",
                             }}
                             onClick={() => {
                               if (cell.status === "available") {
-                                // Slots disponibles para esa hora
-                                const slotsDelHorario = agenda.filter(
-                                  (s) => s.startTime === slot && s.available
-                                );
-                                setQuickModal({
-                                  opened: true,
-                                  slotsDisponibles: slotsDelHorario,
-                                  defaultUser: asistente,
-                                });
+                                const slotsDelHorario = agenda.filter((s) => s.startTime === slot && s.available);
+                                setQuickModal({ opened: true, slotsDisponibles: slotsDelHorario, defaultUser: asistente });
                               } else if (cell.status === "accepted") {
                                 const meeting = meetings.find((m) => {
                                   if (!m.timeSlot) return false;
                                   const [start] = m.timeSlot.split(" - ");
-                                  return (
-                                    start === slot &&
-                                    m.participants.includes(asistente.id)
-                                  );
+                                  return start === slot && m.participants.includes(asistente.id);
                                 });
-
                                 if (meeting) {
-                                  const [startTime, endTime] =
-                                    meeting.timeSlot.split(" - ");
+                                  const [startTime, endTime] = meeting.timeSlot.split(" - ");
                                   setEditModal({
                                     opened: true,
                                     meeting,
@@ -1299,12 +1263,7 @@ const MatrixPage = () => {
                                       tableNumber: meeting.tableAssigned,
                                       startTime,
                                       endTime,
-                                      id: agenda.find(
-                                        (s) =>
-                                          s.tableNumber ===
-                                            Number(meeting.tableAssigned) &&
-                                          s.startTime === startTime
-                                      )?.id,
+                                      id: agenda.find((s) => s.tableNumber === Number(meeting.tableAssigned) && s.startTime === startTime)?.id,
                                     },
                                     lockedUserId: asistente.id,
                                   });
@@ -1312,90 +1271,80 @@ const MatrixPage = () => {
                               }
                             }}
                           >
-                            <Table.Td>{slot}</Table.Td>
+                            <Table.Td style={{ fontWeight: 600, fontSize: 13, color: "#1f2125ff", whiteSpace: "nowrap" }}>
+                              {slot}
+                            </Table.Td>
                             <Table.Td>
-                              <StatusBadge status={cell.status} />
-                              {cell.status === "accepted" && (
-                                <>
-                                  <Text size="xs" mb={2}>
-                                    Mesa {cell.table}
-                                  </Text>
-                                  <ParticipantPopover
-                                    width={340}
-                                    trigger={
-                                      <ParticipantsChips
-                                        participants={[
-                                          `${asistente.empresa} (${asistente.nombre})`,
-                                          ...cell.participants.map((pid) =>
-                                            participantsInfo[pid]
-                                              ? `${participantsInfo[pid].empresa} (${participantsInfo[pid].nombre})`
-                                              : pid
-                                          ),
-                                        ]}
-                                      />
-                                    }
-                                  >
-                                    <div style={{ marginBottom: 12 }}>
-                                      <b>Usuario:</b>
-                                      <div>
-                                        <b>{asistente.empresa} ({asistente.nombre})</b>
-                                      </div>
-                                      <div>
-                                        <span style={{ color: "#6c6c6c" }}>Tel: </span>
-                                        {asistente.telefono || <i>No registrado</i>}
-                                      </div>
-                                      <div>
-                                        <span style={{ color: "#6c6c6c" }}>Descripción: </span>
-                                        {asistente.descripcion || <i>No especificada</i>}
-                                      </div>
-                                      <div>
-                                        <span style={{ color: "#6c6c6c" }}>Necesidad: </span>
-                                        {asistente.necesidad || <i>No especificada</i>}
-                                      </div>
+                              {cell.status === "accepted" ? (() => {
+                                const affinity = getAffinityScore(asistente.id, cell.participants?.[0]);
+                                return (
+                                  <>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                      <StatusBadge status={cell.status} />
+                                      <Text size="xs" c="dimmed">Mesa {cell.table}</Text>
+                                      {affinity && (
+                                        <Badge color="blue" variant="light" size="lg">{affinity.score}%</Badge>
+                                      )}
                                     </div>
-                                    <Divider my={4} />
-                                    <div>
-                                      <b>Contraparte:</b>
+                                    <ParticipantPopover
+                                      width={340}
+                                      trigger={
+                                        <div style={{ marginTop: 6 }}>
+                                          {cell.participants.map((pid) => {
+                                            const info = participantsInfo[pid];
+                                            return (
+                                              <div key={pid} style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 2 }}>
+                                                <Text size="md" fw={600} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220, color: "#1c7ed6", cursor: "pointer" }}>
+                                                  {info ? info.empresa : pid}
+                                                </Text>
+                                                {info && (
+                                                  <Text size="md" c="dimmed" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 120 }}>
+                                                    {info.nombre}
+                                                  </Text>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      }
+                                    >
+                                      <div style={{ marginBottom: 10 }}>
+                                        <Text size="sm" fw={700} mb={2}>Usuario</Text>
+                                        <Text size="sm" fw={600}>{asistente.empresa}</Text>
+                                        <Text size="xs" c="dimmed">{asistente.nombre}</Text>
+                                        <Text size="xs"><span style={{ color: "#6c6c6c" }}>Tel: </span>{asistente.telefono || <i>No registrado</i>}</Text>
+                                        <Text size="xs"><span style={{ color: "#6c6c6c" }}>Descripción: </span>{asistente.descripcion || <i>No especificada</i>}</Text>
+                                        <Text size="xs"><span style={{ color: "#6c6c6c" }}>Necesidad: </span>{asistente.necesidad || <i>No especificada</i>}</Text>
+                                      </div>
+                                      <Divider my={6} />
+                                      <Text size="sm" fw={700} mb={4}>Contraparte</Text>
                                       {cell.participants.map((pid) => {
                                         const info = participantsInfo[pid];
                                         if (!info) return <div key={pid}>{pid}</div>;
-                                        
-                                        // Obtener afinidad entre el usuario y la contraparte
-                                        const affinity = getAffinityScore(asistente.id, pid);
-                                        
+                                        const aff = getAffinityScore(asistente.id, pid);
                                         return (
-                                          <div key={pid} style={{ marginBottom: 6 }}>
-                                            <b>{info.empresa} ({info.nombre})</b>
-                                            <div>
-                                              <span style={{ color: "#6c6c6c" }}>Tel: </span>
-                                              {info.telefono || <i>No registrado</i>}
-                                            </div>
-                                            <div>
-                                              <span style={{ color: "#6c6c6c" }}>Descripción: </span>
-                                              {info.descripcion || <i>No especificada</i>}
-                                            </div>
-                                            <div>
-                                              <span style={{ color: "#6c6c6c" }}>Necesidad: </span>
-                                              {info.necesidad || <i>No especificada</i>}
-                                            </div>
-                                            {affinity && (
-                                              <div style={{ marginTop: 8, padding: "6px 8px", backgroundColor: "#e7f5ff", borderRadius: 4 }}>
-                                                <span style={{ color: "#1971c2", fontWeight: 600 }}>
-                                                  Afinidad: {affinity.score}%
-                                                </span>
-                                                {affinity.reasons && affinity.reasons.length > 0 && (
-                                                  <div style={{ fontSize: 11, color: "#495057", marginTop: 4 }}>
-                                                    {affinity.reasons.join(", ")}
-                                                  </div>
+                                          <div key={pid} style={{ marginBottom: 8 }}>
+                                            <Text size="sm" fw={600}>{info.empresa}</Text>
+                                            <Text size="xs" c="dimmed">{info.nombre}</Text>
+                                            <Text size="xs"><span style={{ color: "#6c6c6c" }}>Tel: </span>{info.telefono || <i>No registrado</i>}</Text>
+                                            <Text size="xs"><span style={{ color: "#6c6c6c" }}>Descripción: </span>{info.descripcion || <i>No especificada</i>}</Text>
+                                            <Text size="xs"><span style={{ color: "#6c6c6c" }}>Necesidad: </span>{info.necesidad || <i>No especificada</i>}</Text>
+                                            {aff && (
+                                              <div style={{ marginTop: 6, padding: "5px 8px", backgroundColor: "#e7f5ff", borderRadius: 4 }}>
+                                                <Text size="xs" fw={600} c="blue">Afinidad: {aff.score}%</Text>
+                                                {aff.reasons?.length > 0 && (
+                                                  <Text size="xs" c="dimmed" mt={2}>{aff.reasons.join(", ")}</Text>
                                                 )}
                                               </div>
                                             )}
                                           </div>
                                         );
                                       })}
-                                    </div>
-                                  </ParticipantPopover>
-                                </>
+                                    </ParticipantPopover>
+                                  </>
+                                );
+                              })() : (
+                                <StatusBadge status={cell.status} />
                               )}
                             </Table.Td>
                           </Table.Tr>
