@@ -119,6 +119,26 @@ const getValue = (a, fieldName) => {
   return a[fieldName] ?? "";
 };
 
+// Resuelve el valor legible de un campo según su tipo (select, multiselect, etc.)
+const getDisplayValue = (attendee, field) => {
+  const raw = getValue(attendee, field.name);
+  if (field.type === "select") {
+    return field.options?.find((op) => op.value === raw)?.label || raw || "";
+  }
+  if (field.type === "multiselect") {
+    if (!Array.isArray(raw)) return raw ?? "";
+    const labels = raw.map((v) => {
+      if (v === "__otro__") {
+        const otroText = attendee[field.name + "_otro"];
+        return otroText ? `Otro: ${otroText}` : "Otro";
+      }
+      return field.options?.find((op) => op.value === v)?.label || v;
+    });
+    return labels.join(", ");
+  }
+  return raw ?? "";
+};
+
 // ------ MAIN COMPONENT ------
 const AttendeesList = ({ event, setGlobalMessage }) => {
   const fileInputRef = useRef();
