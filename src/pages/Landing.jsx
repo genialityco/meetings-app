@@ -554,14 +554,16 @@ const Landing = () => {
       const uid = currentUser?.uid;
       const isNewUser = !currentUser?.data?.createdAt;
 
-      let dataToUpdate = {
-        ...formValues,
-        correo: String(formValues["correo"] || "")
-          .toLowerCase()
-          .trim(),
-        eventId,
-        updatedAt: new Date().toISOString(),
-      };
+      let dataToUpdate = Object.fromEntries(
+        Object.entries({
+          ...formValues,
+          correo: String(formValues["correo"] || "")
+            .toLowerCase()
+            .trim(),
+          eventId,
+          updatedAt: new Date().toISOString(),
+        }).filter(([, v]) => v !== undefined)
+      );
 
       // Validación de correo duplicado (mejorada)
       if (dataToUpdate.correo) {

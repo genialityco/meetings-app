@@ -93,10 +93,14 @@ export const UserProvider = ({ children }) => {
 
   const updateUser = async (uid, data) => {
     try {
-      await setDoc(doc(db, "users", uid), data, { merge: true });
+      // Filtrar campos undefined para evitar que Firestore los elimine con merge:true
+      const cleanData = Object.fromEntries(
+        Object.entries(data).filter(([, v]) => v !== undefined)
+      );
+      await setDoc(doc(db, "users", uid), cleanData, { merge: true });
       const updatedUser = {
         ...currentUser,
-        data: { ...currentUser.data, ...data },
+        data: { ...currentUser.data, ...cleanData },
       };
       setCurrentUser(updatedUser);
       localStorage.setItem("currentUser", JSON.stringify(updatedUser));

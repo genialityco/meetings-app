@@ -21,6 +21,7 @@ import {
 import {
   doc,
   getDoc,
+  setDoc,
   updateDoc,
   addDoc,
   deleteDoc,
@@ -30,6 +31,7 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
+import { sendWhatsAppMessage, sendMeetingConfirmation } from "../../utils/whatsappService";
 import EditEventConfigModal from "./EditEventConfigModal";
 import ManualMeetingModal from "./ManualMeetingModal";
 import MeetingsListModal from "./MeetingsListModal";
@@ -58,7 +60,16 @@ const EventAdmin = () => {
   const [orphanedMeetingsModalOpened, setOrphanedMeetingsModalOpened] = useState(false);
   const [orphanedMeetings, setOrphanedMeetings] = useState([]);
   const [checkingOrphans, setCheckingOrphans] = useState(false);
+
+  // Estado para importar reuniones desde JSON
+  const [importMeetingsModalOpened, setImportMeetingsModalOpened] = useState(false);
+  const [importMeetingsJson, setImportMeetingsJson] = useState("");
+  const [importMeetingsPreview, setImportMeetingsPreview] = useState([]);
+  const [importMeetingsError, setImportMeetingsError] = useState("");
+  const [importingMeetings, setImportingMeetings] = useState(false);
+  const [importMeetingsResult, setImportMeetingsResult] = useState(null);
   const [deletingOrphan, setDeletingOrphan] = useState(null);
+  const [notifyingMeetings, setNotifyingMeetings] = useState(false);
 
   const [meetingsCounts, setMeetingsCounts] = useState({
     aceptadas: 0,
@@ -635,6 +646,334 @@ const EventAdmin = () => {
     }
   };
 
+  // Manejar cambio de JSON para importar reuniones
+  const handleImportMeetingsJsonChange = (value) => {
+    setImportMeetingsJson(value);
+    setImportMeetingsError("");
+    setImportMeetingsPreview([]);
+    setImportMeetingsResult(null);
+    if (!value.trim()) return;
+    try {
+      const parsed = JSON.parse(value);
+      if (!Array.isArray(parsed)) {
+        setImportMeetingsError("El JSON debe ser un array de reuniones.");
+        return;
+      }
+      setImportMeetingsPreview(parsed);
+    } catch {
+      setImportMeetingsError("JSON inválido. Verifica el formato.");
+    }
+  };
+
+  // Helper: convierte "HH:MM" a minutos
+  const hmToMinutes = (hm) => {
+    const [h, m] = hm.split(":").map(Number);
+    return h * 60 + m;
+  };
+
+  // Helper: genera el lockId con el mismo formato del sistema
+  const buildLockId = (evId, userId, dateISO, start, end) => {
+    const d = String(dateISO || "").replace(/-/g, "");
+    return `${evId}_${userId}_${d}_${start}-${end}`;
+  };
+
+  // Confirmar importación de reuniones desde JSON
+  const handleConfirmImportMeetings = async () => {
+    if (!importMeetingsPreview.length) return;
+    setImportingMeetings(true);
+    setImportMeetingsResult(null);
+    let created = 0;
+    let errors = 0;
+    const skipped = [];
+    try {
+      // 1. Validar usuarios existentes
+      const usersSnap = await getDocs(
+        query(collection(db, "users"), where("eventId", "==", eventId))
+      );
+      const validUserIds = new Set(usersSnap.docs.map((d) => d.id));
+
+      // 2. Cargar agenda disponible del evento
+      const agendaSnap = await getDocs(collection(db, "events", eventId, "agenda"));
+      // Mapa: "HH:MM" -> lista de slots disponibles ordenados por mesa
+      const agendaByTime = {};
+      agendaSnap.docs.forEach((d) => {
+        const s = d.data();
+        if (s.available !== false) {
+          const key = s.startTime;
+          if (!agendaByTime[key]) agendaByTime[key] = [];
+          agendaByTime[key].push({ id: d.id, ...s });
+        }
+      });
+      // Ordenar cada grupo por número de mesa
+      Object.values(agendaByTime).forEach((slots) =>
+        slots.sort((a, b) => Number(a.tableNumber) - Number(b.tableNumber))
+      );
+
+      // Rastrear slots ya usados en esta importación para no reutilizarlos
+      const usedSlotIds = new Set();
+
+      const meetingsRef = collection(db, "events", eventId, "meetings");
+
+      for (const item of importMeetingsPreview) {
+        // Validar usuarios
+        const compradorExists = validUserIds.has(item.comprador_id);
+        const vendedorExists = validUserIds.has(item.vendedor_id);
+        if (!compradorExists || !vendedorExists) {
+          skipped.push({
+            bloque: item.bloque,
+            comprador_id: item.comprador_id,
+            vendedor_id: item.vendedor_id,
+            missingComprador: !compradorExists,
+            missingVendedor: !vendedorExists,
+            reason: "Usuario no encontrado",
+          });
+          continue;
+        }
+
+        // Parsear el bloque: "08:30-08:45" o "08:30 - 08:45"
+        const bloqueClean = item.bloque.replace(/\s/g, "");
+        const [startTime, endTime] = bloqueClean.split("-");
+
+        // Buscar slot disponible para este horario
+        const slotsForTime = (agendaByTime[startTime] || []).filter(
+          (s) => !usedSlotIds.has(s.id)
+        );
+
+        if (!slotsForTime.length) {
+          skipped.push({
+            bloque: item.bloque,
+            comprador_id: item.comprador_id,
+            vendedor_id: item.vendedor_id,
+            reason: `Sin mesa disponible para ${startTime}`,
+          });
+          continue;
+        }
+
+        const slot = slotsForTime[0];
+        usedSlotIds.add(slot.id);
+
+        // Fecha del slot (multi-día) o fecha del evento
+        const meetingDate = slot.date || event.config?.eventDate || event.config?.eventDates?.[0] || "";
+        const dateISO = String(meetingDate).replace(/-/g, "");
+
+        const reqLockId = buildLockId(eventId, item.comprador_id, meetingDate, startTime, endTime || slot.endTime);
+        const recLockId = buildLockId(eventId, item.vendedor_id, meetingDate, startTime, endTime || slot.endTime);
+
+        try {
+          const now = new Date();
+          const meetingDocRef = await addDoc(meetingsRef, {
+            eventId,
+            requesterId: item.comprador_id,
+            receiverId: item.vendedor_id,
+            participants: [item.comprador_id, item.vendedor_id],
+            status: "accepted",
+            timeSlot: `${startTime} - ${endTime || slot.endTime}`,
+            tableAssigned: String(slot.tableNumber),
+            meetingDate,
+            startMinutes: hmToMinutes(startTime),
+            endMinutes: hmToMinutes(endTime || slot.endTime),
+            slotId: slot.id,
+            lockIds: [reqLockId, recLockId],
+            turno: item.turno || null,
+            comprador_nombre: item.comprador_nombre || null,
+            comprador_empresa: item.comprador_empresa || null,
+            vendedor_nombre: item.vendedor_nombre || null,
+            vendedor_empresa: item.vendedor_empresa || null,
+            afinidad: item.afinidad ?? null,
+            ambos_colsubsidio: item.ambos_colsubsidio ?? null,
+            createdAt: now,
+            updatedAt: now,
+            importedFromJson: true,
+            isNotificated: false,
+          });
+
+          // Crear locks
+          await setDoc(doc(db, "locks", reqLockId), {
+            eventId,
+            userId: item.comprador_id,
+            meetingId: meetingDocRef.id,
+            date: meetingDate,
+            start: startTime,
+            end: endTime || slot.endTime,
+            createdAt: now,
+          });
+          await setDoc(doc(db, "locks", recLockId), {
+            eventId,
+            userId: item.vendedor_id,
+            meetingId: meetingDocRef.id,
+            date: meetingDate,
+            start: startTime,
+            end: endTime || slot.endTime,
+            createdAt: now,
+          });
+
+          // Marcar slot como ocupado
+          await updateDoc(doc(db, "events", eventId, "agenda", slot.id), {
+            available: false,
+            meetingId: meetingDocRef.id,
+          });
+
+          created++;
+        } catch (e) {
+          console.error("Error creando reunión:", e);
+          errors++;
+        }
+      }
+
+      setImportMeetingsResult({ created, errors, skipped: skipped.length, skippedDetails: skipped });
+      fetchMeetingsCounts();
+      if (skipped.length === 0 && errors === 0) {
+        setGlobalMessage(`${created} reuniones importadas correctamente.`);
+        setImportMeetingsModalOpened(false);
+        setImportMeetingsJson("");
+        setImportMeetingsPreview([]);
+      }
+    } catch (error) {
+      console.error("Error importing meetings:", error);
+      setImportMeetingsError("Error al importar reuniones.");
+    } finally {
+      setImportingMeetings(false);
+    }
+  };
+
+  // Notificar por WhatsApp las reuniones accepted no notificadas
+  const notifyPendingMeetings = async () => {
+    if (!window.confirm("¿Enviar notificaciones WhatsApp a todas las reuniones aceptadas sin notificar?")) return;
+    setNotifyingMeetings(true);
+    let sent = 0;
+    let failed = 0;
+    try {
+      const whatsappVersion = event.config?.policies.whatsappApiVersion || "v1";
+      const eventName = event.eventName || "Evento";
+
+      // Obtener reuniones accepted + isNotificated == false (o campo ausente)
+      const meetingsSnap = await getDocs(collection(db, "events", eventId, "meetings"));
+      const pending = meetingsSnap.docs.filter((d) => {
+        const m = d.data();
+        return m.status === "accepted" && !m.isNotificated;
+      });
+
+      if (pending.length === 0) {
+        setGlobalMessage("No hay reuniones pendientes de notificación.");
+        setNotifyingMeetings(false);
+        return;
+      }
+
+      // Cargar usuarios del evento en un mapa
+      const usersSnap = await getDocs(
+        query(collection(db, "users"), where("eventId", "==", eventId))
+      );
+      const usersMap = {};
+      usersSnap.docs.forEach((d) => { usersMap[d.id] = { id: d.id, ...d.data() }; });
+
+      for (const meetingDoc of pending) {
+        const m = meetingDoc.data();
+        const requester = usersMap[m.requesterId];
+        const receiver = usersMap[m.receiverId];
+
+        // Formatear fecha
+        let dateStr = "";
+        if (m.meetingDate) {
+          const [y, mo, dy] = m.meetingDate.split("-").map(Number);
+          const d = new Date(y, mo - 1, dy);
+          dateStr = d.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
+        }
+
+        const meetingInfo = {
+          timeSlot: m.timeSlot,
+          tableAssigned: m.tableAssigned,
+          meetingDate: m.meetingDate,
+        };
+
+        let reqOk = false;
+        let recOk = false;
+
+        // Notificar al solicitante (comprador) — "con quién se reúne" es el receptor
+        if (requester?.contacto?.telefono || requester?.telefono) {
+          const phone = (requester.contacto?.telefono || requester.telefono || "").replace(/[^\d]/g, "");
+          try {
+            if (whatsappVersion === "v2") {
+              const schedule = dateStr ? `${dateStr} - ${m.timeSlot || ""}` : m.timeSlot || "";
+              reqOk = await sendMeetingConfirmation({
+                phone,
+                eventName,
+                acceptedBy: receiver?.nombre || "El participante",
+                meetingWith: receiver?.nombre || "Participante",
+                company: receiver?.empresa || "Empresa",
+                schedule,
+                table: m.tableAssigned || "N/A",
+              });
+            } else {
+              const dateLine = dateStr ? `📅 *Día:* ${dateStr}\n` : "";
+              const message =
+                `🤝 *¡Reunión confirmada!*\n\n` +
+                `📌 *Evento:* ${eventName}\n` +
+                `👤 *Con:* ${receiver?.nombre || ""}\n` +
+                `🏢 *Empresa:* ${receiver?.empresa || ""}\n` +
+                dateLine +
+                `🕐 *Horario:* ${m.timeSlot || ""}\n` +
+                `🪑 *Mesa:* ${m.tableAssigned || ""}\n\n` +
+                `¡Te esperamos!`;
+              reqOk = await sendWhatsAppMessage({ apiVersion: "v1", phone, message });
+            }
+          } catch { reqOk = false; }
+        } else {
+          reqOk = true; // sin teléfono, no bloquear
+        }
+
+        // Notificar al receptor (vendedor)
+        if (receiver?.contacto?.telefono || receiver?.telefono) {
+          const phone = (receiver.contacto?.telefono || receiver.telefono || "").replace(/[^\d]/g, "");
+          try {
+            if (whatsappVersion === "v2") {
+              const schedule = dateStr ? `${dateStr} - ${m.timeSlot || ""}` : m.timeSlot || "";
+              recOk = await sendMeetingConfirmation({
+                phone,
+                eventName,
+                acceptedBy: requester?.nombre || "El participante",
+                meetingWith: requester?.nombre || "Participante",
+                company: requester?.empresa || "Empresa",
+                schedule,
+                table: m.tableAssigned || "N/A",
+              });
+            } else {
+              const dateLine = dateStr ? `📅 *Día:* ${dateStr}\n` : "";
+              const message =
+                `🤝 *¡Reunión confirmada!*\n\n` +
+                `📌 *Evento:* ${eventName}\n` +
+                `👤 *Con:* ${requester?.nombre || ""}\n` +
+                `🏢 *Empresa:* ${requester?.empresa || ""}\n` +
+                dateLine +
+                `🕐 *Horario:* ${m.timeSlot || ""}\n` +
+                `🪑 *Mesa:* ${m.tableAssigned || ""}\n\n` +
+                `¡Te esperamos!`;
+              recOk = await sendWhatsAppMessage({ apiVersion: "v1", phone, message });
+            }
+          } catch { recOk = false; }
+        } else {
+          recOk = true;
+        }
+
+        // Marcar como notificado si ambos fueron enviados (o no tenían teléfono)
+        if (reqOk && recOk) {
+          await updateDoc(doc(db, "events", eventId, "meetings", meetingDoc.id), {
+            isNotificated: true,
+          });
+          sent++;
+        } else {
+          failed++;
+        }
+      }
+
+      setGlobalMessage(`Notificaciones enviadas: ${sent} exitosas, ${failed} fallidas de ${pending.length} reuniones.`);
+    } catch (error) {
+      console.error("Error notifying meetings:", error);
+      setGlobalMessage("Error al enviar notificaciones.");
+    } finally {
+      setNotifyingMeetings(false);
+    }
+  };
+
   if (!event) {
     return (
       <Center mt="lg">
@@ -922,6 +1261,30 @@ const EventAdmin = () => {
               >
                 Buscar Reuniones Huérfanas
               </Button>
+
+              <Button
+                onClick={() => {
+                  setImportMeetingsJson("");
+                  setImportMeetingsPreview([]);
+                  setImportMeetingsError("");
+                  setImportMeetingsResult(null);
+                  setImportMeetingsModalOpened(true);
+                }}
+                color="violet"
+                variant="light"
+              >
+                Importar Reuniones JSON
+              </Button>
+
+              <Button
+                onClick={notifyPendingMeetings}
+                loading={notifyingMeetings}
+                disabled={notifyingMeetings || actionLoading}
+                color="green"
+                variant="light"
+              >
+                Notificar Reuniones por WhatsApp
+              </Button>
             </Group>
           </Tabs.Panel>
 
@@ -1105,6 +1468,108 @@ const EventAdmin = () => {
         setGlobalMessage={setGlobalMessage}
       />
 
+      {/* Modal de importar reuniones desde JSON */}
+      <Modal
+        opened={importMeetingsModalOpened}
+        onClose={() => setImportMeetingsModalOpened(false)}
+        title="Importar Reuniones desde JSON"
+        size="xl"
+        centered
+      >
+        <Stack gap="md">
+          <textarea
+            rows={8}
+            style={{ width: "100%", fontFamily: "monospace", fontSize: 12, padding: 8, borderRadius: 4, border: "1px solid #ced4da" }}
+            placeholder='[{"bloque":"08:30-08:45","turno":"mañana","comprador_id":"...","vendedor_id":"...",...}]'
+            value={importMeetingsJson}
+            onChange={(e) => handleImportMeetingsJsonChange(e.target.value)}
+          />
+
+          {importMeetingsError && (
+            <Alert color="red" title="Error">{importMeetingsError}</Alert>
+          )}
+
+          {importMeetingsPreview.length > 0 && (
+            <>
+              <Text size="sm" fw={600}>
+                Vista previa: {importMeetingsPreview.length} reuniones a importar
+              </Text>
+              <Table.ScrollContainer minWidth={500}>
+                <Table striped highlightOnHover>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Bloque</Table.Th>
+                      <Table.Th>Turno</Table.Th>
+                      <Table.Th>Comprador</Table.Th>
+                      <Table.Th>Vendedor</Table.Th>
+                      <Table.Th>Afinidad</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {importMeetingsPreview.map((item, i) => (
+                      <Table.Tr key={i}>
+                        <Table.Td>{item.bloque}</Table.Td>
+                        <Table.Td>{item.turno}</Table.Td>
+                        <Table.Td>
+                          <Text size="xs">{item.comprador_nombre}</Text>
+                          <Text size="xs" c="dimmed">{item.comprador_empresa}</Text>
+                        </Table.Td>
+                        <Table.Td>
+                          <Text size="xs">{item.vendedor_nombre}</Text>
+                          <Text size="xs" c="dimmed">{item.vendedor_empresa}</Text>
+                        </Table.Td>
+                        <Table.Td>
+                          <Badge color={item.afinidad >= 89 ? "green" : "yellow"} size="sm">
+                            {item.afinidad}%
+                          </Badge>
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
+            </>
+          )}
+
+          {importMeetingsResult && (
+            <Stack gap="xs">
+              <Alert
+                color={importMeetingsResult.errors > 0 || importMeetingsResult.skipped > 0 ? "orange" : "green"}
+                title="Resultado"
+              >
+                {importMeetingsResult.created} importadas
+                {importMeetingsResult.skipped > 0 && `, ${importMeetingsResult.skipped} omitidas (usuarios no encontrados)`}
+                {importMeetingsResult.errors > 0 && `, ${importMeetingsResult.errors} errores`}.
+              </Alert>
+              {importMeetingsResult.skippedDetails?.length > 0 && (
+                <Stack gap={4}>
+                  <Text size="xs" fw={600} c="orange">Reuniones omitidas por usuarios inexistentes:</Text>
+                  {importMeetingsResult.skippedDetails.map((s, i) => (
+                    <Text key={i} size="xs" style={{ fontFamily: "monospace" }}>
+                      {s.bloque} — {s.missingComprador && `comprador: ${s.comprador_id}`}{s.missingComprador && s.missingVendedor && ", "}{s.missingVendedor && `vendedor: ${s.vendedor_id}`}
+                    </Text>
+                  ))}
+                </Stack>
+              )}
+            </Stack>
+          )}
+
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setImportMeetingsModalOpened(false)}>
+              Cancelar
+            </Button>
+            <Button
+              color="violet"
+              onClick={handleConfirmImportMeetings}
+              loading={importingMeetings}
+              disabled={importMeetingsPreview.length === 0 || !!importMeetingsError}
+            >
+              Importar {importMeetingsPreview.length > 0 ? `(${importMeetingsPreview.length})` : ""}
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
       {/* Modal de reuniones huérfanas */}
       <Modal
         opened={orphanedMeetingsModalOpened}
@@ -1119,9 +1584,23 @@ const EventAdmin = () => {
           ) : (
             <>
               <Group justify="space-between">
-                <Text size="sm">
-                  Se encontraron <strong>{orphanedMeetings.length}</strong> reuniones con usuarios que ya no existen.
-                </Text>
+                <Stack gap={4}>
+                  <Text size="sm">
+                    Se encontraron <strong>{orphanedMeetings.length}</strong> reuniones con usuarios que ya no existen.
+                  </Text>
+                  <Text size="sm" c="dimmed">
+                    IDs únicos inexistentes: <strong>
+                      {(() => {
+                        const missingIds = new Set();
+                        orphanedMeetings.forEach(m => {
+                          if (m.missingRequester) missingIds.add(m.requesterId);
+                          if (m.missingReceiver) missingIds.add(m.receiverId);
+                        });
+                        return missingIds.size;
+                      })()}
+                    </strong>
+                  </Text>
+                </Stack>
                 <Button
                   color="red"
                   size="sm"
