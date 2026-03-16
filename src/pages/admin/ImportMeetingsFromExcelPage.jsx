@@ -441,6 +441,7 @@ const ImportMeetingsFromExcelPage = () => {
             razonMatch: `Afinidad: ${record.afinidad}`,
             scoreMatch: record.afinidad,
             agendadoAutomatico: true,
+            isNotificated: false
           }
         );
         await updateDoc(doc(db, "events", eventId, "agenda", slot.id), {

@@ -690,163 +690,163 @@ const EventAdmin = () => {
   };
 
   // Confirmar importación de reuniones desde JSON
-  const handleConfirmImportMeetings = async () => {
-    if (!importMeetingsPreview.length) return;
-    setImportingMeetings(true);
-    setImportMeetingsResult(null);
-    let created = 0;
-    let errors = 0;
-    const skipped = [];
-    try {
-      // 1. Validar usuarios existentes
-      const usersSnap = await getDocs(
-        query(collection(db, "users"), where("eventId", "==", eventId))
-      );
-      const validUserIds = new Set(usersSnap.docs.map((d) => d.id));
+  // const handleConfirmImportMeetings = async () => {
+  //   if (!importMeetingsPreview.length) return;
+  //   setImportingMeetings(true);
+  //   setImportMeetingsResult(null);
+  //   let created = 0;
+  //   let errors = 0;
+  //   const skipped = [];
+  //   try {
+  //     // 1. Validar usuarios existentes
+  //     const usersSnap = await getDocs(
+  //       query(collection(db, "users"), where("eventId", "==", eventId))
+  //     );
+  //     const validUserIds = new Set(usersSnap.docs.map((d) => d.id));
 
-      // 2. Cargar agenda disponible del evento
-      const agendaSnap = await getDocs(collection(db, "events", eventId, "agenda"));
-      // Mapa: "HH:MM" -> lista de slots disponibles ordenados por mesa
-      const agendaByTime = {};
-      agendaSnap.docs.forEach((d) => {
-        const s = d.data();
-        if (s.available !== false) {
-          const key = s.startTime;
-          if (!agendaByTime[key]) agendaByTime[key] = [];
-          agendaByTime[key].push({ id: d.id, ...s });
-        }
-      });
-      // Ordenar cada grupo por número de mesa
-      Object.values(agendaByTime).forEach((slots) =>
-        slots.sort((a, b) => Number(a.tableNumber) - Number(b.tableNumber))
-      );
+  //     // 2. Cargar agenda disponible del evento
+  //     const agendaSnap = await getDocs(collection(db, "events", eventId, "agenda"));
+  //     // Mapa: "HH:MM" -> lista de slots disponibles ordenados por mesa
+  //     const agendaByTime = {};
+  //     agendaSnap.docs.forEach((d) => {
+  //       const s = d.data();
+  //       if (s.available !== false) {
+  //         const key = s.startTime;
+  //         if (!agendaByTime[key]) agendaByTime[key] = [];
+  //         agendaByTime[key].push({ id: d.id, ...s });
+  //       }
+  //     });
+  //     // Ordenar cada grupo por número de mesa
+  //     Object.values(agendaByTime).forEach((slots) =>
+  //       slots.sort((a, b) => Number(a.tableNumber) - Number(b.tableNumber))
+  //     );
 
-      // Rastrear slots ya usados en esta importación para no reutilizarlos
-      const usedSlotIds = new Set();
+  //     // Rastrear slots ya usados en esta importación para no reutilizarlos
+  //     const usedSlotIds = new Set();
 
-      const meetingsRef = collection(db, "events", eventId, "meetings");
+  //     const meetingsRef = collection(db, "events", eventId, "meetings");
 
-      for (const item of importMeetingsPreview) {
-        // Validar usuarios
-        const compradorExists = validUserIds.has(item.comprador_id);
-        const vendedorExists = validUserIds.has(item.vendedor_id);
-        if (!compradorExists || !vendedorExists) {
-          skipped.push({
-            bloque: item.bloque,
-            comprador_id: item.comprador_id,
-            vendedor_id: item.vendedor_id,
-            missingComprador: !compradorExists,
-            missingVendedor: !vendedorExists,
-            reason: "Usuario no encontrado",
-          });
-          continue;
-        }
+  //     for (const item of importMeetingsPreview) {
+  //       // Validar usuarios
+  //       const compradorExists = validUserIds.has(item.comprador_id);
+  //       const vendedorExists = validUserIds.has(item.vendedor_id);
+  //       if (!compradorExists || !vendedorExists) {
+  //         skipped.push({
+  //           bloque: item.bloque,
+  //           comprador_id: item.comprador_id,
+  //           vendedor_id: item.vendedor_id,
+  //           missingComprador: !compradorExists,
+  //           missingVendedor: !vendedorExists,
+  //           reason: "Usuario no encontrado",
+  //         });
+  //         continue;
+  //       }
 
-        // Parsear el bloque: "08:30-08:45" o "08:30 - 08:45"
-        const bloqueClean = item.bloque.replace(/\s/g, "");
-        const [startTime, endTime] = bloqueClean.split("-");
+  //       // Parsear el bloque: "08:30-08:45" o "08:30 - 08:45"
+  //       const bloqueClean = item.bloque.replace(/\s/g, "");
+  //       const [startTime, endTime] = bloqueClean.split("-");
 
-        // Buscar slot disponible para este horario
-        const slotsForTime = (agendaByTime[startTime] || []).filter(
-          (s) => !usedSlotIds.has(s.id)
-        );
+  //       // Buscar slot disponible para este horario
+  //       const slotsForTime = (agendaByTime[startTime] || []).filter(
+  //         (s) => !usedSlotIds.has(s.id)
+  //       );
 
-        if (!slotsForTime.length) {
-          skipped.push({
-            bloque: item.bloque,
-            comprador_id: item.comprador_id,
-            vendedor_id: item.vendedor_id,
-            reason: `Sin mesa disponible para ${startTime}`,
-          });
-          continue;
-        }
+  //       if (!slotsForTime.length) {
+  //         skipped.push({
+  //           bloque: item.bloque,
+  //           comprador_id: item.comprador_id,
+  //           vendedor_id: item.vendedor_id,
+  //           reason: `Sin mesa disponible para ${startTime}`,
+  //         });
+  //         continue;
+  //       }
 
-        const slot = slotsForTime[0];
-        usedSlotIds.add(slot.id);
+  //       const slot = slotsForTime[0];
+  //       usedSlotIds.add(slot.id);
 
-        // Fecha del slot (multi-día) o fecha del evento
-        const meetingDate = slot.date || event.config?.eventDate || event.config?.eventDates?.[0] || "";
-        const dateISO = String(meetingDate).replace(/-/g, "");
+  //       // Fecha del slot (multi-día) o fecha del evento
+  //       const meetingDate = slot.date || event.config?.eventDate || event.config?.eventDates?.[0] || "";
+  //       const dateISO = String(meetingDate).replace(/-/g, "");
 
-        const reqLockId = buildLockId(eventId, item.comprador_id, meetingDate, startTime, endTime || slot.endTime);
-        const recLockId = buildLockId(eventId, item.vendedor_id, meetingDate, startTime, endTime || slot.endTime);
+  //       const reqLockId = buildLockId(eventId, item.comprador_id, meetingDate, startTime, endTime || slot.endTime);
+  //       const recLockId = buildLockId(eventId, item.vendedor_id, meetingDate, startTime, endTime || slot.endTime);
 
-        try {
-          const now = new Date();
-          const meetingDocRef = await addDoc(meetingsRef, {
-            eventId,
-            requesterId: item.comprador_id,
-            receiverId: item.vendedor_id,
-            participants: [item.comprador_id, item.vendedor_id],
-            status: "accepted",
-            timeSlot: `${startTime} - ${endTime || slot.endTime}`,
-            tableAssigned: String(slot.tableNumber),
-            meetingDate,
-            startMinutes: hmToMinutes(startTime),
-            endMinutes: hmToMinutes(endTime || slot.endTime),
-            slotId: slot.id,
-            lockIds: [reqLockId, recLockId],
-            turno: item.turno || null,
-            comprador_nombre: item.comprador_nombre || null,
-            comprador_empresa: item.comprador_empresa || null,
-            vendedor_nombre: item.vendedor_nombre || null,
-            vendedor_empresa: item.vendedor_empresa || null,
-            afinidad: item.afinidad ?? null,
-            ambos_colsubsidio: item.ambos_colsubsidio ?? null,
-            createdAt: now,
-            updatedAt: now,
-            importedFromJson: true,
-            isNotificated: false,
-          });
+  //       try {
+  //         const now = new Date();
+  //         const meetingDocRef = await addDoc(meetingsRef, {
+  //           eventId,
+  //           requesterId: item.comprador_id,
+  //           receiverId: item.vendedor_id,
+  //           participants: [item.comprador_id, item.vendedor_id],
+  //           status: "accepted",
+  //           timeSlot: `${startTime} - ${endTime || slot.endTime}`,
+  //           tableAssigned: String(slot.tableNumber),
+  //           meetingDate,
+  //           startMinutes: hmToMinutes(startTime),
+  //           endMinutes: hmToMinutes(endTime || slot.endTime),
+  //           slotId: slot.id,
+  //           lockIds: [reqLockId, recLockId],
+  //           turno: item.turno || null,
+  //           comprador_nombre: item.comprador_nombre || null,
+  //           comprador_empresa: item.comprador_empresa || null,
+  //           vendedor_nombre: item.vendedor_nombre || null,
+  //           vendedor_empresa: item.vendedor_empresa || null,
+  //           afinidad: item.afinidad ?? null,
+  //           ambos_colsubsidio: item.ambos_colsubsidio ?? null,
+  //           createdAt: now,
+  //           updatedAt: now,
+  //           importedFromJson: true,
+  //           isNotificated: false,
+  //         });
 
-          // Crear locks
-          await setDoc(doc(db, "locks", reqLockId), {
-            eventId,
-            userId: item.comprador_id,
-            meetingId: meetingDocRef.id,
-            date: meetingDate,
-            start: startTime,
-            end: endTime || slot.endTime,
-            createdAt: now,
-          });
-          await setDoc(doc(db, "locks", recLockId), {
-            eventId,
-            userId: item.vendedor_id,
-            meetingId: meetingDocRef.id,
-            date: meetingDate,
-            start: startTime,
-            end: endTime || slot.endTime,
-            createdAt: now,
-          });
+  //         // Crear locks
+  //         await setDoc(doc(db, "locks", reqLockId), {
+  //           eventId,
+  //           userId: item.comprador_id,
+  //           meetingId: meetingDocRef.id,
+  //           date: meetingDate,
+  //           start: startTime,
+  //           end: endTime || slot.endTime,
+  //           createdAt: now,
+  //         });
+  //         await setDoc(doc(db, "locks", recLockId), {
+  //           eventId,
+  //           userId: item.vendedor_id,
+  //           meetingId: meetingDocRef.id,
+  //           date: meetingDate,
+  //           start: startTime,
+  //           end: endTime || slot.endTime,
+  //           createdAt: now,
+  //         });
 
-          // Marcar slot como ocupado
-          await updateDoc(doc(db, "events", eventId, "agenda", slot.id), {
-            available: false,
-            meetingId: meetingDocRef.id,
-          });
+  //         // Marcar slot como ocupado
+  //         await updateDoc(doc(db, "events", eventId, "agenda", slot.id), {
+  //           available: false,
+  //           meetingId: meetingDocRef.id,
+  //         });
 
-          created++;
-        } catch (e) {
-          console.error("Error creando reunión:", e);
-          errors++;
-        }
-      }
+  //         created++;
+  //       } catch (e) {
+  //         console.error("Error creando reunión:", e);
+  //         errors++;
+  //       }
+  //     }
 
-      setImportMeetingsResult({ created, errors, skipped: skipped.length, skippedDetails: skipped });
-      fetchMeetingsCounts();
-      if (skipped.length === 0 && errors === 0) {
-        setGlobalMessage(`${created} reuniones importadas correctamente.`);
-        setImportMeetingsModalOpened(false);
-        setImportMeetingsJson("");
-        setImportMeetingsPreview([]);
-      }
-    } catch (error) {
-      console.error("Error importing meetings:", error);
-      setImportMeetingsError("Error al importar reuniones.");
-    } finally {
-      setImportingMeetings(false);
-    }
-  };
+  //     setImportMeetingsResult({ created, errors, skipped: skipped.length, skippedDetails: skipped });
+  //     fetchMeetingsCounts();
+  //     if (skipped.length === 0 && errors === 0) {
+  //       setGlobalMessage(`${created} reuniones importadas correctamente.`);
+  //       setImportMeetingsModalOpened(false);
+  //       setImportMeetingsJson("");
+  //       setImportMeetingsPreview([]);
+  //     }
+  //   } catch (error) {
+  //     console.error("Error importing meetings:", error);
+  //     setImportMeetingsError("Error al importar reuniones.");
+  //   } finally {
+  //     setImportingMeetings(false);
+  //   }
+  // };
 
   // Notificar por WhatsApp las reuniones accepted no notificadas
   const notifyPendingMeetings = async () => {
@@ -1274,7 +1274,7 @@ const EventAdmin = () => {
                 Buscar Reuniones Huérfanas
               </Button>
 
-              <Button
+              {/* <Button
                 onClick={() => {
                   setImportMeetingsJson("");
                   setImportMeetingsPreview([]);
@@ -1286,7 +1286,7 @@ const EventAdmin = () => {
                 variant="light"
               >
                 Importar Reuniones JSON
-              </Button>
+              </Button> */}
 
               <Button
                 onClick={notifyPendingMeetings}
@@ -1481,7 +1481,7 @@ const EventAdmin = () => {
       />
 
       {/* Modal de importar reuniones desde JSON */}
-      <Modal
+      {/* <Modal
         opened={importMeetingsModalOpened}
         onClose={() => setImportMeetingsModalOpened(false)}
         title="Importar Reuniones desde JSON"
@@ -1580,7 +1580,7 @@ const EventAdmin = () => {
             </Button>
           </Group>
         </Stack>
-      </Modal>
+      </Modal> */}
 
       {/* Modal de reuniones huérfanas */}
       <Modal

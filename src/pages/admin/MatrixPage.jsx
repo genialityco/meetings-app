@@ -911,7 +911,7 @@ const MatrixPage = () => {
       case "occupied":
         return "#ffa500";
       case "accepted":
-        return "#4caf50";
+        return "#82c485ff";
       case "break":
         return "#90caf9";
       default:
@@ -980,29 +980,29 @@ const MatrixPage = () => {
                   shadow="md"
                   radius="lg"
                   style={{
-                    minWidth: 260,
-                    maxWidth: 330,
+                    minWidth: 360,
+                    maxWidth: 480,
                     margin: "0 16px 16px 0",
                     background: "#f9fafb",
                     border: "1px solid #e5e7eb",
                     boxShadow: "0 2px 12px #0001",
                   }}
                 >
-                  <Title order={5} align="center" mb="xs">
+                  <Title order={5} ta="center" mb="xs" style={{ letterSpacing: 0.5 }}>
                     Mesa {ti + 1}
                   </Title>
                   <Divider mb="sm" />
                   <Table
                     striped
                     highlightOnHover
-                    horizontalSpacing="sm"
-                    verticalSpacing={8}
+                    horizontalSpacing="md"
+                    verticalSpacing={10}
                     style={{ borderRadius: 12, overflow: "hidden" }}
                   >
                     <Table.Thead>
                       <Table.Tr>
-                        <Table.Th>Hora</Table.Th>
-                        <Table.Th>Estado</Table.Th>
+                        <Table.Th style={{ fontSize: 12, color: "#6b7280", fontWeight: 600, width: 90 }}>Hora</Table.Th>
+                        <Table.Th style={{ fontSize: 12, color: "#6b7280", fontWeight: 600 }}>Estado / Participantes</Table.Th>
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
@@ -1053,65 +1053,92 @@ const MatrixPage = () => {
                             }
                           }}
                         >
-                          <Table.Td style={{ fontWeight: 500 }}>
+                          <Table.Td style={{ fontWeight: 600, fontSize: 13, color: "#21252cff", whiteSpace: "nowrap" }}>
                             {timeSlots[si]}
                           </Table.Td>
                           <Table.Td>
-                            <StatusBadge status={cell.status} />
-                            {cell.status === "accepted" && (
-                              <ParticipantPopover
-                                width={320}
-                                trigger={
-                                  <ParticipantsChips
-                                    participants={cell.participants.map((pid) =>
-                                      participantsInfo[pid]
-                                        ? `${participantsInfo[pid].empresa} (${participantsInfo[pid].nombre})`
-                                        : pid
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                              <StatusBadge status={cell.status} />
+                              {cell.status === "accepted" && (() => {
+                                const p0 = cell.meetingData?.participants?.[0];
+                                const p1 = cell.meetingData?.participants?.[1];
+                                const affinity = p0 && p1 ? getAffinityScore(p0, p1) : null;
+                                return (
+                                  <>
+                                    {affinity && (
+                                      <Badge  variant="light" size="lg" style={{color: "#172417ff"}}>
+                                        {affinity.score}%
+                                      </Badge>
                                     )}
-                                  />
-                                }
-                              >
-                                <b>Participantes:</b>
-                                {cell.meetingData?.participants?.map((pid, idx) => {
-                                  const info = participantsInfo[pid];
-                                  if (!info) return <div key={pid}>{pid}</div>;
-                                  
-                                  // Obtener afinidad entre los dos participantes
-                                  const otherPid = cell.meetingData.participants.find(p => p !== pid);
-                                  const affinity = otherPid ? getAffinityScore(pid, otherPid) : null;
-                                  
-                                  return (
-                                    <div key={pid} style={{ marginBottom: 6 }}>
-                                      <b>{info.empresa} ({info.nombre})</b>
-                                      <div>
-                                        <span style={{ color: "#6c6c6c" }}>Tel: </span>
-                                        {info.telefono || <i>No registrado</i>}
-                                      </div>
-                                      <div>
-                                        <span style={{ color: "#6c6c6c" }}>Descripción: </span>
-                                        {info.descripcion || <i>No especificada</i>}
-                                      </div>
-                                      <div>
-                                        <span style={{ color: "#6c6c6c" }}>Necesidad: </span>
-                                        {info.necesidad || <i>No especificada</i>}
-                                      </div>
-                                      {idx === 0 && affinity && (
-                                        <div style={{ marginTop: 8, padding: "6px 8px", backgroundColor: "#e7f5ff", borderRadius: 4 }}>
-                                          <span style={{ color: "#1971c2", fontWeight: 600 }}>
-                                            Afinidad: {affinity.score}%
-                                          </span>
-                                          {affinity.reasons && affinity.reasons.length > 0 && (
-                                            <div style={{ fontSize: 11, color: "#495057", marginTop: 4 }}>
-                                              {affinity.reasons.join(", ")}
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
+                                  </>
+                                );
+                              })()}
+                            </div>
+                            {cell.status === "accepted" && (() => {
+                              const p0 = cell.meetingData?.participants?.[0];
+                              const p1 = cell.meetingData?.participants?.[1];
+                              const affinity = p0 && p1 ? getAffinityScore(p0, p1) : null;
+                              return (
+                                <ParticipantPopover
+                                  width={340}
+                                  trigger={
+                                    <div style={{ marginTop: 6 }}>
+                                      {cell.meetingData?.participants?.map((pid) => {
+                                        const info = participantsInfo[pid];
+                                        return (
+                                          <div key={pid} style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 2 }}>
+                                            <Text
+                                              size="md"
+                                              fw={600}
+                                              style={{
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                                whiteSpace: "nowrap",
+                                                maxWidth: 220,
+                                                color: "#064175ff",
+                                                cursor: "pointer",
+                                              }}
+                                            >
+                                              {info ? info.empresa : pid}
+                                            </Text>
+                                            {info && (
+                                              <Text size="md" c="dimmed" style={{color: "#191c1fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 120 }}>
+                                                {info.nombre}
+                                              </Text>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
                                     </div>
-                                  );
-                                })}
-                              </ParticipantPopover>
-                            )}
+                                  }
+                                >
+                                  <b>Participantes:</b>
+                                  {cell.meetingData?.participants?.map((pid, idx) => {
+                                    const info = participantsInfo[pid];
+                                    if (!info) return <div key={pid}>{pid}</div>;
+                                    const otherPid = cell.meetingData.participants.find(p => p !== pid);
+                                    const aff = otherPid ? getAffinityScore(pid, otherPid) : null;
+                                    return (
+                                      <div key={pid} style={{ marginBottom: 8 }}>
+                                        <Text size="sm" fw={600}>{info.empresa}</Text>
+                                        <Text size="xs" c="dimmed">{info.nombre}</Text>
+                                        <Text size="xs"><span style={{ color: "#6c6c6c" }}>Tel: </span>{info.telefono || <i>No registrado</i>}</Text>
+                                        <Text size="xs"><span style={{ color: "#6c6c6c" }}>Descripción: </span>{info.descripcion || <i>No especificada</i>}</Text>
+                                        <Text size="xs"><span style={{ color: "#6c6c6c" }}>Necesidad: </span>{info.necesidad || <i>No especificada</i>}</Text>
+                                        {idx === 0 && aff && (
+                                          <div style={{ marginTop: 6, padding: "5px 8px", backgroundColor: "#e7f5ff", borderRadius: 4 }}>
+                                            <Text size="xs" fw={600} c="blue">Afinidad: {aff.score}%</Text>
+                                            {aff.reasons?.length > 0 && (
+                                              <Text size="xs" c="dimmed" mt={2}>{aff.reasons.join(", ")}</Text>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </ParticipantPopover>
+                              );
+                            })()}
                           </Table.Td>
                         </Table.Tr>
                       ))}
