@@ -179,33 +179,45 @@ const EventAdmin = () => {
       // Generar slots para cada día
       for (const [date, dayConfig] of daysToProcess) {
         const { startTime, endTime, breakBlocks = [] } = dayConfig;
-        
-        const startMinutes = timeToMinutes(startTime);
-        const endMinutes = timeToMinutes(endTime);
+
         const blockLength = meetingDuration + breakTime;
-        const totalSlots = Math.floor((endMinutes - startMinutes) / blockLength);
 
-        for (let slot = 0; slot < totalSlots; slot++) {
-          const slotStart = startMinutes + slot * blockLength;
-          const slotEnd = slotStart + meetingDuration;
+        // Dividir el día en segmentos separados por los breaks
+        // Ej: 8:30-10:30, 11:00-13:00 (si hay break 10:30-11:00)
+        const sortedBreaks = [...breakBlocks]
+          .filter((b) => b.start && b.end)
+          .map((b) => ({ start: timeToMinutes(b.start), end: timeToMinutes(b.end) }))
+          .sort((a, b) => a.start - b.start);
 
-          if (isWithinBreakBlock(slotStart, slotEnd, breakBlocks)) {
-            continue;
-          }
+        // Construir lista de segmentos [segStart, segEnd]
+        const segments = [];
+        let segStart = timeToMinutes(startTime);
+        const dayEnd = timeToMinutes(endTime);
+        for (const br of sortedBreaks) {
+          if (br.start > segStart) segments.push([segStart, br.start]);
+          segStart = br.end;
+        }
+        if (segStart < dayEnd) segments.push([segStart, dayEnd]);
 
-          const slotStartTime = minutesToTime(slotStart);
-          const slotEndTime = minutesToTime(slotEnd);
+        // Generar slots dentro de cada segmento
+        for (const [segBegin, segEnd] of segments) {
+          const totalSlots = Math.floor((segEnd - segBegin) / blockLength);
+          for (let slot = 0; slot < totalSlots; slot++) {
+            const slotStart = segBegin + slot * blockLength;
+            const slotEnd = slotStart + meetingDuration;
+            const slotStartTime = minutesToTime(slotStart);
+            const slotEndTime = minutesToTime(slotEnd);
 
-          for (let tableNumber = 1; tableNumber <= numTables; tableNumber++) {
-            const slotData = {
-              date, // ⭐ NUEVO: incluir fecha del slot
-              tableNumber,
-              startTime: slotStartTime,
-              endTime: slotEndTime,
-              available: true,
-            };
-            await addDoc(collection(db, "events", event.id, "agenda"), slotData);
-            createdCount++;
+            for (let tableNumber = 1; tableNumber <= numTables; tableNumber++) {
+              await addDoc(collection(db, "events", event.id, "agenda"), {
+                date,
+                tableNumber,
+                startTime: slotStartTime,
+                endTime: slotEndTime,
+                available: true,
+              });
+              createdCount++;
+            }
           }
         }
       }

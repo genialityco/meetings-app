@@ -22,6 +22,8 @@ import {
   Text,
   Table,
   Select,
+  Tabs,
+  Badge,
 } from "@mantine/core";
 
 // Simula y agenda con swaps entre vendedores
@@ -138,15 +140,25 @@ function simulateScheduleWithSwaps(matches, slotsByMesa, compradorMesa) {
 
 const ImportMeetingsFromExcelPage = () => {
   const { eventId } = useParams();
-  const [file, setFile] = useState(null);
-  const [matches, setMatches] = useState([]);
+
+  // --- Estado compartido ---
   const [attendees, setAttendees] = useState([]);
   const [agenda, setAgenda] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  // --- Estado importación Excel ---
+  const [file, setFile] = useState(null);
+  const [matches, setMatches] = useState([]);
   const [globalMessage, setGlobalMessage] = useState("");
   const [createdMeetings, setCreatedMeetings] = useState(0);
-  const [compradorMesa, setCompradorMesa] = useState({}); // { compradorId: mesa }
-  const [simResults, setSimResults] = useState(null); // { resultado, pendientes }
+  const [compradorMesa, setCompradorMesa] = useState({});
+  const [simResults, setSimResults] = useState(null);
+
+  // --- Estado importación JSON ---
+  const [jsonData, setJsonData] = useState([]);
+  const [empresaMesa, setEmpresaMesa] = useState({});
+  const [jsonSimResults, setJsonSimResults] = useState(null);
+  const [jsonMessage, setJsonMessage] = useState("");
 
   // 1. Cargar asistentes y slots de agenda
   useEffect(() => {
@@ -166,72 +178,67 @@ const ImportMeetingsFromExcelPage = () => {
     fetchAll();
   }, [eventId]);
 
-  // 2. Procesar Excel cargado
-const handleFile = (e) => {
-  const file = e.target.files[0];
-  setFile(file);
-  const reader = new FileReader();
-  reader.onload = (evt) => {
-    const data = new Uint8Array(evt.target.result);
-    const wb = XLSX.read(data, { type: "array" });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+  // ─── HANDLERS EXCEL ────────────────────────────────────────────────────────
 
-    // Incluye la columna "mesa" y normaliza todos los datos relevantes
-    const normalized = rows.map((row) => ({
-      compradorId: row.compradorId,
-      compradorNombre: row.comprador_nombre,
-      compradorEmpresa: row.comprador_empresa,
-      compradorNecesidad: row.comprador_necesidad,
-      vendedorId: row.vendedorId,
-      vendedorNombre: row.vendedor_nombre,
-      vendedorEmpresa: row.vendedor_empresa,
-      vendedorDescripcion: row.vendedor_descripcion,
-      vendedorNecesidad: row.vendedor_necesidad,
-      matchScore: Number(row.match_score ?? 0),
-      ordenMatchComprador: row.orden_match_comprador,
-      ordenMatchVendedor: row.orden_match_vendedor,
-      mesa: row.mesa !== undefined && row.mesa !== null && String(row.mesa).trim() !== "" ? String(row.mesa) : "",
-    }));
-    setMatches(normalized);
+  const handleFile = (e) => {
+    const file = e.target.files[0];
+    setFile(file);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const data = new Uint8Array(evt.target.result);
+      const wb = XLSX.read(data, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
 
-    const compradoresUnicos = Array.from(
-      new Set(normalized.map((m) => m.compradorId))
-    );
+      const normalized = rows.map((row) => ({
+        compradorId: row.compradorId,
+        compradorNombre: row.comprador_nombre,
+        compradorEmpresa: row.comprador_empresa,
+        compradorNecesidad: row.comprador_necesidad,
+        vendedorId: row.vendedorId,
+        vendedorNombre: row.vendedor_nombre,
+        vendedorEmpresa: row.vendedor_empresa,
+        vendedorDescripcion: row.vendedor_descripcion,
+        vendedorNecesidad: row.vendedor_necesidad,
+        matchScore: Number(row.match_score ?? 0),
+        ordenMatchComprador: row.orden_match_comprador,
+        ordenMatchVendedor: row.orden_match_vendedor,
+        mesa: row.mesa !== undefined && row.mesa !== null && String(row.mesa).trim() !== "" ? String(row.mesa) : "",
+      }));
+      setMatches(normalized);
 
-    // Asignación robusta de mesa: busca la PRIMERA mesa no vacía para cada comprador
-    const asignacionPorDefecto = {};
-    compradoresUnicos.forEach((c) => {
-      const matchWithMesa = normalized.find(
-        (m) =>
-          m.compradorId === c &&
-          m.mesa !== undefined &&
-          m.mesa !== null &&
-          String(m.mesa).trim() !== ""
+      const compradoresUnicos = Array.from(
+        new Set(normalized.map((m) => m.compradorId))
       );
-      asignacionPorDefecto[c] = matchWithMesa ? String(matchWithMesa.mesa) : "";
-    });
 
-    // Debug opcional: compradores sin mesa detectada
-    Object.entries(asignacionPorDefecto).forEach(([cid, mesa]) => {
-      if (!mesa) {
-        const info = normalized.find(m => m.compradorId === cid);
-        console.log(`(Debug) Comprador sin mesa: ID=${cid} | Nombre=${info?.compradorNombre} | Empresa=${info?.compradorEmpresa}`);
-      }
-    });
+      const asignacionPorDefecto = {};
+      compradoresUnicos.forEach((c) => {
+        const matchWithMesa = normalized.find(
+          (m) =>
+            m.compradorId === c &&
+            m.mesa !== undefined &&
+            m.mesa !== null &&
+            String(m.mesa).trim() !== ""
+        );
+        asignacionPorDefecto[c] = matchWithMesa ? String(matchWithMesa.mesa) : "";
+      });
 
-    setCompradorMesa(asignacionPorDefecto);
-    setSimResults(null); // Limpiar simulación al recargar Excel
+      Object.entries(asignacionPorDefecto).forEach(([cid, mesa]) => {
+        if (!mesa) {
+          const info = normalized.find(m => m.compradorId === cid);
+          console.log(`(Debug) Comprador sin mesa: ID=${cid} | Nombre=${info?.compradorNombre} | Empresa=${info?.compradorEmpresa}`);
+        }
+      });
+
+      setCompradorMesa(asignacionPorDefecto);
+      setSimResults(null);
+    };
+    reader.readAsArrayBuffer(file);
   };
-  reader.readAsArrayBuffer(file);
-};
 
-
-  // 3. Simular la agenda antes de crear en Firebase
   const handleSimulateAgenda = () => {
     setLoading(true);
 
-    // Prepara slots por mesa y hora
     const slotsByMesa = {};
     agenda
       .filter((a) => a.available)
@@ -246,7 +253,6 @@ const handleFile = (e) => {
       )
     );
 
-    // SIMULAR
     const { resultado, pendientes } = simulateScheduleWithSwaps(
       matches,
       slotsByMesa,
@@ -261,7 +267,6 @@ const handleFile = (e) => {
     setLoading(false);
   };
 
-  // 4. Crear en Firestore solo las asignadas en simResults
   const handleCreateMeetings = async () => {
     if (!simResults || !simResults.resultado) {
       setGlobalMessage("Primero debes simular la agenda.");
@@ -271,13 +276,11 @@ const handleFile = (e) => {
     setCreatedMeetings(0);
     setGlobalMessage("");
 
-    // Índice de IDs válidos para validación rápida
     const validIds = new Set(attendees.map((a) => a.id));
     let created = 0;
     let skipped = 0;
 
     for (const { match, slot } of simResults.resultado) {
-      // Validar que ambos participantes existan en la base de datos
       const compradorExiste = validIds.has(match.compradorId);
       const vendedorExiste = validIds.has(match.vendedorId);
       if (!compradorExiste || !vendedorExiste) {
@@ -314,20 +317,151 @@ const handleFile = (e) => {
         });
         created++;
       } catch (e) {
-        // Manejo de errores si falla
+        console.error("[ImportMeetings] Error:", e);
       }
     }
 
-    const skipMsg = skipped > 0 ? ` (${skipped} omitidas por IDs no encontrados en la base de datos — ver consola)` : "";
+    const skipMsg = skipped > 0 ? ` (${skipped} omitidas por IDs no encontrados — ver consola)` : "";
     setGlobalMessage(`¡Listo! Se crearon ${created} reuniones en agenda.${skipMsg}`);
     setCreatedMeetings(created);
     setLoading(false);
   };
 
-  // -- Tabla editable de asignación de mesas por comprador --
-  const compradoresUnicos = Array.from(
-    new Set(matches.map((m) => m.compradorId))
-  );
+  // ─── HANDLERS JSON ─────────────────────────────────────────────────────────
+
+  const handleJsonFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = JSON.parse(evt.target.result);
+        setJsonData(data);
+        setEmpresaMesa({});
+        setJsonSimResults(null);
+        setJsonMessage("");
+      } catch {
+        setJsonMessage("Error al leer el archivo JSON. Verifica que sea válido.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleSimulateJson = () => {
+    setLoading(true);
+
+    // Índice de slots disponibles: { "HH:MM_tableNumber": slot }
+    const slotLookup = {};
+    agenda
+      .filter((a) => a.available)
+      .forEach((slot) => {
+        const key = `${slot.startTime}_${String(slot.tableNumber)}`;
+        slotLookup[key] = slot;
+      });
+
+    const resultado = [];
+    const pendientes = [];
+    // Copia consumible para detectar doble-booking
+    const usedSlots = new Set();
+
+    for (const record of jsonData) {
+      const mesa = empresaMesa[record.comprador_empresa];
+      if (!mesa) {
+        pendientes.push({ ...record, motivo: "Empresa sin mesa asignada" });
+        continue;
+      }
+
+      // Parsear bloque "HH:MM-HH:MM"
+      const dashIdx = record.bloque.indexOf("-");
+      const startTime = record.bloque.substring(0, dashIdx);
+
+      const slotKey = `${startTime}_${mesa}`;
+
+      if (usedSlots.has(slotKey)) {
+        pendientes.push({
+          ...record,
+          motivo: `Conflicto: ya hay otra reunión en mesa ${mesa} a las ${startTime}`,
+        });
+        continue;
+      }
+
+      const slot = slotLookup[slotKey];
+      if (!slot) {
+        pendientes.push({
+          ...record,
+          motivo: `No hay slot disponible en mesa ${mesa} para el bloque ${record.bloque}`,
+        });
+        continue;
+      }
+
+      usedSlots.add(slotKey);
+      resultado.push({ record, slot });
+    }
+
+    setJsonSimResults({ resultado, pendientes });
+    setJsonMessage(
+      `Simulación: ${resultado.length} reuniones asignadas, ${pendientes.length} con problemas.`
+    );
+    setLoading(false);
+  };
+
+  const handleCreateJsonMeetings = async () => {
+    if (!jsonSimResults?.resultado?.length) {
+      setJsonMessage("Primero debes simular la agenda.");
+      return;
+    }
+    setLoading(true);
+
+    const validIds = new Set(attendees.map((a) => a.id));
+    let created = 0;
+    let skipped = 0;
+
+    for (const { record, slot } of jsonSimResults.resultado) {
+      if (!validIds.has(record.comprador_id) || !validIds.has(record.vendedor_id)) {
+        console.warn(
+          `[ImportJSON] Skipping: comprador=${record.comprador_id}, vendedor=${record.vendedor_id}`
+        );
+        skipped++;
+        continue;
+      }
+
+      try {
+        const meetingRef = await addDoc(
+          collection(db, "events", eventId, "meetings"),
+          {
+            eventId,
+            requesterId: record.comprador_id,
+            receiverId: record.vendedor_id,
+            status: "accepted",
+            createdAt: new Date(),
+            timeSlot: `${slot.startTime} - ${slot.endTime}`,
+            tableAssigned: String(slot.tableNumber),
+            participants: [record.comprador_id, record.vendedor_id],
+            motivoMatch: "Compatibilidad IA",
+            razonMatch: `Afinidad: ${record.afinidad}`,
+            scoreMatch: record.afinidad,
+            agendadoAutomatico: true,
+          }
+        );
+        await updateDoc(doc(db, "events", eventId, "agenda", slot.id), {
+          available: false,
+          meetingId: meetingRef.id,
+        });
+        created++;
+      } catch (e) {
+        console.error("[ImportJSON] Error creando reunión:", e);
+      }
+    }
+
+    const skipMsg = skipped > 0 ? ` (${skipped} omitidas por IDs no encontrados — ver consola)` : "";
+    setJsonMessage(`¡Listo! Se crearon ${created} reuniones desde JSON.${skipMsg}`);
+    setLoading(false);
+  };
+
+  // ─── COMPUTED ──────────────────────────────────────────────────────────────
+
+  // Excel
+  const compradoresUnicos = Array.from(new Set(matches.map((m) => m.compradorId)));
   const compradoresData = compradoresUnicos.map((cid) => {
     const m = matches.find((r) => r.compradorId === cid);
     return {
@@ -338,12 +472,10 @@ const handleFile = (e) => {
     };
   });
 
-  // Opciones de mesas en agenda
   const mesasDisponibles = Array.from(
     new Set(agenda.filter((a) => a.available).map((a) => String(a.tableNumber)))
   ).sort((a, b) => Number(a) - Number(b));
 
-  // -- RESUMEN DINÁMICO --
   const resumen = (() => {
     if (matches.length === 0) return null;
     const compradoresUnicosSet = new Set(matches.map((m) => m.compradorId));
@@ -363,16 +495,9 @@ const handleFile = (e) => {
     const vendedoresConMenosDe3 = Object.entries(reunionesPorVendedor)
       .filter(([, n]) => n < 3)
       .map(([nombre]) => nombre);
-
-    const matchFuerte = matches.filter(
-      (m) => Number(m.matchScore) >= 80
-    ).length;
-    const matchMedio = matches.filter(
-      (m) => Number(m.matchScore) >= 40 && Number(m.matchScore) < 80
-    ).length;
-    const matchDebil = matches.filter(
-      (m) => Number(m.matchScore) > 0 && Number(m.matchScore) < 40
-    ).length;
+    const matchFuerte = matches.filter((m) => Number(m.matchScore) >= 80).length;
+    const matchMedio = matches.filter((m) => Number(m.matchScore) >= 40 && Number(m.matchScore) < 80).length;
+    const matchDebil = matches.filter((m) => Number(m.matchScore) > 0 && Number(m.matchScore) < 40).length;
     const scoreMax = Math.max(...matches.map((m) => Number(m.matchScore)));
     const scoreMin = Math.min(...matches.map((m) => Number(m.matchScore)));
 
@@ -392,200 +517,341 @@ const handleFile = (e) => {
     };
   })();
 
+  // JSON
+  const empresasUnicas = [...new Set(jsonData.map((r) => r.comprador_empresa))].sort();
+  const empresasData = empresasUnicas.map((emp) => {
+    const records = jsonData.filter((r) => r.comprador_empresa === emp);
+    const compradores = [...new Set(records.map((r) => r.comprador_id))];
+    return {
+      empresa: emp,
+      compradores: compradores.length,
+      reuniones: records.length,
+    };
+  });
+  const todasEmpresasConMesa = empresasUnicas.every((e) => empresaMesa[e]);
+
+  // ─── RENDER ────────────────────────────────────────────────────────────────
+
   return (
     <Container>
       <Group mb="md">
         <Button component={Link} to={`/admin/event/${eventId}`}>
           Volver
         </Button>
-        <Title order={2}>Importar reuniones desde Excel</Title>
+        <Title order={2}>Importar reuniones</Title>
       </Group>
 
-      <input type="file" accept=".xlsx,.xls" onChange={handleFile} />
+      {loading && <Loader mb="md" />}
 
-      {/* RESUMEN */}
-      {resumen && (
-        <Card mt="md" shadow="sm" p="md" withBorder>
-          <Title order={5} mb="xs">
-            Resumen de datos a importar
-          </Title>
-          <Text>
-            <b>Compradores únicos:</b> {resumen.compradoresUnicos.size}
-            <br />
-            <b>Vendedores únicos:</b> {resumen.vendedoresUnicos.size}
-            <br />
-            <b>Reuniones a crear:</b> {matches.length}
-            <br />
-            <b>Slots de agenda disponibles:</b> {resumen.slotsDisponibles}
-          </Text>
-          <Text mt="xs">
-            <b>Reuniones por comprador (ejemplo):</b>
-            <br />
-            {Object.entries(resumen.reunionesPorComprador)
-              .slice(0, 5)
-              .map(([nombre, n]) => (
-                <span key={nombre}>
-                  {nombre}: {n} &nbsp;{" "}
-                </span>
-              ))}
-            {Object.keys(resumen.reunionesPorComprador).length > 5 && (
-              <span>... (y más)</span>
-            )}
-          </Text>
-          <Text mt="xs">
-            <b>Reuniones por vendedor (ejemplo):</b>
-            <br />
-            {Object.entries(resumen.reunionesPorVendedor)
-              .slice(0, 5)
-              .map(([nombre, n]) => (
-                <span key={nombre}>
-                  {nombre}: {n} &nbsp;{" "}
-                </span>
-              ))}
-            {Object.keys(resumen.reunionesPorVendedor).length > 5 && (
-              <span>... (y más)</span>
-            )}
-          </Text>
-          <Text mt="xs">
-            <b>Compradores con menos de 18 reuniones:</b>{" "}
-            {resumen.compradoresPorCompletar.length
-              ? resumen.compradoresPorCompletar.join(", ")
-              : "Ninguno"}
-          </Text>
-          <Text mt="xs">
-            <b>Vendedores con menos de 3 reuniones:</b>{" "}
-            {resumen.vendedoresConMenosDe3.length
-              ? resumen.vendedoresConMenosDe3.join(", ")
-              : "Ninguno"}
-          </Text>
-          <Text mt="xs">
-            <b>Match fuerte (score ≥ 80):</b> {resumen.matchFuerte} <br />
-            <b>Match medio (score 40-79):</b> {resumen.matchMedio} <br />
-            <b>Match débil (score 1-39):</b> {resumen.matchDebil}
-          </Text>
-          <Text mt="xs">
-            <b>Score máximo:</b> {resumen.scoreMax} <br />
-            <b>Score mínimo:</b> {resumen.scoreMin}
-          </Text>
-          <Text mt="xs" color="orange">
-            <b>¿Alcanza la agenda?</b>{" "}
-            {resumen.slotsDisponibles >= matches.length
-              ? "Sí, hay suficientes slots."
-              : "No, FALTAN slots, algunos compradores quedarán sin reuniones."}
-          </Text>
-        </Card>
-      )}
+      <Tabs defaultValue="json">
+        <Tabs.List>
+          <Tabs.Tab value="json">Desde JSON</Tabs.Tab>
+          <Tabs.Tab value="excel">Desde Excel</Tabs.Tab>
+        </Tabs.List>
 
-      {/* Tabla editable para asignación de mesa por comprador */}
-      {matches.length > 0 && (
-        <Card mt="md" shadow="sm" p="md" withBorder>
-          <Title order={5} mb="xs">
-            Asignación de Mesa por Comprador
-          </Title>
-          <Table striped withBorder>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Comprador</Table.Th>
-                <Table.Th>Empresa</Table.Th>
-                <Table.Th>Reuniones</Table.Th>
-                <Table.Th>Mesa Asignada</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {compradoresData.map((c) => (
-                <Table.Tr key={c.compradorId}>
-                  <Table.Td>{c.compradorNombre}</Table.Td>
-                  <Table.Td>{c.compradorEmpresa}</Table.Td>
-                  <Table.Td>{c.reuniones}</Table.Td>
-                  <Table.Td>
-                    <Select
-                      data={mesasDisponibles.map((num) => ({
-                        value: num,
-                        label: `Mesa ${num}`,
-                      }))}
-                      value={compradorMesa[c.compradorId] || ""}
-                      onChange={(val) =>
-                        setCompradorMesa((cm) => ({
-                          ...cm,
-                          [c.compradorId]: val,
-                        }))
-                      }
-                      placeholder="Seleccionar mesa"
-                      searchable
-                      withinPortal
-                      required
-                    />
-                  </Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        </Card>
-      )}
+        {/* ══════════════════ TAB JSON ══════════════════ */}
+        <Tabs.Panel value="json" pt="md">
 
-      {/* Botón para simular agenda */}
-      {matches.length > 0 && (
-        <Button
-          mt="md"
-          onClick={handleSimulateAgenda}
-          loading={loading}
-          color="orange"
-          disabled={Object.values(compradorMesa).some((m) => !m)}
-        >
-          Simular agenda y asignar reuniones
-        </Button>
-      )}
+          <input type="file" accept=".json" onChange={handleJsonFile} />
 
-      {/* Resultados de la simulación */}
-      {simResults && (
-        <Card mt="md" shadow="sm" p="md" withBorder>
-          <Title order={5} mb="xs">
-            Resultados de Simulación
-          </Title>
-          <Text>
-            Reuniones simuladas/agendadas: {simResults.resultado.length}
-            <br />
-            Reuniones NO agendadas: {simResults.pendientes.length}
-          </Text>
-          {simResults.pendientes.length > 0 && (
-            <Text mt="xs" color="red">
-              Ejemplo pendiente:{" "}
-              {simResults.pendientes
-                .slice(0, 5)
-                .map(
-                  (p) =>
-                    `${p.compradorNombre} vs ${p.vendedorNombre} (${p.motivo})`
-                )
-                .join("; ")}
-              {simResults.pendientes.length > 5 && " ..."}
-            </Text>
+          {/* Resumen JSON */}
+          {jsonData.length > 0 && (
+            <Card mt="md" shadow="sm" p="md" withBorder>
+              <Title order={5} mb="xs">Resumen del archivo</Title>
+              <Text>
+                <b>Total reuniones:</b> {jsonData.length}<br />
+                <b>Empresas compradoras:</b> {empresasUnicas.length}<br />
+                <b>Slots disponibles en agenda:</b> {agenda.filter((a) => a.available).length}<br />
+                <b>Bloques horarios:</b> {[...new Set(jsonData.map((r) => r.bloque))].sort().join(", ")}
+              </Text>
+              {agenda.filter((a) => a.available).length < jsonData.length && (
+                <Text mt="xs" c="orange">
+                  ⚠ Hay menos slots disponibles que reuniones a crear.
+                </Text>
+              )}
+            </Card>
           )}
-        </Card>
-      )}
 
-      {/* Botón para crear en firestore */}
-      {simResults && simResults.resultado.length > 0 && (
-        <Button
-          mt="md"
-          onClick={handleCreateMeetings}
-          loading={loading}
-          color="teal"
-        >
-          Crear reuniones en agenda de Firebase
-        </Button>
-      )}
+          {/* Tabla asignación de mesa por empresa compradora */}
+          {empresasData.length > 0 && (
+            <Card mt="md" shadow="sm" p="md" withBorder>
+              <Title order={5} mb="xs">Asignación de mesa por empresa compradora</Title>
+              <Text size="sm" c="dimmed" mb="sm">
+                Cada empresa compradora permanece en su mesa durante todo el evento.
+                Si dos nombres de empresa son la misma, asigna la misma mesa.
+              </Text>
+              <Table striped withBorder>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Empresa compradora</Table.Th>
+                    <Table.Th>Compradores</Table.Th>
+                    <Table.Th>Reuniones</Table.Th>
+                    <Table.Th>Mesa asignada</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {empresasData.map((e) => (
+                    <Table.Tr key={e.empresa}>
+                      <Table.Td>{e.empresa}</Table.Td>
+                      <Table.Td>{e.compradores}</Table.Td>
+                      <Table.Td>{e.reuniones}</Table.Td>
+                      <Table.Td>
+                        <Select
+                          data={mesasDisponibles.map((num) => ({
+                            value: num,
+                            label: `Mesa ${num}`,
+                          }))}
+                          value={empresaMesa[e.empresa] || ""}
+                          onChange={(val) =>
+                            setEmpresaMesa((em) => ({ ...em, [e.empresa]: val }))
+                          }
+                          placeholder="Seleccionar mesa"
+                          searchable
+                          withinPortal
+                          required
+                        />
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Card>
+          )}
 
-      {globalMessage && (
-        <Alert color="green" mt="md">
-          {globalMessage}
-        </Alert>
-      )}
-      {loading && <Loader />}
-      {matches.length > 0 && (
-        <Card mt="md">
-          <Text>Se cargaron {matches.length} matches desde Excel.</Text>
-        </Card>
-      )}
+          {/* Botón simular */}
+          {jsonData.length > 0 && (
+            <Button
+              mt="md"
+              color="orange"
+              loading={loading}
+              disabled={!todasEmpresasConMesa}
+              onClick={handleSimulateJson}
+            >
+              Simular asignación de reuniones
+            </Button>
+          )}
+
+          {/* Resultados simulación JSON */}
+          {jsonSimResults && (
+            <Card mt="md" shadow="sm" p="md" withBorder>
+              <Title order={5} mb="xs">Resultados de simulación</Title>
+              <Text>
+                <b>Reuniones listas para crear:</b> {jsonSimResults.resultado.length}<br />
+                <b>Con problemas:</b> {jsonSimResults.pendientes.length}
+              </Text>
+              {jsonSimResults.pendientes.length > 0 && (
+                <Card mt="sm" p="xs" withBorder bg="red.0">
+                  <Text size="sm" fw={500} c="red" mb={4}>Reuniones con problemas:</Text>
+                  <Table striped withBorder fz="xs">
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th>Comprador</Table.Th>
+                        <Table.Th>Empresa</Table.Th>
+                        <Table.Th>Vendedor</Table.Th>
+                        <Table.Th>Bloque</Table.Th>
+                        <Table.Th>Motivo</Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {jsonSimResults.pendientes.map((p, i) => (
+                        <Table.Tr key={i}>
+                          <Table.Td>{p.comprador_nombre}</Table.Td>
+                          <Table.Td>{p.comprador_empresa}</Table.Td>
+                          <Table.Td>{p.vendedor_nombre}</Table.Td>
+                          <Table.Td>{p.bloque}</Table.Td>
+                          <Table.Td>
+                            <Badge color="red" size="sm">{p.motivo}</Badge>
+                          </Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                </Card>
+              )}
+            </Card>
+          )}
+
+          {/* Botón crear en Firestore */}
+          {jsonSimResults?.resultado?.length > 0 && (
+            <Button
+              mt="md"
+              color="teal"
+              loading={loading}
+              onClick={handleCreateJsonMeetings}
+            >
+              Crear {jsonSimResults.resultado.length} reuniones en Firebase
+            </Button>
+          )}
+
+          {jsonMessage && (
+            <Alert
+              color={jsonMessage.startsWith("Error") ? "red" : "green"}
+              mt="md"
+            >
+              {jsonMessage}
+            </Alert>
+          )}
+        </Tabs.Panel>
+
+        {/* ══════════════════ TAB EXCEL ══════════════════ */}
+        <Tabs.Panel value="excel" pt="md">
+
+          <input type="file" accept=".xlsx,.xls" onChange={handleFile} />
+
+          {/* RESUMEN */}
+          {resumen && (
+            <Card mt="md" shadow="sm" p="md" withBorder>
+              <Title order={5} mb="xs">Resumen de datos a importar</Title>
+              <Text>
+                <b>Compradores únicos:</b> {resumen.compradoresUnicos.size}<br />
+                <b>Vendedores únicos:</b> {resumen.vendedoresUnicos.size}<br />
+                <b>Reuniones a crear:</b> {matches.length}<br />
+                <b>Slots de agenda disponibles:</b> {resumen.slotsDisponibles}
+              </Text>
+              <Text mt="xs">
+                <b>Reuniones por comprador (ejemplo):</b><br />
+                {Object.entries(resumen.reunionesPorComprador)
+                  .slice(0, 5)
+                  .map(([nombre, n]) => (
+                    <span key={nombre}>{nombre}: {n} &nbsp; </span>
+                  ))}
+                {Object.keys(resumen.reunionesPorComprador).length > 5 && <span>... (y más)</span>}
+              </Text>
+              <Text mt="xs">
+                <b>Reuniones por vendedor (ejemplo):</b><br />
+                {Object.entries(resumen.reunionesPorVendedor)
+                  .slice(0, 5)
+                  .map(([nombre, n]) => (
+                    <span key={nombre}>{nombre}: {n} &nbsp; </span>
+                  ))}
+                {Object.keys(resumen.reunionesPorVendedor).length > 5 && <span>... (y más)</span>}
+              </Text>
+              <Text mt="xs">
+                <b>Compradores con menos de 18 reuniones:</b>{" "}
+                {resumen.compradoresPorCompletar.length ? resumen.compradoresPorCompletar.join(", ") : "Ninguno"}
+              </Text>
+              <Text mt="xs">
+                <b>Vendedores con menos de 3 reuniones:</b>{" "}
+                {resumen.vendedoresConMenosDe3.length ? resumen.vendedoresConMenosDe3.join(", ") : "Ninguno"}
+              </Text>
+              <Text mt="xs">
+                <b>Match fuerte (score ≥ 80):</b> {resumen.matchFuerte}<br />
+                <b>Match medio (score 40-79):</b> {resumen.matchMedio}<br />
+                <b>Match débil (score 1-39):</b> {resumen.matchDebil}
+              </Text>
+              <Text mt="xs">
+                <b>Score máximo:</b> {resumen.scoreMax}<br />
+                <b>Score mínimo:</b> {resumen.scoreMin}
+              </Text>
+              <Text mt="xs" color="orange">
+                <b>¿Alcanza la agenda?</b>{" "}
+                {resumen.slotsDisponibles >= matches.length
+                  ? "Sí, hay suficientes slots."
+                  : "No, FALTAN slots, algunos compradores quedarán sin reuniones."}
+              </Text>
+            </Card>
+          )}
+
+          {/* Tabla editable para asignación de mesa por comprador */}
+          {matches.length > 0 && (
+            <Card mt="md" shadow="sm" p="md" withBorder>
+              <Title order={5} mb="xs">Asignación de Mesa por Comprador</Title>
+              <Table striped withBorder>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Comprador</Table.Th>
+                    <Table.Th>Empresa</Table.Th>
+                    <Table.Th>Reuniones</Table.Th>
+                    <Table.Th>Mesa Asignada</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {compradoresData.map((c) => (
+                    <Table.Tr key={c.compradorId}>
+                      <Table.Td>{c.compradorNombre}</Table.Td>
+                      <Table.Td>{c.compradorEmpresa}</Table.Td>
+                      <Table.Td>{c.reuniones}</Table.Td>
+                      <Table.Td>
+                        <Select
+                          data={mesasDisponibles.map((num) => ({
+                            value: num,
+                            label: `Mesa ${num}`,
+                          }))}
+                          value={compradorMesa[c.compradorId] || ""}
+                          onChange={(val) =>
+                            setCompradorMesa((cm) => ({ ...cm, [c.compradorId]: val }))
+                          }
+                          placeholder="Seleccionar mesa"
+                          searchable
+                          withinPortal
+                          required
+                        />
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Card>
+          )}
+
+          {/* Botón simular agenda Excel */}
+          {matches.length > 0 && (
+            <Button
+              mt="md"
+              onClick={handleSimulateAgenda}
+              loading={loading}
+              color="orange"
+              disabled={Object.values(compradorMesa).some((m) => !m)}
+            >
+              Simular agenda y asignar reuniones
+            </Button>
+          )}
+
+          {/* Resultados de la simulación Excel */}
+          {simResults && (
+            <Card mt="md" shadow="sm" p="md" withBorder>
+              <Title order={5} mb="xs">Resultados de Simulación</Title>
+              <Text>
+                Reuniones simuladas/agendadas: {simResults.resultado.length}<br />
+                Reuniones NO agendadas: {simResults.pendientes.length}
+              </Text>
+              {simResults.pendientes.length > 0 && (
+                <Text mt="xs" color="red">
+                  Ejemplo pendiente:{" "}
+                  {simResults.pendientes
+                    .slice(0, 5)
+                    .map((p) => `${p.compradorNombre} vs ${p.vendedorNombre} (${p.motivo})`)
+                    .join("; ")}
+                  {simResults.pendientes.length > 5 && " ..."}
+                </Text>
+              )}
+            </Card>
+          )}
+
+          {/* Botón crear en Firestore (Excel) */}
+          {simResults && simResults.resultado.length > 0 && (
+            <Button
+              mt="md"
+              onClick={handleCreateMeetings}
+              loading={loading}
+              color="teal"
+            >
+              Crear reuniones en agenda de Firebase
+            </Button>
+          )}
+
+          {globalMessage && (
+            <Alert color="green" mt="md">
+              {globalMessage}
+            </Alert>
+          )}
+          {matches.length > 0 && (
+            <Card mt="md">
+              <Text>Se cargaron {matches.length} matches desde Excel.</Text>
+            </Card>
+          )}
+        </Tabs.Panel>
+      </Tabs>
     </Container>
   );
 };

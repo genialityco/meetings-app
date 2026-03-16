@@ -39,15 +39,38 @@ import { useDashboardData } from "../dashboard/useDashboardData";
 
 // ----------- UTILIDADES -----------
 
-const generateTimeSlots = (start, end, meetingDuration, breakTime) => {
+const generateTimeSlots = (start, end, meetingDuration, breakTime, breakBlocks = []) => {
+  const toMin = (hhmm) => {
+    const [h, m] = hhmm.split(":").map(Number);
+    return h * 60 + m;
+  };
+  const toHHMM = (min) =>
+    `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+
+  const blockLength = meetingDuration + breakTime;
+
+  // Dividir el día en segmentos separados por los breaks
+  const sortedBreaks = [...breakBlocks]
+    .filter((b) => b.start && b.end)
+    .map((b) => ({ start: toMin(b.start), end: toMin(b.end) }))
+    .sort((a, b) => a.start - b.start);
+
+  const segments = [];
+  let segStart = toMin(start);
+  const dayEnd = toMin(end);
+  for (const br of sortedBreaks) {
+    if (br.start > segStart) segments.push([segStart, br.start]);
+    segStart = br.end;
+  }
+  if (segStart < dayEnd) segments.push([segStart, dayEnd]);
+
+  // Generar slots dentro de cada segmento
   const slots = [];
-  let currentTime = new Date(`1970-01-01T${start}:00`);
-  const endTimeObj = new Date(`1970-01-01T${end}:00`);
-  while (currentTime < endTimeObj) {
-    slots.push(currentTime.toTimeString().substring(0, 5));
-    currentTime.setMinutes(
-      currentTime.getMinutes() + meetingDuration + breakTime
-    );
+  for (const [segBegin, segEnd] of segments) {
+    const total = Math.floor((segEnd - segBegin) / blockLength);
+    for (let i = 0; i < total; i++) {
+      slots.push(toHHMM(segBegin + i * blockLength));
+    }
   }
   return slots;
 };
@@ -340,13 +363,15 @@ const MatrixPage = () => {
     const dayConfig = config.config.dailyConfig?.[selectedDate] || {
       startTime: config.config.startTime,
       endTime: config.config.endTime,
+      breakBlocks: config.config.breakBlocks || [],
     };
-    
+
     return generateTimeSlots(
       dayConfig.startTime,
       dayConfig.endTime,
       config.config.meetingDuration,
-      config.config.breakTime
+      config.config.breakTime,
+      dayConfig.breakBlocks || []
     );
   }, [config, selectedDate]);
 
@@ -362,10 +387,8 @@ const MatrixPage = () => {
   const breakBlocks = dayConfig.breakBlocks || [];
 
   const baseMatrix = Array.from({ length: numTables }, () =>
-    timeSlots.map((slot) => ({
-      status: slotOverlapsBreakBlock(slot, meetingDuration, breakBlocks)
-        ? "break"
-        : "available",
+    timeSlots.map(() => ({
+      status: "available",
       participants: [],
     }))
   );
@@ -425,9 +448,6 @@ const MatrixPage = () => {
 
     return asistentes.map((user) => {
       const row = timeSlots.map((slot) => {
-        if (slotOverlapsBreakBlock(slot, meetingDuration, breakBlocks)) {
-          return { status: "break" };
-        }
         const mtg = meetingsDelDia.find((m) => {
           if (!m.timeSlot) return false;
           const [start] = m.timeSlot.split(" - ");

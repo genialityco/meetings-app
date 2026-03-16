@@ -262,22 +262,44 @@ export default function CalendarTab({
     endTime: eventConfig?.endTime || "18:00",
   };
 
-  // Generar slots de tiempo
-  const generateTimeSlots = (start: string, end: string, duration: number) => {
-    const slots: string[] = [];
-    const [startH, startM] = start.split(":").map(Number);
-    const [endH, endM] = end.split(":").map(Number);
-    
-    let currentMinutes = startH * 60 + startM;
-    const endMinutes = endH * 60 + endM;
+  // Generar slots de tiempo por segmentos, respetando breaks
+  const generateTimeSlots = (
+    start: string,
+    end: string,
+    duration: number,
+    breakTime: number = 0,
+    breakBlocks: { start: string; end: string }[] = []
+  ): string[] => {
+    const toMin = (hhmm: string) => {
+      const [h, m] = hhmm.split(":").map(Number);
+      return h * 60 + m;
+    };
+    const toHHMM = (min: number) =>
+      `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
 
-    while (currentMinutes < endMinutes) {
-      const h = Math.floor(currentMinutes / 60);
-      const m = currentMinutes % 60;
-      slots.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
-      currentMinutes += duration;
+    const blockLength = duration + breakTime;
+
+    const sortedBreaks = [...breakBlocks]
+      .filter((b) => b.start && b.end)
+      .map((b) => ({ start: toMin(b.start), end: toMin(b.end) }))
+      .sort((a, b) => a.start - b.start);
+
+    const segments: [number, number][] = [];
+    let segStart = toMin(start);
+    const dayEnd = toMin(end);
+    for (const br of sortedBreaks) {
+      if (br.start > segStart) segments.push([segStart, br.start]);
+      segStart = br.end;
     }
+    if (segStart < dayEnd) segments.push([segStart, dayEnd]);
 
+    const slots: string[] = [];
+    for (const [segBegin, segEnd] of segments) {
+      const total = Math.floor((segEnd - segBegin) / blockLength);
+      for (let i = 0; i < total; i++) {
+        slots.push(toHHMM(segBegin + i * blockLength));
+      }
+    }
     return slots;
   };
 
@@ -285,9 +307,11 @@ export default function CalendarTab({
     return generateTimeSlots(
       dayConfig.startTime,
       dayConfig.endTime,
-      eventConfig?.meetingDuration || 30
+      eventConfig?.meetingDuration || 30,
+      eventConfig?.breakTime || 0,
+      dayConfig.breakBlocks || eventConfig?.breakBlocks || []
     );
-  }, [dayConfig, eventConfig?.meetingDuration]);
+  }, [dayConfig, eventConfig?.meetingDuration, eventConfig?.breakTime, eventConfig?.breakBlocks]);
 
   // Combinar todas las reuniones y solicitudes con filtros
   const allMeetings = useMemo(() => {
