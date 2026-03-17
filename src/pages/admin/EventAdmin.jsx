@@ -17,6 +17,8 @@ import {
   SimpleGrid,
   Modal,
   Table,
+  ScrollArea,
+  SegmentedControl,
 } from "@mantine/core";
 import {
   doc,
@@ -70,6 +72,11 @@ const EventAdmin = () => {
   const [importMeetingsResult, setImportMeetingsResult] = useState(null);
   const [deletingOrphan, setDeletingOrphan] = useState(null);
   const [notifyingMeetings, setNotifyingMeetings] = useState(false);
+  const [notifyModalOpened, setNotifyModalOpened] = useState(false);
+  const [notifyTarget, setNotifyTarget] = useState("ambos"); // "compradores" | "vendedores" | "ambos"
+  const [notifyLog, setNotifyLog] = useState([]); // { nombre, empresa, tipo, status: "ok"|"fail"|"skip", meetingId }
+  const [notifyRunning, setNotifyRunning] = useState(false);
+  const [notifyDone, setNotifyDone] = useState(false);
 
   const [meetingsCounts, setMeetingsCounts] = useState({
     aceptadas: 0,
@@ -850,15 +857,14 @@ const EventAdmin = () => {
 
   // Notificar por WhatsApp las reuniones accepted no notificadas
   const notifyPendingMeetings = async () => {
-    if (!window.confirm("¿Enviar notificaciones WhatsApp a todas las reuniones aceptadas sin notificar?")) return;
-    setNotifyingMeetings(true);
-    let sent = 0;
-    let failed = 0;
+    setNotifyRunning(true);
+    setNotifyDone(false);
+    setNotifyLog([]);
+
     try {
-      const whatsappVersion = event.config?.policies.whatsappApiVersion || "v1";
+      const whatsappVersion = event.config?.policies?.whatsappApiVersion || "v1";
       const eventName = event.eventName || "Evento";
 
-      // Obtener reuniones accepted + isNotificated == false (o campo ausente)
       const meetingsSnap = await getDocs(collection(db, "events", eventId, "meetings"));
       const pending = meetingsSnap.docs.filter((d) => {
         const m = d.data();
@@ -866,123 +872,105 @@ const EventAdmin = () => {
       });
 
       if (pending.length === 0) {
-        setGlobalMessage("No hay reuniones pendientes de notificación.");
-        setNotifyingMeetings(false);
+        setNotifyLog([{ nombre: "—", empresa: "—", tipo: "—", status: "skip", reason: "No hay reuniones pendientes de notificación" }]);
+        setNotifyDone(true);
+        setNotifyRunning(false);
         return;
       }
 
-      // Cargar usuarios del evento en un mapa
-      const usersSnap = await getDocs(
-        query(collection(db, "users"), where("eventId", "==", eventId))
-      );
+      const usersSnap = await getDocs(query(collection(db, "users"), where("eventId", "==", eventId)));
       const usersMap = {};
       usersSnap.docs.forEach((d) => { usersMap[d.id] = { id: d.id, ...d.data() }; });
 
-      for (const meetingDoc of pending) {
-        const m = meetingDoc.data();
-        const requester = usersMap[m.requesterId];
-        const receiver = usersMap[m.receiverId];
+      const sendToUser = async (user, otherUser, m, tipo) => {
+        const phone = (user?.contacto?.telefono || user?.telefono || "").replace(/[^\d]/g, "");
+        if (!phone) return "skip";
 
-        // Formatear fecha
         let dateStr = "";
         if (m.meetingDate) {
           const [y, mo, dy] = m.meetingDate.split("-").map(Number);
-          const d = new Date(y, mo - 1, dy);
-          dateStr = d.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
+          dateStr = new Date(y, mo - 1, dy).toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
         }
 
-        const meetingInfo = {
-          timeSlot: m.timeSlot,
-          tableAssigned: m.tableAssigned,
-          meetingDate: m.meetingDate,
-        };
+        try {
+          if (whatsappVersion === "v2") {
+            const schedule = dateStr ? `${dateStr} - ${m.timeSlot || ""}` : m.timeSlot || "";
+            const ok = await sendMeetingConfirmation({
+              phone,
+              eventName,
+              acceptedBy: otherUser?.nombre || "El participante",
+              meetingWith: otherUser?.nombre || "Participante",
+              company: otherUser?.empresa || "Empresa",
+              schedule,
+              table: m.tableAssigned || "N/A",
+            });
+            return ok ? "ok" : "fail";
+          } else {
+            const dateLine = dateStr ? `📅 *Día:* ${dateStr}\n` : "";
+            const message =
+              `🤝 *¡Reunión confirmada!*\n\n` +
+              `📌 *Evento:* ${eventName}\n` +
+              `👤 *Con:* ${otherUser?.nombre || ""}\n` +
+              `🏢 *Empresa:* ${otherUser?.empresa || ""}\n` +
+              dateLine +
+              `🕐 *Horario:* ${m.timeSlot || ""}\n` +
+              `🪑 *Mesa:* ${m.tableAssigned || ""}\n\n` +
+              `¡Te esperamos!`;
+            const ok = await sendWhatsAppMessage({ apiVersion: "v1", phone, message });
+            return ok ? "ok" : "fail";
+          }
+        } catch { return "fail"; }
+      };
 
-        let reqOk = false;
-        let recOk = false;
+      const log = [];
 
-        // Notificar al solicitante (comprador) — "con quién se reúne" es el receptor
-        if (requester?.contacto?.telefono || requester?.telefono) {
-          const phone = (requester.contacto?.telefono || requester.telefono || "").replace(/[^\d]/g, "");
-          try {
-            if (whatsappVersion === "v2") {
-              const schedule = dateStr ? `${dateStr} - ${m.timeSlot || ""}` : m.timeSlot || "";
-              reqOk = await sendMeetingConfirmation({
-                phone,
-                eventName,
-                acceptedBy: receiver?.nombre || "El participante",
-                meetingWith: receiver?.nombre || "Participante",
-                company: receiver?.empresa || "Empresa",
-                schedule,
-                table: m.tableAssigned || "N/A",
-              });
-            } else {
-              const dateLine = dateStr ? `📅 *Día:* ${dateStr}\n` : "";
-              const message =
-                `🤝 *¡Reunión confirmada!*\n\n` +
-                `📌 *Evento:* ${eventName}\n` +
-                `👤 *Con:* ${receiver?.nombre || ""}\n` +
-                `🏢 *Empresa:* ${receiver?.empresa || ""}\n` +
-                dateLine +
-                `🕐 *Horario:* ${m.timeSlot || ""}\n` +
-                `🪑 *Mesa:* ${m.tableAssigned || ""}\n\n` +
-                `¡Te esperamos!`;
-              reqOk = await sendWhatsAppMessage({ apiVersion: "v1", phone, message });
-            }
-          } catch { reqOk = false; }
-        } else {
-          reqOk = true; // sin teléfono, no bloquear
-        }
+      for (const meetingDoc of pending) {
+        const m = meetingDoc.data();
+        const requester = usersMap[m.requesterId]; // comprador
+        const receiver = usersMap[m.receiverId];   // vendedor
 
-        // Notificar al receptor (vendedor)
-        if (receiver?.contacto?.telefono || receiver?.telefono) {
-          const phone = (receiver.contacto?.telefono || receiver.telefono || "").replace(/[^\d]/g, "");
-          try {
-            if (whatsappVersion === "v2") {
-              const schedule = dateStr ? `${dateStr} - ${m.timeSlot || ""}` : m.timeSlot || "";
-              recOk = await sendMeetingConfirmation({
-                phone,
-                eventName,
-                acceptedBy: requester?.nombre || "El participante",
-                meetingWith: requester?.nombre || "Participante",
-                company: requester?.empresa || "Empresa",
-                schedule,
-                table: m.tableAssigned || "N/A",
-              });
-            } else {
-              const dateLine = dateStr ? `📅 *Día:* ${dateStr}\n` : "";
-              const message =
-                `🤝 *¡Reunión confirmada!*\n\n` +
-                `📌 *Evento:* ${eventName}\n` +
-                `👤 *Con:* ${requester?.nombre || ""}\n` +
-                `🏢 *Empresa:* ${requester?.empresa || ""}\n` +
-                dateLine +
-                `🕐 *Horario:* ${m.timeSlot || ""}\n` +
-                `🪑 *Mesa:* ${m.tableAssigned || ""}\n\n` +
-                `¡Te esperamos!`;
-              recOk = await sendWhatsAppMessage({ apiVersion: "v1", phone, message });
-            }
-          } catch { recOk = false; }
-        } else {
-          recOk = true;
-        }
+        let reqResult = "skip";
+        let recResult = "skip";
 
-        // Marcar como notificado si ambos fueron enviados (o no tenían teléfono)
-        if (reqOk && recOk) {
-          await updateDoc(doc(db, "events", eventId, "meetings", meetingDoc.id), {
-            isNotificated: true,
+        if (notifyTarget === "compradores" || notifyTarget === "ambos") {
+          reqResult = await sendToUser(requester, receiver, m, "comprador");
+          log.push({
+            meetingId: meetingDoc.id,
+            nombre: requester?.nombre || m.requesterId,
+            empresa: requester?.empresa || "—",
+            tipo: "Comprador",
+            timeSlot: m.timeSlot,
+            status: reqResult,
           });
-          sent++;
-        } else {
-          failed++;
+          setNotifyLog([...log]);
+        }
+
+        if (notifyTarget === "vendedores" || notifyTarget === "ambos") {
+          recResult = await sendToUser(receiver, requester, m, "vendedor");
+          log.push({
+            meetingId: meetingDoc.id,
+            nombre: receiver?.nombre || m.receiverId,
+            empresa: receiver?.empresa || "—",
+            tipo: "Vendedor",
+            timeSlot: m.timeSlot,
+            status: recResult,
+          });
+          setNotifyLog([...log]);
+        }
+
+        // Marcar como notificado si los envíos relevantes fueron ok o skip (sin teléfono)
+        const reqDone = notifyTarget === "vendedores" || reqResult === "ok" || reqResult === "skip";
+        const recDone = notifyTarget === "compradores" || recResult === "ok" || recResult === "skip";
+        if (reqDone && recDone) {
+          await updateDoc(doc(db, "events", eventId, "meetings", meetingDoc.id), { isNotificated: true });
         }
       }
 
-      setGlobalMessage(`Notificaciones enviadas: ${sent} exitosas, ${failed} fallidas de ${pending.length} reuniones.`);
+      setNotifyDone(true);
     } catch (error) {
       console.error("Error notifying meetings:", error);
-      setGlobalMessage("Error al enviar notificaciones.");
     } finally {
-      setNotifyingMeetings(false);
+      setNotifyRunning(false);
     }
   };
 
@@ -1289,7 +1277,12 @@ const EventAdmin = () => {
               </Button> */}
 
               <Button
-                onClick={notifyPendingMeetings}
+                onClick={() => {
+                  setNotifyLog([]);
+                  setNotifyDone(false);
+                  setNotifyTarget("ambos");
+                  setNotifyModalOpened(true);
+                }}
                 loading={notifyingMeetings}
                 disabled={notifyingMeetings || actionLoading}
                 color="green"
@@ -1702,6 +1695,107 @@ const EventAdmin = () => {
           )}
         </Stack>
       </Modal>
+
+      {/* Modal de notificaciones WhatsApp */}
+      <Modal
+        opened={notifyModalOpened}
+        onClose={() => { if (!notifyRunning) setNotifyModalOpened(false); }}
+        title="Notificar Reuniones por WhatsApp"
+        size="xl"
+        centered
+      >
+        <Stack gap="md">
+          {!notifyRunning && !notifyDone && (
+            <>
+              <Text size="sm">Selecciona a quiénes enviar las notificaciones de reuniones aceptadas sin notificar:</Text>
+              <SegmentedControl
+                value={notifyTarget}
+                onChange={setNotifyTarget}
+                data={[
+                  { label: "Compradores", value: "compradores" },
+                  { label: "Vendedores", value: "vendedores" },
+                  { label: "Ambos", value: "ambos" },
+                ]}
+              />
+              <Group justify="flex-end">
+                <Button variant="default" onClick={() => setNotifyModalOpened(false)}>Cancelar</Button>
+                <Button color="green" onClick={notifyPendingMeetings}>Iniciar envío</Button>
+              </Group>
+            </>
+          )}
+
+          {(notifyRunning || notifyLog.length > 0) && (
+            <>
+              {notifyRunning && (
+                <Group gap="xs">
+                  <Loader size="xs" />
+                  <Text size="sm" c="dimmed">Enviando notificaciones...</Text>
+                </Group>
+              )}
+
+              <ScrollArea h={320} offsetScrollbars>
+                <Table striped highlightOnHover fz="xs">
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Nombre</Table.Th>
+                      <Table.Th>Empresa</Table.Th>
+                      <Table.Th>Tipo</Table.Th>
+                      <Table.Th>Horario</Table.Th>
+                      <Table.Th>Estado</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {notifyLog.map((entry, i) => (
+                      <Table.Tr key={i}>
+                        <Table.Td>{entry.nombre}</Table.Td>
+                        <Table.Td>{entry.empresa}</Table.Td>
+                        <Table.Td>
+                          <Badge size="xs" color={entry.tipo === "Comprador" ? "blue" : "teal"} variant="light">
+                            {entry.tipo}
+                          </Badge>
+                        </Table.Td>
+                        <Table.Td>{entry.timeSlot || "—"}</Table.Td>
+                        <Table.Td>
+                          <Badge
+                            size="xs"
+                            color={entry.status === "ok" ? "green" : entry.status === "skip" ? "gray" : "red"}
+                            variant="filled"
+                          >
+                            {entry.status === "ok" ? "✓ Enviado" : entry.status === "skip" ? "Sin teléfono" : "✗ Falló"}
+                          </Badge>
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </ScrollArea>
+
+              {notifyDone && (() => {
+                const ok = notifyLog.filter(e => e.status === "ok").length;
+                const fail = notifyLog.filter(e => e.status === "fail").length;
+                const skip = notifyLog.filter(e => e.status === "skip").length;
+                return (
+                  <Alert color={fail > 0 ? "orange" : "green"} title="Resumen">
+                    <Group gap="lg">
+                      <Text size="sm">✓ Enviados: <strong>{ok}</strong></Text>
+                      <Text size="sm">✗ Fallidos: <strong>{fail}</strong></Text>
+                      <Text size="sm">— Sin teléfono: <strong>{skip}</strong></Text>
+                      <Text size="sm">Total: <strong>{notifyLog.length}</strong></Text>
+                    </Group>
+                  </Alert>
+                );
+              })()}
+
+              {notifyDone && (
+                <Group justify="flex-end">
+                  <Button onClick={() => setNotifyModalOpened(false)}>Cerrar</Button>
+                </Group>
+              )}
+            </>
+          )}
+        </Stack>
+      </Modal>
+
     </Container>
   );
 };
