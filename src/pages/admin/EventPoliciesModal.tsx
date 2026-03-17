@@ -47,6 +47,8 @@ export default function EventPoliciesModal({
   );
   const [whatsappApiVersion, setWhatsappApiVersion] = useState<"v1" | "v2">("v1");
   const [autoReassignOnCancel, setAutoReassignOnCancel] = useState(false);
+  const [surveyBlockedFor, setSurveyBlockedFor] = useState<EventPolicies["surveyBlockedFor"]>("none");
+  const [surveyMode, setSurveyMode] = useState<EventPolicies["surveyMode"]>("default");
 
   // Empresas y asignación de mesas fijas
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -70,6 +72,8 @@ export default function EventPoliciesModal({
     );
     setWhatsappApiVersion(p.whatsappApiVersion ?? "v1");
     setAutoReassignOnCancel(p.autoReassignOnCancel ?? false);
+    setSurveyBlockedFor(p.surveyBlockedFor ?? "none");
+    setSurveyMode(p.surveyMode ?? "default");
   }, [event]);
 
   // Cargar empresas cuando se abre el modal y tableMode es "fixed"
@@ -140,6 +144,8 @@ export default function EventPoliciesModal({
               uiViewsEnabled: uiViews,
               whatsappApiVersion,
               autoReassignOnCancel,
+              surveyBlockedFor,
+              surveyMode,
             },
           },
         },
@@ -285,6 +291,30 @@ export default function EventPoliciesModal({
           description="Cuando se cancela una reunión, el slot liberado se reasigna automáticamente al mejor candidato disponible"
           checked={autoReassignOnCancel}
           onChange={(e) => setAutoReassignOnCancel(e.currentTarget.checked)}
+        />
+
+        <Select
+          label="Modo de encuesta"
+          description="Define si se usa la encuesta original o la personalizada por rol"
+          data={[
+            { value: "default", label: "Por defecto (valor estimado + comentarios)" },
+            { value: "custom", label: "Personalizada por rol (configurar en 'Configurar encuesta')" },
+          ]}
+          value={surveyMode}
+          onChange={(v) => setSurveyMode((v as EventPolicies["surveyMode"]) ?? "default")}
+        />
+
+        <Select
+          label="Bloquear encuesta para"
+          description="Impide que ciertos roles vean o completen la encuesta de reunión"
+          data={[
+            { value: "none", label: "Nadie (todos pueden responder)" },
+            { value: "compradores", label: "Compradores" },
+            { value: "vendedores", label: "Vendedores" },
+            { value: "ambos", label: "Ambos (encuesta deshabilitada)" },
+          ]}
+          value={surveyBlockedFor}
+          onChange={(v) => setSurveyBlockedFor((v as EventPolicies["surveyBlockedFor"]) ?? "none")}
         />
 
         <Divider label="Vistas habilitadas en el dashboard" labelPosition="left" />

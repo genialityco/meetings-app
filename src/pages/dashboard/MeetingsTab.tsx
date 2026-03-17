@@ -54,6 +54,7 @@ import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
 import { showNotification } from "@mantine/notifications";
 import { trackEvent } from "../../utils/analytics";
+import { DEFAULT_SURVEY_FIELDS } from "../../pages/admin/ConfigureSurveyModal";
 
 function InfoRow({
   icon,
@@ -94,9 +95,34 @@ export default function MeetingsTab({
   eventConfig,
   globalDateFilter,
   setGlobalDateFilter,
+  policies,
 }) {
   const { currentUser } = useContext(UserContext);
   const theme = useMantineTheme();
+
+  // Survey fields: default or custom per role
+  const surveyMode = policies?.surveyMode || "default";
+  const myRole = (currentUser?.data?.tipoAsistente || "").toLowerCase();
+
+  const surveyFields: any[] = (() => {
+    if (surveyMode === "custom") {
+      const cfg = eventConfig?.surveyConfig;
+      if (myRole === "vendedor" && cfg?.vendedorFields?.length) return cfg.vendedorFields;
+      if (myRole === "comprador" && cfg?.compradorFields?.length) return cfg.compradorFields;
+      // fallback: try any configured fields
+      return cfg?.compradorFields || cfg?.vendedorFields || DEFAULT_SURVEY_FIELDS;
+    }
+    return DEFAULT_SURVEY_FIELDS;
+  })();
+
+  // Check if survey is blocked for current user's role
+  const surveyBlocked = (() => {
+    const blocked = policies?.surveyBlockedFor || "none";
+    if (blocked === "ambos") return true;
+    if (blocked === "compradores" && myRole === "comprador") return true;
+    if (blocked === "vendedores" && myRole === "vendedor") return true;
+    return false;
+  })();
 
   // Multi-day event dates
   const eventDates = eventConfig?.eventDates || (eventConfig?.eventDate ? [eventConfig.eventDate] : []);
@@ -117,8 +143,7 @@ export default function MeetingsTab({
     open: false,
     meeting: null,
   });
-  const [surveyValue, setSurveyValue] = useState("");
-  const [surveyComments, setSurveyComments] = useState("");
+  const [surveyValues, setSurveyValues] = useState<Record<string, string>>({});
   const [savingSurvey, setSavingSurvey] = useState(false);
   const [userSurveys, setUserSurveys] = useState({});
   const [loadingSurvey, setLoadingSurvey] = useState(false);
@@ -133,16 +158,16 @@ export default function MeetingsTab({
       );
       if (surveyDoc.exists()) {
         const data = surveyDoc.data();
-        setSurveyValue(data.value || "");
-        setSurveyComments(data.comments || "");
+        // Load all field values dynamically
+        const vals: Record<string, string> = {};
+        surveyFields.forEach((f) => { vals[f.name] = data[f.name] || ""; });
+        setSurveyValues(vals);
         setUserSurveys((prev) => ({ ...prev, [meeting.id]: data }));
       } else {
-        setSurveyValue("");
-        setSurveyComments("");
+        setSurveyValues({});
       }
     } catch (err) {
-      setSurveyValue("");
-      setSurveyComments("");
+      setSurveyValues({});
     }
     setLoadingSurvey(false);
   };
@@ -157,7 +182,7 @@ export default function MeetingsTab({
         meeting.requesterId === myId ? meeting.receiverId : meeting.requesterId;
       const otherInfo = participantsInfo[otherId];
 
-      await setDoc(doc(db, "meetingSurveys", `${meeting.id}_${myId}`), {
+      const payload: any = {
         meetingId: meeting.id,
         userId: myId,
         userName: myInfo?.nombre || "",
@@ -165,17 +190,16 @@ export default function MeetingsTab({
         otherUserId: otherId,
         otherUserName: otherInfo?.nombre || "",
         otherUserEmpresa: otherInfo?.empresa || "",
-        value: surveyValue,
-        comments: surveyComments,
         createdAt: new Date(),
-      });
-      setUserSurveys((prev) => ({
-        ...prev,
-        [meeting.id]: {
-          value: surveyValue,
-          comments: surveyComments,
-        },
-      }));
+        // legacy fields for backwards compat
+        value: surveyValues["value"] || "",
+        comments: surveyValues["comments"] || "",
+        // all dynamic fields
+        ...surveyValues,
+      };
+
+      await setDoc(doc(db, "meetingSurveys", `${meeting.id}_${myId}`), payload);
+      setUserSurveys((prev) => ({ ...prev, [meeting.id]: payload }));
       setSurveyModal({ open: false, meeting: null });
     } catch (err) {
       alert("Error guardando la encuesta");
@@ -467,6 +491,8 @@ export default function MeetingsTab({
                             }
                             leftSection={<IconClipboardCheck size={14} />}
                             onClick={() => handleOpenSurvey(meeting)}
+                            disabled={surveyBlocked}
+                            title={surveyBlocked ? "Encuesta no disponible para tu perfil" : undefined}
                           >
                             {surveyExists(meeting.id)
                               ? "Ver encuesta"
@@ -615,36 +641,74 @@ export default function MeetingsTab({
         ) : surveyExists(surveyModal.meeting?.id) ? (
           <Stack gap="md">
             <Text fw={700}>Tus respuestas de encuesta</Text>
-            <Paper withBorder radius="md" p="sm">
-              <Text size="sm">
-                <Text span fw={600}>Valor estimado:</Text>{" "}
-                {userSurveys[surveyModal.meeting.id]?.value}
-              </Text>
-            </Paper>
-            <Paper withBorder radius="md" p="sm">
-              <Text size="sm">
-                <Text span fw={600}>Comentarios:</Text>{" "}
-                {userSurveys[surveyModal.meeting.id]?.comments}
-              </Text>
-            </Paper>
+            {surveyFields.map((field) => (
+              <Paper key={field.name} withBorder radius="md" p="sm">
+                <Text size="sm">
+                  <Text span fw={600}>{field.label}:</Text>{" "}
+                  {userSurveys[surveyModal.meeting?.id]?.[field.name] || "-"}
+                </Text>
+              </Paper>
+            ))}
           </Stack>
         ) : (
           <Stack gap="md">
-            <TextInput
-              label="Estimado valor del negocio"
-              value={surveyValue}
-              onChange={(e) => setSurveyValue(e.currentTarget.value)}
-              required
-              radius="md"
-            />
-            <Textarea
-              label="Comentarios"
-              value={surveyComments}
-              onChange={(e) => setSurveyComments(e.currentTarget.value)}
-              minRows={3}
-              required
-              radius="md"
-            />
+            {surveyFields.map((field) => {
+              const val = surveyValues[field.name] || "";
+              const onChange = (v: string) =>
+                setSurveyValues((prev) => ({ ...prev, [field.name]: v }));
+
+              if (field.type === "textarea") {
+                return (
+                  <Textarea
+                    key={field.name}
+                    label={field.label}
+                    value={val}
+                    onChange={(e) => onChange(e.currentTarget.value)}
+                    minRows={3}
+                    required={field.required}
+                    radius="md"
+                  />
+                );
+              }
+              if (field.type === "select" && field.options?.length) {
+                return (
+                  <Select
+                    key={field.name}
+                    label={field.label}
+                    value={val}
+                    onChange={(v) => onChange(v || "")}
+                    data={field.options.map((o: string) => ({ value: o, label: o }))}
+                    required={field.required}
+                    radius="md"
+                  />
+                );
+              }
+              if (field.type === "rating") {
+                return (
+                  <Select
+                    key={field.name}
+                    label={field.label}
+                    value={val}
+                    onChange={(v) => onChange(v || "")}
+                    data={["1", "2", "3", "4", "5"].map((n) => ({ value: n, label: `${n} ⭐` }))}
+                    required={field.required}
+                    radius="md"
+                  />
+                );
+              }
+              // text / number
+              return (
+                <TextInput
+                  key={field.name}
+                  label={field.label}
+                  value={val}
+                  onChange={(e) => onChange(e.currentTarget.value)}
+                  type={field.type === "number" ? "number" : "text"}
+                  required={field.required}
+                  radius="md"
+                />
+              );
+            })}
             <Group mt="xs" grow>
               <Button
                 variant="default"
@@ -656,7 +720,7 @@ export default function MeetingsTab({
               <Button
                 loading={savingSurvey}
                 onClick={handleSaveSurvey}
-                disabled={!surveyValue}
+                disabled={surveyFields.filter((f) => f.required).some((f) => !surveyValues[f.name])}
                 radius="md"
               >
                 Guardar

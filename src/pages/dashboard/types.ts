@@ -109,6 +109,10 @@ export interface EventPolicies {
   whatsappApiVersion?: "v1" | "v2";
   /** Reasignar automáticamente el slot cuando se cancela una reunión */
   autoReassignOnCancel?: boolean;
+  /** Bloquear encuesta para ciertos roles: "none" | "compradores" | "vendedores" | "ambos" */
+  surveyBlockedFor?: "none" | "compradores" | "vendedores" | "ambos";
+  /** Modo de encuesta: "default" usa los campos originales, "custom" usa surveyConfig por rol */
+  surveyMode?: "default" | "custom";
 }
 
 /** Empresa (events/{eventId}/companies/{nitNorm}) */
@@ -158,4 +162,6 @@ export const DEFAULT_POLICIES: EventPolicies = {
   },
   whatsappApiVersion: "v1",
   autoReassignOnCancel: false,
+  surveyBlockedFor: "none",
+  surveyMode: "default",
 };

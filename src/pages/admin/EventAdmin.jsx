@@ -42,6 +42,7 @@ import { useParams, Link } from "react-router-dom";
 import * as XLSX from "xlsx";
 import ConfigureFieldsModal from "./ConfigureFieldsModal";
 import EventPoliciesModal from "./EventPoliciesModal";
+import ConfigureSurveyModal from "./ConfigureSurveyModal";
 
 const EventAdmin = () => {
   const { eventId } = useParams();
@@ -57,6 +58,7 @@ const EventAdmin = () => {
   const [configureFieldsModalOpened, setConfigureFieldsModalOpened] =
     useState(false);
   const [policiesModalOpened, setPoliciesModalOpened] = useState(false);
+  const [configureSurveyModalOpened, setConfigureSurveyModalOpened] = useState(false);
 
   // Estado para reuniones huérfanas
   const [orphanedMeetingsModalOpened, setOrphanedMeetingsModalOpened] = useState(false);
@@ -1212,6 +1214,15 @@ const EventAdmin = () => {
               </Button>
 
               <Button
+                onClick={() => setConfigureSurveyModalOpened(true)}
+                loading={actionLoading}
+                disabled={actionLoading}
+                variant="default"
+              >
+                Configurar encuesta
+              </Button>
+
+              <Button
                 onClick={() => setPoliciesModalOpened(true)}
                 loading={actionLoading}
                 disabled={actionLoading}
@@ -1313,6 +1324,15 @@ const EventAdmin = () => {
                     variant="default"
                   >
                     Configurar campos
+                  </Button>
+
+                  <Button
+                    onClick={() => setConfigureSurveyModalOpened(true)}
+                    loading={actionLoading}
+                    disabled={actionLoading}
+                    variant="default"
+                  >
+                    Configurar encuesta
                   </Button>
 
                   <Button
@@ -1461,6 +1481,13 @@ const EventAdmin = () => {
       <ConfigureFieldsModal
         opened={configureFieldsModalOpened}
         onClose={() => setConfigureFieldsModalOpened(false)}
+        event={event}
+        refreshEvents={fetchEvent}
+        setGlobalMessage={setGlobalMessage}
+      />
+      <ConfigureSurveyModal
+        opened={configureSurveyModalOpened}
+        onClose={() => setConfigureSurveyModalOpened(false)}
         event={event}
         refreshEvents={fetchEvent}
         setGlobalMessage={setGlobalMessage}
