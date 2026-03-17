@@ -3597,3 +3597,339 @@ async function sendWhatsAppMessage(apiVersion, phone, message, metadata = {}) {
   }
 }
 
+
+// ============================================================================
+// CANCEL AND REASSIGN MEETING
+// ============================================================================
+
+/**
+ * Cancela una reunión y reasigna el slot liberado al mejor candidato disponible.
+ * POST body: { eventId, meetingId, cancelledByUserId }
+ */
+export const cancelAndReassign = onRequest(
+  {
+    region: "us-central1",
+    memory: "512MiB",
+    timeoutSeconds: 120,
+    cors: true,
+    secrets: [WHATSAPP_API_V1, WHATSAPP_API_V2, WHATSAPP_ACCOUNT_ID],
+  },
+  async (req, res) => {
+    if (req.method !== "POST") {
+      return res.status(405).send({ error: "Method not allowed" });
+    }
+
+    const { eventId, meetingId, cancelledByUserId } = req.body;
+    if (!eventId || !meetingId) {
+      return res.status(400).send({ error: "eventId and meetingId are required" });
+    }
+
+    const db = getFirestore();
+
+    try {
+      // 1. Cargar evento
+      const eventSnap = await db.collection("events").doc(eventId).get();
+      if (!eventSnap.exists) return res.status(404).send({ error: "Event not found" });
+      const eventData = eventSnap.data();
+      const whatsappApiVersion = eventData.config?.policies?.whatsappApiVersion || "v1";
+      const eventName = eventData.eventName || "Evento";
+      const maxMeetings = eventData.config?.maxMeetingsPerUser ?? 4;
+
+      // 2. Cargar reunión a cancelar
+      const mtgRef = db.collection("events").doc(eventId).collection("meetings").doc(meetingId);
+      const mtgSnap = await mtgRef.get();
+      if (!mtgSnap.exists) return res.status(404).send({ error: "Meeting not found" });
+      const mtgData = mtgSnap.data();
+
+      const slotId = mtgData.slotId;
+      const lockIds = mtgData.lockIds || [];
+      const cancelledParticipants = mtgData.participants || [];
+      const meetingDate = mtgData.meetingDate;
+      const timeSlot = mtgData.timeSlot;
+      const tableAssigned = mtgData.tableAssigned;
+      const startMinutes = mtgData.startMinutes;
+      const endMinutes = mtgData.endMinutes;
+
+      // 3. Cancelar reunión
+      await mtgRef.update({ status: "cancelled", updatedAt: new Date() });
+
+      // 4. Liberar slot
+      if (slotId) {
+        await db.collection("events").doc(eventId).collection("agenda").doc(slotId).update({
+          available: true,
+          meetingId: null,
+        });
+      }
+
+      // 5. Eliminar locks
+      for (const lid of lockIds) {
+        try { await db.collection("locks").doc(lid).delete(); } catch (error) {
+          console.error("Error deleting lock, error:", error);
+        }
+      }
+
+      // 6. Cargar todos los usuarios del evento
+      const usersSnap = await db.collection("users").where("eventId", "==", eventId).get();
+      const allUsers = usersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      // 7. Cargar todas las reuniones aceptadas para contar y validar
+      const acceptedSnap = await db.collection("events").doc(eventId).collection("meetings")
+        .where("status", "==", "accepted").get();
+      const acceptedMeetings = acceptedSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      // Contar reuniones por usuario
+      const meetingCount = {};
+      for (const u of allUsers) meetingCount[u.id] = 0;
+      for (const m of acceptedMeetings) {
+        for (const pid of (m.participants || [])) {
+          if (meetingCount[pid] !== undefined) meetingCount[pid]++;
+        }
+      }
+
+      // Pares que ya se reunieron (por company_nit)
+      const metPairs = new Set();
+      for (const m of acceptedMeetings) {
+        const [a, b] = m.participants || [];
+        if (a && b) {
+          const uA = allUsers.find((u) => u.id === a);
+          const uB = allUsers.find((u) => u.id === b);
+          const nitA = uA?.company_nit || uA?.companyId || a;
+          const nitB = uB?.company_nit || uB?.companyId || b;
+          metPairs.add(`${nitA}__${nitB}`);
+          metPairs.add(`${nitB}__${nitA}`);
+        }
+      }
+
+      // Usuarios ocupados en ese slot (por lockIds existentes)
+      const locksSnap = await db.collection("locks")
+        .where("eventId", "==", eventId)
+        .where("date", "==", meetingDate)
+        .get();
+      const busyAtSlot = new Set();
+      for (const ld of locksSnap.docs) {
+        const ldata = ld.data();
+        const lStart = ldata.start ? ldata.start.split(":").map(Number).reduce((h, m) => h * 60 + m) : null;
+        const lEnd = ldata.end ? ldata.end.split(":").map(Number).reduce((h, m) => h * 60 + m) : null;
+        if (lStart !== null && lEnd !== null) {
+          // Overlap check
+          if (startMinutes < lEnd && endMinutes > lStart) {
+            busyAtSlot.add(ldata.userId);
+          }
+        }
+      }
+
+      // Quien canceló vs quien fue cancelado
+      // cancelledByUserId es quien inició la cancelación; el otro es la "víctima"
+      const cancellerUserId = cancelledByUserId || null;
+      const victimUserId = cancelledParticipants.find((id) => id !== cancellerUserId) || null;
+
+      // Siempre excluir al que canceló
+      const excludedIds = new Set(cancellerUserId ? [cancellerUserId] : []);
+
+      // Helper: verifica si dos usuarios ya se reunieron por company_nit
+      const alreadyMet = (uA, uB) => {
+        const nitA = uA?.company_nit || uA?.companyId || uA?.id;
+        const nitB = uB?.company_nit || uB?.companyId || uB?.id;
+        return metPairs.has(`${nitA}__${nitB}`);
+      };
+
+      // Helper: usuario libre en el slot
+      const isFreeAtSlot = (userId) => !busyAtSlot.has(userId);
+
+      // 8. Candidato principal: la víctima (quien le cancelaron), si está libre en el slot
+      let mainCandidate = null;
+
+      if (victimUserId && !excludedIds.has(victimUserId) && isFreeAtSlot(victimUserId)) {
+        mainCandidate = allUsers.find((u) => u.id === victimUserId) || null;
+      }
+
+      // Si la víctima no está disponible, buscar por menor número de reuniones
+      if (!mainCandidate) {
+        let candidates = allUsers.filter(
+          (u) =>
+            !excludedIds.has(u.id) &&
+            u.id !== victimUserId && // ya descartado arriba
+            (meetingCount[u.id] || 0) < maxMeetings &&
+            isFreeAtSlot(u.id)
+        );
+
+        if (candidates.length === 0) {
+          // Sin límite de maxMeetings: tomar el de menor cantidad libre
+          const freeCandidates = allUsers.filter(
+            (u) => !excludedIds.has(u.id) && u.id !== victimUserId && isFreeAtSlot(u.id)
+          );
+          if (freeCandidates.length === 0) {
+            return res.status(200).send({
+              success: true,
+              reassigned: false,
+              reason: "No hay usuarios disponibles en el slot liberado",
+            });
+          }
+          freeCandidates.sort((a, b) => (meetingCount[a.id] || 0) - (meetingCount[b.id] || 0));
+          candidates = [freeCandidates[0]];
+        }
+
+        candidates.sort((a, b) => (meetingCount[a.id] || 0) - (meetingCount[b.id] || 0));
+        mainCandidate = candidates[0];
+      }
+
+      // 9. Buscar mejor partner para mainCandidate: mayor afinidad, no se han reunido, libre en slot
+      const affinitySnap = await db.collection("users").doc(mainCandidate.id)
+        .collection("affinityScores").get();
+      const affinityMap = {};
+      for (const ad of affinitySnap.docs) {
+        const adata = ad.data();
+        if (adata.targetUserId && typeof adata.score === "number") {
+          affinityMap[adata.targetUserId] = adata.score;
+        }
+      }
+
+      const partnerCandidates = allUsers
+        .filter(
+          (u) =>
+            u.id !== mainCandidate.id &&
+            !excludedIds.has(u.id) &&
+            isFreeAtSlot(u.id) &&
+            !alreadyMet(mainCandidate, u)
+        )
+        .sort((a, b) => (affinityMap[b.id] || 0) - (affinityMap[a.id] || 0));
+
+      if (partnerCandidates.length === 0) {
+        return res.status(200).send({
+          success: true,
+          reassigned: false,
+          reason: "No se encontró un partner disponible sin reunión previa para el candidato",
+        });
+      }
+
+      const partner = partnerCandidates[0];
+      const affinityScore = affinityMap[partner.id] || 0;
+
+      // 10. Crear nueva reunión
+      const hmToMin = (hm) => { const [h, m] = hm.split(":").map(Number); return h * 60 + m; };
+      const buildLockId = (eId, userId, dateISO, start, end) => {
+        const d = String(dateISO || "").replace(/-/g, "");
+        return `${eId}_${userId}_${d}_${start}-${end}`;
+      };
+
+      const [startStr, endStr] = timeSlot.split(" - ");
+      const newMeetingRef = db.collection("events").doc(eventId).collection("meetings").doc();
+      const newMeetingId = newMeetingRef.id;
+
+      const reqLockId = buildLockId(eventId, mainCandidate.id, meetingDate, startStr, endStr);
+      const recLockId = buildLockId(eventId, partner.id, meetingDate, startStr, endStr);
+
+      const batch = db.batch();
+
+      // Crear reunión
+      batch.set(newMeetingRef, {
+        eventId,
+        requesterId: mainCandidate.id,
+        receiverId: partner.id,
+        participants: [mainCandidate.id, partner.id],
+        status: "accepted",
+        timeSlot,
+        tableAssigned,
+        meetingDate,
+        startMinutes: startMinutes || hmToMin(startStr),
+        endMinutes: endMinutes || hmToMin(endStr),
+        slotId: slotId || null,
+        lockIds: [reqLockId, recLockId],
+        isNotificated: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        autoReassigned: true,
+        cancelledMeetingId: meetingId,
+      });
+
+      // Crear locks
+      batch.set(db.collection("locks").doc(reqLockId), {
+        eventId,
+        userId: mainCandidate.id,
+        meetingId: newMeetingId,
+        date: meetingDate,
+        start: startStr,
+        end: endStr,
+        createdAt: new Date(),
+      });
+      batch.set(db.collection("locks").doc(recLockId), {
+        eventId,
+        userId: partner.id,
+        meetingId: newMeetingId,
+        date: meetingDate,
+        start: startStr,
+        end: endStr,
+        createdAt: new Date(),
+      });
+
+      // Marcar slot como ocupado
+      if (slotId) {
+        batch.update(
+          db.collection("events").doc(eventId).collection("agenda").doc(slotId),
+          { available: false, meetingId: newMeetingId }
+        );
+      }
+
+      await batch.commit();
+
+      //11. Notificaciones WhatsApp
+      const sendWA = async (recipientData, counterpartData, details) => {
+        const phone = recipientData?.telefono;
+        if (!phone) return false;
+        const cleanPhone = phone.replace(/[^\d]/g, "");
+
+        if (whatsappApiVersion === "v2") {
+          try {
+            const response = await fetch(`${WHATSAPP_API_V2.value()}/api/send-meeting-confirmation`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                accountId: WHATSAPP_ACCOUNT_ID.value(),
+                to: `57${cleanPhone}`,
+                eventName,
+                acceptedBy: counterpartData?.nombre || "",
+                meetingWith: counterpartData?.nombre || "",
+                company: counterpartData?.empresa || "",
+                schedule: details.timeSlot,
+                table: String(details.tableAssigned),
+              }),
+            });
+            return response.ok;
+          } catch (e) {
+            console.error("sendWA v2 error:", e);
+            return false;
+          }
+        } else {
+          const msg =
+            `✅ *Reunión asignada automáticamente*\n\n` +
+            `📌 *Evento:* ${eventName}\n\n` +
+            `Se te ha asignado una reunión con:\n\n` +
+            `👤 *Nombre:* ${counterpartData?.nombre || ""}\n` +
+            `🏢 *Empresa:* ${counterpartData?.empresa || ""}\n` +
+            `💼 *Cargo:* ${counterpartData?.cargo || ""}\n\n` +
+            `📅 *Fecha:* ${details.meetingDate || ""}\n` +
+            `⏰ *Horario:* ${details.timeSlot}\n` +
+            `🪑 *Mesa:* ${details.tableAssigned}\n`;
+          return sendWhatsAppMessage("v1", cleanPhone, msg);
+        }
+      };
+
+      await sendWA(mainCandidate, partner, { meetingDate, timeSlot, tableAssigned });
+      await sendWA(partner, mainCandidate, { meetingDate, timeSlot, tableAssigned });
+
+      return res.status(200).send({
+        success: true,
+        reassigned: true,
+        newMeetingId,
+        candidate: { id: mainCandidate.id, nombre: mainCandidate.nombre, empresa: mainCandidate.empresa },
+        partner: { id: partner.id, nombre: partner.nombre, empresa: partner.empresa },
+        affinityScore,
+        timeSlot,
+        tableAssigned,
+      });
+    } catch (error) {
+      console.error("cancelAndReassign error:", error);
+      return res.status(500).send({ error: "Internal error", details: error.message });
+    }
+  }
+);
