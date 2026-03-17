@@ -375,6 +375,40 @@ const MatrixPage = () => {
     );
   }, [config, selectedDate]);
 
+  // Genera lista de filas para la tabla: slots reales + filas de descanso intercaladas
+  const slotsWithBreaks = useMemo(() => {
+    if (!config || !selectedDate || timeSlots.length === 0) return timeSlots.map(s => ({ type: "slot", time: s }));
+
+    const dayConfig = config.config.dailyConfig?.[selectedDate] || {
+      breakBlocks: config.config.breakBlocks || [],
+    };
+    const breakBlocks = (dayConfig.breakBlocks || []).filter(b => b.start && b.end);
+
+    const toMin = (hhmm) => { const [h, m] = hhmm.split(":").map(Number); return h * 60 + m; };
+
+    const rows = [];
+    let breakIdx = 0;
+    const sortedBreaks = [...breakBlocks].sort((a, b) => toMin(a.start) - toMin(b.start));
+
+    for (const slot of timeSlots) {
+      const slotMin = toMin(slot);
+      // Insertar breaks que ocurren antes de este slot
+      while (breakIdx < sortedBreaks.length && toMin(sortedBreaks[breakIdx].start) <= slotMin) {
+        const br = sortedBreaks[breakIdx];
+        rows.push({ type: "break", label: br.label || "Descanso", start: br.start, end: br.end });
+        breakIdx++;
+      }
+      rows.push({ type: "slot", time: slot });
+    }
+    // Breaks al final del día
+    while (breakIdx < sortedBreaks.length) {
+      const br = sortedBreaks[breakIdx];
+      rows.push({ type: "break", label: br.label || "Descanso", start: br.start, end: br.end });
+      breakIdx++;
+    }
+    return rows;
+  }, [config, selectedDate, timeSlots]);
+
   // Memoize matriz por mesas - filtrar por fecha seleccionada
   const memoMatrix = useMemo(() => {
   if (!config || !selectedDate) return [];
@@ -1006,7 +1040,22 @@ const MatrixPage = () => {
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
-                      {table.map((cell, si) => (
+                      {slotsWithBreaks.map((row, ri) => {
+                        if (row.type === "break") {
+                          return (
+                            <Table.Tr key={`break-${ri}`} style={{ backgroundColor: "#90caf9" }}>
+                              <Table.Td style={{ fontWeight: 600, fontSize: 12, color: "#1565c0", whiteSpace: "nowrap" }}>
+                                {row.start} - {row.end}
+                              </Table.Td>
+                              <Table.Td>
+                                <Badge color="blue" variant="light" size="sm">{row.label}</Badge>
+                              </Table.Td>
+                            </Table.Tr>
+                          );
+                        }
+                        const si = timeSlots.indexOf(row.time);
+                        const cell = si >= 0 ? table[si] : { status: "available", participants: [] };
+                        return (
                         <Table.Tr
                           key={`${ti}-${si}`}
                           style={{
@@ -1141,7 +1190,8 @@ const MatrixPage = () => {
                             })()}
                           </Table.Td>
                         </Table.Tr>
-                      ))}
+                        );
+                      })}
                     </Table.Tbody>
                   </Table>
                 </Card>
@@ -1235,8 +1285,22 @@ const MatrixPage = () => {
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
-                      {timeSlots.map((slot, i) => {
-                        const cell = row[i];
+                      {slotsWithBreaks.map((rowItem, ri) => {
+                        if (rowItem.type === "break") {
+                          return (
+                            <Table.Tr key={`break-${ri}`} style={{ backgroundColor: "#90caf9" }}>
+                              <Table.Td style={{ fontWeight: 600, fontSize: 12, color: "#1565c0", whiteSpace: "nowrap" }}>
+                                {rowItem.start} - {rowItem.end}
+                              </Table.Td>
+                              <Table.Td>
+                                <Badge color="blue" variant="light" size="sm">{rowItem.label}</Badge>
+                              </Table.Td>
+                            </Table.Tr>
+                          );
+                        }
+                        const i = timeSlots.indexOf(rowItem.time);
+                        const slot = rowItem.time;
+                        const cell = i >= 0 ? row[i] : { status: "available" };
                         return (
                           <Table.Tr
                             key={i}
