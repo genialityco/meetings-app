@@ -966,7 +966,7 @@ export function useDashboardData(eventId?: string) {
         }
       }
 
-      // 5. Obtén datos de los participantes (si no los tienes)
+      // 5. Obtén datos de los participantes
       let requester = meeting.requester || null;
       let receiver = meeting.receiver || null;
 
@@ -997,7 +997,7 @@ export function useDashboardData(eventId?: string) {
         }, eventName, cancellerName, whatsappApiVersion);
       }
 
-      // 7. Notifica por la app
+      // 8. Notifica por la app
       await addDoc(collection(db, "notifications"), {
         userId: meeting.requesterId,
         title: "Reunión cancelada",
@@ -1015,14 +1015,30 @@ export function useDashboardData(eventId?: string) {
         type: "meeting_cancelled",
       });
 
-      // Trackear evento de analytics
-      meetingAnalytics.cancelled(meeting.id, 'user_cancelled');
+      // 9. Si la política autoReassignOnCancel está activa, llamar la función Firebase
+      if (policies.autoReassignOnCancel) {
+        //console.log("++++----entro a asignar reunion")
+        try {
+          await fetch("https://cancelandreassign-6eaymlz5eq-uc.a.run.app", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              eventId: meeting.eventId || eventId,
+              meetingId: meeting.id,
+              cancelledByUserId: uid,
+            }),
+          });
+        } catch (e) {
+          console.warn("autoReassign failed (non-blocking):", e);
+        }
+      }
 
-      return true; // <-- IMPORTANTE
+      meetingAnalytics.cancelled(meeting.id, 'user_cancelled');
+      return true;
     } catch (err) {
       console.error("Error en cancelMeeting:", err);
       trackError(err instanceof Error ? err.message : String(err), 'useDashboardData.cancelMeeting');
-      throw err; // <-- IMPORTANTE
+      throw err;
     }
   };
 

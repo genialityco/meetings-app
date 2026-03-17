@@ -17,6 +17,7 @@ import {
   Popover,
   Menu,
   Button,
+  Checkbox,
 } from "@mantine/core";
 import { db } from "../../firebase/firebaseConfig";
 import {
@@ -492,6 +493,8 @@ const MatrixPage = () => {
           return {
             status: "accepted",
             table: mtg.tableAssigned,
+            meetingId: mtg.id,
+            completed: mtg.completed ?? false,
             participants: mtg.participants.filter((pid) => pid !== user.id),
           };
         } else if (mtg && mtg.status === "pending") {
@@ -903,6 +906,17 @@ const MatrixPage = () => {
     }
   };
 
+  const toggleMeetingCompleted = async (meetingId, currentValue, e) => {
+    e.stopPropagation();
+    try {
+      await updateDoc(doc(db, "events", eventId, "meetings", meetingId), {
+        completed: !currentValue,
+      });
+    } catch (err) {
+      console.error("Error toggling completed:", err);
+    }
+  };
+
   const handleSwapMeetings = async (meetingA, slotA, meetingB, slotB) => {
     setCreatingMeeting(true);
     try {
@@ -1119,6 +1133,14 @@ const MatrixPage = () => {
                                         {affinity.score}%
                                       </Badge>
                                     )}
+                                    <Checkbox
+                                      size="sm"
+                                      label="Realizada"
+                                      checked={!!cell.meetingData?.completed}
+                                      onChange={(e) => toggleMeetingCompleted(cell.meetingId, cell.meetingData?.completed, e)}
+                                      onClick={(e) => e.stopPropagation()}
+                                      color="green"
+                                    />
                                   </>
                                 );
                               })()}
@@ -1349,6 +1371,14 @@ const MatrixPage = () => {
                                       {affinity && (
                                         <Badge color="blue" variant="light" size="lg">{affinity.score}%</Badge>
                                       )}
+                                      <Checkbox
+                                        size="sm"
+                                        label="Realizada"
+                                        checked={!!cell.completed}
+                                        onChange={(e) => toggleMeetingCompleted(cell.meetingId, cell.completed, e)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        color="green"
+                                      />
                                     </div>
                                     <ParticipantPopover
                                       width={340}

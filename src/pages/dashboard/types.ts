@@ -107,6 +107,8 @@ export interface EventPolicies {
   };
   /** Versión de la API de WhatsApp a usar */
   whatsappApiVersion?: "v1" | "v2";
+  /** Reasignar automáticamente el slot cuando se cancela una reunión */
+  autoReassignOnCancel?: boolean;
 }
 
 /** Empresa (events/{eventId}/companies/{nitNorm}) */
@@ -155,4 +157,5 @@ export const DEFAULT_POLICIES: EventPolicies = {
     products: true 
   },
   whatsappApiVersion: "v1",
+  autoReassignOnCancel: false,
 };

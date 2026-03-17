@@ -46,6 +46,7 @@ export default function EventPoliciesModal({
     DEFAULT_POLICIES.cardFieldsConfig!.companyCard
   );
   const [whatsappApiVersion, setWhatsappApiVersion] = useState<"v1" | "v2">("v1");
+  const [autoReassignOnCancel, setAutoReassignOnCancel] = useState(false);
 
   // Empresas y asignación de mesas fijas
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -68,6 +69,7 @@ export default function EventPoliciesModal({
       p.cardFieldsConfig?.companyCard ?? DEFAULT_POLICIES.cardFieldsConfig!.companyCard
     );
     setWhatsappApiVersion(p.whatsappApiVersion ?? "v1");
+    setAutoReassignOnCancel(p.autoReassignOnCancel ?? false);
   }, [event]);
 
   // Cargar empresas cuando se abre el modal y tableMode es "fixed"
@@ -137,6 +139,7 @@ export default function EventPoliciesModal({
               },
               uiViewsEnabled: uiViews,
               whatsappApiVersion,
+              autoReassignOnCancel,
             },
           },
         },
@@ -275,6 +278,13 @@ export default function EventPoliciesModal({
           ]}
           value={whatsappApiVersion}
           onChange={(v) => setWhatsappApiVersion((v as "v1" | "v2") ?? "v1")}
+        />
+
+        <Switch
+          label="Reasignación automática al cancelar reunión"
+          description="Cuando se cancela una reunión, el slot liberado se reasigna automáticamente al mejor candidato disponible"
+          checked={autoReassignOnCancel}
+          onChange={(e) => setAutoReassignOnCancel(e.currentTarget.checked)}
         />
 
         <Divider label="Vistas habilitadas en el dashboard" labelPosition="left" />
