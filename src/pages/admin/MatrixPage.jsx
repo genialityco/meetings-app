@@ -18,6 +18,10 @@ import {
   Menu,
   Button,
   Checkbox,
+  Modal,
+  Stack,
+  Paper,
+  Tooltip,
 } from "@mantine/core";
 import { db } from "../../firebase/firebaseConfig";
 import {
@@ -239,6 +243,9 @@ const MatrixPage = () => {
   const [pendingMeetings, setPendingMeetings] = useState([]);
   const [selectedDate, setSelectedDate] = useState(null);
   const [affinityScores, setAffinityScores] = useState({});
+  // surveys: { [meetingId]: SurveyResponse[] }
+  const [surveys, setSurveys] = useState({});
+  const [surveyModal, setSurveyModal] = useState({ opened: false, meetingId: null, responses: [] });
 
   // Carga configuración evento
   useEffect(() => {
@@ -357,6 +364,28 @@ const MatrixPage = () => {
     loadAffinityScores();
   }, [eventId, asistentes]);
 
+  // Cargar encuestas del evento
+  const meetingIdsKey = useMemo(() => meetings.map((m) => m.id).sort().join(","), [meetings]);
+
+  useEffect(() => {
+    if (!eventId || !meetingIdsKey) return;
+    const meetingIds = meetingIdsKey.split(",").filter(Boolean);
+    if (meetingIds.length === 0) return;
+    const q = query(collection(db, "meetingSurveys"));
+    const unsub = onSnapshot(q, (snap) => {
+      const map = {};
+      snap.docs.forEach((d) => {
+        const data = { id: d.id, ...d.data() };
+        if (meetingIds.includes(data.meetingId)) {
+          if (!map[data.meetingId]) map[data.meetingId] = [];
+          map[data.meetingId].push(data);
+        }
+      });
+      setSurveys(map);
+    });
+    return () => unsub();
+  }, [eventId, meetingIdsKey]);
+
   // Memoize timeSlots - usar configuración del día seleccionado
   const timeSlots = useMemo(() => {
     if (!config || !selectedDate) return [];
@@ -411,6 +440,17 @@ const MatrixPage = () => {
   }, [config, selectedDate, timeSlots]);
 
   // Memoize matriz por mesas - filtrar por fecha seleccionada
+  // Mapa name -> label de todos los campos de surveyConfig
+  const surveyFieldLabels = useMemo(() => {
+    const map = {};
+    const sc = config?.config?.surveyConfig;
+    if (!sc) return map;
+    [...(sc.compradorFields || []), ...(sc.vendedorFields || [])].forEach((f) => {
+      if (f.name) map[f.name] = f.label || f.name;
+    });
+    return map;
+  }, [config]);
+
   const memoMatrix = useMemo(() => {
   if (!config || !selectedDate) return [];
   const { numTables, meetingDuration } = config.config;
@@ -917,6 +957,28 @@ const MatrixPage = () => {
     }
   };
 
+  const openSurveyModal = (meetingId, e) => {
+    e.stopPropagation();
+    const responses = surveys[meetingId] || [];
+    setSurveyModal({ opened: true, meetingId, responses });
+  };
+
+  const openUserSurveyModal = (meetingId, userId, e) => {
+    e.stopPropagation();
+    const responses = (surveys[meetingId] || []).filter((r) => r.userId === userId);
+    setSurveyModal({ opened: true, meetingId, responses });
+  };
+
+  // Retorna { count, total, color, label } para el badge de encuesta
+  const getSurveyStatus = (meetingId, participants) => {
+    const responses = surveys[meetingId] || [];
+    const total = participants?.length || 2;
+    const count = responses.length;
+    if (count === 0) return { count, total, color: "red", label: "Ninguno ha diligenciado la encuesta" };
+    if (count < total) return { count, total, color: "orange", label: `Falta encuesta de ${total - count} participante(s)` };
+    return { count, total, color: "green", label: "Ambos han diligenciado la encuesta" };
+  };
+
   const handleSwapMeetings = async (meetingA, slotA, meetingB, slotB) => {
     setCreatingMeeting(true);
     try {
@@ -1028,8 +1090,9 @@ const MatrixPage = () => {
                   shadow="md"
                   radius="lg"
                   style={{
-                    minWidth: 360,
-                    maxWidth: 480,
+                    minWidth: 480,
+                    maxWidth: 680,
+                    width: "100%",
                     margin: "0 16px 16px 0",
                     background: "#f9fafb",
                     border: "1px solid #e5e7eb",
@@ -1141,6 +1204,22 @@ const MatrixPage = () => {
                                       onClick={(e) => e.stopPropagation()}
                                       color="green"
                                     />
+                                    {(() => {
+                                      const ss = getSurveyStatus(cell.meetingId, cell.meetingData?.participants);
+                                      return (
+                                        <Tooltip label={ss.label} withArrow>
+                                          <Badge
+                                            color={ss.color}
+                                            variant={ss.count > 0 ? "filled" : "outline"}
+                                            size="sm"
+                                            style={{ cursor: ss.count > 0 ? "pointer" : "default" }}
+                                            onClick={(e) => ss.count > 0 && openSurveyModal(cell.meetingId, e)}
+                                          >
+                                            📋 {ss.count}/{ss.total}
+                                          </Badge>
+                                        </Tooltip>
+                                      );
+                                    })()}
                                   </>
                                 );
                               })()}
@@ -1156,16 +1235,24 @@ const MatrixPage = () => {
                                     <div style={{ marginTop: 6 }}>
                                       {cell.meetingData?.participants?.map((pid) => {
                                         const info = participantsInfo[pid];
+                                        const hasSurvey = (surveys[cell.meetingId] || []).some((r) => r.userId === pid);
                                         return (
-                                          <div key={pid} style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 2 }}>
+                                          <div key={pid} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                                            <span
+                                              style={{ fontSize: 18, color: hasSurvey ? "#253b25ff" : "#e03131", flexShrink: 0, cursor: hasSurvey ? "pointer" : "default" }}
+                                              title={hasSurvey ? "Ver encuesta" : "Sin encuesta"}
+                                              onClick={(e) => hasSurvey && openUserSurveyModal(cell.meetingId, pid, e)}
+                                            >
+                                              {hasSurvey ? "✓" : "✗"}
+                                            </span>
                                             <Text
-                                              size="md"
+                                              size="lg"
                                               fw={600}
                                               style={{
                                                 overflow: "hidden",
                                                 textOverflow: "ellipsis",
                                                 whiteSpace: "nowrap",
-                                                maxWidth: 220,
+                                                maxWidth: 280,
                                                 color: "#064175ff",
                                                 cursor: "pointer",
                                               }}
@@ -1173,7 +1260,7 @@ const MatrixPage = () => {
                                               {info ? info.empresa : pid}
                                             </Text>
                                             {info && (
-                                              <Text size="md" c="dimmed" style={{color: "#191c1fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 120 }}>
+                                              <Text size="md" c="dimmed" style={{color: "#191c1fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 160 }}>
                                                 {info.nombre}
                                               </Text>
                                             )}
@@ -1253,8 +1340,9 @@ const MatrixPage = () => {
                   shadow="md"
                   radius="lg"
                   style={{
-                    minWidth: 360,
-                    maxWidth: 480,
+                    minWidth: 480,
+                    maxWidth: 680,
+                    width: "100%",
                     margin: "0 16px 16px 0",
                     background: "#f9fafb",
                     border: "1px solid #e5e7eb",
@@ -1379,20 +1467,44 @@ const MatrixPage = () => {
                                         onClick={(e) => e.stopPropagation()}
                                         color="green"
                                       />
+                                      {(() => {
+                                        const ss = getSurveyStatus(cell.meetingId, [asistente.id, ...cell.participants]);
+                                        return (
+                                          <Tooltip label={ss.label} withArrow>
+                                            <Badge
+                                              color={ss.color}
+                                              variant={ss.count > 0 ? "filled" : "outline"}
+                                              size="sm"
+                                              style={{ cursor: ss.count > 0 ? "pointer" : "default" }}
+                                              onClick={(e) => ss.count > 0 && openSurveyModal(cell.meetingId, e)}
+                                            >
+                                              📋 {ss.count}/{ss.total}
+                                            </Badge>
+                                          </Tooltip>
+                                        );
+                                      })()}
                                     </div>
                                     <ParticipantPopover
                                       width={340}
                                       trigger={
                                         <div style={{ marginTop: 6 }}>
-                                          {cell.participants.map((pid) => {
-                                            const info = participantsInfo[pid];
+                                          {[asistente.id, ...cell.participants].map((pid) => {
+                                            const info = pid === asistente.id ? asistente : participantsInfo[pid];
+                                            const hasSurvey = (surveys[cell.meetingId] || []).some((r) => r.userId === pid);
                                             return (
-                                              <div key={pid} style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 2 }}>
-                                                <Text size="md" fw={600} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220, color: "#1c7ed6", cursor: "pointer" }}>
+                                              <div key={pid} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                                                <span
+                                                  style={{ fontSize: 13, color: hasSurvey ? "#2f9e44" : "#e03131", flexShrink: 0, cursor: hasSurvey ? "pointer" : "default" }}
+                                                  title={hasSurvey ? "Ver encuesta" : "Sin encuesta"}
+                                                  onClick={(e) => hasSurvey && openUserSurveyModal(cell.meetingId, pid, e)}
+                                                >
+                                                  {hasSurvey ? "✓" : "✗"}
+                                                </span>
+                                                <Text size="md" fw={600} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 280, color: "#1c7ed6", cursor: "pointer" }}>
                                                   {info ? info.empresa : pid}
                                                 </Text>
                                                 {info && (
-                                                  <Text size="md" c="dimmed" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 120 }}>
+                                                  <Text size="md" c="dimmed" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 160 }}>
                                                     {info.nombre}
                                                   </Text>
                                                 )}
@@ -1494,7 +1606,8 @@ const MatrixPage = () => {
         allMeetings={meetings}
         agenda={agenda}
         participantsInfo={participantsInfo}
-        slotsDisponibles={slotsDisponiblesParaEdicion} // Aquí está el filtro aplicado
+        slotsDisponibles={slotsDisponiblesParaEdicion}
+        getAffinity={getAffinityScore}
       />
 
       {globalMessage && (
@@ -1508,6 +1621,41 @@ const MatrixPage = () => {
           {globalMessage}
         </Alert>
       )}
+
+      <Modal
+        opened={surveyModal?.opened || false}
+        onClose={() => setSurveyModal({ opened: false, meetingId: null, responses: [] })}
+        title="Encuestas de la reunión"
+        size="lg"
+      >
+        {surveyModal?.opened && (
+          <Stack gap="md">
+            {surveyModal.responses.length === 0 ? (
+              <Text c="dimmed">No hay encuestas respondidas.</Text>
+            ) : (
+              surveyModal.responses.map((resp) => {
+                const excluded = new Set(["id", "meetingId", "userId", "otherUserId", "otherUserName", "otherUserEmpresa", "userEmpresa", "userName", "createdAt"]);
+                const fields = Object.entries(resp).filter(([k]) => !excluded.has(k));
+                return (
+                  <Paper key={resp.id} p="md" withBorder radius="md">
+                    <Text fw={700} size="sm">{resp.userName}</Text>
+                    <Text size="xs" c="dimmed" mb="xs">{resp.userEmpresa}</Text>
+                    <Divider mb="xs" />
+                    <Stack gap={4}>
+                      {fields.map(([key, val]) => (
+                        <div key={key} style={{ display: "flex", gap: 8 }}>
+                          <Text size="xs" fw={600} style={{ minWidth: 160, color: "#555" }}>{surveyFieldLabels[key] || key}:</Text>
+                          <Text size="xs">{String(val)}</Text>
+                        </div>
+                      ))}
+                    </Stack>
+                  </Paper>
+                );
+              })
+            )}
+          </Stack>
+        )}
+      </Modal>
     </Container>
   );
 };

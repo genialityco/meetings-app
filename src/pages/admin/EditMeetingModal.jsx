@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Modal, Select, Button, Text, Group } from "@mantine/core";
+import { Modal, Select, Button, Text, Group, Badge } from "@mantine/core";
 
 const EditMeetingModal = ({
   opened,
@@ -15,6 +15,7 @@ const EditMeetingModal = ({
   agenda = [],
   onSwapMeetings,
   participantsInfo = {},
+  getAffinity,
 }) => {
   // Estados para editar participantes y slot
   const [user1, setUser1] = useState("");
@@ -63,6 +64,22 @@ const EditMeetingModal = ({
     value: a.id,
     label: `${a.nombre} (${a.empresa})`,
   }));
+
+  // Opciones participante 2 con afinidad respecto a participante 1
+  const assistant2Options = useMemo(() => {
+    return assistants
+      .filter((a) => a.value !== user1 && a.id !== user1)
+      .map((a) => {
+        const aff = getAffinity && user1 ? getAffinity(user1, a.id) : null;
+        const affLabel = aff ? ` · ${aff.score}%` : "";
+        return {
+          value: a.id,
+          label: `${a.nombre} (${a.empresa})${affLabel}`,
+          affScore: aff?.score ?? 0,
+        };
+      })
+      .sort((a, b) => b.affScore - a.affScore);
+  }, [assistants, user1, getAffinity]);
 
   // Opciones para slots disponibles (filtrados)
   const slotOptions = slotsFiltered.map((s) => ({
@@ -162,7 +179,7 @@ const EditMeetingModal = ({
           />
           <Select
             label="Participante 2"
-            data={assistantOptions.filter((a) => a.value !== user1)}
+            data={assistant2Options}
             value={user2}
             onChange={setUser2}
             required
