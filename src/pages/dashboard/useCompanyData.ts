@@ -10,7 +10,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
-import type { Company, Product, EventPolicies, DEFAULT_POLICIES } from "./types";
+import { Company, Product, EventPolicies, DEFAULT_POLICIES } from "./types";
 import { showNotification } from "@mantine/notifications";
 import { sendWhatsAppMessage as sendWhatsAppAPI } from "../../utils/whatsappService";
 
