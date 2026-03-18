@@ -326,84 +326,73 @@ const EventAdmin = () => {
     try {
       setActionLoading(true);
 
-      // Consulta todas las reuniones aceptadas del evento
-      const meetingsRef = collection(db, "events", event.id, "meetings");
-      const meetingsSnap = await getDocs(meetingsRef);
+      const [meetingsSnap, agendaSnap, asistentesSnap, usersSnap] = await Promise.all([
+        getDocs(collection(db, "events", event.id, "meetings")),
+        getDocs(collection(db, "events", event.id, "agenda")),
+        getDocs(collection(db, "events", event.id, "asistentes")),
+        getDocs(query(collection(db, "users"), where("eventId", "==", event.id))),
+      ]);
 
-      // Consulta la agenda para obtener los datos de slot (hora, mesa, etc)
-      const agendaSnap = await getDocs(
-        collection(db, "events", event.id, "agenda"),
-      );
-      const agendaData = {};
-      agendaSnap.forEach((doc) => {
-        agendaData[doc.data().meetingId] = doc.data();
+      // meetingId -> agendaSlot
+      const agendaByMeetingId = {};
+      agendaSnap.forEach((d) => {
+        const data = d.data();
+        if (data.meetingId) agendaByMeetingId[data.meetingId] = data;
       });
 
-      // Si tienes usuarios, para poner los nombres de participantes
-      const usersSnap = await getDocs(
-        query(collection(db, "users"), where("eventId", "==", event.id)),
-      );
+      // userId -> asistente (info base)
       const usersMap = {};
+      asistentesSnap.forEach((d) => { usersMap[d.id] = { ...d.data() }; });
+
+      // Enriquecer con tipoAsistente desde users
       usersSnap.forEach((d) => {
-        usersMap[d.id] = d.data();
+        const u = d.data();
+        if (usersMap[d.id]) usersMap[d.id].tipoAsistente = u.tipoAsistente || "";
+        else usersMap[d.id] = { ...u };
       });
 
       const wsData = [
         [
           "Hora",
           "Mesa",
+          "Fecha reunión",
           "Participante 1 (Empresa)",
           "Participante 1 (Nombre)",
+          "Participante 1 (Rol)",
           "Participante 1 (Necesidad)",
           "Participante 2 (Empresa)",
           "Participante 2 (Nombre)",
+          "Participante 2 (Rol)",
           "Participante 2 (Necesidad)",
           "Estado",
-          "Descripción reunión",
+          "Realizada",
           "Fecha creación",
         ],
-        ...meetingsSnap.docs.map((doc) => {
-          const meeting = doc.data();
-          // Busca el slot de agenda para la hora y mesa
-          const agendaSlot = Object.values(agendaData).find(
-            (a) => a.meetingId === doc.id,
-          );
+        ...meetingsSnap.docs.map((d) => {
+          const meeting = d.data();
+          const agendaSlot = agendaByMeetingId[d.id];
+          const p1 = meeting.participants?.[0] ? usersMap[meeting.participants[0]] : null;
+          const p2 = meeting.participants?.[1] ? usersMap[meeting.participants[1]] : null;
 
-          // Obtener datos de cada participante
-          const participant1 = meeting.participants?.[0]
-            ? usersMap[meeting.participants[0]]
-            : null;
-          const participant2 = meeting.participants?.[1]
-            ? usersMap[meeting.participants[1]]
-            : null;
-
-          // Formatear la fecha de creación si existe
-          let createdAtFormatted = "";
-          if (meeting.createdAt) {
-            // Si es un timestamp de Firestore
-            if (meeting.createdAt.toDate) {
-              createdAtFormatted = meeting.createdAt.toDate().toLocaleString();
-            }
-            // Si ya es una cadena de texto
-            else if (typeof meeting.createdAt === "string") {
-              createdAtFormatted = meeting.createdAt;
-            }
-          }
+          let createdAt = "";
+          if (meeting.createdAt?.toDate) createdAt = meeting.createdAt.toDate().toLocaleString();
+          else if (typeof meeting.createdAt === "string") createdAt = meeting.createdAt;
 
           return [
-            agendaSlot
-              ? `${agendaSlot.startTime} - ${agendaSlot.endTime}`
-              : meeting.timeSlot,
-            agendaSlot ? agendaSlot.tableNumber : meeting.tableAssigned,
-            participant1?.empresa || "",
-            participant1?.nombre || "",
-            participant1?.necesidad || "",
-            participant2?.empresa || "",
-            participant2?.nombre || "",
-            participant2?.necesidad || "",
-            meeting.status,
-            meeting.descripcion || "",
-            createdAtFormatted,
+            agendaSlot ? `${agendaSlot.startTime} - ${agendaSlot.endTime}` : (meeting.timeSlot || ""),
+            agendaSlot ? agendaSlot.tableNumber : (meeting.tableAssigned || ""),
+            meeting.meetingDate || "",
+            p1?.empresa || "",
+            p1?.nombre || "",
+            p1?.tipoAsistente || "",
+            p1?.necesidad || "",
+            p2?.empresa || "",
+            p2?.nombre || "",
+            p2?.tipoAsistente || "",
+            p2?.necesidad || "",
+            meeting.status || "",
+            meeting.completed ? "Sí" : "No",
+            createdAt,
           ];
         }),
       ];
