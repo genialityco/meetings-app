@@ -1339,12 +1339,12 @@ const MatrixPage = () => {
                                             </span>
                                             <Tooltip label="Llenar encuesta" withArrow>
                                               <ActionIcon
-                                                size="xs"
+                                                size="md"
                                                 variant="subtle"
                                                 color="violet"
                                                 onClick={(e) => openFillSurveyModal(cell.meetingId, pid, cell.meetingData, e)}
                                               >
-                                                <IconClipboardList size={12} />
+                                                <IconClipboardList size={18} />
                                               </ActionIcon>
                                             </Tooltip>
                                             <Text
@@ -1605,12 +1605,12 @@ const MatrixPage = () => {
                                                 </span>
                                                 <Tooltip label="Llenar encuesta" withArrow>
                                                   <ActionIcon
-                                                    size="xs"
+                                                    size="md"
                                                     variant="subtle"
                                                     color="violet"
                                                     onClick={(e) => openFillSurveyModal(cell.meetingId, pid, meetingDataForUser, e)}
                                                   >
-                                                    <IconClipboardList size={12} />
+                                                    <IconClipboardList size={18} />
                                                   </ActionIcon>
                                                 </Tooltip>
                                                 <Text size="md" fw={600} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 280, color: "#1c7ed6", cursor: "pointer" }}>
