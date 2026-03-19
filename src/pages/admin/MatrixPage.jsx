@@ -13,6 +13,8 @@ import {
   Chip,
   Alert,
   TextInput,
+  Textarea,
+  NumberInput,
   Select,
   Popover,
   Menu,
@@ -22,6 +24,9 @@ import {
   Stack,
   Paper,
   Tooltip,
+  ActionIcon,
+  Loader,
+  Group,
 } from "@mantine/core";
 import { db } from "../../firebase/firebaseConfig";
 import {
@@ -36,11 +41,14 @@ import {
   addDoc,
   updateDoc,
   runTransaction,
+  setDoc,
 } from "firebase/firestore";
+import { DEFAULT_SURVEY_FIELDS } from "./ConfigureSurveyModal";
 import { useParams } from "react-router-dom";
 import QuickMeetingModal from "./QuickMeetingModal";
 import EditMeetingModal from "./EditMeetingModal";
 import { useDashboardData } from "../dashboard/useDashboardData";
+import { IconPencil } from "@tabler/icons-react";
 
 // ----------- UTILIDADES -----------
 
@@ -246,6 +254,12 @@ const MatrixPage = () => {
   // surveys: { [meetingId]: SurveyResponse[] }
   const [surveys, setSurveys] = useState({});
   const [surveyModal, setSurveyModal] = useState({ opened: false, meetingId: null, responses: [] });
+
+  // Modal para llenar/editar encuesta de un asistente desde la matriz
+  const [fillSurveyModal, setFillSurveyModal] = useState({ opened: false, meetingId: null, userId: null, meetingData: null });
+  const [fillSurveyValues, setFillSurveyValues] = useState({});
+  const [fillSurveyLoading, setFillSurveyLoading] = useState(false);
+  const [fillSurveySaving, setFillSurveySaving] = useState(false);
 
   // Carga configuración evento
   useEffect(() => {
@@ -975,6 +989,78 @@ const MatrixPage = () => {
     setSurveyModal({ opened: true, meetingId, responses });
   };
 
+  // Obtiene los campos de encuesta según configuración del evento y rol del usuario
+  const getSurveyFieldsForUser = (userId) => {
+    const surveyMode = config?.config?.policies?.surveyMode || "default";
+    if (surveyMode === "custom") {
+      const cfg = config?.config?.surveyConfig;
+      const userInfo = participantsInfo[userId];
+      const role = (userInfo?.tipoAsistente || "").toLowerCase();
+      if (role === "vendedor" && cfg?.vendedorFields?.length) return cfg.vendedorFields;
+      if (role === "comprador" && cfg?.compradorFields?.length) return cfg.compradorFields;
+      return cfg?.compradorFields || cfg?.vendedorFields || DEFAULT_SURVEY_FIELDS;
+    }
+    return DEFAULT_SURVEY_FIELDS;
+  };
+
+  const openFillSurveyModal = async (meetingId, userId, meetingData, e) => {
+    e.stopPropagation();
+    setFillSurveyModal({ opened: true, meetingId, userId, meetingData });
+    setFillSurveyLoading(true);
+    try {
+      const surveyDoc = await getDoc(doc(db, "meetingSurveys", `${meetingId}_${userId}`));
+      const fields = getSurveyFieldsForUser(userId);
+      if (surveyDoc.exists()) {
+        const data = surveyDoc.data();
+        const vals = {};
+        fields.forEach((f) => { vals[f.name] = data[f.name] ?? ""; });
+        setFillSurveyValues(vals);
+      } else {
+        const vals = {};
+        fields.forEach((f) => { vals[f.name] = ""; });
+        setFillSurveyValues(vals);
+      }
+    } catch {
+      setFillSurveyValues({});
+    }
+    setFillSurveyLoading(false);
+  };
+
+  const handleSaveFillSurvey = async () => {
+    const { meetingId, userId, meetingData } = fillSurveyModal;
+    setFillSurveySaving(true);
+    try {
+      const userInfo = participantsInfo[userId] || {};
+      const otherUserId = meetingData?.participants?.find((p) => p !== userId);
+      const otherInfo = participantsInfo[otherUserId] || {};
+      const payload = {
+        meetingId,
+        userId,
+        userName: userInfo.nombre || "",
+        userEmpresa: userInfo.empresa || "",
+        otherUserId: otherUserId || "",
+        otherUserName: otherInfo.nombre || "",
+        otherUserEmpresa: otherInfo.empresa || "",
+        createdAt: new Date(),
+        value: fillSurveyValues["value"] || "",
+        comments: fillSurveyValues["comments"] || "",
+        ...fillSurveyValues,
+        filledByAdmin: true,
+      };
+      await setDoc(doc(db, "meetingSurveys", `${meetingId}_${userId}`), payload);
+      // Actualizar surveys localmente
+      setSurveys((prev) => {
+        const existing = (prev[meetingId] || []).filter((r) => r.userId !== userId);
+        return { ...prev, [meetingId]: [...existing, { ...payload, id: `${meetingId}_${userId}` }] };
+      });
+      setFillSurveyModal({ opened: false, meetingId: null, userId: null, meetingData: null });
+    } catch (err) {
+      console.error(err);
+      alert("Error guardando la encuesta");
+    }
+    setFillSurveySaving(false);
+  };
+
   // Retorna { count, total, color, label } para el badge de encuesta
   const getSurveyStatus = (meetingId, participants) => {
     const responses = surveys[meetingId] || [];
@@ -1251,6 +1337,16 @@ const MatrixPage = () => {
                                             >
                                               {hasSurvey ? "✓" : "✗"}
                                             </span>
+                                            <Tooltip label="Llenar encuesta" withArrow>
+                                              <ActionIcon
+                                                size="xs"
+                                                variant="subtle"
+                                                color="violet"
+                                                onClick={(e) => openFillSurveyModal(cell.meetingId, pid, cell.meetingData, e)}
+                                              >
+                                                <IconPencil size={12} />
+                                              </ActionIcon>
+                                            </Tooltip>
                                             <Text
                                               size="lg"
                                               fw={600}
@@ -1497,6 +1593,7 @@ const MatrixPage = () => {
                                           {[asistente.id, ...cell.participants].map((pid) => {
                                             const info = pid === asistente.id ? asistente : participantsInfo[pid];
                                             const hasSurvey = (surveys[cell.meetingId] || []).some((r) => r.userId === pid);
+                                            const meetingDataForUser = meetings.find((m) => m.id === cell.meetingId);
                                             return (
                                               <div key={pid} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
                                                 <span
@@ -1506,6 +1603,16 @@ const MatrixPage = () => {
                                                 >
                                                   {hasSurvey ? "✓" : "✗"}
                                                 </span>
+                                                <Tooltip label="Llenar encuesta" withArrow>
+                                                  <ActionIcon
+                                                    size="xs"
+                                                    variant="subtle"
+                                                    color="violet"
+                                                    onClick={(e) => openFillSurveyModal(cell.meetingId, pid, meetingDataForUser, e)}
+                                                  >
+                                                    <IconPencil size={12} />
+                                                  </ActionIcon>
+                                                </Tooltip>
                                                 <Text size="md" fw={600} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 280, color: "#1c7ed6", cursor: "pointer" }}>
                                                   {info ? info.empresa : pid}
                                                 </Text>
@@ -1628,6 +1735,105 @@ const MatrixPage = () => {
           {globalMessage}
         </Alert>
       )}
+
+      {/* Modal para llenar encuesta de un asistente */}
+      <Modal
+        opened={fillSurveyModal.opened}
+        onClose={() => setFillSurveyModal({ opened: false, meetingId: null, userId: null, meetingData: null })}
+        title={(() => {
+          const info = participantsInfo[fillSurveyModal.userId];
+          return info ? `Encuesta — ${info.nombre} (${info.empresa})` : "Llenar encuesta";
+        })()}
+        size="md"
+        centered
+      >
+        {fillSurveyLoading ? (
+          <Group justify="center" py="md"><Loader /></Group>
+        ) : (
+          <Stack gap="md">
+            {getSurveyFieldsForUser(fillSurveyModal.userId).map((field) => {
+              const val = fillSurveyValues[field.name] ?? "";
+              const onChange = (v) => setFillSurveyValues((prev) => ({ ...prev, [field.name]: v }));
+
+              if (field.type === "textarea") {
+                return (
+                  <Textarea
+                    key={field.name}
+                    label={field.label}
+                    value={val}
+                    onChange={(e) => onChange(e.currentTarget.value)}
+                    minRows={3}
+                    required={field.required}
+                    radius="md"
+                  />
+                );
+              }
+              if (field.type === "number") {
+                return (
+                  <NumberInput
+                    key={field.name}
+                    label={field.label}
+                    value={val === "" ? "" : Number(val)}
+                    onChange={(v) => onChange(String(v))}
+                    required={field.required}
+                    radius="md"
+                  />
+                );
+              }
+              if (field.type === "select" && field.options?.length) {
+                return (
+                  <Select
+                    key={field.name}
+                    label={field.label}
+                    value={val}
+                    onChange={(v) => onChange(v || "")}
+                    data={field.options.map((o) => ({ value: o, label: o }))}
+                    required={field.required}
+                    radius="md"
+                  />
+                );
+              }
+              if (field.type === "rating") {
+                return (
+                  <Select
+                    key={field.name}
+                    label={field.label}
+                    value={val}
+                    onChange={(v) => onChange(v || "")}
+                    data={["1", "2", "3", "4", "5"].map((n) => ({ value: n, label: `${n} ⭐` }))}
+                    required={field.required}
+                    radius="md"
+                  />
+                );
+              }
+              return (
+                <TextInput
+                  key={field.name}
+                  label={field.label}
+                  value={val}
+                  onChange={(e) => onChange(e.currentTarget.value)}
+                  required={field.required}
+                  radius="md"
+                />
+              );
+            })}
+            <Group justify="flex-end" mt="xs">
+              <Button variant="default" onClick={() => setFillSurveyModal({ opened: false, meetingId: null, userId: null, meetingData: null })}>
+                Cancelar
+              </Button>
+              <Button
+                loading={fillSurveySaving}
+                onClick={handleSaveFillSurvey}
+                disabled={getSurveyFieldsForUser(fillSurveyModal.userId)
+                  .filter((f) => f.required)
+                  .some((f) => !fillSurveyValues[f.name])}
+              >
+                Guardar
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
 
       <Modal
         opened={surveyModal?.opened || false}
