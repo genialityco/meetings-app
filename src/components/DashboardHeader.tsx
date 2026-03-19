@@ -343,7 +343,7 @@ const DashboardHeader = ({
             label={field.label}
             placeholder="Selecciona una o más opciones"
             data={field.options || []}
-            value={getFieldValue(field.name) || []}
+            value={Array.isArray(getFieldValue(field.name)) ? getFieldValue(field.name) : []}
             onChange={(value) => handleChange(field.name, value)}
             searchable
             clearable

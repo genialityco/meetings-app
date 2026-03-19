@@ -36,7 +36,11 @@ Configurable per event via admin panel (`EventPoliciesModal.tsx`):
 - `schedulingMode`: "manual" | "auto"
 - `sellerRedirectToProducts`: boolean — redirects sellers to "Mis productos" on first login, hides that tab for buyers
 - `cardFieldsConfig`: { attendeeCard: string[], companyCard: string[] } — fields visible on dashboard cards per view
-- `uiViewsEnabled`: { chatbot, attendees, companies, products } — which dashboard views are shown
+- `uiViewsEnabled`: { chatbot, matches, attendees, companies, products } — which dashboard views are shown
+- `whatsappApiVersion`: "v1" | "v2" — WhatsApp notification API version
+- `autoReassignOnCancel`: boolean — auto-reassign slot when a meeting is cancelled
+- `surveyBlockedFor`: "none" | "compradores" | "vendedores" | "ambos" — lock survey for certain roles
+- `surveyMode`: "default" | "custom" — "custom" uses per-role surveyConfig
 
 Defaults defined in `DEFAULT_POLICIES` in `src/pages/dashboard/types.ts`.
 
@@ -53,12 +57,13 @@ Defaults defined in `DEFAULT_POLICIES` in `src/pages/dashboard/types.ts`.
 
 `Dashboard.tsx` → `useDashboardData.ts` (hook) → `TabsPanel.tsx` (view router)
 
-**TabsPanel** uses a `SegmentedControl` with 5 sections driven by `policies.uiViewsEnabled`:
+**TabsPanel** uses a `SegmentedControl` with sections driven by `policies.uiViewsEnabled`:
 1. **Chatbot** (`ChatbotTab.tsx`) — AI-powered search assistant (also gated by `VITE_ENABLE_CHATBOT` env var)
-2. **Directorio** (`AttendeesView.tsx`) — Card-based attendee list with search/filters
-3. **Empresas** (`CompaniesView.tsx`) — Companies grouped by NIT with logo, representatives, meeting CTA
-4. **Productos** (`ProductsView.tsx`) — Product catalog with company/text filters, meeting CTA with context
-5. **Mi actividad** — Tabs for: Reuniones (`MeetingsTab`), Solicitudes (`RequestsTab`), Mis productos (`MyProductsTab`), Mi empresa (`MyCompanyTab`)
+2. **Matches** (`MatchesTab.tsx`) — Affinity-based attendee recommendations
+3. **Directorio** (`AttendeesView.tsx`) — Card-based attendee list with search/filters
+4. **Empresas** (`CompaniesView.tsx`) — Companies grouped by NIT with logo, representatives, meeting CTA
+5. **Productos** (`ProductsView.tsx`) — Product catalog with company/text filters, meeting CTA with context
+6. **Mi actividad** — Tabs for: Agenda (`CalendarTab`), Reuniones (`MeetingsTab`), Solicitudes (`RequestsTab`), Mis productos (`MyProductsTab`), Mi empresa (`MyCompanyTab`)
 
 Meeting requests from CompaniesView/ProductsView pass context (productId, companyId, contextNote).
 

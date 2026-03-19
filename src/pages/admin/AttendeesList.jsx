@@ -1,5 +1,5 @@
 import { Card, Table, Button, Loader, Text, Group, Title, MultiSelect, Modal, Image, Tabs, Stack, TextInput } from "@mantine/core";
-import { collection, query, where, getDocs, deleteDoc, doc, addDoc, updateDoc, writeBatch } from "firebase/firestore";
+import { collection, query, where, getDocs, deleteDoc, doc, addDoc, updateDoc, writeBatch, setDoc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
@@ -1371,6 +1371,16 @@ function parseFirestoreTimestamp(input) {
           const { id: _id, ...toSave } = updated;
           try {
             await updateDoc(doc(db, "users", id), toSave);
+
+            // Sincronizar documento de empresa si el asistente tiene NIT y evento
+            const nitNorm = String(toSave.company_nit || toSave.companyId || "").replace(/\D/g, "");
+            const eventId = toSave.eventId || event?.id;
+            if (nitNorm && eventId) {
+              const companyDoc = { nitNorm, updatedAt: new Date() };
+              if (toSave.company_razonSocial) companyDoc.razonSocial = String(toSave.company_razonSocial).trim();
+              await setDoc(doc(db, "events", eventId, "companies", nitNorm), companyDoc, { merge: true });
+            }
+
             setGlobalMessage("Asistente actualizado correctamente.");
             fetchAttendees();
           } catch (err) {

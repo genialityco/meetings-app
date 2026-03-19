@@ -386,16 +386,22 @@ const MatrixPage = () => {
     return () => unsub();
   }, [eventId, meetingIdsKey]);
 
-  // Memoize timeSlots - usar configuración del día seleccionado
+  // Memoize timeSlots - derivar de los slots reales en Firestore para incluir expansiones
   const timeSlots = useMemo(() => {
     if (!config || !selectedDate) return [];
-    
+
+    // Obtener horarios únicos de los slots reales de la agenda para el día seleccionado
+    const agendaForDate = agenda.filter((s) => !s.date || s.date === selectedDate);
+    const fromFirestore = [...new Set(agendaForDate.map((s) => s.startTime))].sort();
+
+    if (fromFirestore.length > 0) return fromFirestore;
+
+    // Fallback: calcular desde config si aún no hay slots en Firestore
     const dayConfig = config.config.dailyConfig?.[selectedDate] || {
       startTime: config.config.startTime,
       endTime: config.config.endTime,
       breakBlocks: config.config.breakBlocks || [],
     };
-
     return generateTimeSlots(
       dayConfig.startTime,
       dayConfig.endTime,
@@ -403,7 +409,7 @@ const MatrixPage = () => {
       config.config.breakTime,
       dayConfig.breakBlocks || []
     );
-  }, [config, selectedDate]);
+  }, [config, selectedDate, agenda]);
 
   // Genera lista de filas para la tabla: slots reales + filas de descanso intercaladas
   const slotsWithBreaks = useMemo(() => {
@@ -1145,15 +1151,15 @@ const MatrixPage = () => {
                           }}
                           onClick={() => {
                             if (cell.status === "available") {
+                              const slotEncontrado = agenda.find(
+                                (s) =>
+                                  s.tableNumber === ti + 1 &&
+                                  s.startTime === timeSlots[si]
+                              );
                               setQuickModal({
                                 opened: true,
-                                slot: {
-                                  ...agenda.find(
-                                    (s) =>
-                                      s.tableNumber === ti + 1 &&
-                                      s.startTime === timeSlots[si]
-                                  ),
-                                },
+                                slot: slotEncontrado ? { ...slotEncontrado } : null,
+                                slotsDisponibles: slotEncontrado ? [slotEncontrado] : [],
                                 defaultUser: null,
                               });
                             } else if (cell.status === "accepted") {
@@ -1420,7 +1426,7 @@ const MatrixPage = () => {
                             }}
                             onClick={() => {
                               if (cell.status === "available") {
-                                const slotsDelHorario = agenda.filter((s) => s.startTime === slot && s.available);
+                                const slotsDelHorario = agenda.filter((s) => s.startTime === slot && s.available && (!s.date || s.date === selectedDate));
                                 setQuickModal({ opened: true, slotsDisponibles: slotsDelHorario, defaultUser: asistente });
                               } else if (cell.status === "accepted") {
                                 const meeting = meetings.find((m) => {
@@ -1437,7 +1443,7 @@ const MatrixPage = () => {
                                       tableNumber: meeting.tableAssigned,
                                       startTime,
                                       endTime,
-                                      id: agenda.find((s) => s.tableNumber === Number(meeting.tableAssigned) && s.startTime === startTime)?.id,
+                                      id: agenda.find((s) => s.tableNumber === Number(meeting.tableAssigned) && s.startTime === startTime && (!s.date || s.date === selectedDate))?.id,
                                     },
                                     lockedUserId: asistente.id,
                                   });
@@ -1608,6 +1614,7 @@ const MatrixPage = () => {
         participantsInfo={participantsInfo}
         slotsDisponibles={slotsDisponiblesParaEdicion}
         getAffinity={getAffinityScore}
+        companies={dashboard.companies || []}
       />
 
       {globalMessage && (

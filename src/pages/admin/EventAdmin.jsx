@@ -19,6 +19,8 @@ import {
   Table,
   ScrollArea,
   SegmentedControl,
+  Select,
+  TextInput,
 } from "@mantine/core";
 import {
   doc,
@@ -79,6 +81,12 @@ const EventAdmin = () => {
   const [notifyLog, setNotifyLog] = useState([]); // { nombre, empresa, tipo, status: "ok"|"fail"|"skip", meetingId }
   const [notifyRunning, setNotifyRunning] = useState(false);
   const [notifyDone, setNotifyDone] = useState(false);
+
+  // Estado para expandir agenda
+  const [expandAgendaModalOpened, setExpandAgendaModalOpened] = useState(false);
+  const [expandDate, setExpandDate] = useState(null);
+  const [expandStartTime, setExpandStartTime] = useState("");
+  const [expandEndTime, setExpandEndTime] = useState("");
 
   const [meetingsCounts, setMeetingsCounts] = useState({
     aceptadas: 0,
@@ -237,6 +245,92 @@ const EventAdmin = () => {
     } catch (error) {
       console.log(error);
       setGlobalMessage("Error al generar la agenda.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Expandir la agenda: añadir nuevos slots en un rango horario sin tocar los existentes
+  const expandAgendaForEvent = async () => {
+    try {
+      setActionLoading(true);
+      const { meetingDuration, breakTime, numTables } = event.config;
+
+      const date = expandDate;
+      const startTime = expandStartTime.trim();
+      const endTime = expandEndTime.trim();
+
+      if (!date || !startTime || !endTime) {
+        setGlobalMessage("Debes completar fecha, hora de inicio y hora de fin.");
+        return;
+      }
+
+      const timeRegex = /^\d{2}:\d{2}$/;
+      if (!timeRegex.test(startTime) || !timeRegex.test(endTime)) {
+        setGlobalMessage("Formato de hora inválido. Usa HH:MM (ej: 13:00).");
+        return;
+      }
+
+      const newStart = timeToMinutes(startTime);
+      const newEnd = timeToMinutes(endTime);
+
+      if (newStart >= newEnd) {
+        setGlobalMessage("La hora de inicio debe ser anterior a la hora de fin.");
+        return;
+      }
+
+      // Cargar slots existentes para esa fecha y detectar colisiones
+      const agendaSnap = await getDocs(collection(db, "events", event.id, "agenda"));
+      const existingSlots = agendaSnap.docs
+        .map((d) => d.data())
+        .filter((s) => s.date === date);
+
+      const existingSet = new Set(
+        existingSlots.map((s) => `${s.startTime}_${s.tableNumber}`)
+      );
+
+      const blockLength = meetingDuration + breakTime;
+      const totalSlots = Math.floor((newEnd - newStart) / blockLength);
+
+      if (totalSlots <= 0) {
+        setGlobalMessage("El rango horario es demasiado corto para generar al menos un slot.");
+        return;
+      }
+
+      let createdCount = 0;
+      let skippedCount = 0;
+
+      for (let slot = 0; slot < totalSlots; slot++) {
+        const slotStart = newStart + slot * blockLength;
+        const slotEnd = slotStart + meetingDuration;
+        const slotStartTime = minutesToTime(slotStart);
+        const slotEndTime = minutesToTime(slotEnd);
+
+        for (let tableNumber = 1; tableNumber <= numTables; tableNumber++) {
+          const key = `${slotStartTime}_${tableNumber}`;
+          if (existingSet.has(key)) {
+            skippedCount++;
+            continue;
+          }
+          await addDoc(collection(db, "events", event.id, "agenda"), {
+            date,
+            tableNumber,
+            startTime: slotStartTime,
+            endTime: slotEndTime,
+            available: true,
+          });
+          createdCount++;
+        }
+      }
+
+      const msg = skippedCount > 0
+        ? `Expansión completada: ${createdCount} slots creados, ${skippedCount} omitidos por ya existir.`
+        : `Expansión completada: ${createdCount} slots creados.`;
+      setGlobalMessage(msg);
+      setExpandAgendaModalOpened(false);
+    } catch (error) {
+      console.log(error);
+      setGlobalMessage("Error al expandir la agenda.");
     } finally {
       setActionLoading(false);
     }
@@ -1348,6 +1442,22 @@ const EventAdmin = () => {
                   </Button>
 
                   <Button
+                    onClick={() => {
+                      const dates = event.config?.eventDates || (event.config?.eventDate ? [event.config.eventDate] : []);
+                      setExpandDate(dates[0] || null);
+                      setExpandStartTime("");
+                      setExpandEndTime("");
+                      setExpandAgendaModalOpened(true);
+                    }}
+                    loading={actionLoading}
+                    disabled={actionLoading}
+                    color="teal"
+                    variant="light"
+                  >
+                    Expandir Agenda
+                  </Button>
+
+                  <Button
                     component={Link}
                     to={`/admin/event/${event.id}/agenda`}
                     loading={actionLoading}
@@ -1488,6 +1598,94 @@ const EventAdmin = () => {
         refreshEvents={fetchEvent}
         setGlobalMessage={setGlobalMessage}
       />
+
+      {/* Modal para expandir agenda */}
+      <Modal
+        opened={expandAgendaModalOpened}
+        onClose={() => setExpandAgendaModalOpened(false)}
+        title="Expandir agenda"
+        centered
+      >
+        <Stack gap="md">
+          <Text size="sm" c="dimmed">
+            Agrega nuevos bloques de reunión a la agenda existente sin borrarla.
+            Se usará la misma duración de reunión ({event?.config?.meetingDuration} min)
+            y pausa ({event?.config?.breakTime} min) configuradas en el evento.
+          </Text>
+
+          {(() => {
+            const dates = event?.config?.eventDates || (event?.config?.eventDate ? [event.config.eventDate] : []);
+            if (dates.length > 1) {
+              return (
+                <Select
+                  label="Día"
+                  data={dates.map((d) => ({ value: d, label: d }))}
+                  value={expandDate}
+                  onChange={setExpandDate}
+                  required
+                />
+              );
+            }
+            return (
+              <Text size="sm">
+                Fecha: <strong>{dates[0] || "—"}</strong>
+              </Text>
+            );
+          })()}
+
+          <Group grow>
+            <TextInput
+              label="Hora de inicio"
+              placeholder="13:00"
+              value={expandStartTime}
+              onChange={(e) => setExpandStartTime(e.currentTarget.value)}
+              required
+            />
+            <TextInput
+              label="Hora de fin"
+              placeholder="15:00"
+              value={expandEndTime}
+              onChange={(e) => setExpandEndTime(e.currentTarget.value)}
+              required
+            />
+          </Group>
+
+          {expandStartTime && expandEndTime && (() => {
+            const timeRegex = /^\d{2}:\d{2}$/;
+            if (!timeRegex.test(expandStartTime) || !timeRegex.test(expandEndTime)) return null;
+            const [sh, sm] = expandStartTime.split(":").map(Number);
+            const [eh, em] = expandEndTime.split(":").map(Number);
+            const startMin = sh * 60 + sm;
+            const endMin = eh * 60 + em;
+            const blockLen = (event?.config?.meetingDuration || 0) + (event?.config?.breakTime || 0);
+            const slots = blockLen > 0 ? Math.floor((endMin - startMin) / blockLen) : 0;
+            const tables = event?.config?.numTables || 0;
+            if (slots <= 0) return (
+              <Alert color="orange">El rango es demasiado corto para generar slots.</Alert>
+            );
+            return (
+              <Alert color="teal" variant="light">
+                Se generarán <strong>{slots}</strong> horario(s) ×{" "}
+                <strong>{tables}</strong> mesa(s) ={" "}
+                <strong>{slots * tables}</strong> slots nuevos.
+              </Alert>
+            );
+          })()}
+
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setExpandAgendaModalOpened(false)}>
+              Cancelar
+            </Button>
+            <Button
+              color="teal"
+              loading={actionLoading}
+              onClick={expandAgendaForEvent}
+            >
+              Expandir
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       {/* Modal de importar reuniones desde JSON */}
       {/* <Modal

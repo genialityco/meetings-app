@@ -16,6 +16,7 @@ const EditMeetingModal = ({
   onSwapMeetings,
   participantsInfo = {},
   getAffinity,
+  companies = [],
 }) => {
   // Estados para editar participantes y slot
   const [user1, setUser1] = useState("");
@@ -26,17 +27,29 @@ const EditMeetingModal = ({
   const [swapMode, setSwapMode] = useState(false);
   const [swapMeetingId, setSwapMeetingId] = useState("");
 
-  // Filtrar slots disponibles que coincidan con la hora del slot actual y que estén libres o sean la mesa actual
+  // Obtiene la mesa fija de un usuario según su compañía
+  const getFixedTable = (userId) => {
+    const user = participantsInfo[userId] || assistants.find((a) => a.id === userId);
+    if (!user?.companyId) return null;
+    const company = companies.find((c) => c.id === user.companyId || c.nitNorm === user.companyId);
+    return company?.fixedTable ? Number(company.fixedTable) : null;
+  };
+
+  // Filtrar slots disponibles que coincidan con la hora del slot actual y que estén libres,
+  // sean la mesa actual, o sean la mesa fija del participante 2 seleccionado
   const slotsFiltered = useMemo(() => {
     if (!agenda || !slot?.startTime || !meeting) return [];
+
+    const fixedTable2 = getFixedTable(user2);
 
     return agenda.filter((s) => {
       const isSameTime = s.startTime === slot.startTime;
       const isAvailable = s.available;
       const isCurrentTable = s.tableNumber === Number(meeting.tableAssigned);
-      return isSameTime && (isAvailable || isCurrentTable);
+      const isFixedTableOfUser2 = fixedTable2 && s.tableNumber === fixedTable2;
+      return isSameTime && (isAvailable || isCurrentTable || isFixedTableOfUser2);
     });
-  }, [agenda, slot, meeting]);
+  }, [agenda, slot, meeting, user2, companies, participantsInfo, assistants]);
 
   // Inicializa los estados cuando cambia meeting, lockedUserId, slot o slotsFiltered
   useEffect(() => {
@@ -58,6 +71,19 @@ const EditMeetingModal = ({
       setSelectedSlotId("");
     }
   }, [meeting, lockedUserId, slot, slotsFiltered]);
+
+  // Cuando cambia user2, auto-seleccionar su mesa fija si la tiene
+  useEffect(() => {
+    if (!user2 || !slot?.startTime) return;
+    const fixedTable = getFixedTable(user2);
+    if (!fixedTable) return;
+    const fixedSlot = agenda.find(
+      (s) => s.startTime === slot.startTime && s.tableNumber === fixedTable
+    );
+    if (fixedSlot) {
+      setSelectedSlotId(fixedSlot.id);
+    }
+  }, [user2]);
 
   // Opciones para selects de asistentes
   const assistantOptions = assistants.map((a) => ({
