@@ -48,7 +48,7 @@ import { useParams } from "react-router-dom";
 import QuickMeetingModal from "./QuickMeetingModal";
 import EditMeetingModal from "./EditMeetingModal";
 import { useDashboardData } from "../dashboard/useDashboardData";
-import { IconPencil } from "@tabler/icons-react";
+import { IconClipboardList } from "@tabler/icons-react";
 
 // ----------- UTILIDADES -----------
 
@@ -1344,7 +1344,7 @@ const MatrixPage = () => {
                                                 color="violet"
                                                 onClick={(e) => openFillSurveyModal(cell.meetingId, pid, cell.meetingData, e)}
                                               >
-                                                <IconPencil size={12} />
+                                                <IconClipboardList size={12} />
                                               </ActionIcon>
                                             </Tooltip>
                                             <Text
@@ -1610,7 +1610,7 @@ const MatrixPage = () => {
                                                     color="violet"
                                                     onClick={(e) => openFillSurveyModal(cell.meetingId, pid, meetingDataForUser, e)}
                                                   >
-                                                    <IconPencil size={12} />
+                                                    <IconClipboardList size={12} />
                                                   </ActionIcon>
                                                 </Tooltip>
                                                 <Text size="md" fw={600} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 280, color: "#1c7ed6", cursor: "pointer" }}>
