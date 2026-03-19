@@ -17,6 +17,8 @@ import {
   Checkbox,
   Menu,
   ActionIcon,
+  Tooltip,
+  Button,
 } from "@mantine/core";
 import {
   IconClock,
@@ -30,9 +32,10 @@ import {
   IconLockOpen,
   IconDots,
 } from "@tabler/icons-react";
-import { doc, updateDoc, collection, query, where, getDocs, addDoc, deleteDoc } from "firebase/firestore";
+import { doc, updateDoc, collection, query, where, getDocs, addDoc, deleteDoc, onSnapshot, getDoc, setDoc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { showNotification } from "@mantine/notifications";
+import { DEFAULT_SURVEY_FIELDS } from "../admin/ConfigureSurveyModal";
 
 interface CalendarTabProps {
   acceptedMeetings: any[];
@@ -43,6 +46,8 @@ interface CalendarTabProps {
   uid: string;
   eventConfig: any;
   eventId: string;
+  currentUser?: any;
+  policies?: any;
 }
 
 function InfoRow({
@@ -78,6 +83,8 @@ export default function CalendarTab({
   uid,
   eventConfig,
   eventId,
+  currentUser,
+  policies,
 }: CalendarTabProps) {
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
   const [modalOpened, setModalOpened] = useState(false);
@@ -85,6 +92,35 @@ export default function CalendarTab({
   const [agendaSlots, setAgendaSlots] = useState<any[]>([]);
   const [blockedSlots, setBlockedSlots] = useState<any[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const [surveys, setSurveys] = useState<{ [meetingId: string]: any[] }>({});
+  const [surveyModal, setSurveyModal] = useState<{ meetingId: string; responses: any[] } | null>(null);
+
+  // Survey config
+  const surveyMode = policies?.surveyMode || "default";
+  const myRole = (currentUser?.data?.tipoAsistente || "").toLowerCase();
+  const surveyFields: any[] = (() => {
+    if (surveyMode === "custom") {
+      const cfg = eventConfig?.surveyConfig;
+      if (!cfg) return DEFAULT_SURVEY_FIELDS;
+      if (myRole === "vendedor" && cfg?.vendedorFields?.length) return cfg.vendedorFields;
+      if (myRole === "comprador" && cfg?.compradorFields?.length) return cfg.compradorFields;
+      return cfg?.compradorFields || cfg?.vendedorFields || DEFAULT_SURVEY_FIELDS;
+    }
+    return DEFAULT_SURVEY_FIELDS;
+  })();
+  const surveyBlocked = (() => {
+    const blocked = policies?.surveyBlockedFor || "none";
+    if (blocked === "ambos") return true;
+    if (blocked === "compradores" && myRole === "comprador") return true;
+    if (blocked === "vendedores" && myRole === "vendedor") return true;
+    return false;
+  })();
+
+  const [surveyEditModal, setSurveyEditModal] = useState<{ open: boolean; meeting: any | null }>({ open: false, meeting: null });
+  const [surveyValues, setSurveyValues] = useState<Record<string, string>>({});
+  const [savingSurvey, setSavingSurvey] = useState(false);
+  const [userSurveys, setUserSurveys] = useState<Record<string, any>>({});
+  const [loadingSurvey, setLoadingSurvey] = useState(false);
   
   // Filtros de visualización
   const [showAccepted, setShowAccepted] = useState(true);
@@ -150,6 +186,82 @@ export default function CalendarTab({
     };
     loadData();
   }, [loadAgendaSlots, loadBlockedSlots]);
+
+  // Cargar encuestas del usuario para sus reuniones aceptadas
+  useEffect(() => {
+    if (!uid || acceptedMeetings.length === 0) return;
+    const meetingIds = acceptedMeetings.map((m) => m.id);
+    const unsub = onSnapshot(collection(db, "meetingSurveys"), (snap) => {
+      const map: { [meetingId: string]: any[] } = {};
+      const userMap: Record<string, any> = {};
+      snap.docs.forEach((d) => {
+        const data = { id: d.id, ...d.data() };
+        if (meetingIds.includes((data as any).meetingId)) {
+          const mid = (data as any).meetingId;
+          if (!map[mid]) map[mid] = [];
+          map[mid].push(data);
+          // Si es la encuesta del usuario actual, pre-cargar en userSurveys
+          if ((data as any).userId === uid) {
+            userMap[mid] = data;
+          }
+        }
+      });
+      setSurveys(map);
+      setUserSurveys((prev) => ({ ...prev, ...userMap }));
+    });
+    return () => unsub();
+  }, [uid, acceptedMeetings.length]);
+
+  const handleOpenSurvey = async (meeting: any) => {
+    setSurveyEditModal({ open: true, meeting });
+    setLoadingSurvey(true);
+    try {
+      const surveyDoc = await getDoc(doc(db, "meetingSurveys", `${meeting.id}_${uid}`));
+      if (surveyDoc.exists()) {
+        const data = surveyDoc.data();
+        const vals: Record<string, string> = {};
+        surveyFields.forEach((f) => { vals[f.name] = data[f.name] || ""; });
+        setSurveyValues(vals);
+        setUserSurveys((prev) => ({ ...prev, [meeting.id]: data }));
+      } else {
+        setSurveyValues({});
+      }
+    } catch {
+      setSurveyValues({});
+    }
+    setLoadingSurvey(false);
+  };
+
+  const handleSaveSurvey = async () => {
+    setSavingSurvey(true);
+    try {
+      const meeting = surveyEditModal.meeting;
+      const myInfo = participantsInfo[uid] || currentUser?.data || {};
+      const otherPid = meeting.participants?.find((p: string) => p !== uid);
+      const otherInfo = participantsInfo[otherPid] || {};
+      const payload: Record<string, any> = {
+        meetingId: meeting.id,
+        userId: uid,
+        userName: myInfo.nombre || "",
+        userEmpresa: myInfo.empresa || "",
+        otherUserId: otherPid || "",
+        otherUserName: otherInfo.nombre || "",
+        otherUserEmpresa: otherInfo.empresa || "",
+        createdAt: new Date(),
+        value: surveyValues["value"] || "",
+        comments: surveyValues["comments"] || "",
+        ...surveyValues,
+      };
+      await setDoc(doc(db, "meetingSurveys", `${meeting.id}_${uid}`), payload);
+      setUserSurveys((prev) => ({ ...prev, [meeting.id]: payload }));
+      setSurveyEditModal({ open: false, meeting: null });
+    } catch {
+      alert("Error guardando la encuesta");
+    }
+    setSavingSurvey(false);
+  };
+
+  const surveyExists = (meetingId: string) => !!userSurveys[meetingId];
 
   // Bloquear slot
   const handleBlockSlot = async (time: string) => {
@@ -551,16 +663,33 @@ export default function CalendarTab({
                             {meetings.map((meeting, idx) => {
                               const participant = getOtherParticipant(meeting);
                               return (
-                                <Badge
-                                  key={idx}
-                                  color={getStatusColor(meeting.type)}
-                                  variant="filled"
-                                  style={{ cursor: "pointer" }}
-                                  onClick={() => handleMeetingClick(meeting)}
-                                >
-                                  {participant?.nombre || "Cargando..."}
-                                  {meeting.tableAssigned && ` - Mesa ${meeting.tableAssigned}`}
-                                </Badge>
+                                <Group key={idx} gap={4} wrap="nowrap">
+                                  <Badge
+                                    color={getStatusColor(meeting.type)}
+                                    variant="filled"
+                                    style={{ cursor: "pointer" }}
+                                    onClick={() => handleMeetingClick(meeting)}
+                                  >
+                                    {participant?.nombre || "Cargando..."}
+                                    {meeting.tableAssigned && ` - Mesa ${meeting.tableAssigned}`}
+                                  </Badge>
+                                  {meeting.type === "accepted" && (
+                                    <>
+                                      <Tooltip label={surveyExists(meeting.id) ? "Ver/editar encuesta" : "Llenar encuesta"} withArrow>
+                                        <Button
+                                          size="compact-xs"
+                                          color={surveyExists(meeting.id) ? "violet" : "gray"}
+                                          variant={surveyExists(meeting.id) ? "filled" : "outline"}
+                                          px={6}
+                                          disabled={surveyBlocked}
+                                          onClick={() => handleOpenSurvey(meeting)}
+                                        >
+                                          📋 {surveyExists(meeting.id) ? "Ver/editar encuesta" : "Llenar encuesta"}
+                                        </Button>
+                                      </Tooltip>
+                                    </>
+                                  )}
+                                </Group>
                               );
                             })}
                           </Group>
@@ -574,6 +703,72 @@ export default function CalendarTab({
           </ScrollArea>
         </Paper>
       </Stack>
+
+      {/* Modal encuesta */}
+      <Modal
+        opened={surveyEditModal.open}
+        onClose={() => setSurveyEditModal({ open: false, meeting: null })}
+        title="Encuesta de reunión"
+        radius="lg"
+      >
+        {loadingSurvey ? (
+          <Group justify="center" py="md"><Text size="sm" c="dimmed">Cargando...</Text></Group>
+        ) : surveyExists(surveyEditModal.meeting?.id) ? (
+          <Stack gap="md">
+            <Text fw={700}>Tus respuestas de encuesta</Text>
+            {surveyFields.map((field: any) => (
+              <Paper key={field.name} withBorder radius="md" p="sm">
+                <Text size="sm">
+                  <Text span fw={600}>{field.label}:</Text>{" "}
+                  {userSurveys[surveyEditModal.meeting?.id]?.[field.name] || "-"}
+                </Text>
+              </Paper>
+            ))}
+            <Group mt="xs" grow>
+              <Button variant="default" radius="md" onClick={() => setSurveyEditModal({ open: false, meeting: null })}>
+                Cerrar
+              </Button>
+              <Button radius="md" onClick={() => setUserSurveys((prev) => { const n = { ...prev }; delete n[surveyEditModal.meeting?.id]; return n; })}>
+                Editar
+              </Button>
+            </Group>
+          </Stack>
+        ) : (
+          <Stack gap="md">
+            {surveyFields.map((field: any) => {
+              const val = surveyValues[field.name] || "";
+              const onChange = (v: string) => setSurveyValues((prev) => ({ ...prev, [field.name]: v }));
+              if (field.type === "textarea") {
+                return <textarea key={field.name} placeholder={field.label} value={val} onChange={(e) => onChange(e.currentTarget.value)} style={{ width: "100%", minHeight: 80, borderRadius: 8, padding: 8, border: "1px solid #ced4da" }} />;
+              }
+              if ((field.type === "select" || field.type === "rating") && field.options?.length) {
+                return (
+                  <Select key={field.name} label={field.label} value={val} onChange={(v) => onChange(v || "")}
+                    data={field.type === "rating" ? ["1","2","3","4","5"].map((n) => ({ value: n, label: `${n} ⭐` })) : field.options.map((o: string) => ({ value: o, label: o }))}
+                    required={field.required} radius="md" />
+                );
+              }
+              if (field.type === "rating") {
+                return <Select key={field.name} label={field.label} value={val} onChange={(v) => onChange(v || "")} data={["1","2","3","4","5"].map((n) => ({ value: n, label: `${n} ⭐` }))} required={field.required} radius="md" />;
+              }
+              return (
+                <Box key={field.name}>
+                  <Text size="sm" fw={500} mb={4}>{field.label}{field.required && " *"}</Text>
+                  <input value={val} onChange={(e) => onChange(e.currentTarget.value)} type={field.type === "number" ? "number" : "text"} style={{ width: "100%", borderRadius: 8, padding: "8px 12px", border: "1px solid #ced4da", fontSize: 14 }} />
+                </Box>
+              );
+            })}
+            <Group mt="xs" grow>
+              <Button variant="default" radius="md" onClick={() => setSurveyEditModal({ open: false, meeting: null })}>Cancelar</Button>
+              <Button loading={savingSurvey} onClick={handleSaveSurvey}
+                disabled={surveyFields.filter((f: any) => f.required).some((f: any) => !surveyValues[f.name])}
+                radius="md">
+                Guardar
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
 
       {/* Modal de detalles de reunión */}
       <Modal

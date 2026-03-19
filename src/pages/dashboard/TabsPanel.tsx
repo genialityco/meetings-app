@@ -275,6 +275,8 @@ export default function TabsPanel({
               uid={dashboard.uid}
               eventConfig={dashboard.eventConfig}
               eventId={eventId || ""}
+              currentUser={dashboard.currentUser}
+              policies={policies}
             />
           </Tabs.Panel>
           <Tabs.Panel value="reuniones" pt="md">
