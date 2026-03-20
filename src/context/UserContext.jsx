@@ -126,7 +126,6 @@ export const UserProvider = ({ children }) => {
     try {
       setUserLoading(true);
 
-      // Consulta: filtra cédula y eventId
       const q = query(
         collection(db, "users"),
         where("cedula", "==", cedula.trim()),
@@ -136,31 +135,26 @@ export const UserProvider = ({ children }) => {
 
       if (querySnapshot.empty) {
         setUserLoading(false);
-        return {
-          error: "No se encontró ningún usuario con esa cédula en este evento.",
-        };
+        return { error: "No se encontró ningún usuario con esa cédula en este evento." };
       }
 
       const userDoc = querySnapshot.docs[0];
       const userData = userDoc.data();
       const uid = userDoc.id;
 
-      // Guardar nueva fecha de conexión
       const now = new Date();
       await updateDoc(doc(db, "users", uid), {
         lastConnection: now,
+        checkedIn: true,
+        checkInTime: now,
       });
 
-      // Establecer usuario en el contexto
-      const newUser = { uid: userDoc.id, data: userData };
+      const newUser = { uid: userDoc.id, data: { ...userData, checkedIn: true, checkInTime: now } };
       setCurrentUser(newUser);
       localStorage.setItem("currentUser", JSON.stringify(newUser));
-
-      // Evita sobrescribir con sesión anónima
       localStorage.setItem("manualLogin", "true");
       setManualLogin(true);
       setUserLoading(false);
-
       return { success: true };
     } catch (error) {
       console.error("Error al buscar usuario:", error);
@@ -170,63 +164,55 @@ export const UserProvider = ({ children }) => {
   };
 
   const loginByEmail = async (correo, eventId) => {
-  try {
-    setUserLoading(true);
-    
-    const emailLowercase = correo.trim().toLowerCase();
+    try {
+      setUserLoading(true);
+      const emailLowercase = correo.trim().toLowerCase();
 
-    // Busca el usuario por correo principal y evento
-    let q = query(
-      collection(db, "users"),
-      where("correo", "==", emailLowercase),
-      where("eventId", "==", eventId)
-    );
-    let querySnapshot = await getDocs(q);
-    
-    // Si no encuentra en correo, busca en contacto.correo
-    if (querySnapshot.empty) {
-      q = query(
+      let q = query(
         collection(db, "users"),
-        where("contacto.correo", "==", emailLowercase),
+        where("correo", "==", emailLowercase),
         where("eventId", "==", eventId)
       );
-      querySnapshot = await getDocs(q);
-    }
-    
-    if (querySnapshot.empty) {
+      let querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        q = query(
+          collection(db, "users"),
+          where("contacto.correo", "==", emailLowercase),
+          where("eventId", "==", eventId)
+        );
+        querySnapshot = await getDocs(q);
+      }
+
+      if (querySnapshot.empty) {
+        setUserLoading(false);
+        return { error: "No se encontró ningún usuario con ese correo en este evento." };
+      }
+
+      const userDoc = querySnapshot.docs[0];
+      const userData = userDoc.data();
+      const uid = userDoc.id;
+
+      const now = new Date();
+      await updateDoc(doc(db, "users", uid), {
+        lastConnection: now,
+        checkedIn: true,
+        checkInTime: now,
+      });
+
+      const newUser = { uid: userDoc.id, data: { ...userData, checkedIn: true, checkInTime: now } };
+      setCurrentUser(newUser);
+      localStorage.setItem("currentUser", JSON.stringify(newUser));
+      localStorage.setItem("manualLogin", "true");
+      setManualLogin(true);
       setUserLoading(false);
-      return {
-        error: "No se encontró ningún usuario con ese correo en este evento.",
-      };
+      return { success: true };
+    } catch (error) {
+      console.error("Error al buscar usuario:", error);
+      setUserLoading(false);
+      return { error: "Error al buscar usuario. Intente nuevamente." };
     }
-
-    const userDoc = querySnapshot.docs[0];
-    const userData = userDoc.data();
-    const uid = userDoc.id;
-
-    // Guardar nueva fecha de conexión
-    const now = new Date();
-    await updateDoc(doc(db, "users", uid), {
-      lastConnection: now,
-    });
-
-    // Establecer usuario en el contexto
-    const newUser = { uid: userDoc.id, data: userData };
-    setCurrentUser(newUser);
-    localStorage.setItem("currentUser", JSON.stringify(newUser));
-
-    // Evita sobrescribir con sesión anónima
-    localStorage.setItem("manualLogin", "true");
-    setManualLogin(true);
-    setUserLoading(false);
-
-    return { success: true };
-  } catch (error) {
-    console.error("Error al buscar usuario:", error);
-    setUserLoading(false);
-    return { error: "Error al buscar usuario. Intente nuevamente." };
-  }
-};
+  };
 
 
   return (

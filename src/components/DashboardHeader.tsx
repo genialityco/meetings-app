@@ -24,7 +24,7 @@ import {
   Grid,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
-import { IconEdit, IconLogout, IconChevronDown, IconPackage, IconBuilding } from "@tabler/icons-react";
+import { IconEdit, IconLogout, IconChevronDown, IconPackage, IconBuilding, IconCheck } from "@tabler/icons-react";
 import { UserContext } from "../context/UserContext";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { doc, setDoc } from "firebase/firestore";
@@ -86,6 +86,11 @@ const DashboardHeader = ({
   >("idle");
   const [photoUploadError, setPhotoUploadError] = useState("");
 
+  // Check-in state
+  const [checkedIn, setCheckedIn] = useState<boolean>(!!data?.checkedIn);
+  const [uncheckConfirmOpened, setUncheckConfirmOpened] = useState(false);
+  const [savingCheckIn, setSavingCheckIn] = useState(false);
+
   // Sync edit data when modal opens
   useEffect(() => {
     if (editModalOpened && currentUser?.data) {
@@ -95,6 +100,11 @@ const DashboardHeader = ({
       setPhotoUploadError("");
     }
   }, [editModalOpened, currentUser]);
+
+  // Sync checkedIn from user data
+  useEffect(() => {
+    setCheckedIn(!!currentUser?.data?.checkedIn);
+  }, [currentUser?.data?.checkedIn]);
 
   const handleChange = useCallback((fieldName: string, value: any) => {
     if (fieldName.startsWith("contacto.")) {
@@ -272,6 +282,23 @@ const DashboardHeader = ({
     logout();
     if (data?.eventId) window.location.assign(`/event/${data.eventId}`);
   }, [logout, data?.eventId]);
+
+  const handleCheckIn = useCallback(async (value: boolean) => {
+    if (!uid) return;
+    setSavingCheckIn(true);
+    try {
+      const now = new Date();
+      await updateUser(uid, {
+        checkedIn: value,
+        ...(value ? { checkInTime: now } : { checkOutTime: now }),
+      });
+      setCheckedIn(value);
+    } catch (e) {
+      console.error("Error updating check-in:", e);
+    } finally {
+      setSavingCheckIn(false);
+    }
+  }, [uid, updateUser]);
 
   // Render a single form field based on its type
   const renderField = useCallback(
@@ -490,6 +517,23 @@ const DashboardHeader = ({
               )}
               <Menu.Divider />
               <Menu.Item
+                leftSection={
+                  savingCheckIn
+                    ? <Loader size={16} />
+                    : <IconCheck size={16} color={checkedIn ? "green" : "gray"} />
+                }
+                onClick={() => {
+                  if (checkedIn) {
+                    setUncheckConfirmOpened(true);
+                  } else {
+                    handleCheckIn(true);
+                  }
+                }}
+              >
+                {checkedIn ? "✅ Check-in realizado" : "Hacer check-in"}
+              </Menu.Item>
+              <Menu.Divider />
+              <Menu.Item
                 color="red"
                 leftSection={<IconLogout size={16} />}
                 onClick={handleLogout}
@@ -500,6 +544,35 @@ const DashboardHeader = ({
           </Menu>
         </Group>
       </Group>
+
+      {/* Modal confirmación uncheck */}
+      <Modal
+        opened={uncheckConfirmOpened}
+        onClose={() => setUncheckConfirmOpened(false)}
+        title="Cancelar check-in"
+        size="sm"
+        centered
+        radius="md"
+      >
+        <Stack gap="md">
+          <Text size="sm">¿Estás seguro de que deseas cancelar tu check-in? Esto indicará que no estás presente en el evento.</Text>
+          <Group grow>
+            <Button variant="default" onClick={() => setUncheckConfirmOpened(false)}>
+              Cancelar
+            </Button>
+            <Button
+              color="red"
+              loading={savingCheckIn}
+              onClick={async () => {
+                await handleCheckIn(false);
+                setUncheckConfirmOpened(false);
+              }}
+            >
+              Confirmar
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       {/* Modal de edición con formFields dinámicos */}
       <Modal

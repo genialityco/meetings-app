@@ -20,6 +20,7 @@ import {
   Grid,
   useMantineTheme,
   Select,
+  Skeleton,
 } from "@mantine/core";
 import {
   IconClock,
@@ -256,9 +257,27 @@ export default function MeetingsTab({
 
   if (loadingMeetings) {
     return (
-      <Group justify="center" py="xl">
-        <Loader />
-      </Group>
+      <Grid gutter="sm">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Grid.Col span={{ base: 12, sm: 6, lg: 4 }} key={i}>
+            <Card withBorder radius="xl" padding="md" shadow="sm">
+              <Group wrap="nowrap" align="center" gap="sm" mb="sm">
+                <Skeleton height={44} width={44} circle />
+                <Stack gap={6} style={{ flex: 1 }}>
+                  <Skeleton height={14} width="60%" radius="sm" />
+                  <Skeleton height={12} width="40%" radius="sm" />
+                </Stack>
+              </Group>
+              <Skeleton height={1} mb="sm" />
+              <Stack gap={6}>
+                <Skeleton height={12} width="50%" radius="sm" />
+                <Skeleton height={12} width="40%" radius="sm" />
+              </Stack>
+              <Skeleton height={30} mt="md" radius="md" />
+            </Card>
+          </Grid.Col>
+        ))}
+      </Grid>
     );
   }
 

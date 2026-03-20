@@ -19,6 +19,7 @@ import {
   ActionIcon,
   Tooltip,
   Button,
+  Skeleton,
 } from "@mantine/core";
 import {
   IconClock,
@@ -595,7 +596,14 @@ export default function CalendarTab({
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {timeSlots.map((time) => {
+                {loadingSlots
+                  ? Array.from({ length: 6 }).map((_, i) => (
+                      <Table.Tr key={i}>
+                        <Table.Td><Skeleton height={18} width={60} radius="sm" /></Table.Td>
+                        <Table.Td><Skeleton height={18} width={180} radius="sm" /></Table.Td>
+                      </Table.Tr>
+                    ))
+                  : timeSlots.map((time) => {
                   const meetings = meetingsByTime[time] || [];
                   const isBlocked = blockedSlots.some((s) => s.startTime === time);
                   const hasAvailableSlot = agendaSlots.some(
