@@ -37,6 +37,7 @@ import { doc, updateDoc, collection, query, where, getDocs, addDoc, deleteDoc, o
 import { db } from "../../firebase/firebaseConfig";
 import { showNotification } from "@mantine/notifications";
 import { DEFAULT_SURVEY_FIELDS } from "../admin/ConfigureSurveyModal";
+import { surveyAnalytics } from "../../utils/analytics";
 
 interface CalendarTabProps {
   acceptedMeetings: any[];
@@ -254,6 +255,7 @@ export default function CalendarTab({
         ...surveyValues,
       };
       await setDoc(doc(db, "meetingSurveys", `${meeting.id}_${uid}`), payload);
+      surveyAnalytics.submitted(meeting.id, eventId, uid, myRole || undefined);
       setUserSurveys((prev) => ({ ...prev, [meeting.id]: payload }));
       setSurveyEditModal({ open: false, meeting: null });
     } catch {

@@ -525,7 +525,8 @@ export default function MeetingsTab({
                             leftSection={<IconX size={14} />}
                             loading={cancellingId === meeting.id}
                             onClick={() => handleCancelMeeting(meeting)}
-                            disabled={cancellingId === meeting.id}
+                            disabled={cancellingId === meeting.id || !!policies?.cancelMeetingDisabled}
+                            title={policies?.cancelMeetingDisabled ? "La cancelación de reuniones está deshabilitada" : undefined}
                           >
                             Cancelar
                           </Button>

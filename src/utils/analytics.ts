@@ -49,6 +49,9 @@ export type AnalyticsEvent =
   | { name: 'notification_clicked'; params: { notification_type: string } }
   | { name: 'notification_dismissed'; params: { notification_type: string } }
   
+  // Eventos de encuesta
+  | { name: 'survey_submitted'; params: { meeting_id: string; event_id: string; user_id: string; role?: string } }
+
   // Eventos de error
   | { name: 'error'; params: { error_message: string; error_location: string } };
 
@@ -285,6 +288,18 @@ export function trackError(errorMessage: string, errorLocation: string): void {
     },
   });
 }
+
+/**
+ * Trackea eventos de encuesta
+ */
+export const surveyAnalytics = {
+  submitted: (meetingId: string, eventId: string, userId: string, role?: string) => {
+    trackEvent({
+      name: 'survey_submitted',
+      params: { meeting_id: meetingId, event_id: eventId, user_id: userId, role },
+    });
+  },
+};
 
 /**
  * Configura propiedades de usuario (para segmentación)

@@ -3,14 +3,8 @@
 import { Button, Modal, Select, Stack } from "@mantine/core";
 import { addDoc, collection, getDocs, query, where, updateDoc, doc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 
-/* ===================================================
-   Componente ManualMeetingModal
-   – Modal para asignar una reunión manual a un evento.
-     Se generan los horarios disponibles a partir de la
-     configuración del evento y se listan los asistentes.
-=================================================== */
 const ManualMeetingModal = ({
   opened,
   onClose,
@@ -24,61 +18,98 @@ const ManualMeetingModal = ({
   const [selectedTimeSlot, setSelectedTimeSlot] = useState("");
   const [participant1, setParticipant1] = useState("");
   const [participant2, setParticipant2] = useState("");
-  const [timeSlots, setTimeSlots] = useState([]);
+
+  // Multi-day support
+  const eventDates = event.config?.eventDates || (event.config?.eventDate ? [event.config.eventDate] : []);
+  const isMultiDay = eventDates.length > 1;
+  const [selectedDate, setSelectedDate] = useState(eventDates[0] || null);
+
+  const formatDate = (dateStr) => {
+    const [year, month, day] = dateStr.split("-").map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString("es-ES", {
+      weekday: "short", day: "numeric", month: "short",
+    });
+  };
 
   useEffect(() => {
     fetchAssistants();
-    generateTimeSlots();
-    // Reiniciamos los campos al abrir el modal y prellenamos si vienen props
     setSelectedTable("");
     setSelectedTimeSlot("");
     setParticipant1(initialParticipant1 || "");
     setParticipant2(initialParticipant2 || "");
+    setSelectedDate(eventDates[0] || null);
   }, [event, initialParticipant1, initialParticipant2]);
+
+  // Reset slot when date changes
+  useEffect(() => {
+    setSelectedTimeSlot("");
+  }, [selectedDate]);
 
   const fetchAssistants = async () => {
     try {
-      // Consulta a la colección "users" SOLO los que tengan eventId == event.id
-      const q = query(
-        collection(db, "users"),
-        where("eventId", "==", event.id)
-      );
-      const usersSnapshot = await getDocs(q);
-
-      const usersList = usersSnapshot.docs.map((doc) => ({
-        value: doc.id,
-        label: `${doc.data().nombre} - ${doc.data().empresa}`,
-      }));
-      setAssistants(usersList);
+      const q = query(collection(db, "users"), where("eventId", "==", event.id));
+      const snap = await getDocs(q);
+      setAssistants(snap.docs.map((d) => ({
+        value: d.id,
+        label: `${d.data().nombre} - ${d.data().empresa}`,
+      })));
     } catch (error) {
       console.error("Error al obtener asistentes:", error);
     }
   };
 
-  const generateTimeSlots = () => {
-    const { startTime, endTime, meetingDuration, breakTime } = event.config;
-    const slots = [];
-    let currentTime = new Date(`1970-01-01T${startTime}:00`);
-    const endTimeObj = new Date(`1970-01-01T${endTime}:00`);
-    while (currentTime < endTimeObj) {
-      const formattedTime = currentTime.toTimeString().substring(0, 5);
-      slots.push({ value: formattedTime, label: formattedTime });
-      currentTime.setMinutes(
-        currentTime.getMinutes() + meetingDuration + breakTime
-      );
+  const timeSlots = useMemo(() => {
+    const cfg = event.config;
+    const dayConfig = (selectedDate && cfg.dailyConfig?.[selectedDate]) || {
+      startTime: cfg.startTime,
+      endTime: cfg.endTime,
+      breakBlocks: cfg.breakBlocks || [],
+    };
+    const { meetingDuration, breakTime } = cfg;
+    const blockLength = meetingDuration + breakTime;
+
+    const toMin = (hhmm) => { const [h, m] = hhmm.split(":").map(Number); return h * 60 + m; };
+    const toHHMM = (min) => `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+
+    const sortedBreaks = [...(dayConfig.breakBlocks || [])]
+      .filter((b) => b.start && b.end)
+      .map((b) => ({ start: toMin(b.start), end: toMin(b.end) }))
+      .sort((a, b) => a.start - b.start);
+
+    const segments = [];
+    let segStart = toMin(dayConfig.startTime);
+    const dayEnd = toMin(dayConfig.endTime);
+    for (const br of sortedBreaks) {
+      if (br.start > segStart) segments.push([segStart, br.start]);
+      segStart = br.end;
     }
-    setTimeSlots(slots);
-  };
+    if (segStart < dayEnd) segments.push([segStart, dayEnd]);
+
+    const slots = [];
+    for (const [segBegin, segEnd] of segments) {
+      const total = Math.floor((segEnd - segBegin) / blockLength);
+      for (let i = 0; i < total; i++) {
+        const t = toHHMM(segBegin + i * blockLength);
+        slots.push({ value: t, label: t });
+      }
+    }
+    return slots;
+  }, [event.config, selectedDate]);
 
   const assignMeetingManually = async () => {
     if (!selectedTable || !selectedTimeSlot || !participant1 || !participant2) {
       setGlobalMessage("Todos los campos son obligatorios.");
       return;
     }
+    if (isMultiDay && !selectedDate) {
+      setGlobalMessage("Debes seleccionar un día.");
+      return;
+    }
     if (participant1 === participant2) {
       setGlobalMessage("Los participantes deben ser diferentes.");
       return;
     }
+
     const meetingData = {
       eventId: event.id,
       requesterId: participant1,
@@ -92,25 +123,24 @@ const ManualMeetingModal = ({
       razonMatch: "Agendada manualmente por admin",
       scoreMatch: null,
       agendadoAutomatico: false,
+      isNotificated: false,
+      ...(selectedDate ? { meetingDate: selectedDate } : {}),
     };
 
     try {
-      // Se agrega la reunión en un subdocumento de "meetings" dentro del evento
       const docRef = await addDoc(collection(db, "events", event.id, "meetings"), meetingData);
 
-      // Buscar el slot en 'agenda' que coincida con el time y la mesa para marcarlo como no disponible
+      // Marcar slot en agenda como ocupado
       try {
         const q = query(
-          collection(db, "agenda"),
-          where("eventId", "==", event.id),
+          collection(db, "events", event.id, "agenda"),
           where("tableNumber", "==", parseInt(selectedTable, 10)),
-          where("startTime", "==", selectedTimeSlot)
+          where("startTime", "==", selectedTimeSlot),
+          ...(selectedDate ? [where("date", "==", selectedDate)] : [])
         );
         const snap = await getDocs(q);
         if (!snap.empty) {
-          // marcar el primer slot encontrado como asignado
-          const slotDoc = snap.docs[0];
-          await updateDoc(doc(db, "agenda", slotDoc.id), {
+          await updateDoc(doc(db, "events", event.id, "agenda", snap.docs[0].id), {
             available: false,
             meetingId: docRef.id,
           });
@@ -130,6 +160,14 @@ const ManualMeetingModal = ({
   return (
     <Modal opened={opened} onClose={onClose} title="Agendar Reunión Manual">
       <Stack>
+        {isMultiDay && (
+          <Select
+            label="Día"
+            data={eventDates.map((d) => ({ value: d, label: formatDate(d) }))}
+            value={selectedDate}
+            onChange={setSelectedDate}
+          />
+        )}
         <Select
           label="Número de Mesa"
           data={Array.from({ length: event.config.numTables }, (_, i) => ({

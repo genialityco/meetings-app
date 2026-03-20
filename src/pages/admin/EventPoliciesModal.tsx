@@ -49,6 +49,7 @@ export default function EventPoliciesModal({
   const [autoReassignOnCancel, setAutoReassignOnCancel] = useState(false);
   const [surveyBlockedFor, setSurveyBlockedFor] = useState<EventPolicies["surveyBlockedFor"]>("none");
   const [surveyMode, setSurveyMode] = useState<EventPolicies["surveyMode"]>("default");
+  const [cancelMeetingDisabled, setCancelMeetingDisabled] = useState(false);
 
   // Empresas y asignación de mesas fijas
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -74,6 +75,7 @@ export default function EventPoliciesModal({
     setAutoReassignOnCancel(p.autoReassignOnCancel ?? false);
     setSurveyBlockedFor(p.surveyBlockedFor ?? "none");
     setSurveyMode(p.surveyMode ?? "default");
+    setCancelMeetingDisabled(p.cancelMeetingDisabled ?? false);
   }, [event]);
 
   // Cargar empresas cuando se abre el modal y tableMode es "fixed"
@@ -146,6 +148,7 @@ export default function EventPoliciesModal({
               autoReassignOnCancel,
               surveyBlockedFor,
               surveyMode,
+              cancelMeetingDisabled,
             },
           },
         },
@@ -291,6 +294,13 @@ export default function EventPoliciesModal({
           description="Cuando se cancela una reunión, el slot liberado se reasigna automáticamente al mejor candidato disponible"
           checked={autoReassignOnCancel}
           onChange={(e) => setAutoReassignOnCancel(e.currentTarget.checked)}
+        />
+
+        <Switch
+          label="Deshabilitar cancelación de reuniones"
+          description="Los asistentes no podrán cancelar sus reuniones desde el dashboard"
+          checked={cancelMeetingDisabled}
+          onChange={(e) => setCancelMeetingDisabled(e.currentTarget.checked)}
         />
 
         <Select
