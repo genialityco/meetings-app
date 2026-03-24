@@ -117,6 +117,13 @@ const getValue = (a, fieldName) => {
     return a.nit || a.nitNorm || a.id || "";
   }
   return a[fieldName] ?? "";
+}
+
+// Sanitiza un valor para Excel: quita el = inicial que Excel interpreta como fórmula
+const sanitizeForExcel = (val) => {
+  if (val === null || val === undefined) return "";
+  const str = String(val);
+  return str.startsWith("=") ? str.slice(1) : str;
 };
 
 // Resuelve el valor legible de un campo según su tipo (select, multiselect, etc.)
@@ -807,7 +814,7 @@ function parseFirestoreTimestamp(input) {
       ...attendees.map((a) => {
         const counts = getMeetingCounts(a.id);
         return [
-          ...allFields.slice(0, -4).map((f) => getValue(a, f.name)),
+          ...allFields.slice(0, -4).map((f) => sanitizeForExcel(getValue(a, f.name))),
           counts.pending,
           counts.accepted,
           counts.rejected,
@@ -823,48 +830,83 @@ function parseFirestoreTimestamp(input) {
     XLSX.writeFile(wb, `asistentes_${event?.eventName || event.id}.xlsx`);
   };
   const exportCompradoresToExcel = () => {
-    // Puedes ajustar estos campos según tu modelo
-    const compradores = attendees.filter((a) => a.tipoAsistente === "comprador");
+    const compradores = attendees.filter((a) => (a.tipoAsistente || "").toLowerCase() === "comprador");
     if (compradores.length === 0) return setGlobalMessage("No hay compradores.");
-    const fieldsComprador = [
-      "id",
-      "nombre",
-      "empresa",
-      "necesidad",
-      "lastConnectionFormatted",
-      // agrega aquí más campos si los tienes configurados
+
+    const visibleFields = fields.filter((f) => shownFields.includes(f.name));
+    const allFields = [
+      { name: "id", label: "ID" },
+      ...visibleFields,
+      { name: "citasPendientes", label: "Citas Pendientes" },
+      { name: "citasAceptadas", label: "Citas Aceptadas" },
+      { name: "citasRechazadas", label: "Citas Rechazadas" },
+      { name: "citasTotales", label: "Total Citas" },
     ];
+
+    const getMeetingCounts = (userId) => {
+      const userMeetings = meetings.filter((m) => m.participants?.includes(userId));
+      return {
+        pending: userMeetings.filter((m) => m.status === "pending").length,
+        accepted: userMeetings.filter((m) => m.status === "accepted").length,
+        rejected: userMeetings.filter((m) => m.status === "rejected").length,
+        total: userMeetings.length,
+      };
+    };
+
     const wsData = [
-      fieldsComprador, // header
-      ...compradores.map((c) => fieldsComprador.map((f) => c[f] || "")),
+      allFields.map((f) => f.label),
+      ...compradores.map((a) => {
+        const counts = getMeetingCounts(a.id);
+        return [
+          ...allFields.slice(0, -4).map((f) => sanitizeForExcel(getValue(a, f.name))),
+          counts.pending, counts.accepted, counts.rejected, counts.total,
+        ];
+      }),
     ];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Compradores");
-    XLSX.writeFile(wb, "compradores_evento_final.xlsx");
+    XLSX.writeFile(wb, `compradores_${event?.eventName || event.id}.xlsx`);
   };
 
-  // 2. Función para exportar vendedores
   const exportVendedoresToExcel = () => {
-    const vendedores = attendees.filter((a) => a.tipoAsistente === "vendedor");
+    const vendedores = attendees.filter((a) => (a.tipoAsistente || "").toLowerCase() === "vendedor");
     if (vendedores.length === 0) return setGlobalMessage("No hay vendedores.");
-    const fieldsVendedor = [
-      "id",
-      "nombre",
-      "empresa",
-      "descripcion",
-      "necesidad",
-      "lastConnectionFormatted",
-      // agrega aquí más campos si los tienes configurados
+
+    const visibleFields = fields.filter((f) => shownFields.includes(f.name));
+    const allFields = [
+      { name: "id", label: "ID" },
+      ...visibleFields,
+      { name: "citasPendientes", label: "Citas Pendientes" },
+      { name: "citasAceptadas", label: "Citas Aceptadas" },
+      { name: "citasRechazadas", label: "Citas Rechazadas" },
+      { name: "citasTotales", label: "Total Citas" },
     ];
+
+    const getMeetingCounts = (userId) => {
+      const userMeetings = meetings.filter((m) => m.participants?.includes(userId));
+      return {
+        pending: userMeetings.filter((m) => m.status === "pending").length,
+        accepted: userMeetings.filter((m) => m.status === "accepted").length,
+        rejected: userMeetings.filter((m) => m.status === "rejected").length,
+        total: userMeetings.length,
+      };
+    };
+
     const wsData = [
-      fieldsVendedor, // header
-      ...vendedores.map((v) => fieldsVendedor.map((f) => v[f] || "")),
+      allFields.map((f) => f.label),
+      ...vendedores.map((a) => {
+        const counts = getMeetingCounts(a.id);
+        return [
+          ...allFields.slice(0, -4).map((f) => sanitizeForExcel(getValue(a, f.name))),
+          counts.pending, counts.accepted, counts.rejected, counts.total,
+        ];
+      }),
     ];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Vendedores");
-    XLSX.writeFile(wb, "vendedores_evento_final.xlsx");
+    XLSX.writeFile(wb, `vendedores_${event?.eventName || event.id}.xlsx`);
   };
 
   // Exportar empresas a Excel
