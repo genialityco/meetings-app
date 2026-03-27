@@ -43,7 +43,7 @@ const getEventTableFields = (event, entityType = "users") => {
   // Si hay campos específicos configurados, usarlos
   if (event?.config?.[configKey] && event.config[configKey].length > 0) {
     return event.config[configKey]
-      .filter((f) => !["photo", "aceptaTratamiento"].includes(f.name))
+      .filter((f) => !["photo"].includes(f.name))
       .map((f) => ({
         name: f.name,
         label: f.label || f.name,
