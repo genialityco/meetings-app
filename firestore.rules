@@ -1,0 +1,98 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helpers
+    function isAdmin(uid) {
+      return exists(/databases/$(database)/documents/admins/$(uid));
+    }
+
+    function isSuperAdmin(uid) {
+      return isAdmin(uid) &&
+        get(/databases/$(database)/documents/admins/$(uid)).data.get("isSuperAdmin", false) == true;
+    }
+
+    function isEventOwner(uid, eventId) {
+      return uid in get(/databases/$(database)/documents/events/$(eventId)).data.get("owners", []);
+    }
+
+    function canManageEvent(uid, eventId) {
+      return isSuperAdmin(uid) || isEventOwner(uid, eventId);
+    }
+
+    // ─── Eventos ────────────────────────────────────────────────────────────
+    match /events/{eventId} {
+      // Lectura libre (dashboard de asistentes la necesita)
+      allow read: if true;
+
+      // Solo admins registrados pueden crear eventos
+      allow create: if request.auth != null && isAdmin(request.auth.uid);
+
+      // Solo owners o super-admin pueden modificar/eliminar
+      allow update, delete: if request.auth != null && canManageEvent(request.auth.uid, eventId);
+
+      // Sub-colecciones del evento (meetings, agenda, companies, products, etc.)
+      match /{subcollection}/{document=**} {
+        allow read: if true;
+        allow write: if request.auth != null && canManageEvent(request.auth.uid, eventId);
+      }
+    }
+
+    // ─── Admins ─────────────────────────────────────────────────────────────
+    match /admins/{uid} {
+      // get: cada admin lee su perfil; super-admins leen cualquiera por uid
+      allow get: if request.auth != null &&
+        (request.auth.uid == uid || isSuperAdmin(request.auth.uid));
+      // list: solo super-admins pueden listar la colección completa
+      allow list: if request.auth != null && isSuperAdmin(request.auth.uid);
+      // Solo super-admins pueden crear/modificar/eliminar admins
+      allow write: if request.auth != null && isSuperAdmin(request.auth.uid);
+    }
+
+    // ─── Solicitudes de acceso admin ─────────────────────────────────────────
+    match /adminRequests/{uid} {
+      // get: el solicitante lee su propia solicitud; super-admins leen cualquiera
+      allow get: if request.auth != null &&
+        (request.auth.uid == uid || isSuperAdmin(request.auth.uid));
+      // list: solo super-admins pueden listar todas las solicitudes
+      allow list: if request.auth != null && isSuperAdmin(request.auth.uid);
+      // Cualquier usuario autenticado puede crear su propia solicitud
+      allow create: if request.auth != null && request.auth.uid == uid;
+      // Solo super-admins pueden actualizar (aprobar/rechazar)
+      allow update, delete: if request.auth != null && isSuperAdmin(request.auth.uid);
+    }
+
+    // ─── Usuarios (asistentes) ───────────────────────────────────────────────
+    match /users/{uid} {
+      allow read: if true;
+      // Usuarios autenticados (anónimos o manual) pueden escribir
+      allow write: if request.auth != null;
+    }
+
+    // ─── Locks (reservas de agenda) ──────────────────────────────────────────
+    match /locks/{lockId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // ─── Notificaciones ──────────────────────────────────────────────────────
+    match /notifications/{doc} {
+      allow read, write: if request.auth != null;
+    }
+
+    // ─── Encuestas de reuniones ──────────────────────────────────────────────
+    match /meetingSurveys/{doc} {
+      allow read, write: if request.auth != null;
+    }
+
+    // ─── Chats de IA ─────────────────────────────────────────────────────────
+    match /aiChats/{doc} {
+      allow read, write: if request.auth != null;
+    }
+
+    // ─── Configuración general ───────────────────────────────────────────────
+    match /config/{doc} {
+      allow read: if true;
+      allow write: if request.auth != null && isSuperAdmin(request.auth.uid);
+    }
+  }
+}

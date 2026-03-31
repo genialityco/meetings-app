@@ -48,10 +48,13 @@ Defaults defined in `DEFAULT_POLICIES` in `src/pages/dashboard/types.ts`.
 
 - `src/firebase/firebaseConfig.js` — Firebase init, exports `db`, `auth`, `storage`, `messaging`
 - `src/context/UserContext.jsx` — Auth state (anonymous auth + manual login by cedula/email), exports `UserProvider` and `UserContext`
-- `src/utils/` — Utilities (companyStorage.ts for logo upload)
+- `src/utils/companyStorage.ts` — Logo upload to Firebase Storage
+- `src/utils/analytics.ts` — Centralized GA4 event tracking (typed `AnalyticsEvent` union, used via `TrackedButton` and direct `trackEvent()` calls)
+- `src/utils/whatsappService.ts` — Client-side WhatsApp notification sender (supports v1/v2 API controlled by `whatsappApiVersion` policy)
+- `src/hooks/usePageTracking.ts` — GA4 page view tracking on route changes
 - `src/pages/admin/` — Admin panel: event management, attendees, meetings, policies config
 - `src/pages/dashboard/` — Attendee dashboard with discovery views + activity tabs
-- `src/components/` — Shared components (UserProfile, DashboardHeader, NotificationMenu)
+- `src/components/` — Shared components (UserProfile, DashboardHeader, NotificationMenu, TrackedButton)
 
 ### Dashboard Architecture
 

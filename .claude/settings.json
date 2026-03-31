@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find d:gen.ialityProyectosmy-meetings-app -name firestore.rules -o -name *.rules)",
+      "Bash(ls -la d:gen.ialityProyectosmy-meetings-app.env*)",
+      "Bash(find /d/gen.iality/Proyectos/my-meetings-app/src -type f \\\\\\(-name *login* -o -name *auth* -o -name *Login* -o -name *Auth* \\\\\\))",
+      "Bash(grep -r useForm d:/gen.iality/Proyectos/my-meetings-app/src --include=*.tsx --include=*.jsx -l)",
+      "Bash(firebase login:list)",
+      "Bash(firebase projects:list)",
+      "Bash(firebase login:use contactogeniality@gmail.com)"
+    ]
+  }
+}

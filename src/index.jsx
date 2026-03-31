@@ -11,6 +11,7 @@ import { Notifications } from "@mantine/notifications";
 import { ModalsProvider } from "@mantine/modals";
 import { BrowserRouter } from "react-router-dom";
 import { UserProvider } from "./context/UserContext.jsx";
+import { AdminAuthProvider } from "./context/AdminAuthContext.tsx";
 
 const theme = createTheme({
   fontFamily: "Barlow, sans-serif",
@@ -31,12 +32,14 @@ createRoot(document.getElementById("root")).render(
   // <StrictMode>
   <UserProvider>
     <BrowserRouter>
+      <AdminAuthProvider>
       <MantineProvider theme={theme}>
         <ModalsProvider>
           <Notifications />
           <App />
         </ModalsProvider>
       </MantineProvider>
+      </AdminAuthProvider>
     </BrowserRouter>
   </UserProvider>
   // </StrictMode>

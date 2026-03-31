@@ -40,7 +40,9 @@ import EditEventConfigModal from "./EditEventConfigModal";
 import ManualMeetingModal from "./ManualMeetingModal";
 import MeetingsListModal from "./MeetingsListModal";
 import AttendeesList from "./AttendeesList";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
+import { useContext } from "react";
+import { AdminAuthContext } from "../../context/AdminAuthContext";
 import * as XLSX from "xlsx";
 import ConfigureFieldsModal from "./ConfigureFieldsModal";
 import EventPoliciesModal from "./EventPoliciesModal";
@@ -48,6 +50,8 @@ import ConfigureSurveyModal from "./ConfigureSurveyModal";
 
 const EventAdmin = () => {
   const { eventId } = useParams();
+  const navigate = useNavigate();
+  const { adminUser, isSuperAdmin } = useContext(AdminAuthContext);
   const [event, setEvent] = useState(null);
   const [globalMessage, setGlobalMessage] = useState("");
   const [editConfigModalOpened, setEditConfigModalOpened] = useState(false);
@@ -103,7 +107,14 @@ const EventAdmin = () => {
     try {
       const eventSnap = await getDoc(doc(db, "events", eventId));
       if (eventSnap.exists()) {
-        setEvent({ id: eventSnap.id, ...eventSnap.data() });
+        const eventData = eventSnap.data();
+        // Verificar permisos: solo owners o super-admin pueden acceder
+        const isOwner = (eventData.owners || []).includes(adminUser?.uid);
+        if (!isSuperAdmin && !isOwner) {
+          navigate("/admin", { replace: true });
+          return;
+        }
+        setEvent({ id: eventSnap.id, ...eventData });
       }
     } catch (error) {
       console.log(error);
@@ -450,11 +461,15 @@ const EventAdmin = () => {
           "Hora",
           "Mesa",
           "Fecha reunión",
+          "Participante 1 (NIT)",
           "Participante 1 (Empresa)",
+          "Participante 1 (Cédula)",
           "Participante 1 (Nombre)",
           "Participante 1 (Rol)",
           "Participante 1 (Necesidad)",
+          "Participante 2 (NIT)",
           "Participante 2 (Empresa)",
+          "Participante 2 (Cédula)",
           "Participante 2 (Nombre)",
           "Participante 2 (Rol)",
           "Participante 2 (Necesidad)",
@@ -476,11 +491,15 @@ const EventAdmin = () => {
             agendaSlot ? `${agendaSlot.startTime} - ${agendaSlot.endTime}` : (meeting.timeSlot || ""),
             agendaSlot ? agendaSlot.tableNumber : (meeting.tableAssigned || ""),
             meeting.meetingDate || "",
+            p1?.companyId || "",
             p1?.empresa || "",
+            p1?.cedula || "",
             p1?.nombre || "",
             p1?.tipoAsistente || "",
             p1?.necesidad || "",
+            p2?.companyId || "",
             p2?.empresa || "",
+            p2?.cedula || "",
             p2?.nombre || "",
             p2?.tipoAsistente || "",
             p2?.necesidad || "",

@@ -2,6 +2,7 @@ import { Suspense, lazy } from "react";
 import { Routes, Route } from "react-router-dom";
 import { LoadingOverlay } from "@mantine/core";
 import { usePageTracking } from "./hooks/usePageTracking";
+import ProtectedAdminRoute from "./components/ProtectedAdminRoute.tsx";
 
 // Eager: landing page (ruta más visitada)
 import Landing from "./pages/Landing";
@@ -20,6 +21,8 @@ const EventMatchPage = lazy(() => import("./pages/admin/EventMatchPage.jsx"));
 const ImportMeetingsFromExcelPage = lazy(() => import("./pages/admin/ImportMeetingsFromExcelPage.jsx"));
 const AgendaAdminPanel = lazy(() => import("./pages/admin/AgendaAdminPanel.jsx"));
 const MeetingSurveys = lazy(() => import("./pages/admin/MeetingSurveys.jsx"));
+const AdminLogin = lazy(() => import("./pages/admin/AdminLogin.tsx"));
+const AdminRegister = lazy(() => import("./pages/admin/AdminRegister.tsx"));
 
 const App = () => {
   // Trackear automáticamente todas las vistas de página
@@ -39,16 +42,18 @@ const App = () => {
         {/* Páginas de actividad del usuario */}
         <Route path="/dashboard/:eventId/my-products" element={<MyProductsPage />} />
         <Route path="/dashboard/:eventId/my-company" element={<MyCompanyPage />} />
-        <Route path="/admin" element={<AdminPanel />} />
+        <Route path="/admin/login" element={<AdminLogin />} />
+        <Route path="/admin/register" element={<AdminRegister />} />
+        <Route path="/admin" element={<ProtectedAdminRoute><AdminPanel /></ProtectedAdminRoute>} />
         <Route path="/matrix/:eventId" element={<MatrixPage />} />
         <Route
           path="/admin/event/:eventId/match"
-          element={<EventMatchPage />}
+          element={<ProtectedAdminRoute><EventMatchPage /></ProtectedAdminRoute>}
         />
 
         <Route
           path="/admin/event/:eventId/import-meetings"
-          element={<ImportMeetingsFromExcelPage />}
+          element={<ProtectedAdminRoute><ImportMeetingsFromExcelPage /></ProtectedAdminRoute>}
         />
 
         <Route path="/phonesadmin" element={<PhonesAdminPage />} />
@@ -56,14 +61,14 @@ const App = () => {
           path="/meeting-response/:eventId/:meetingId/:action"
           element={<MeetingAutoResponse />}
         />
-        <Route path="/admin/event/:eventId" element={<EventAdmin />} />
+        <Route path="/admin/event/:eventId" element={<ProtectedAdminRoute><EventAdmin /></ProtectedAdminRoute>} />
         <Route
           path="/admin/event/:eventId/agenda"
-          element={<AgendaAdminPanel />}
+          element={<ProtectedAdminRoute><AgendaAdminPanel /></ProtectedAdminRoute>}
         />
         <Route
           path="/admin/surveys"
-          element={<MeetingSurveys />}
+          element={<ProtectedAdminRoute><MeetingSurveys /></ProtectedAdminRoute>}
         />
       </Routes>
     </Suspense>

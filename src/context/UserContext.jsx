@@ -64,6 +64,11 @@ export const UserProvider = ({ children }) => {
         //   console.error("Error al obtener el token de notificación:", error);
         // }
       } else {
+        // No re-autenticar anónimamente si hay una sesión admin activa
+        if (localStorage.getItem("adminSession") === "true") {
+          setUserLoading(false);
+          return;
+        }
         try {
           const userCredential = await signInAnonymously(auth);
           const newUser = { uid: userCredential.user.uid, data: null };

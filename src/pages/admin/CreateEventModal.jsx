@@ -1,11 +1,13 @@
 /* eslint-disable react/prop-types */
-import { useState } from "react";
+import { useState, useContext } from "react";
 import { Modal, Stack, TextInput, Button } from "@mantine/core";
 import { collection, addDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../../firebase/firebaseConfig";
+import { AdminAuthContext } from "../../context/AdminAuthContext";
 
 const CreateEventModal = ({ opened, onClose, refreshEvents, setGlobalMessage }) => {
+  const { adminUser } = useContext(AdminAuthContext);
   const [eventName, setEventName] = useState("");
   const [eventImageUrl, setEventImageUrl] = useState("");
   const [eventImageFile, setEventImageFile] = useState(null);
@@ -38,6 +40,9 @@ const CreateEventModal = ({ opened, onClose, refreshEvents, setGlobalMessage }) 
       const newEvent = {
         eventName,
         eventImage: imageUrl,
+        createdBy: adminUser?.uid || null,
+        owners: adminUser?.uid ? [adminUser.uid] : [],
+        createdAt: new Date(),
         // Configuración por defecto del evento
         config: {
           maxPersons: 100,
