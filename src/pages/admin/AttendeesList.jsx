@@ -42,14 +42,18 @@ const getEventTableFields = (event, entityType = "users") => {
   
   // Si hay campos específicos configurados, usarlos
   if (event?.config?.[configKey] && event.config[configKey].length > 0) {
-    return event.config[configKey]
-      .filter((f) => !["photo", "aceptaTratamiento"].includes(f.name))
-      .map((f) => ({
-        name: f.name,
-        label: f.label || f.name,
-        type: f.type,
-        options: f.options,
-      }));
+    return [
+      ...event.config[configKey]
+        .filter((f) => !["photo"].includes(f.name))
+        .map((f) => ({
+          name: f.name,
+          label: f.label || f.name,
+          type: f.type,
+          options: f.options,
+        })),
+      // aceptaTratamiento no está en formFields pero siempre debe exportarse
+      ...(entityType === "users" ? [{ name: "aceptaTratamiento", label: "Acepta Tratamiento", type: "text" }] : []),
+    ];
   }
   
   // Para empresas, extraer campos relevantes de formFields si existen
@@ -104,17 +108,20 @@ const getValue = (a, fieldName) => {
     const key = fieldName.split(".")[1];
     return a.contacto?.[key] || "";
   }
-  // Caso especial para imágenes de productos (puede ser array o string)
   if (fieldName === "images" && Array.isArray(a.images)) {
     return a.images[0] || "";
   }
-  // Caso especial para imageUrl de productos
   if (fieldName === "imageUrl") {
     return a.imageUrl || (Array.isArray(a.images) ? a.images[0] : "") || "";
   }
-  // Caso especial para NIT de empresa (puede estar como nit, nitNorm o id)
   if (fieldName === "nit") {
     return a.nit || a.nitNorm || a.id || "";
+  }
+  if (fieldName === "aceptaTratamiento") {
+    const val = a.aceptaTratamiento;
+    if (val === true || val === "true" || val === 1) return "Sí";
+    if (val === false || val === "false" || val === 0) return "No";
+    return "";
   }
   return a[fieldName] ?? "";
 }
@@ -786,9 +793,13 @@ function parseFirestoreTimestamp(input) {
   // Exporta SOLO los campos visibles
   const handleExportCurrentToExcel = () => {
     const visibleFields = fields.filter((f) => shownFields.includes(f.name));
+    // Asegurar que aceptaTratamiento siempre esté incluido
+    const hasAcepta = visibleFields.some((f) => f.name === "aceptaTratamiento");
+    const extraFields = hasAcepta ? [] : [{ name: "aceptaTratamiento", label: "Acepta Tratamiento" }];
     const allFields = [
-      { name: "id", label: "ID" }, 
+      { name: "id", label: "ID" },
       ...visibleFields,
+      ...extraFields,
       { name: "citasPendientes", label: "Citas Pendientes" },
       { name: "citasAceptadas", label: "Citas Aceptadas" },
       { name: "citasRechazadas", label: "Citas Rechazadas" },
@@ -834,9 +845,12 @@ function parseFirestoreTimestamp(input) {
     if (compradores.length === 0) return setGlobalMessage("No hay compradores.");
 
     const visibleFields = fields.filter((f) => shownFields.includes(f.name));
+    const hasAcepta = visibleFields.some((f) => f.name === "aceptaTratamiento");
+    const extraFields = hasAcepta ? [] : [{ name: "aceptaTratamiento", label: "Acepta Tratamiento" }];
     const allFields = [
       { name: "id", label: "ID" },
       ...visibleFields,
+      ...extraFields,
       { name: "citasPendientes", label: "Citas Pendientes" },
       { name: "citasAceptadas", label: "Citas Aceptadas" },
       { name: "citasRechazadas", label: "Citas Rechazadas" },
@@ -874,9 +888,12 @@ function parseFirestoreTimestamp(input) {
     if (vendedores.length === 0) return setGlobalMessage("No hay vendedores.");
 
     const visibleFields = fields.filter((f) => shownFields.includes(f.name));
+    const hasAcepta = visibleFields.some((f) => f.name === "aceptaTratamiento");
+    const extraFields = hasAcepta ? [] : [{ name: "aceptaTratamiento", label: "Acepta Tratamiento" }];
     const allFields = [
       { name: "id", label: "ID" },
       ...visibleFields,
+      ...extraFields,
       { name: "citasPendientes", label: "Citas Pendientes" },
       { name: "citasAceptadas", label: "Citas Aceptadas" },
       { name: "citasRechazadas", label: "Citas Rechazadas" },
