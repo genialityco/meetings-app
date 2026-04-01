@@ -36,6 +36,7 @@ import {
   IconUsers,
   IconSparkles,
   IconHeart,
+  IconFileTypePdf,
 } from "@tabler/icons-react";
 import type { Assistant } from "./types";
 import { useNavigate, useParams } from "react-router-dom";
@@ -679,6 +680,33 @@ export default function AttendeesView({
                           return null;
                       }
                       const label = fieldDef?.label || fieldName;
+
+                      // Campos PDF: mostrar botón de descarga
+                      if (fieldDef?.type === "pdf") {
+                        const pdfUrl = assistant[fieldName];
+                        if (!pdfUrl) return null;
+                        return (
+                          <Group key={fieldName} gap={8} wrap="nowrap">
+                            <ThemeIcon variant="light" radius="xl" size={26} color="red">
+                              <IconFileTypePdf size={14} />
+                            </ThemeIcon>
+                            <Button
+                              component="a"
+                              href={pdfUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              variant="light"
+                              color="red"
+                              size="xs"
+                              radius="md"
+                              leftSection={<IconFileTypePdf size={13} />}
+                            >
+                              {label}
+                            </Button>
+                          </Group>
+                        );
+                      }
+
                       const Icon =
                         FIELD_ICONS[fieldName] || IconFileDescription;
                       return (

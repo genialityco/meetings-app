@@ -159,6 +159,12 @@ const AVAILABLE_FIELDS = [
       errorMessage: "Debe contener entre 7 y 10 dígitos",
     },
   },
+  {
+    name: "brochure",
+    label: "Brochure (PDF)",
+    type: "pdf",
+    required: false,
+  },
 ];
 
 const CONSENTIMIENTO_FIELD = {
@@ -306,7 +312,13 @@ function SortableFieldItem({
                 ? `Multi-select: ${(field.options || []).map((op: any) => op.label).join(", ")}`
                 : field.type === "richtext"
                   ? "RichText"
-                  : "Texto"}
+                  : field.type === "pdf"
+                    ? "PDF"
+                    : field.type === "photo"
+                      ? "Foto"
+                      : field.type === "file"
+                        ? "Archivo"
+                        : "Texto"}
         </Text>
         {isCustomField(field) && (
           <ActionIcon
@@ -406,7 +418,7 @@ export default function ConfigureFieldsModal({
   // Custom field UI
   const [newFieldLabel, setNewFieldLabel] = useState("");
   const [newFieldType, setNewFieldType] = useState<
-    "text" | "select" | "multiselect" | "checkbox"
+    "text" | "select" | "multiselect" | "checkbox" | "pdf"
   >("text");
   const [newSelectOptions, setNewSelectOptions] =
     useState("Opción 1, Opción 2");
@@ -957,6 +969,7 @@ export default function ConfigureFieldsModal({
               { value: "select", label: "Select" },
               { value: "multiselect", label: "Multi-select" },
               { value: "checkbox", label: "Checkbox" },
+              { value: "pdf", label: "PDF (documento)" },
             ]}
             style={{ width: 140 }}
             size="xs"

@@ -67,6 +67,13 @@ const uploadProfilePicture = async (file, uid) => {
   return photoURL;
 };
 
+const uploadPdfDocument = async (file, eventId, uid, fieldName) => {
+  const ext = file.name.split(".").pop() || "pdf";
+  const storageRef = ref(storage, `brochures/${eventId}/${uid}/${fieldName}.${ext}`);
+  await uploadBytes(storageRef, file);
+  return getDownloadURL(storageRef);
+};
+
 const isValidEmail = (v = "") =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim());
 
@@ -195,6 +202,9 @@ const Landing = () => {
   const [companyLogoFile, setCompanyLogoFile] = useState(null);
   const [companyLogoPreview, setCompanyLogoPreview] = useState(null);
 
+  // PDF document fields state: { [fieldName]: File }
+  const [pdfFiles, setPdfFiles] = useState({});
+
   // AI description improvement state
   const [improvingDescription, setImprovingDescription] = useState(false);
 
@@ -289,6 +299,10 @@ const Landing = () => {
         value = "selected";
       }
 
+      if (field.type === "pdf" && (pdfFiles[field.name] || formValues[field.name])) {
+        value = "selected";
+      }
+
       const error = validateField(field, value);
       if (error) errors[field.name] = error;
     });
@@ -300,7 +314,7 @@ const Landing = () => {
 
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
-  }, [event?.config?.formFields, formValues, getValueForField, isFieldVisible]);
+  }, [event?.config?.formFields, formValues, getValueForField, isFieldVisible, pdfFiles]);
 
   const validateStep = useCallback(
     (fieldNames = []) => {
@@ -316,6 +330,10 @@ const Landing = () => {
           (def.name === "photoURL" || def.type === "photo") &&
           formValues._photoFile
         ) {
+          value = "selected";
+        }
+
+        if (def.type === "pdf" && (pdfFiles[def.name] || formValues[def.name])) {
           value = "selected";
         }
 
@@ -339,6 +357,7 @@ const Landing = () => {
       steps,
       activeStep,
       formValues,
+      pdfFiles,
     ],
   );
 
@@ -613,55 +632,71 @@ const Landing = () => {
         }
       }
 
+      // Subir documentos PDF por campo
+      for (const [fieldName, pdfFile] of Object.entries(pdfFiles)) {
+        if (pdfFile) {
+          try {
+            const pdfUrl = await uploadPdfDocument(pdfFile, eventId, uid, fieldName);
+            dataToUpdate[fieldName] = pdfUrl;
+          } catch (e) {
+            console.error(`Error subiendo PDF ${fieldName}:`, e);
+          }
+        }
+      }
+
       const nitNorm = normalizeNit(formValues.company_nit || "");
       const razon = String(formValues.company_razonSocial || "").trim();
 
       if (eventId && nitNorm) {
-        const companyRef = doc(db, "events", eventId, "companies", nitNorm);
-        const snap = await getDoc(companyRef);
+        try {
+          const companyRef = doc(db, "events", eventId, "companies", nitNorm);
+          const snap = await getDoc(companyRef);
 
-        const companyFieldData = {};
-        companyStepFields.forEach((fieldName) => {
-          if (fieldName === "company_nit") return;
-          const val = formValues[fieldName];
-          if (val !== undefined && val !== null) {
-            companyFieldData[fieldName] = val;
-          }
-        });
-        if (razon) companyFieldData.razonSocial = razon;
-
-        if (!snap.exists()) {
-          await setDoc(companyRef, {
-            nitNorm,
-            ...companyFieldData,
-            logoUrl: null,
-            fixedTable: null,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
+          const companyFieldData = {};
+          companyStepFields.forEach((fieldName) => {
+            if (fieldName === "company_nit") return;
+            const val = formValues[fieldName];
+            if (val !== undefined && val !== null) {
+              companyFieldData[fieldName] = val;
+            }
           });
-        } else {
-          await setDoc(
-            companyRef,
-            { ...companyFieldData, updatedAt: serverTimestamp() },
-            { merge: true },
-          );
-        }
+          if (razon) companyFieldData.razonSocial = razon;
 
-        if (companyLogoFile && eventId && nitNorm) {
-          try {
-            const logoUrl = await uploadCompanyLogo(
-              eventId,
+          if (!snap.exists()) {
+            await setDoc(companyRef, {
               nitNorm,
-              companyLogoFile,
-            );
+              ...companyFieldData,
+              logoUrl: null,
+              fixedTable: null,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+          } else {
             await setDoc(
               companyRef,
-              { logoUrl, updatedAt: serverTimestamp() },
+              { ...companyFieldData, updatedAt: serverTimestamp() },
               { merge: true },
             );
-          } catch (e) {
-            console.error("Error subiendo logo de empresa:", e);
           }
+
+          if (companyLogoFile && eventId && nitNorm) {
+            try {
+              const logoUrl = await uploadCompanyLogo(
+                eventId,
+                nitNorm,
+                companyLogoFile,
+              );
+              await setDoc(
+                companyRef,
+                { logoUrl, updatedAt: serverTimestamp() },
+                { merge: true },
+              );
+            } catch (e) {
+              console.error("Error subiendo logo de empresa:", e);
+            }
+          }
+        } catch (e) {
+          console.warn("No se pudo guardar datos de empresa (sin permisos o sin NIT):", e);
         }
 
         dataToUpdate.companyId = nitNorm;
@@ -704,6 +739,7 @@ const Landing = () => {
     validateForm,
     companyStepFields,
     companyLogoFile,
+    pdfFiles,
   ]);
 
   const renderFieldsForNames = useCallback(
@@ -971,6 +1007,35 @@ const Landing = () => {
           );
         }
 
+        if (field.type === "pdf") {
+          const currentFile = pdfFiles[field.name] || null;
+          const existingUrl = formValues[field.name];
+          return (
+            <Box key={field.name}>
+              <FileInput
+                label={field.label || "Documento PDF"}
+                placeholder={field.placeholder || "Selecciona un PDF"}
+                accept="application/pdf"
+                value={currentFile}
+                onChange={(file) =>
+                  setPdfFiles((prev) => ({ ...prev, [field.name]: file }))
+                }
+                required={field.required}
+                error={fieldError}
+                radius="md"
+              />
+              {!currentFile && existingUrl && (
+                <Text size="xs" c="dimmed" mt={4}>
+                  Ya tienes un documento cargado.{" "}
+                  <a href={existingUrl} target="_blank" rel="noreferrer">
+                    Ver documento
+                  </a>
+                </Text>
+              )}
+            </Box>
+          );
+        }
+
         return (
           <TextInput
             key={field.name}
@@ -1003,6 +1068,8 @@ const Landing = () => {
       profilePicPreview,
       photoUploadStatus,
       photoUploadError,
+      pdfFiles,
+      formValues,
     ],
   );
 
