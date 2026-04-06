@@ -781,13 +781,24 @@ const Landing = () => {
               />
 
               {profilePicPreview ? (
-                <img
-                  src={profilePicPreview}
-                  alt="Vista previa"
-                  width={120}
-                  height={120}
-                  style={{ borderRadius: "10px", marginTop: "10px"}}
-                />
+                <div style={{ position: "relative", display: "inline-block", marginTop: 10 }}>
+                  <img
+                    src={profilePicPreview}
+                    alt="Vista previa"
+                    width={120}
+                    height={120}
+                    style={{ borderRadius: "10px", display: "block", opacity: photoUploadStatus === "uploading" ? 0.4 : 1 }}
+                  />
+                  {photoUploadStatus === "uploading" && (
+                    <div style={{
+                      position: "absolute", inset: 0,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      borderRadius: "10px", background: "rgba(255,255,255,0.5)",
+                    }}>
+                      <Loader size="sm" />
+                    </div>
+                  )}
+                </div>
               ) : null}
 
               <Group justify="space-between" mt={6}>
@@ -1100,7 +1111,7 @@ const Landing = () => {
       width: "100%",
       backgroundImage: img
         ? `url('${img}')`
-        : `linear-gradient(180deg, rgba(15,71,32,1) 0%, rgba(7,36,18,1) 100%)`,
+        : `linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%)`,
       backgroundPosition: "center center",
       backgroundSize: "cover",
       backgroundRepeat: "no-repeat",
@@ -1111,7 +1122,37 @@ const Landing = () => {
     };
   }, [event.backgroundImage, event.backgroundMobileImage, isMobile]);
 
-  if (userLoading) return <Loader />;
+  if (userLoading) return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg, rgba(107, 107, 107, 0.7), rgba(203, 206, 204, 1) 100%)" }}>
+      <style>{`
+        @keyframes magnetic-pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.3; transform: scale(0.85); }
+        }
+        .magnetic-letter {
+          display: inline-block;
+          color: #fff;
+          font-size: 2.8rem;
+          font-weight: 900;
+          letter-spacing: 0.18em;
+          animation: magnetic-pulse 1.4s ease-in-out infinite;
+        }
+        .magnetic-letter:nth-child(1) { animation-delay: 0s; }
+        .magnetic-letter:nth-child(2) { animation-delay: 0.1s; }
+        .magnetic-letter:nth-child(3) { animation-delay: 0.2s; }
+        .magnetic-letter:nth-child(4) { animation-delay: 0.3s; }
+        .magnetic-letter:nth-child(5) { animation-delay: 0.4s; }
+        .magnetic-letter:nth-child(6) { animation-delay: 0.5s; }
+        .magnetic-letter:nth-child(7) { animation-delay: 0.6s; }
+        .magnetic-letter:nth-child(8) { animation-delay: 0.7s; }
+      `}</style>
+      <div>
+        {"MAGNETIC".split("").map((l, i) => (
+          <span key={i} className="magnetic-letter">{l}</span>
+        ))}
+      </div>
+    </div>
+  );
 
   if (!eventId) {
     return (
