@@ -113,6 +113,8 @@ export interface EventPolicies {
   surveyBlockedFor?: "none" | "compradores" | "vendedores" | "ambos";
   /** Modo de encuesta: "default" usa los campos originales, "custom" usa surveyConfig por rol */
   surveyMode?: "default" | "custom";
+  /** Deshabilitar el botón de cancelar reunión para los asistentes */
+  cancelMeetingDisabled?: boolean;
 }
 
 /** Empresa (events/{eventId}/companies/{nitNorm}) */
@@ -164,4 +166,5 @@ export const DEFAULT_POLICIES: EventPolicies = {
   autoReassignOnCancel: false,
   surveyBlockedFor: "none",
   surveyMode: "default",
+  cancelMeetingDisabled: false,
 };

@@ -47,6 +47,7 @@ import { DEFAULT_SURVEY_FIELDS } from "./ConfigureSurveyModal";
 import { useParams } from "react-router-dom";
 import QuickMeetingModal from "./QuickMeetingModal";
 import EditMeetingModal from "./EditMeetingModal";
+import TransferMeetingsModal from "./TransferMeetingsModal";
 import { useDashboardData } from "../dashboard/useDashboardData";
 import { IconClipboardList } from "@tabler/icons-react";
 
@@ -260,6 +261,7 @@ const MatrixPage = () => {
   const [fillSurveyValues, setFillSurveyValues] = useState({});
   const [fillSurveyLoading, setFillSurveyLoading] = useState(false);
   const [fillSurveySaving, setFillSurveySaving] = useState(false);
+  const [transferModalOpened, setTransferModalOpened] = useState(false);
 
   // Carga configuración evento
   useEffect(() => {
@@ -1166,6 +1168,12 @@ const MatrixPage = () => {
         </Flex>
       )}
 
+      <Group justify="flex-end" mb="sm">
+        <Button color="indigo" onClick={() => setTransferModalOpened(true)}>
+          Transferir Reuniones
+        </Button>
+      </Group>
+
       <Tabs defaultValue="mesas">
         <Tabs.List>
           <Tabs.Tab value="mesas">Por Mesas</Tabs.Tab>
@@ -1840,8 +1848,7 @@ const MatrixPage = () => {
         onClose={() => setSurveyModal({ opened: false, meetingId: null, responses: [] })}
         title="Encuestas de la reunión"
         size="lg"
-      >
-        {surveyModal?.opened && (
+      >        {surveyModal?.opened && (
           <Stack gap="md">
             {surveyModal.responses.length === 0 ? (
               <Text c="dimmed">No hay encuestas respondidas.</Text>
@@ -1869,6 +1876,14 @@ const MatrixPage = () => {
           </Stack>
         )}
       </Modal>
+      <TransferMeetingsModal
+        opened={transferModalOpened}
+        onClose={() => setTransferModalOpened(false)}
+        eventId={eventId}
+        asistentes={asistentes}
+        meetings={meetings}
+        participantsInfo={participantsInfo}
+      />
     </Container>
   );
 };
