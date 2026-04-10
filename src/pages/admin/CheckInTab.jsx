@@ -4,7 +4,7 @@ import {
   ActionIcon, Loader, Box, ScrollArea, Divider,
 } from "@mantine/core";
 import { IconSearch, IconX, IconCheck, IconUserCheck } from "@tabler/icons-react";
-import { collection, query, where, onSnapshot, doc, updateDoc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, updateDoc, getDocs } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 
 export default function CheckInTab({ event }) {
@@ -45,6 +45,36 @@ export default function CheckInTab({ event }) {
         checkedIn: newValue,
         ...(newValue ? { checkInTime: new Date() } : { checkOutTime: new Date() }),
       });
+
+      // Resolve standby meetings if policy is active
+      const standbyEnabled = event?.config?.policies?.standbyCheckInRequired === true;
+      if (standbyEnabled && event?.id) {
+        const targetStatus = newValue ? "standby" : "accepted";
+        const standbySnap = await getDocs(
+          query(
+            collection(db, "events", event.id, "meetings"),
+            where("status", "==", targetStatus),
+            where("participants", "array-contains", attendee.id)
+          )
+        );
+        for (const d of standbySnap.docs) {
+          const m = d.data();
+          const otherId = (m.participants || []).find((p) => p !== attendee.id);
+          if (!otherId) continue;
+          const otherAttendee = attendees.find((a) => a.id === otherId);
+          const otherCheckedIn = otherAttendee?.checkedIn ?? false;
+
+          if (newValue) {
+            // This user just checked in — promote to accepted if other also checked in
+            if (otherCheckedIn) {
+              await updateDoc(doc(db, "events", event.id, "meetings", d.id), { status: "accepted" });
+            }
+          } else {
+            // This user unchecked — demote to standby
+            await updateDoc(doc(db, "events", event.id, "meetings", d.id), { status: "standby" });
+          }
+        }
+      }
     } catch (e) {
       console.error("Error toggling check-in:", e);
     } finally {
