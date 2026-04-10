@@ -269,6 +269,7 @@ export default function TabsPanel({
             <CalendarTab
               acceptedMeetings={dashboard.acceptedMeetings}
               cancelledMeetings={dashboard.cancelledMeetings}
+              standbyMeetings={dashboard.standbyMeetings || []}
               pendingRequests={dashboard.pendingRequests}
               sentRequests={dashboard.sentRequests}
               participantsInfo={dashboard.participantsInfo}
@@ -277,6 +278,9 @@ export default function TabsPanel({
               eventId={eventId || ""}
               currentUser={dashboard.currentUser}
               policies={policies}
+              downloadVCard={dashboard.downloadVCard}
+              sendWhatsAppMessage={dashboard.sendWhatsAppMessage}
+              cancelMeeting={dashboard.cancelMeeting}
             />
           </Tabs.Panel>
           <Tabs.Panel value="reuniones" pt="md">

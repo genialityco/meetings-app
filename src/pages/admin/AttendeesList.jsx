@@ -7,6 +7,7 @@ import * as XLSX from "xlsx";
 import { IconSearch, IconX } from "@tabler/icons-react";
 import ModalEditAttendee from "./ModalEditAttendee";
 import ImportWizard from "./ImportWizard";
+import CheckInTab from "./CheckInTab";
 
 // Utilidad para obtener campos configurados para el evento (omite foto y consentimiento)
 const getEventTableFields = (event, entityType = "users") => {
@@ -1069,6 +1070,9 @@ function parseFirestoreTimestamp(input) {
           <Tabs.Tab value="productos">
             Productos ({products.length})
           </Tabs.Tab>
+          <Tabs.Tab value="checkin">
+            Check-in
+          </Tabs.Tab>
         </Tabs.List>
 
         {/* TAB ASISTENTES */}
@@ -1406,6 +1410,11 @@ function parseFirestoreTimestamp(input) {
               </Table>
             </Table.ScrollContainer>
           )}
+        </Tabs.Panel>
+
+        {/* TAB CHECK-IN */}
+        <Tabs.Panel value="checkin" p={0}>
+          <CheckInTab event={event} />
         </Tabs.Panel>
       </Tabs>
 
