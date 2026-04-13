@@ -14,7 +14,7 @@ const WHATSAPP_API_V2 = defineSecret("WHATSAPP_API_V2");
 const WHATSAPP_ACCOUNT_ID = defineSecret("WHATSAPP_ACCOUNT_ID");
 
 // Configuración: Campos a utilizar para generar el vector de embeddings
-const VECTOR_FIELDS = [];
+const VECTOR_FIELDS = ['descripcion'];
 
 export const notifyMeetingsScheduled = onSchedule(
   {
@@ -2371,98 +2371,42 @@ export const vectorizeDocuments = onRequest(
 // }
 
 /**
+/**
  * Función helper para generar embedding de un usuario
- * USA los campos configurados en VECTOR_FIELDS
+ * USA los campos configurados en VECTOR_FIELDS, omite los que no existen
  */
 async function generateUserEmbedding(userData) {
   try {
-    // Concatenar los campos configurados en VECTOR_FIELDS
+    // Usar solo VECTOR_FIELDS; si el campo no existe en el usuario, omitirlo
     const textParts = VECTOR_FIELDS
-      .map(fieldName => userData[fieldName] || "")
+      .map(fieldName => {
+        const val = userData[fieldName];
+        if (val === undefined || val === null || val === "") return null;
+        if (Array.isArray(val)) {
+          const items = val.filter(v => v && v !== "__otro__");
+          // Si hay campo _otro, incluirlo
+          const otroVal = userData[`${fieldName}_otro`];
+          if (val.includes("__otro__") && otroVal && typeof otroVal === "string" && otroVal.trim()) {
+            items.push(otroVal.trim());
+          }
+          return items.length > 0 ? items.join(", ") : null;
+        }
+        if (typeof val === "string") return val.trim() || null;
+        return String(val);
+      })
       .filter(Boolean);
-    
-    // CASO ESPECIAL: Agregar campos custom según el tipo de asistente
-    const tipoAsistente = (userData.tipoAsistente || "").toLowerCase();
-    
-    if (tipoAsistente === "vendedor") {
-      // Para vendedores, agregar custom_qu_tipo_de_productos_o_se_2198
-      const customField = userData.custom_qu_tipo_de_productos_o_se_2198;
-      const customOtroField = userData.custom_qu_tipo_de_productos_o_se_2198_otro;
-      
-      if (customField) {
-        if (Array.isArray(customField)) {
-          // Filtrar elementos válidos y procesar "__otro__"
-          let filteredItems = customField.filter(item => item && item !== "__otro__");
-          
-          // Si solo había "__otro__" en la lista, no generar embedding
-          if (customField.length > 0 && customField.every(item => item === "__otro__")) {
-            console.warn(`User ${userData.nombre || "unknown"} has only "__otro__" in custom field, skipping embedding generation`);
-            return null;
-          }
-          
-          // Si había "__otro__" y existe el campo _otro, agregarlo
-          if (customField.includes("__otro__") && customOtroField && typeof customOtroField === "string" && customOtroField.trim()) {
-            filteredItems.push(customOtroField.trim());
-          }
-          
-          // Unir los elementos filtrados
-          const customText = filteredItems.filter(Boolean).join(", ");
-          if (customText) {
-            textParts.push(customText);
-          }
-        } else if (typeof customField === "string" && customField.trim() && customField !== "__otro__") {
-          textParts.push(customField);
-        }
-      }
-    } else if (tipoAsistente === "comprador") {
-      // Para compradores, agregar custom_qu_tipo_de_productos_o_se_8102
-      const customField = userData.custom_qu_tipo_de_productos_o_se_8102;
-      const customOtroField = userData.custom_qu_tipo_de_productos_o_se_8102_otro;
-      
-      if (customField) {
-        if (Array.isArray(customField)) {
-          // Filtrar elementos válidos y procesar "__otro__"
-          let filteredItems = customField.filter(item => item && item !== "__otro__");
-          
-          // Si solo había "__otro__" en la lista, no generar embedding
-          if (customField.length > 0 && customField.every(item => item === "__otro__")) {
-            console.warn(`User ${userData.nombre || "unknown"} has only "__otro__" in custom field, skipping embedding generation`);
-            return null;
-          }
-          
-          // Si había "__otro__" y existe el campo _otro, agregarlo
-          if (customField.includes("__otro__") && customOtroField && typeof customOtroField === "string" && customOtroField.trim()) {
-            filteredItems.push(customOtroField.trim());
-          }
-          
-          // Unir los elementos filtrados
-          const customText = filteredItems.filter(Boolean).join(", ");
-          if (customText) {
-            textParts.push(customText);
-          }
-        } else if (typeof customField === "string" && customField.trim() && customField !== "__otro__") {
-          textParts.push(customField);
-        }
-      }
-    }
-    
+
     const textToEmbed = textParts.join(". ").trim();
-    
-    if (!textToEmbed || textToEmbed.length === 0) {
+
+    if (!textToEmbed) {
       console.warn(`User ${userData.nombre || "unknown"} has no information to embed from fields: ${VECTOR_FIELDS.join(", ")}`);
       return null;
     }
-    
-    console.log(`Generating embedding from fields: ${VECTOR_FIELDS.join(", ")}${tipoAsistente ? ` + custom fields for ${tipoAsistente}` : ""} for user ${userData.nombre || "unknown"}`);
-    
-    // Generar embedding usando Gemini
+
+    console.log(`Generating embedding from VECTOR_FIELDS [${VECTOR_FIELDS.join(", ")}] for user ${userData.nombre || "unknown"}`);
+
     const embedding = await generateEmbedding(textToEmbed);
-    
-    // Retornar tanto el embedding como el texto original
-    return {
-      vector: embedding,
-      condensedText: textToEmbed
-    };
+    return { vector: embedding, condensedText: textToEmbed };
   } catch (error) {
     console.error("Error generating user embedding:", error);
     return null;
@@ -3929,6 +3873,65 @@ export const cancelAndReassign = onRequest(
       });
     } catch (error) {
       console.error("cancelAndReassign error:", error);
+      return res.status(500).send({ error: "Internal error", details: error.message });
+    }
+  }
+);
+
+// ============================================================================
+// GENERATE ATTENDEE ID
+// ============================================================================
+
+/**
+ * Genera un identificador único para un asistente (ej: 1C, 2V)
+ * POST body: { eventId, userId, tipoAsistente }
+ */
+export const generateAttendeeId = onRequest(
+  {
+    region: "us-central1",
+    memory: "256MiB",
+    cors: true,
+  },
+  async (req, res) => {
+    if (req.method !== "POST") return res.status(405).send({ error: "Method not allowed" });
+
+    const { eventId, userId, tipoAsistente } = req.body;
+    if (!eventId || !userId) return res.status(400).send({ error: "eventId and userId are required" });
+
+    const db = getFirestore();
+
+    try {
+      // Verificar que la política está activa
+      const eventSnap = await db.collection("events").doc(eventId).get();
+      if (!eventSnap.exists) return res.status(404).send({ error: "Event not found" });
+      const attendeeIdEnabled = eventSnap.data()?.config?.policies?.attendeeIdEnabled === true;
+      if (!attendeeIdEnabled) return res.status(200).send({ skipped: true, reason: "Policy not enabled" });
+
+      // Verificar que el usuario no tiene ya un attendeeId
+      const userSnap = await db.collection("users").doc(userId).get();
+      if (userSnap.exists && userSnap.data()?.attendeeId) {
+        return res.status(200).send({ skipped: true, attendeeId: userSnap.data().attendeeId });
+      }
+
+      // Incrementar contador atómicamente
+      const counterRef = db.collection("events").doc(eventId).collection("metadata").doc("attendeeCounter");
+      const newNumber = await db.runTransaction(async (tx) => {
+        const snap = await tx.get(counterRef);
+        const current = snap.exists ? (snap.data().count || 0) : 0;
+        const next = current + 1;
+        tx.set(counterRef, { count: next }, { merge: true });
+        return next;
+      });
+
+      const tipo = (tipoAsistente || "A").charAt(0).toUpperCase();
+      const attendeeId = `${newNumber}${tipo}`;
+
+      // Guardar en el usuario
+      await db.collection("users").doc(userId).set({ attendeeId }, { merge: true });
+
+      return res.status(200).send({ success: true, attendeeId });
+    } catch (error) {
+      console.error("generateAttendeeId error:", error);
       return res.status(500).send({ error: "Internal error", details: error.message });
     }
   }

@@ -117,6 +117,8 @@ export interface EventPolicies {
   meetingConfirmationEnabled?: boolean;
   /** Reuniones pasan a standby hasta que ambos participantes hagan check-in */
   standbyCheckInRequired?: boolean;
+  /** Asignar número de identificación al registrarse (ej: 1C, 2V) */
+  attendeeIdEnabled?: boolean;
 }
 
 /** Empresa (events/{eventId}/companies/{nitNorm}) */
@@ -170,4 +172,5 @@ export const DEFAULT_POLICIES: EventPolicies = {
   surveyMode: "default",
   meetingConfirmationEnabled: false,
   standbyCheckInRequired: false,
+  attendeeIdEnabled: false,
 };

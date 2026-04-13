@@ -29,7 +29,7 @@ import { useMediaQuery } from "@mantine/hooks";
 import { IconEdit, IconLogout, IconChevronDown, IconPackage, IconBuilding, IconCheck, IconUserCheck } from "@tabler/icons-react";
 import { UserContext } from "../context/UserContext";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { doc, setDoc, updateDoc } from "firebase/firestore";
+import { doc, setDoc, updateDoc, getDoc } from "firebase/firestore";
 import { storage, db } from "../firebase/firebaseConfig";
 import { showNotification } from "@mantine/notifications";
 import NotificationsMenu from "../pages/dashboard/NotificationsMenu";
@@ -95,6 +95,26 @@ const DashboardHeader = ({
   useEffect(() => {
     setCheckedIn(!!currentUser?.data?.checkedIn);
   }, [currentUser?.data?.checkedIn]);
+
+  // attendeeId: leer del contexto o directamente de Firestore si no está disponible
+  const [attendeeIdLocal, setAttendeeIdLocal] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fromContext = currentUser?.data?.attendeeId;
+    if (fromContext) {
+      setAttendeeIdLocal(fromContext);
+      return;
+    }
+    // Si la política está activa y no hay ID en contexto, leer de Firestore
+    if (uid && policies?.attendeeIdEnabled) {
+      getDoc(doc(db, "users", uid)).then((snap) => {
+        if (snap.exists()) {
+          const id = snap.data()?.attendeeId;
+          if (id) setAttendeeIdLocal(id);
+        }
+      }).catch(() => {});
+    }
+  }, [uid, currentUser?.data?.attendeeId, policies?.attendeeIdEnabled]);
 
   // Sync edit data when modal opens
   useEffect(() => {
@@ -474,6 +494,8 @@ const DashboardHeader = ({
 
   const avatarSrc = data?.photoURL || null;
   const userName = data?.nombre || data?.name || "U";
+  const attendeeId = attendeeIdLocal || data?.attendeeId || null;
+  const showAttendeeId = policies?.attendeeIdEnabled === true && !!attendeeId;
 
   return (
     <>
@@ -507,6 +529,24 @@ const DashboardHeader = ({
             </Title>
           )}
         </Group>
+
+        {/* Centro: Identificador de asistente */}
+        {showAttendeeId && (
+          <Box style={{ position: "absolute", left: "50%", transform: "translateX(-50%)", pointerEvents: "none" }}>
+            <Text
+              fw={900}
+              style={{
+                fontSize: isMobile ? 28 : 38,
+                lineHeight: 1,
+                letterSpacing: 2,
+                color: "var(--mantine-color-blue-7)",
+                userSelect: "none",
+              }}
+            >
+              {attendeeId}
+            </Text>
+          </Box>
+        )}
 
         {/* Derecha: Notificaciones + Check-in + Avatar con Menu */}
         <Group gap="sm" align="center">

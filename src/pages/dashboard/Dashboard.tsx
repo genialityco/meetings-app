@@ -88,6 +88,7 @@ export default function Dashboard() {
           onMarkAllRead={dashboard.markAllNotificationsRead}
           formFields={dashboard.formFields}
           eventConfig={dashboard.eventConfig}
+          policies={dashboard.policies}
         />
       )}
       <Container fluid pt="sm">

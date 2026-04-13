@@ -1124,6 +1124,9 @@ const EventAdmin = () => {
           <Button component={Link} to={`/matrix/${event.id}`} variant="default">
             Ver Matriz
           </Button>
+          <Button component={Link} to={`/admin/event/${event.id}/checkin`} variant="default">
+            Check-In
+          </Button>
         </Group>
       </Group>
 

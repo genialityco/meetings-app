@@ -1,10 +1,13 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useContext } from "react";
 import {
   Modal, Stack, Text, Button, Group, Badge, Box, Loader, Center,
+  TextInput, Textarea, Select,
 } from "@mantine/core";
 import { IconCheck, IconX } from "@tabler/icons-react";
-import { doc, updateDoc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { doc, updateDoc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
+import { UserContext } from "../../context/UserContext";
+import { DEFAULT_SURVEY_FIELDS } from "../admin/ConfigureSurveyModal";
 
 interface Props {
   uid: string;
@@ -21,6 +24,7 @@ interface PendingMeeting {
   participants: string[];
   otherName?: string;
   otherEmpresa?: string;
+  otherId?: string;
 }
 
 const POLL_INTERVAL_MS = 60_000;
@@ -42,10 +46,36 @@ function isMeetingOver(meeting: any, meetingDuration: number): boolean {
 }
 
 export default function MeetingConfirmationGuard({ uid, eventId, enabled, eventConfig }: Props) {
+  const { currentUser } = useContext(UserContext);
   const [pending, setPending] = useState<PendingMeeting[]>([]);
   const [current, setCurrent] = useState<PendingMeeting | null>(null);
   const [saving, setSaving] = useState(false);
+  // Survey state
+  const [showSurvey, setShowSurvey] = useState(false);
+  const [surveyValues, setSurveyValues] = useState<Record<string, string>>({});
+  const [savingSurvey, setSavingSurvey] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Determine survey fields based on policy and user role
+  const myRole = (currentUser?.data?.tipoAsistente || "").toLowerCase();
+  const surveyMode = eventConfig?.policies?.surveyMode || "default";
+  const surveyBlocked = (() => {
+    const blocked = eventConfig?.policies?.surveyBlockedFor || "none";
+    if (blocked === "ambos") return true;
+    if (blocked === "compradores" && myRole === "comprador") return true;
+    if (blocked === "vendedores" && myRole === "vendedor") return true;
+    return false;
+  })();
+
+  const surveyFields: any[] = (() => {
+    if (surveyMode === "custom") {
+      const cfg = eventConfig?.surveyConfig;
+      if (myRole === "vendedor" && cfg?.vendedorFields?.length) return cfg.vendedorFields;
+      if (myRole === "comprador" && cfg?.compradorFields?.length) return cfg.compradorFields;
+      return cfg?.compradorFields || cfg?.vendedorFields || DEFAULT_SURVEY_FIELDS;
+    }
+    return DEFAULT_SURVEY_FIELDS;
+  })();
 
   const checkMeetings = async () => {
     if (!uid || !eventId) return;
@@ -58,21 +88,14 @@ export default function MeetingConfirmationGuard({ uid, eventId, enabled, eventC
         )
       );
 
-      console.log(`[Guard] Found ${snap.docs.length} accepted meetings for uid=${uid} eventId=${eventId}`);
-
       const duration = eventConfig?.meetingDuration || 30;
       const unconfirmed: PendingMeeting[] = [];
 
       for (const d of snap.docs) {
         const m = { id: d.id, ...d.data() } as any;
-        console.log(`[Guard] Meeting ${d.id}: completed=${m.completed}, timeSlot=${m.timeSlot}, over=${isMeetingOver(m, duration)}`);
-
-        // Skip if already confirmed by anyone
         if (typeof m.completed === "boolean") continue;
-        // Skip if not finished yet
         if (!isMeetingOver(m, duration)) continue;
 
-        // Fetch other participant directly by doc ID
         const otherId = (m.participants || []).find((p: string) => p !== uid);
         let otherName = "";
         let otherEmpresa = "";
@@ -96,10 +119,10 @@ export default function MeetingConfirmationGuard({ uid, eventId, enabled, eventC
           participants: m.participants || [],
           otherName: otherName || "Participante",
           otherEmpresa,
+          otherId,
         });
       }
 
-      console.log(`[Guard] Unconfirmed meetings needing confirmation: ${unconfirmed.length}`);
       setPending(unconfirmed);
       if (unconfirmed.length > 0 && !current) {
         setCurrent(unconfirmed[0]);
@@ -127,29 +150,93 @@ export default function MeetingConfirmationGuard({ uid, eventId, enabled, eventC
     if (!current && pending.length > 0) setCurrent(pending[0]);
   }, [pending, current]);
 
-  const handleConfirm = async (completed: boolean) => {
+  // Step 1: user says "No" → mark completed=false and move on
+  const handleNo = async () => {
     if (!current) return;
     setSaving(true);
     try {
-      const meetingRef = doc(db, "events", eventId, "meetings", current.id);
-      console.log(`[Guard] Updating meeting at path: events/${eventId}/meetings/${current.id}`);
-      await updateDoc(meetingRef, {
-        completed,
+      await updateDoc(doc(db, "events", eventId, "meetings", current.id), {
+        completed: false,
         confirmedAt: new Date(),
         confirmedBy: uid,
       });
-      console.log(`[Guard] Meeting ${current.id} confirmed as completed=${completed}`);
-      const remaining = pending.filter((m) => m.id !== current.id);
-      setPending(remaining);
-      setCurrent(remaining.length > 0 ? remaining[0] : null);
+      advanceToNext();
     } catch (e) {
-      console.error("[MeetingConfirmationGuard] Error confirming:", e);
+      console.error("[Guard] Error confirming no:", e);
     } finally {
       setSaving(false);
     }
   };
 
+  // Step 2: user says "Yes" → mark completed=true and show survey (if not blocked)
+  const handleYes = async () => {
+    if (!current) return;
+    setSaving(true);
+    try {
+      await updateDoc(doc(db, "events", eventId, "meetings", current.id), {
+        completed: true,
+        confirmedAt: new Date(),
+        confirmedBy: uid,
+      });
+      if (!surveyBlocked && surveyFields.length > 0) {
+        setSurveyValues({});
+        setShowSurvey(true);
+      } else {
+        advanceToNext();
+      }
+    } catch (e) {
+      console.error("[Guard] Error confirming yes:", e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Step 3: save survey and advance
+  const handleSaveSurvey = async () => {
+    if (!current) return;
+    setSavingSurvey(true);
+    try {
+      const myInfo = currentUser?.data || {};
+      const otherInfo = { nombre: current.otherName, empresa: current.otherEmpresa };
+      await setDoc(doc(db, "meetingSurveys", `${current.id}_${uid}`), {
+        meetingId: current.id,
+        userId: uid,
+        userName: myInfo.nombre || "",
+        userEmpresa: myInfo.empresa || "",
+        otherUserId: current.otherId || "",
+        otherUserName: current.otherName || "",
+        otherUserEmpresa: current.otherEmpresa || "",
+        value: surveyValues["value"] || "",
+        comments: surveyValues["comments"] || "",
+        ...surveyValues,
+        createdAt: new Date(),
+      });
+    } catch (e) {
+      console.error("[Guard] Error saving survey:", e);
+    } finally {
+      setSavingSurvey(false);
+      setShowSurvey(false);
+      advanceToNext();
+    }
+  };
+
+  const handleSkipSurvey = () => {
+    setShowSurvey(false);
+    advanceToNext();
+  };
+
+  const advanceToNext = () => {
+    const remaining = pending.filter((m) => m.id !== current?.id);
+    setPending(remaining);
+    setCurrent(remaining.length > 0 ? remaining[0] : null);
+    setShowSurvey(false);
+    setSurveyValues({});
+  };
+
   if (!enabled || !current) return null;
+
+  const requiredFields = surveyFields.filter((f) => f.required);
+  const surveyValid = requiredFields.every((f) => !!surveyValues[f.name]);
 
   return (
     <>
@@ -172,31 +259,111 @@ export default function MeetingConfirmationGuard({ uid, eventId, enabled, eventC
           </Badge>
         }
       >
-        <Stack gap="md">
-          <Text fw={700} size="md">¿Se realizó esta reunión?</Text>
-          <Box p="md" style={{ background: "#f8f9fa", borderRadius: 8 }}>
-            {current.otherName && <Text size="sm" fw={600}>{current.otherName}</Text>}
-            {current.otherEmpresa && <Text size="xs" c="dimmed">{current.otherEmpresa}</Text>}
-            <Text size="xs" mt={4}>🕐 {current.timeSlot}</Text>
-            {current.tableAssigned && <Text size="xs">🪑 Mesa {current.tableAssigned}</Text>}
-            {current.meetingDate && <Text size="xs">📅 {current.meetingDate}</Text>}
-          </Box>
-          <Text size="xs" c="dimmed">
-            Debes confirmar si la reunión se llevó a cabo para continuar usando la plataforma.
-          </Text>
-          {saving ? (
-            <Center py="sm"><Loader size="sm" /></Center>
-          ) : (
-            <Group grow>
-              <Button color="red" variant="light" leftSection={<IconX size={16} />} onClick={() => handleConfirm(false)}>
-                No se realizó
+        {!showSurvey ? (
+          <Stack gap="md">
+            <Text fw={700} size="md">¿Se realizó esta reunión?</Text>
+            <Box p="md" style={{ background: "#f8f9fa", borderRadius: 8 }}>
+              {current.otherName && <Text size="sm" fw={600}>{current.otherName}</Text>}
+              {current.otherEmpresa && <Text size="xs" c="dimmed">{current.otherEmpresa}</Text>}
+              <Text size="xs" mt={4}>🕐 {current.timeSlot}</Text>
+              {current.tableAssigned && <Text size="xs">🪑 Mesa {current.tableAssigned}</Text>}
+              {current.meetingDate && <Text size="xs">📅 {current.meetingDate}</Text>}
+            </Box>
+            <Text size="xs" c="dimmed">
+              Debes confirmar si la reunión se llevó a cabo para continuar usando la plataforma.
+            </Text>
+            {saving ? (
+              <Center py="sm"><Loader size="sm" /></Center>
+            ) : (
+              <Group grow>
+                <Button color="red" variant="light" leftSection={<IconX size={16} />} onClick={handleNo}>
+                  No se realizó
+                </Button>
+                <Button color="green" leftSection={<IconCheck size={16} />} onClick={handleYes}>
+                  Sí se realizó
+                </Button>
+              </Group>
+            )}
+          </Stack>
+        ) : (
+          <Stack gap="md">
+            <Text fw={700} size="md">Encuesta de reunión</Text>
+            <Text size="xs" c="dimmed">
+              Con: <b>{current.otherName}</b>{current.otherEmpresa ? ` — ${current.otherEmpresa}` : ""}
+            </Text>
+
+            {surveyFields.map((field) => {
+              const val = surveyValues[field.name] || "";
+              const onChange = (v: string) =>
+                setSurveyValues((prev) => ({ ...prev, [field.name]: v }));
+
+              if (field.type === "textarea") {
+                return (
+                  <Textarea
+                    key={field.name}
+                    label={field.label}
+                    value={val}
+                    onChange={(e) => onChange(e.currentTarget.value)}
+                    minRows={2}
+                    required={field.required}
+                    radius="md"
+                  />
+                );
+              }
+              if (field.type === "select" && field.options?.length) {
+                return (
+                  <Select
+                    key={field.name}
+                    label={field.label}
+                    value={val}
+                    onChange={(v) => onChange(v || "")}
+                    data={field.options.map((o: string) => ({ value: o, label: o }))}
+                    required={field.required}
+                    radius="md"
+                  />
+                );
+              }
+              if (field.type === "rating") {
+                return (
+                  <Select
+                    key={field.name}
+                    label={field.label}
+                    value={val}
+                    onChange={(v) => onChange(v || "")}
+                    data={["1", "2", "3", "4", "5"].map((n) => ({ value: n, label: `${n} ⭐` }))}
+                    required={field.required}
+                    radius="md"
+                  />
+                );
+              }
+              return (
+                <TextInput
+                  key={field.name}
+                  label={field.label}
+                  value={val}
+                  onChange={(e) => onChange(e.currentTarget.value)}
+                  type={field.type === "number" ? "number" : "text"}
+                  required={field.required}
+                  radius="md"
+                />
+              );
+            })}
+
+            <Group grow mt="xs">
+              <Button variant="default" size="sm" onClick={handleSkipSurvey}>
+                Omitir
               </Button>
-              <Button color="green" leftSection={<IconCheck size={16} />} onClick={() => handleConfirm(true)}>
-                Sí se realizó
+              <Button
+                color="green"
+                loading={savingSurvey}
+                disabled={!surveyValid}
+                onClick={handleSaveSurvey}
+              >
+                Guardar encuesta
               </Button>
             </Group>
-          )}
-        </Stack>
+          </Stack>
+        )}
       </Modal>
     </>
   );

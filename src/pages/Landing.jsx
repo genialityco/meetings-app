@@ -705,6 +705,28 @@ const Landing = () => {
         if (razon) dataToUpdate.empresa = razon;
       }
 
+      // Generar attendeeId si la política está activa y el usuario no tiene uno
+      if (eventId && uid) {
+        try {
+          const alreadyHasId = currentUser?.data?.attendeeId;
+          if (!alreadyHasId) {
+            const eventSnap = await getDoc(doc(db, "events", eventId));
+            const attendeeIdEnabled = eventSnap.exists() && eventSnap.data()?.config?.policies?.attendeeIdEnabled === true;
+            if (attendeeIdEnabled) {
+              // Contar usuarios existentes del evento para generar el número
+              const usersSnap = await getDocs(
+                query(collection(db, "users"), where("eventId", "==", eventId))
+              );
+              const numero = usersSnap.size; // el usuario actual ya fue guardado, así que size >= 1
+              const tipo = (dataToUpdate.tipoAsistente || currentUser?.data?.tipoAsistente || "A").charAt(0).toUpperCase();
+              dataToUpdate.attendeeId = `${numero}${tipo}`;
+            }
+          }
+        } catch (e) {
+          console.warn("[attendeeId] Error:", e);
+        }
+      }
+
       await updateUser(uid, dataToUpdate);
       
       // Track registration/update completion

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Modal, Select, Button, Text, Group, Badge } from "@mantine/core";
+import { Modal, Select, Button, Text, Group, Badge, Checkbox, Alert, Stack, Divider, Paper } from "@mantine/core";
 
 const EditMeetingModal = ({
   opened,
@@ -17,6 +17,8 @@ const EditMeetingModal = ({
   participantsInfo = {},
   getAffinity,
   companies = [],
+  onCreateFree,        // (user1, user2, checkDuplicates, onDuplicateFound) => void
+  freeMeetingsInSlot = [], // reuniones libres ya existentes en este slot
 }) => {
   // Estados para editar participantes y slot
   const [user1, setUser1] = useState("");
@@ -26,6 +28,15 @@ const EditMeetingModal = ({
   // Estados para swap
   const [swapMode, setSwapMode] = useState(false);
   const [swapMeetingId, setSwapMeetingId] = useState("");
+  const [checkDuplicates, setCheckDuplicates] = useState(true);
+  const [duplicateError, setDuplicateError] = useState("");
+
+  // Estado para reunión libre
+  const [freeUser1, setFreeUser1] = useState("");
+  const [freeUser2, setFreeUser2] = useState("");
+  const [freeCheckDuplicates, setFreeCheckDuplicates] = useState(true);
+  const [freeDuplicateError, setFreeDuplicateError] = useState("");
+  const [creatingFree, setCreatingFree] = useState(false);
 
   // Obtiene la mesa fija de un usuario según su compañía
   const getFixedTable = (userId) => {
@@ -70,11 +81,17 @@ const EditMeetingModal = ({
     } else {
       setSelectedSlotId("");
     }
+    // Reset free meeting form
+    setFreeUser1("");
+    setFreeUser2("");
+    setFreeCheckDuplicates(true);
+    setFreeDuplicateError("");
   }, [meeting, lockedUserId, slot, slotsFiltered]);
 
   // Cuando cambia user2, auto-seleccionar su mesa fija si la tiene
   useEffect(() => {
     if (!user2 || !slot?.startTime) return;
+    setDuplicateError("");
     const fixedTable = getFixedTable(user2);
     if (!fixedTable) return;
     const fixedSlot = agenda.find(
@@ -149,12 +166,25 @@ const EditMeetingModal = ({
   const handleUpdate = () => {
     if (!user1 || !user2 || user1 === user2 || !selectedSlotId) return;
     const slotElegido = slotsFiltered.find((s) => s.id === selectedSlotId);
+    setDuplicateError("");
     onUpdate({
       meetingId: meeting.id,
       user1,
       user2,
       slot: slotElegido,
+      checkDuplicates,
+      onDuplicateFound: () => setDuplicateError("Los asistentes ya se han reunido ese día. Desactiva 'Verificar duplicados' para actualizar de todas formas."),
     });
+  };
+
+  const handleCreateFree = () => {
+    if (!freeUser1 || !freeUser2 || freeUser1 === freeUser2) return;
+    setFreeDuplicateError("");
+    setCreatingFree(true);
+    onCreateFree(freeUser1, freeUser2, freeCheckDuplicates, () => {
+      setFreeDuplicateError("Los asistentes ya se han reunido ese día. Desactiva 'Verificar duplicados' para crear de todas formas.");
+      setCreatingFree(false);
+    }, () => setCreatingFree(false));
   };
 
   // Swap de reuniones
@@ -212,6 +242,17 @@ const EditMeetingModal = ({
             searchable
             mb="sm"
           />
+          <Checkbox
+            label="Verificar duplicados"
+            description="Si está activo, no permite actualizar si los asistentes ya se reunieron ese día"
+            checked={checkDuplicates}
+            onChange={(e) => { setCheckDuplicates(e.currentTarget.checked); setDuplicateError(""); }}
+            color="orange"
+            mb="sm"
+          />
+          {duplicateError && (
+            <Alert color="red" variant="light" radius="md" size="sm" mb="sm">{duplicateError}</Alert>
+          )}
           <Button
             color="red"
             variant="outline"
@@ -241,6 +282,71 @@ const EditMeetingModal = ({
           >
             Intercambiar con otra reunión
           </Button>
+
+          {/* Reuniones libres existentes en este slot */}
+          {freeMeetingsInSlot.length > 0 && (
+            <>
+              <Divider label="Reuniones libres en este slot" labelPosition="left" mt="md" mb="xs" />
+              <Stack gap={4}>
+                {freeMeetingsInSlot.map((fm) => {
+                  const p0 = participantsInfo[fm.participants?.[0]];
+                  const p1 = participantsInfo[fm.participants?.[1]];
+                  return (
+                    <Paper key={fm.id} withBorder p="xs" radius="sm" style={{ background: "#f0fdf4" }}>
+                      <Text size="xs" fw={600} c="teal">Libre</Text>
+                      <Text size="xs">{p0 ? `${p0.empresa} (${p0.nombre})` : fm.participants?.[0]}</Text>
+                      <Text size="xs">{p1 ? `${p1.empresa} (${p1.nombre})` : fm.participants?.[1]}</Text>
+                    </Paper>
+                  );
+                })}
+              </Stack>
+            </>
+          )}
+
+          {/* Crear reunión libre en este slot */}
+          {onCreateFree && (
+            <>
+              <Divider label="Agregar reunión libre" labelPosition="left" mt="md" mb="xs" />
+              <Text size="xs" c="dimmed" mb="xs">No reserva el slot. Puede coexistir con la reunión existente.</Text>
+              <Select
+                label="Participante 1"
+                placeholder="Buscar..."
+                data={assistantOptions}
+                value={freeUser1}
+                onChange={(v) => { setFreeUser1(v || ""); setFreeDuplicateError(""); }}
+                searchable clearable size="xs" mb={4}
+              />
+              <Select
+                label="Participante 2"
+                placeholder="Buscar..."
+                data={assistantOptions.filter((a) => a.value !== freeUser1)}
+                value={freeUser2}
+                onChange={(v) => { setFreeUser2(v || ""); setFreeDuplicateError(""); }}
+                searchable clearable size="xs" mb={4}
+                disabled={!freeUser1}
+              />
+              <Checkbox
+                label="Verificar duplicados"
+                description="Bloquea si ya se reunieron ese día"
+                checked={freeCheckDuplicates}
+                onChange={(e) => { setFreeCheckDuplicates(e.currentTarget.checked); setFreeDuplicateError(""); }}
+                color="orange" size="xs" mb={4}
+              />
+              {freeDuplicateError && (
+                <Alert color="red" variant="light" radius="md" size="xs" mb={4}>{freeDuplicateError}</Alert>
+              )}
+              <Button
+                size="xs"
+                color="teal"
+                fullWidth
+                loading={creatingFree}
+                disabled={!freeUser1 || !freeUser2 || freeUser1 === freeUser2}
+                onClick={handleCreateFree}
+              >
+                Crear reunión libre
+              </Button>
+            </>
+          )}
         </>
       ) : (
         <>
