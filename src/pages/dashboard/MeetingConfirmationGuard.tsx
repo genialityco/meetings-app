@@ -94,7 +94,7 @@ export default function MeetingConfirmationGuard({ uid, eventId, enabled, eventC
           tableAssigned: m.tableAssigned,
           meetingDate: m.meetingDate,
           participants: m.participants || [],
-          otherName: otherName || otherId || "Participante",
+          otherName: otherName || "Participante",
           otherEmpresa,
         });
       }

@@ -1,4 +1,3 @@
-/* eslint-disable react/prop-types */
 import { useState, useEffect, useMemo } from "react";
 import {
   Modal, Stack, Select, TextInput, Button, Text, Alert, Group,
@@ -11,12 +10,23 @@ export default function ExternalMeetingModal({ opened, onClose, event, setGlobal
   const [participant1, setParticipant1] = useState("");
   const [participant2, setParticipant2] = useState("");
   const [timeSlot, setTimeSlot] = useState("");
+  const [tableAssigned, setTableAssigned] = useState("");
   const [saving, setSaving] = useState(false);
+  const [validationError, setValidationError] = useState("");
 
   // Multi-day support
   const eventDates = event?.config?.eventDates || (event?.config?.eventDate ? [event.config.eventDate] : []);
   const isMultiDay = eventDates.length > 1;
   const [selectedDate, setSelectedDate] = useState(eventDates[0] || "");
+
+  const numTables = event?.config?.numTables || 0;
+  const tableOptions = [
+    { value: "", label: "Sin mesa" },
+    ...Array.from({ length: numTables }, (_, i) => ({
+      value: String(i + 1),
+      label: `Mesa ${i + 1}`,
+    })),
+  ];
 
   const formatDate = (dateStr) => {
     const [year, month, day] = dateStr.split("-").map(Number);
@@ -37,8 +47,13 @@ export default function ExternalMeetingModal({ opened, onClose, event, setGlobal
     setParticipant1("");
     setParticipant2("");
     setTimeSlot("");
+    setTableAssigned("");
+    setValidationError("");
     setSelectedDate(eventDates[0] || "");
   }, [opened, event?.id]);
+
+  // Clear validation error when participants change
+  useEffect(() => { setValidationError(""); }, [participant1, participant2, selectedDate]);
 
   const handleSave = async () => {
     if (!participant1 || !participant2) {
@@ -49,8 +64,32 @@ export default function ExternalMeetingModal({ opened, onClose, event, setGlobal
       setGlobalMessage("Los participantes deben ser diferentes.");
       return;
     }
+
     setSaving(true);
+    setValidationError("");
+
     try {
+      // Validar que no se hayan reunido ese día
+      const meetingDate = selectedDate || null;
+      const existingSnap = await getDocs(
+        query(
+          collection(db, "events", event.id, "meetings"),
+          where("status", "==", "accepted"),
+          where("participants", "array-contains", participant1)
+        )
+      );
+      const alreadyMet = existingSnap.docs.some((d) => {
+        const m = d.data();
+        const sameDay = !meetingDate || !m.meetingDate || m.meetingDate === meetingDate;
+        return sameDay && (m.participants || []).includes(participant2);
+      });
+
+      if (alreadyMet) {
+        setValidationError("Los asistentes ya se han reunido ese día.");
+        setSaving(false);
+        return;
+      }
+
       await addDoc(collection(db, "events", event.id, "meetings"), {
         eventId: event.id,
         requesterId: participant1,
@@ -60,8 +99,8 @@ export default function ExternalMeetingModal({ opened, onClose, event, setGlobal
         isExternal: true,
         completed: true,
         timeSlot: timeSlot.trim() || "—",
-        tableAssigned: "",
-        meetingDate: selectedDate || null,
+        tableAssigned: tableAssigned || "",
+        meetingDate: meetingDate,
         motivoMatch: "Externa",
         razonMatch: "Registrada manualmente como reunión externa",
         scoreMatch: null,
@@ -115,12 +154,27 @@ export default function ExternalMeetingModal({ opened, onClose, event, setGlobal
           disabled={!participant1}
         />
 
+        {validationError && (
+          <Alert color="red" variant="light" radius="md">
+            {validationError}
+          </Alert>
+        )}
+
         <TextInput
           label="Horario (opcional)"
           placeholder="Ej: 10:00 - 10:30"
           value={timeSlot}
           onChange={(e) => setTimeSlot(e.currentTarget.value)}
           description="Texto libre, no se valida contra la agenda"
+        />
+
+        <Select
+          label="Mesa (opcional)"
+          placeholder="Sin mesa"
+          data={tableOptions}
+          value={tableAssigned}
+          onChange={(v) => setTableAssigned(v || "")}
+          clearable
         />
 
         <Group justify="flex-end">

@@ -4,7 +4,7 @@ import {
   ActionIcon, Loader, Box, ScrollArea, Divider,
 } from "@mantine/core";
 import { IconSearch, IconX, IconCheck, IconUserCheck } from "@tabler/icons-react";
-import { collection, query, where, onSnapshot, doc, updateDoc, getDocs } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, updateDoc, getDocs, getDoc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 
 export default function CheckInTab({ event }) {
@@ -61,16 +61,16 @@ export default function CheckInTab({ event }) {
           const m = d.data();
           const otherId = (m.participants || []).find((p) => p !== attendee.id);
           if (!otherId) continue;
-          const otherAttendee = attendees.find((a) => a.id === otherId);
-          const otherCheckedIn = otherAttendee?.checkedIn ?? false;
 
           if (newValue) {
-            // This user just checked in — promote to accepted if other also checked in
+            // Check-in: leer checkedIn del otro usuario directo de Firestore (evita estado local desactualizado)
+            const otherUserDoc = await getDoc(doc(db, "users", otherId));
+            const otherCheckedIn = otherUserDoc.exists() && otherUserDoc.data().checkedIn === true;
             if (otherCheckedIn) {
               await updateDoc(doc(db, "events", event.id, "meetings", d.id), { status: "accepted" });
             }
           } else {
-            // This user unchecked — demote to standby
+            // Uncheck-in: demote to standby
             await updateDoc(doc(db, "events", event.id, "meetings", d.id), { status: "standby" });
           }
         }
