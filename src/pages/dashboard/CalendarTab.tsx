@@ -31,6 +31,9 @@ import {
   IconLock,
   IconLockOpen,
   IconDots,
+  IconAddressBook,
+  IconBrandWhatsapp,
+  IconX,
 } from "@tabler/icons-react";
 import { doc, updateDoc, collection, query, where, getDocs, addDoc, deleteDoc, onSnapshot, getDoc, setDoc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
@@ -42,12 +45,16 @@ interface CalendarTabProps {
   cancelledMeetings: any[];
   pendingRequests: any[];
   sentRequests: any[];
+  standbyMeetings?: any[];
   participantsInfo: any;
   uid: string;
   eventConfig: any;
   eventId: string;
   currentUser?: any;
   policies?: any;
+  downloadVCard?: (participant: any) => void;
+  sendWhatsAppMessage?: (participant: any) => void;
+  cancelMeeting?: (meeting: any) => Promise<any>;
 }
 
 function InfoRow({
@@ -79,12 +86,16 @@ export default function CalendarTab({
   cancelledMeetings,
   pendingRequests,
   sentRequests,
+  standbyMeetings = [],
   participantsInfo,
   uid,
   eventConfig,
   eventId,
   currentUser,
   policies,
+  downloadVCard,
+  sendWhatsAppMessage,
+  cancelMeeting,
 }: CalendarTabProps) {
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
   const [modalOpened, setModalOpened] = useState(false);
@@ -121,6 +132,7 @@ export default function CalendarTab({
   const [savingSurvey, setSavingSurvey] = useState(false);
   const [userSurveys, setUserSurveys] = useState<Record<string, any>>({});
   const [loadingSurvey, setLoadingSurvey] = useState(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
   
   // Filtros de visualización
   const [showAccepted, setShowAccepted] = useState(true);
@@ -438,6 +450,13 @@ export default function CalendarTab({
       });
     }
 
+    // Reuniones en standby (siempre visibles)
+    standbyMeetings.forEach((m) => {
+      if (!m.meetingDate || m.meetingDate === currentDate) {
+        meetings.push({ ...m, type: "standby" });
+      }
+    });
+
     // Reuniones canceladas
     if (showCancelled) {
       cancelledMeetings.forEach((m) => {
@@ -466,7 +485,7 @@ export default function CalendarTab({
     }
 
     return meetings;
-  }, [acceptedMeetings, cancelledMeetings, pendingRequests, sentRequests, currentDate, showAccepted, showPending, showCancelled]);
+  }, [acceptedMeetings, cancelledMeetings, standbyMeetings, pendingRequests, sentRequests, currentDate, showAccepted, showPending, showCancelled]);
 
   // Crear matriz de reuniones por hora
   const meetingsByTime = useMemo(() => {
@@ -488,31 +507,23 @@ export default function CalendarTab({
   // Obtener color según tipo de reunión
   const getStatusColor = (type: string) => {
     switch (type) {
-      case "accepted":
-        return "green";
-      case "cancelled":
-        return "red";
-      case "pending-received":
-        return "yellow";
-      case "pending-sent":
-        return "blue";
-      default:
-        return "gray";
+      case "accepted": return "green";
+      case "cancelled": return "red";
+      case "standby": return "orange";
+      case "pending-received": return "yellow";
+      case "pending-sent": return "blue";
+      default: return "gray";
     }
   };
 
   const getStatusLabel = (type: string) => {
     switch (type) {
-      case "accepted":
-        return "Aceptada";
-      case "cancelled":
-        return "Cancelada";
-      case "pending-received":
-        return "Pendiente (recibida)";
-      case "pending-sent":
-        return "Pendiente (enviada)";
-      default:
-        return "Desconocido";
+      case "accepted": return "Aceptada";
+      case "cancelled": return "Cancelada";
+      case "standby": return "En espera de check-in";
+      case "pending-received": return "Pendiente (recibida)";
+      case "pending-sent": return "Pendiente (enviada)";
+      default: return "Desconocido";
     }
   };
 
@@ -673,6 +684,13 @@ export default function CalendarTab({
                                     {participant?.nombre || "Cargando..."}
                                     {meeting.tableAssigned && ` - Mesa ${meeting.tableAssigned}`}
                                   </Badge>
+                                  {meeting.type === "standby" && (
+                                    <Tooltip label="Haz check-in para activar esta reunión" withArrow>
+                                      <Badge color="orange" variant="light" size="xs">
+                                        ⏳ Check-in pendiente
+                                      </Badge>
+                                    </Tooltip>
+                                  )}
                                   {meeting.type === "accepted" && (
                                     <>
                                       <Tooltip label={surveyExists(meeting.id) ? "Ver/editar encuesta" : "Llenar encuesta"} withArrow>
@@ -878,6 +896,60 @@ export default function CalendarTab({
                       <Text size="sm">{selectedMeeting.contextNote}</Text>
                     </Paper>
                   </Box>
+                </>
+              )}
+
+              {/* Action buttons — only for accepted meetings */}
+              {selectedMeeting.type === "accepted" && participant && (
+                <>
+                  <Divider />
+                  <Group grow gap="xs">
+                    {downloadVCard && (
+                      <Button
+                        variant="light"
+                        size="compact-sm"
+                        radius="md"
+                        leftSection={<IconAddressBook size={14} />}
+                        onClick={() => downloadVCard(participant)}
+                      >
+                        Contacto
+                      </Button>
+                    )}
+                    {sendWhatsAppMessage && (
+                      <Button
+                        variant="light"
+                        size="compact-sm"
+                        radius="md"
+                        color="green"
+                        leftSection={<IconBrandWhatsapp size={14} />}
+                        onClick={() => sendWhatsAppMessage(participant)}
+                      >
+                        WhatsApp
+                      </Button>
+                    )}
+                  </Group>
+                  {cancelMeeting && !policies?.cancelMeetingDisabled && (
+                    <Button
+                      size="compact-sm"
+                      radius="md"
+                      variant="light"
+                      color="red"
+                      fullWidth
+                      leftSection={<IconX size={14} />}
+                      loading={cancellingId === selectedMeeting.id}
+                      onClick={async () => {
+                        if (!window.confirm("¿Seguro que deseas cancelar esta reunión?")) return;
+                        setCancellingId(selectedMeeting.id);
+                        try {
+                          await cancelMeeting(selectedMeeting);
+                          setModalOpened(false);
+                        } catch { /* handled upstream */ }
+                        finally { setCancellingId(null); }
+                      }}
+                    >
+                      Cancelar reunión
+                    </Button>
+                  )}
                 </>
               )}
             </Stack>

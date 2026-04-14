@@ -47,6 +47,7 @@ import * as XLSX from "xlsx";
 import ConfigureFieldsModal from "./ConfigureFieldsModal";
 import EventPoliciesModal from "./EventPoliciesModal";
 import ConfigureSurveyModal from "./ConfigureSurveyModal";
+import ExternalMeetingModal from "./ExternalMeetingModal";
 
 const EventAdmin = () => {
   const { eventId } = useParams();
@@ -57,6 +58,7 @@ const EventAdmin = () => {
   const [editConfigModalOpened, setEditConfigModalOpened] = useState(false);
   const [manualMeetingModalOpened, setManualMeetingModalOpened] =
     useState(false);
+  const [externalMeetingModalOpened, setExternalMeetingModalOpened] = useState(false);
   const [meetingsModalOpened, setMeetingsModalOpened] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [attendees, setAttendees] = useState([]);
@@ -1122,6 +1124,9 @@ const EventAdmin = () => {
           <Button component={Link} to={`/matrix/${event.id}`} variant="default">
             Ver Matriz
           </Button>
+          <Button component={Link} to={`/admin/event/${event.id}/checkin`} variant="default">
+            Check-In
+          </Button>
         </Group>
       </Group>
 
@@ -1307,6 +1312,14 @@ const EventAdmin = () => {
               </Button>
 
               <Button
+                onClick={() => setExternalMeetingModalOpened(true)}
+                variant="default"
+                color="teal"
+              >
+                Registrar Reunión Externa
+              </Button>
+
+              <Button
                 onClick={() => setConfigureFieldsModalOpened(true)}
                 loading={actionLoading}
                 disabled={actionLoading}
@@ -1402,6 +1415,35 @@ const EventAdmin = () => {
                 variant="light"
               >
                 Notificar Reuniones por WhatsApp
+              </Button>
+
+              <Button
+                onClick={async () => {
+                  const current = event.config?.policies?.meetingConfirmationEnabled ?? false;
+                  try {
+                    await setDoc(
+                      doc(db, "events", event.id),
+                      { config: { policies: { meetingConfirmationEnabled: !current } } },
+                      { merge: true }
+                    );
+                    setEvent((prev) => ({
+                      ...prev,
+                      config: {
+                        ...prev.config,
+                        policies: { ...prev.config?.policies, meetingConfirmationEnabled: !current },
+                      },
+                    }));
+                    setGlobalMessage(`Confirmación de reuniones ${!current ? "activada" : "desactivada"}.`);
+                  } catch (e) {
+                    setGlobalMessage("Error al cambiar la política.");
+                  }
+                }}
+                color={event.config?.policies?.meetingConfirmationEnabled ? "red" : "teal"}
+                variant="light"
+              >
+                {event.config?.policies?.meetingConfirmationEnabled
+                  ? "Desactivar Confirmación de Reuniones"
+                  : "Activar Confirmación de Reuniones"}
               </Button>
             </Group>
           </Tabs.Panel>
@@ -1587,6 +1629,13 @@ const EventAdmin = () => {
       <ManualMeetingModal
         opened={manualMeetingModalOpened}
         onClose={() => setManualMeetingModalOpened(false)}
+        event={event}
+        setGlobalMessage={setGlobalMessage}
+      />
+
+      <ExternalMeetingModal
+        opened={externalMeetingModalOpened}
+        onClose={() => setExternalMeetingModalOpened(false)}
         event={event}
         setGlobalMessage={setGlobalMessage}
       />

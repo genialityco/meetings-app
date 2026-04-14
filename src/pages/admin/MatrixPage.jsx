@@ -173,6 +173,112 @@ function ParticipantPopover({ width = 320, trigger, children }) {
   );
 }
 
+function FreeMeetingsList({ freeMeetings, participantsInfo, getAffinityScore, toggleMeetingCompleted, surveys, openSurveyModal, openUserSurveyModal, openFillSurveyModal, getSurveyStatus }) {
+  return (
+    <>
+      {freeMeetings.map((fm) => {
+        const p0 = fm.participants?.[0];
+        const p1 = fm.participants?.[1];
+        const affinity = p0 && p1 ? getAffinityScore(p0, p1) : null;
+        return (
+          <div key={fm.id} style={{ marginTop: 8, paddingTop: 8, borderTop: "1px dashed #d1fae5" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <Badge color="white" variant="light" size="sm">Libre</Badge>
+              {affinity && (
+                <Badge variant="light" size="lg" style={{ color: "#172417ff" }}>{affinity.score}%</Badge>
+              )}
+              <Checkbox
+                size="sm"
+                label="Realizada"
+                checked={!!fm.completed}
+                onChange={(e) => toggleMeetingCompleted(fm.id, fm.completed, e)}
+                onClick={(e) => e.stopPropagation()}
+                color="green"
+              />
+              {(() => {
+                const ss = getSurveyStatus(fm.id, fm.participants);
+                return (
+                  <Tooltip label={ss.label} withArrow>
+                    <Badge
+                      color={ss.color}
+                      variant={ss.count > 0 ? "filled" : "outline"}
+                      size="sm"
+                      style={{ cursor: ss.count > 0 ? "pointer" : "default" }}
+                      onClick={(e) => ss.count > 0 && openSurveyModal(fm.id, e)}
+                    >
+                      📋 {ss.count}/{ss.total}
+                    </Badge>
+                  </Tooltip>
+                );
+              })()}
+            </div>
+            <ParticipantPopover
+              width={340}
+              trigger={
+                <div style={{ marginTop: 6 }}>
+                  {fm.participants?.map((pid) => {
+                    const info = participantsInfo[pid];
+                    const hasSurvey = (surveys[fm.id] || []).some((r) => r.userId === pid);
+                    return (
+                      <div key={pid} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                        <span
+                          style={{ fontSize: 18, color: hasSurvey ? "#253b25ff" : "#e03131", flexShrink: 0, cursor: hasSurvey ? "pointer" : "default" }}
+                          title={hasSurvey ? "Ver encuesta" : "Sin encuesta"}
+                          onClick={(e) => hasSurvey && openUserSurveyModal(fm.id, pid, e)}
+                        >
+                          {hasSurvey ? "✓" : "✗"}
+                        </span>
+                        <Tooltip label="Llenar encuesta" withArrow>
+                          <ActionIcon size="md" variant="subtle" color="violet" onClick={(e) => openFillSurveyModal(fm.id, pid, fm, e)}>
+                            <IconClipboardList size={18} />
+                          </ActionIcon>
+                        </Tooltip>
+                        <Text size="lg" fw={600} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 280, color: "#0b7a5e", cursor: "pointer" }}>
+                          {info ? info.empresa : pid}
+                        </Text>
+                        {info && (
+                          <Text size="md" c="dimmed" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 160 }}>
+                            {info.nombre}
+                          </Text>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              }
+            >
+              <b>Reunión libre — Participantes:</b>
+              {fm.participants?.map((pid, idx) => {
+                const info = participantsInfo[pid];
+                if (!info) return <div key={pid}>{pid}</div>;
+                const otherPid = fm.participants.find(p => p !== pid);
+                const aff = otherPid ? getAffinityScore(pid, otherPid) : null;
+                return (
+                  <div key={pid} style={{ marginBottom: 8 }}>
+                    <Text size="sm" fw={600}>{info.empresa}</Text>
+                    <Text size="xs" c="dimmed">{info.nombre}</Text>
+                    <Text size="xs"><span style={{ color: "#6c6c6c" }}>Tel: </span>{info.telefono || <i>No registrado</i>}</Text>
+                    <Text size="xs"><span style={{ color: "#6c6c6c" }}>Descripción: </span>{info.descripcion || <i>No especificada</i>}</Text>
+                    <Text size="xs"><span style={{ color: "#6c6c6c" }}>Necesidad: </span>{info.necesidad || <i>No especificada</i>}</Text>
+                    {idx === 0 && aff && (
+                      <div style={{ marginTop: 6, padding: "5px 8px", backgroundColor: "#e6fcf5", borderRadius: 4 }}>
+                        <Text size="xs" fw={600} c="teal">Afinidad: {aff.score}%</Text>
+                        {aff.reasons?.length > 0 && (
+                          <Text size="xs" c="dimmed" mt={2}>{aff.reasons.join(", ")}</Text>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </ParticipantPopover>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 function getAvailableUsersForSlot(assistants, meetings, slot, meeting = null) {
   if (!slot || !slot.startTime) return [];
   const occupiedIds = new Set();
@@ -245,6 +351,18 @@ const MatrixPage = () => {
     slot: null,
     lockedUserId: null,
   });
+
+  // Modal para reunión libre (sin reservar slot)
+  const [freeMeetingModal, setFreeMeetingModal] = useState({
+    opened: false,
+    asistente: null,
+    timeSlot: "",
+    meetingDate: null,
+  });
+  const [freePartner, setFreePartner] = useState("");
+  const [freeCheckDuplicates, setFreeCheckDuplicates] = useState(true);
+  const [creatingFree, setCreatingFree] = useState(false);
+
   const [creatingMeeting, setCreatingMeeting] = useState(false);
   const [globalMessage, setGlobalMessage] = useState("");
   const [userSearch, setUserSearch] = useState("");
@@ -475,20 +593,18 @@ const MatrixPage = () => {
   if (!config || !selectedDate) return [];
   const { numTables, meetingDuration } = config.config;
   
-  // Obtener breakBlocks del día seleccionado
   const dayConfig = config.config.dailyConfig?.[selectedDate] || {
     breakBlocks: config.config.breakBlocks || [],
   };
-  const breakBlocks = dayConfig.breakBlocks || [];
 
   const baseMatrix = Array.from({ length: numTables }, () =>
     timeSlots.map(() => ({
       status: "available",
       participants: [],
+      freeMeetings: [],
     }))
   );
 
-  // Filtrar agenda por fecha
   const agendaDelDia = agenda.filter(slot => !slot.date || slot.date === selectedDate);
 
   agendaDelDia.forEach((slot) => {
@@ -498,15 +614,16 @@ const MatrixPage = () => {
       baseMatrix[tIdx][sIdx] = {
         status: slot.available ? "available" : "occupied",
         participants: [],
+        freeMeetings: [],
       };
     }
   });
 
-  // Filtrar reuniones por fecha
   const meetingsDelDia = meetings.filter(mtg => !mtg.meetingDate || mtg.meetingDate === selectedDate);
 
+  // Primero las reuniones normales (no libres)
   meetingsDelDia.forEach((mtg) => {
-    if (mtg.status !== "accepted" || !mtg.timeSlot) return;
+    if (mtg.status !== "accepted" || !mtg.timeSlot || mtg.isExternal) return;
     const [startTime] = mtg.timeSlot.split(" - ");
     const tIdx = Number(mtg.tableAssigned) - 1;
     const sIdx = timeSlots.indexOf(startTime);
@@ -520,7 +637,22 @@ const MatrixPage = () => {
         ),
         meetingId: mtg.id,
         meetingData: mtg,
+        freeMeetings: baseMatrix[tIdx][sIdx].freeMeetings || [],
       };
+    }
+  });
+
+  // Luego las reuniones libres — se agregan a freeMeetings de la celda correspondiente por hora
+  meetingsDelDia.forEach((mtg) => {
+    if (mtg.status !== "accepted" || !mtg.timeSlot || !mtg.isExternal) return;
+    const [startTime] = mtg.timeSlot.split(" - ");
+    const sIdx = timeSlots.indexOf(startTime);
+    if (sIdx < 0) return;
+    // Agregar a todas las mesas que coincidan con tableAssigned, o a la primera si no tiene mesa
+    const tIdx = mtg.tableAssigned ? Number(mtg.tableAssigned) - 1 : 0;
+    if (tIdx >= 0 && tIdx < numTables) {
+      if (!baseMatrix[tIdx][sIdx].freeMeetings) baseMatrix[tIdx][sIdx].freeMeetings = [];
+      baseMatrix[tIdx][sIdx].freeMeetings.push(mtg);
     }
   });
 
@@ -603,9 +735,31 @@ const MatrixPage = () => {
   //------------------------------------------------------------
 
   // ------------ FUNCIONES DE CREACION, EDICIÓN, CANCELACIÓN, INTERCAMBIO ------------
-  const handleQuickCreateMeeting = async ({ user1, user2, slot }) => {
+  const handleQuickCreateMeeting = async ({ user1, user2, slot, checkDuplicates, onDuplicateFound }) => {
     setCreatingMeeting(true);
     try {
+      const meetingDate = slot.date || selectedDate;
+
+      // Verificar duplicados si está activo
+      if (checkDuplicates) {
+        const existingSnap = await getDocs(
+          query(
+            collection(db, "events", eventId, "meetings"),
+            where("status", "==", "accepted"),
+            where("participants", "array-contains", user1)
+          )
+        );
+        const alreadyMet = existingSnap.docs.some((d) => {
+          const m = d.data();
+          const sameDay = !meetingDate || !m.meetingDate || m.meetingDate === meetingDate;
+          return sameDay && (m.participants || []).includes(user2);
+        });
+        if (alreadyMet) {
+          if (onDuplicateFound) onDuplicateFound();
+          setCreatingMeeting(false);
+          return;
+        }
+      }
       const meetingRef = await addDoc(
         collection(db, "events", eventId, "meetings"),
         {
@@ -629,7 +783,6 @@ const MatrixPage = () => {
       const requester = asistentes.find((a) => a.id === user1);
       const slotStr = `${slot.startTime} - ${slot.endTime}`;
       const mesa = slot.tableNumber;
-      const meetingDate = slot.date || selectedDate;
 
       if (receiver && requester) {
         // WhatsApp
@@ -663,10 +816,33 @@ const MatrixPage = () => {
     setCreatingMeeting(false);
   };
 
-  const handleEditMeeting = async ({ meetingId, user1, user2, slot }) => {
+  const handleEditMeeting = async ({ meetingId, user1, user2, slot, checkDuplicates, onDuplicateFound }) => {
     setCreatingMeeting(true);
 
     try {
+      // Verificar duplicados si está activo
+      if (checkDuplicates) {
+        const meetingDate = slot.date || selectedDate;
+        const existingSnap = await getDocs(
+          query(
+            collection(db, "events", eventId, "meetings"),
+            where("status", "==", "accepted"),
+            where("participants", "array-contains", user1)
+          )
+        );
+        const alreadyMet = existingSnap.docs.some((d) => {
+          if (d.id === meetingId) return false; // ignorar la reunión actual
+          const m = d.data();
+          const sameDay = !meetingDate || !m.meetingDate || m.meetingDate === meetingDate;
+          return sameDay && (m.participants || []).includes(user2);
+        });
+        if (alreadyMet) {
+          if (onDuplicateFound) onDuplicateFound();
+          setCreatingMeeting(false);
+          return;
+        }
+      }
+
       // Buscar reuniones aceptadas que tengan conflicto con el nuevo slot para user1 y user2
       const reunionesAceptadas = meetings.filter(
         (m) => m.status === "accepted" && m.id !== meetingId
@@ -981,6 +1157,59 @@ const MatrixPage = () => {
     e.stopPropagation();
     const responses = surveys[meetingId] || [];
     setSurveyModal({ opened: true, meetingId, responses });
+  };
+
+  const handleCreateFreeMeeting = async () => {
+    if (!freePartner || !freeMeetingModal.asistente) return;
+    setCreatingFree(true);
+    try {
+      const meetingDate = freeMeetingModal.meetingDate || selectedDate || null;
+
+      // Si checkDuplicates está activo, verificar si ya se reunieron ese día
+      if (freeCheckDuplicates) {
+        const existingSnap = await getDocs(
+          query(
+            collection(db, "events", eventId, "meetings"),
+            where("status", "==", "accepted"),
+            where("participants", "array-contains", freeMeetingModal.asistente.id)
+          )
+        );
+        const alreadyMet = existingSnap.docs.some((d) => {
+          const m = d.data();
+          const sameDay = !meetingDate || !m.meetingDate || m.meetingDate === meetingDate;
+          return sameDay && (m.participants || []).includes(freePartner);
+        });
+        if (alreadyMet) {
+          setGlobalMessage("Los asistentes ya se han reunido ese día. Desactiva 'Verificar duplicados' para crear de todas formas.");
+          setCreatingFree(false);
+          return;
+        }
+      }
+
+      await addDoc(collection(db, "events", eventId, "meetings"), {
+        eventId,
+        requesterId: freeMeetingModal.asistente.id,
+        receiverId: freePartner,
+        participants: [freeMeetingModal.asistente.id, freePartner],
+        status: "accepted",
+        isExternal: true,
+        timeSlot: freeMeetingModal.timeSlot || "—",
+        tableAssigned: "",
+        meetingDate,
+        motivoMatch: "Libre",
+        razonMatch: "Reunión libre creada desde la matriz",
+        isNotificated: false,
+        createdAt: new Date(),
+      });
+      setGlobalMessage("Reunión libre creada correctamente.");
+      setFreeMeetingModal({ opened: false, asistente: null, timeSlot: "", meetingDate: null });
+      setFreePartner("");
+    } catch (e) {
+      setGlobalMessage("Error creando la reunión libre.");
+      console.error(e);
+    } finally {
+      setCreatingFree(false);
+    }
   };
 
   const openUserSurveyModal = (meetingId, userId, e) => {
@@ -1399,6 +1628,20 @@ const MatrixPage = () => {
                                 </ParticipantPopover>
                               );
                             })()}
+                            {/* Reuniones libres en este slot/mesa — lista desplegable */}
+                            {(cell.freeMeetings || []).length > 0 && (
+                              <FreeMeetingsList
+                                freeMeetings={cell.freeMeetings}
+                                participantsInfo={participantsInfo}
+                                getAffinityScore={getAffinityScore}
+                                toggleMeetingCompleted={toggleMeetingCompleted}
+                                surveys={surveys}
+                                openSurveyModal={openSurveyModal}
+                                openUserSurveyModal={openUserSurveyModal}
+                                openFillSurveyModal={openFillSurveyModal}
+                                getSurveyStatus={getSurveyStatus}
+                              />
+                            )}
                           </Table.Td>
                         </Table.Tr>
                         );
@@ -1454,7 +1697,14 @@ const MatrixPage = () => {
                   <Title order={5} ta="center" mb={4} style={{ letterSpacing: 0.5 }}>
                     {asistente.empresa}
                   </Title>
-                  <Text size="xs" c="dimmed" ta="center" mb="xs">{asistente.nombre}</Text>
+                  <Group justify="center" gap={6} mb="xs">
+                    <Text size="xs" c="dimmed">{asistente.nombre}</Text>
+                    {asistente.checkedIn ? (
+                      <Badge color="green" variant="light" size="xs">✓ Check-in</Badge>
+                    ) : (
+                      <Badge color="gray" variant="outline" size="xs">Sin check-in</Badge>
+                    )}
+                  </Group>
 
                   <Menu withinPortal position="bottom-start">
                     <Menu.Target>
@@ -1521,30 +1771,20 @@ const MatrixPage = () => {
                               cursor: cell.status === "available" || cell.status === "accepted" ? "pointer" : "default",
                             }}
                             onClick={() => {
-                              if (cell.status === "available") {
-                                const slotsDelHorario = agenda.filter((s) => s.startTime === slot && s.available && (!s.date || s.date === selectedDate));
-                                setQuickModal({ opened: true, slotsDisponibles: slotsDelHorario, defaultUser: asistente });
-                              } else if (cell.status === "accepted") {
-                                const meeting = meetings.find((m) => {
-                                  if (!m.timeSlot) return false;
-                                  const [start] = m.timeSlot.split(" - ");
-                                  return start === slot && m.participants.includes(asistente.id);
-                                });
-                                if (meeting) {
-                                  const [startTime, endTime] = meeting.timeSlot.split(" - ");
-                                  setEditModal({
-                                    opened: true,
-                                    meeting,
-                                    slot: {
-                                      tableNumber: meeting.tableAssigned,
-                                      startTime,
-                                      endTime,
-                                      id: agenda.find((s) => s.tableNumber === Number(meeting.tableAssigned) && s.startTime === startTime && (!s.date || s.date === selectedDate))?.id,
-                                    },
-                                    lockedUserId: asistente.id,
-                                  });
-                                }
-                              }
+                              // Siempre permitir crear reunión libre en cualquier slot
+                              const slotEndTime = (() => {
+                                const dur = config?.config?.meetingDuration || 30;
+                                const [h, m] = slot.split(":").map(Number);
+                                const endMin = h * 60 + m + dur;
+                                return `${String(Math.floor(endMin / 60)).padStart(2, "0")}:${String(endMin % 60).padStart(2, "0")}`;
+                              })();
+                              setFreePartner("");
+                              setFreeMeetingModal({
+                                opened: true,
+                                asistente,
+                                timeSlot: `${slot} - ${slotEndTime}`,
+                                meetingDate: selectedDate,
+                              });
                             }}
                           >
                             <Table.Td style={{ fontWeight: 600, fontSize: 13, color: "#1f2125ff", whiteSpace: "nowrap" }}>
@@ -1665,6 +1905,32 @@ const MatrixPage = () => {
                               })() : (
                                 <StatusBadge status={cell.status} />
                               )}
+                              {/* Reuniones libres en este slot */}
+                              {(() => {
+                                const freeMeetings = meetings.filter((m) => {
+                                  if (!m.isExternal || m.status !== "accepted") return false;
+                                  if (!m.participants.includes(asistente.id)) return false;
+                                  const [mStart] = (m.timeSlot || "").split(" - ");
+                                  return mStart === slot && (!m.meetingDate || m.meetingDate === selectedDate);
+                                });
+                                if (freeMeetings.length === 0) return null;
+                                return (
+                                  <div style={{ marginTop: 4 }}>
+                                    {freeMeetings.map((fm) => {
+                                      const partnerId = fm.participants.find((p) => p !== asistente.id);
+                                      const partner = participantsInfo[partnerId];
+                                      return (
+                                        <div key={fm.id} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 2 }}>
+                                          <Badge color="white" variant="dot" size="xs">Libre</Badge>
+                                          <Text size="xs" c="dimmed" style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                            {partner ? `${partner.empresa}` : partnerId}
+                                          </Text>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })()}
                             </Table.Td>
                           </Table.Tr>
                         );
@@ -1722,7 +1988,89 @@ const MatrixPage = () => {
         slotsDisponibles={slotsDisponiblesParaEdicion}
         getAffinity={getAffinityScore}
         companies={dashboard.companies || []}
+        onCreateFree={async (u1, u2, checkDups, onDupFound, onDone) => {
+          const meetingDate = editModal.slot?.date || selectedDate;
+          if (checkDups) {
+            const { getDocs: gd, query: q2, collection: col, where: wh } = await import("firebase/firestore");
+            const snap = await getDocs(query(collection(db, "events", eventId, "meetings"), where("status", "==", "accepted"), where("participants", "array-contains", u1)));
+            const met = snap.docs.some((d) => { const m = d.data(); const sd = !meetingDate || !m.meetingDate || m.meetingDate === meetingDate; return sd && (m.participants || []).includes(u2); });
+            if (met) { onDupFound(); return; }
+          }
+          try {
+            await addDoc(collection(db, "events", eventId, "meetings"), {
+              eventId, requesterId: u1, receiverId: u2,
+              participants: [u1, u2], status: "accepted", isExternal: true,
+              timeSlot: editModal.meeting?.timeSlot || "—",
+              tableAssigned: editModal.meeting?.tableAssigned || "",
+              meetingDate, motivoMatch: "Libre",
+              razonMatch: "Reunión libre creada desde la matriz",
+              isNotificated: false, createdAt: new Date(),
+            });
+            setGlobalMessage("Reunión libre creada.");
+          } catch (e) { console.error(e); }
+          if (onDone) onDone();
+        }}
+        freeMeetingsInSlot={editModal.meeting ? meetings.filter((m) => {
+          if (!m.isExternal || m.status !== "accepted") return false;
+          const [ms] = (m.timeSlot || "").split(" - ");
+          const [es] = (editModal.meeting?.timeSlot || "").split(" - ");
+          return ms === es && (!m.meetingDate || m.meetingDate === selectedDate);
+        }) : []}
       />
+
+      {/* Modal reunión libre */}
+      <Modal
+        opened={freeMeetingModal.opened}
+        onClose={() => { setFreeMeetingModal({ opened: false, asistente: null, timeSlot: "", meetingDate: null }); setFreePartner(""); }}
+        title="Crear reunión libre"
+        size="sm"
+        centered
+      >
+        <Stack gap="md">
+          <Text size="sm" c="dimmed">
+            Esta reunión no reserva ningún slot de agenda.
+          </Text>
+          {freeMeetingModal.asistente && (
+            <Paper withBorder p="sm" radius="md">
+              <Text size="xs" c="dimmed">Participante fijo</Text>
+              <Text size="sm" fw={600}>{freeMeetingModal.asistente.empresa}</Text>
+              <Text size="xs" c="dimmed">{freeMeetingModal.asistente.nombre}</Text>
+              {freeMeetingModal.timeSlot && <Text size="xs" mt={2}>🕐 {freeMeetingModal.timeSlot}</Text>}
+            </Paper>
+          )}
+          <Select
+            label="Segundo participante"
+            placeholder="Buscar asistente..."
+            data={asistentes
+              .filter((a) => a.id !== freeMeetingModal.asistente?.id)
+              .map((a) => ({ value: a.id, label: `${a.empresa} — ${a.nombre}` }))}
+            value={freePartner}
+            onChange={(v) => setFreePartner(v || "")}
+            searchable
+            clearable
+          />
+          <Checkbox
+            label="Verificar duplicados"
+            description="Si está activo, no permite crear la reunión si los asistentes ya se reunieron ese día"
+            checked={freeCheckDuplicates}
+            onChange={(e) => setFreeCheckDuplicates(e.currentTarget.checked)}
+            color="orange"
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => { setFreeMeetingModal({ opened: false, asistente: null, timeSlot: "", meetingDate: null }); setFreePartner(""); }}>
+              Cancelar
+            </Button>
+            <Button
+              color="teal"
+              loading={creatingFree}
+              disabled={!freePartner}
+              onClick={handleCreateFreeMeeting}
+            >
+              Crear reunión libre
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       {globalMessage && (
         <Alert

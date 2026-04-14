@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import { createContext, useState, useEffect } from "react";
+import { createContext, useState, useEffect, useRef } from "react";
 import { onAuthStateChanged, signInAnonymously, signOut } from "firebase/auth";
 import {
   updateDoc,
@@ -10,6 +10,7 @@ import {
   collection,
   where,
   getDocs,
+  onSnapshot,
 } from "firebase/firestore";
 import { auth, db, messaging } from "../firebase/firebaseConfig";
 import { onMessage } from "firebase/messaging";
@@ -22,15 +23,44 @@ export const UserProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(
     JSON.parse(localStorage.getItem("currentUser")) || null
   );
-
   const [userLoading, setUserLoading] = useState(true);
   const [manualLogin, setManualLogin] = useState(
     localStorage.getItem("manualLogin") === "true"
   );
+  const userSnapshotUnsub = useRef(null);
+
+  // Subscribe to real-time user doc updates (keeps checkedIn and other fields in sync)
+  const subscribeToUserDoc = (uid) => {
+    if (userSnapshotUnsub.current) userSnapshotUnsub.current();
+    userSnapshotUnsub.current = onSnapshot(
+      doc(db, "users", uid),
+      (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data();
+        setCurrentUser((prev) => {
+          if (!prev || prev.uid !== uid) return prev;
+          const updated = { uid, data };
+          localStorage.setItem("currentUser", JSON.stringify(updated));
+          return updated;
+        });
+      },
+      (error) => {
+        // permission-denied ocurre en sesiones manuales sin Firebase Auth
+        // En ese caso simplemente no actualizamos en tiempo real (los datos del localStorage siguen vigentes)
+        if (error.code === "permission-denied") {
+          console.warn("onSnapshot users: sin permisos (sesión manual sin auth). Usando datos locales.");
+        } else {
+          console.error("onSnapshot users error:", error);
+        }
+      }
+    );
+  };
 
   useEffect(() => {
     if (manualLogin) {
       setUserLoading(false);
+      // En sesiones manuales no hay Firebase Auth, así que no podemos usar onSnapshot
+      // (las reglas de Firestore requieren auth). Los datos se mantienen desde localStorage.
       return;
     }
 
@@ -43,6 +73,7 @@ export const UserProvider = ({ children }) => {
         const newUser = { uid, data: userData };
         setCurrentUser(newUser);
         localStorage.setItem("currentUser", JSON.stringify(newUser));
+        subscribeToUserDoc(uid);
 
         // Solicitar permiso de notificaciones
         // try {
@@ -116,6 +147,10 @@ export const UserProvider = ({ children }) => {
 
   const logout = async () => {
     try {
+      if (userSnapshotUnsub.current) {
+        userSnapshotUnsub.current();
+        userSnapshotUnsub.current = null;
+      }
       await signOut(auth);
       setCurrentUser(null);
       localStorage.removeItem("currentUser");
@@ -160,6 +195,7 @@ export const UserProvider = ({ children }) => {
       const newUser = { uid: userDoc.id, data: userData };
       setCurrentUser(newUser);
       localStorage.setItem("currentUser", JSON.stringify(newUser));
+      subscribeToUserDoc(userDoc.id);
 
       // Evita sobrescribir con sesión anónima
       localStorage.setItem("manualLogin", "true");
@@ -219,6 +255,7 @@ export const UserProvider = ({ children }) => {
     const newUser = { uid: userDoc.id, data: userData };
     setCurrentUser(newUser);
     localStorage.setItem("currentUser", JSON.stringify(newUser));
+    subscribeToUserDoc(userDoc.id);
 
     // Evita sobrescribir con sesión anónima
     localStorage.setItem("manualLogin", "true");

@@ -113,6 +113,12 @@ export interface EventPolicies {
   surveyBlockedFor?: "none" | "compradores" | "vendedores" | "ambos";
   /** Modo de encuesta: "default" usa los campos originales, "custom" usa surveyConfig por rol */
   surveyMode?: "default" | "custom";
+  /** Forzar confirmación de reuniones pasadas antes de continuar */
+  meetingConfirmationEnabled?: boolean;
+  /** Reuniones pasan a standby hasta que ambos participantes hagan check-in */
+  standbyCheckInRequired?: boolean;
+  /** Asignar número de identificación al registrarse (ej: 1C, 2V) */
+  attendeeIdEnabled?: boolean;
 }
 
 /** Empresa (events/{eventId}/companies/{nitNorm}) */
@@ -164,4 +170,7 @@ export const DEFAULT_POLICIES: EventPolicies = {
   autoReassignOnCancel: false,
   surveyBlockedFor: "none",
   surveyMode: "default",
+  meetingConfirmationEnabled: false,
+  standbyCheckInRequired: false,
+  attendeeIdEnabled: false,
 };

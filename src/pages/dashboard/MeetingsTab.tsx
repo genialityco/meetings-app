@@ -1,4 +1,4 @@
-import { useState, useContext } from "react";
+import { useState, useContext, useEffect } from "react";
 import {
   Stack,
   Card,
@@ -20,6 +20,8 @@ import {
   Grid,
   useMantineTheme,
   Select,
+  Skeleton,
+  Alert,
 } from "@mantine/core";
 import {
   IconClock,
@@ -83,6 +85,7 @@ function InfoRow({
 export default function MeetingsTab({
   acceptedMeetings,
   cancelledMeetings = [],
+  standbyMeetings = [],
   participantsInfo,
   uid,
   expandedMeetingId,
@@ -527,6 +530,56 @@ export default function MeetingsTab({
           </Grid.Col>
         )}
       </Grid>
+
+      {/* Reuniones en standby */}
+      {standbyMeetings.length > 0 && (
+        <Stack mt="xl" gap="sm">
+          <Divider
+            label={
+              <Group gap={6}>
+                <IconClock size={16} color="orange" />
+                <Text fw={600} size="sm" c="orange">
+                  En espera de check-in ({standbyMeetings.length})
+                </Text>
+              </Group>
+            }
+            labelPosition="left"
+          />
+          <Alert color="orange" variant="light" radius="md">
+            Estas reuniones están confirmadas pero en espera de que ambos participantes hagan check-in para activarse.
+            Haz check-in desde el botón en la parte superior para confirmar tu asistencia.
+          </Alert>
+          <Grid gutter="sm">
+            {standbyMeetings.map((meeting) => {
+              const otherUserId = meeting.requesterId === uid ? meeting.receiverId : meeting.requesterId;
+              const participant = participantsInfo[otherUserId];
+              return (
+                <Grid.Col key={meeting.id} span={{ base: 12, sm: 6, lg: 4 }}>
+                  <Card withBorder radius="lg" p="md" style={{ opacity: 0.85, borderColor: "orange" }}>
+                    <Group gap="sm" mb="xs">
+                      <Avatar src={participant?.photoURL} radius="xl" size={44} color="orange">
+                        {(participant?.nombre || "?")[0]?.toUpperCase()}
+                      </Avatar>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <Text fw={700} size="sm" lineClamp={1}>{participant?.nombre || otherUserId}</Text>
+                        <Text size="xs" c="dimmed" lineClamp={1}>{participant?.empresa || ""}</Text>
+                      </div>
+                      <Badge color="orange" variant="light" size="sm">Standby</Badge>
+                    </Group>
+                    {meeting.timeSlot && (
+                      <Group gap={6}>
+                        <IconClock size={14} color="gray" />
+                        <Text size="xs" c="dimmed">{meeting.timeSlot}</Text>
+                        {meeting.tableAssigned && <Text size="xs" c="dimmed">· Mesa {meeting.tableAssigned}</Text>}
+                      </Group>
+                    )}
+                  </Card>
+                </Grid.Col>
+              );
+            })}
+          </Grid>
+        </Stack>
+      )}
 
       {/* Reuniones canceladas */}
       {cancelledMeetings.length > 0 && (

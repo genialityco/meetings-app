@@ -9,6 +9,7 @@ import TabsPanel from "./TabsPanel";
 import AvatarModal from "./AvatarModal";
 import SlotModal from "./SlotModal";
 import ConfirmModal from "./ConfirmModal";
+import MeetingConfirmationGuard from "./MeetingConfirmationGuard";
 import { useCallback, useContext, useMemo, useState } from "react";
 import { UserContext } from "../../context/UserContext";
 import DashboardHeader from "../../components/DashboardHeader";
@@ -87,6 +88,7 @@ export default function Dashboard() {
           onMarkAllRead={dashboard.markAllNotificationsRead}
           formFields={dashboard.formFields}
           eventConfig={dashboard.eventConfig}
+          policies={dashboard.policies}
         />
       )}
       <Container fluid pt="sm">
@@ -134,6 +136,15 @@ export default function Dashboard() {
           dashboard.confirmAcceptWithSlot(idToUse, dashboard.chosenSlot);
         }}
       />
+
+      {currentUser?.uid && eventId && (
+        <MeetingConfirmationGuard
+          uid={currentUser.uid}
+          eventId={eventId}
+          enabled={!!dashboard.eventConfig?.policies?.meetingConfirmationEnabled}
+          eventConfig={dashboard.eventConfig}
+        />
+      )}
     </Container>
     </MantineProvider>
   );

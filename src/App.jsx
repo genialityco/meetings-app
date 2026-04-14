@@ -21,6 +21,7 @@ const EventMatchPage = lazy(() => import("./pages/admin/EventMatchPage.jsx"));
 const ImportMeetingsFromExcelPage = lazy(() => import("./pages/admin/ImportMeetingsFromExcelPage.jsx"));
 const AgendaAdminPanel = lazy(() => import("./pages/admin/AgendaAdminPanel.jsx"));
 const MeetingSurveys = lazy(() => import("./pages/admin/MeetingSurveys.jsx"));
+const CheckInPage = lazy(() => import("./pages/admin/CheckInPage.jsx"));
 const AdminLogin = lazy(() => import("./pages/admin/AdminLogin.tsx"));
 const AdminRegister = lazy(() => import("./pages/admin/AdminRegister.tsx"));
 
@@ -69,6 +70,10 @@ const App = () => {
         <Route
           path="/admin/surveys"
           element={<ProtectedAdminRoute><MeetingSurveys /></ProtectedAdminRoute>}
+        />
+        <Route
+          path="/admin/event/:eventId/checkin"
+          element={<ProtectedAdminRoute><CheckInPage /></ProtectedAdminRoute>}
         />
       </Routes>
     </Suspense>

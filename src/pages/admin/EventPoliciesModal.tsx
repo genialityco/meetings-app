@@ -49,6 +49,9 @@ export default function EventPoliciesModal({
   const [autoReassignOnCancel, setAutoReassignOnCancel] = useState(false);
   const [surveyBlockedFor, setSurveyBlockedFor] = useState<EventPolicies["surveyBlockedFor"]>("none");
   const [surveyMode, setSurveyMode] = useState<EventPolicies["surveyMode"]>("default");
+  const [cancelMeetingDisabled, setCancelMeetingDisabled] = useState(false);
+  const [standbyCheckInRequired, setStandbyCheckInRequired] = useState(false);
+  const [attendeeIdEnabled, setAttendeeIdEnabled] = useState(false);
 
   // Empresas y asignación de mesas fijas
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -74,6 +77,9 @@ export default function EventPoliciesModal({
     setAutoReassignOnCancel(p.autoReassignOnCancel ?? false);
     setSurveyBlockedFor(p.surveyBlockedFor ?? "none");
     setSurveyMode(p.surveyMode ?? "default");
+    setCancelMeetingDisabled(p.cancelMeetingDisabled ?? false);
+    setStandbyCheckInRequired(p.standbyCheckInRequired ?? false);
+    setAttendeeIdEnabled(p.attendeeIdEnabled ?? false);
   }, [event]);
 
   // Cargar empresas cuando se abre el modal y tableMode es "fixed"
@@ -146,6 +152,9 @@ export default function EventPoliciesModal({
               autoReassignOnCancel,
               surveyBlockedFor,
               surveyMode,
+              cancelMeetingDisabled,
+              standbyCheckInRequired,
+              attendeeIdEnabled,
             },
           },
         },
@@ -291,6 +300,27 @@ export default function EventPoliciesModal({
           description="Cuando se cancela una reunión, el slot liberado se reasigna automáticamente al mejor candidato disponible"
           checked={autoReassignOnCancel}
           onChange={(e) => setAutoReassignOnCancel(e.currentTarget.checked)}
+        />
+
+        <Switch
+          label="Deshabilitar cancelación de reuniones"
+          description="Los asistentes no podrán cancelar sus reuniones desde el dashboard"
+          checked={cancelMeetingDisabled}
+          onChange={(e) => setCancelMeetingDisabled(e.currentTarget.checked)}
+        />
+
+        <Switch
+          label="Reuniones en standby hasta check-in"
+          description="Las reuniones aceptadas quedan en standby hasta que ambos participantes hagan check-in. Si no hay slots libres, se usan slots de standby."
+          checked={standbyCheckInRequired}
+          onChange={(e) => setStandbyCheckInRequired(e.currentTarget.checked)}
+        />
+
+        <Switch
+          label="Identificador de asistente"
+          description="Al registrarse, cada asistente recibe un número de identificación visible en el header (ej: 1C para comprador, 1V para vendedor)"
+          checked={attendeeIdEnabled}
+          onChange={(e) => setAttendeeIdEnabled(e.currentTarget.checked)}
         />
 
         <Select

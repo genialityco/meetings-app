@@ -62,43 +62,12 @@ function slotOverlapsBreakBlock(
   });
 }
 
-function formatPhoneNumber(phone: string) {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length === 10 && digits.startsWith("3")) {
-    return "57" + digits;
-  }
-  if (digits.length === 12 && digits.startsWith("57")) {
-    return digits;
-  }
-  if (digits.length === 11 && digits.startsWith("03")) {
-    return "57" + digits.slice(1);
-  }
-  return digits;
-}
-
-async function sendSms(text: string, phone: string) {
-  const url = "https://www.onurix.com/api/v1/sms/send";
-  const data = new URLSearchParams();
-  data.append("client", "7121");
-  data.append("key", "145d2b857deea633450f5af2b42350c52288e309682f7a1904272");
-  data.append("phone", formatPhoneNumber(phone));
-  data.append("sms", text);
-
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-      },
-      body: data,
-    });
-
-    const json = await response.json();
-    // console.log("✅ SMS enviado:", json);
-  } catch (err) {
-    // console.error("❌ Error al enviar SMS:", err);
-  }
+async function sendSms(text: string, phone: string, apiVersion: "v1" | "v2" = "v1") {
+  await sendWhatsAppAPI({
+    apiVersion,
+    phone,
+    message: text,
+  });
 }
 
 function downloadVCard(participant: Assistant) {
@@ -368,6 +337,7 @@ export function useDashboardData(eventId?: string) {
   const [assistants, setAssistants] = useState<Assistant[]>([]);
   const [filteredAssistants, setFilteredAssistants] = useState<Assistant[]>([]);
   const [acceptedMeetings, setAcceptedMeetings] = useState<Meeting[]>([]);
+  const [standbyMeetings, setStandbyMeetings] = useState<Meeting[]>([]);
   const [cancelledMeetings, setCancelledMeetings] = useState<Meeting[]>([]);
   const [loadingMeetings, setLoadingMeetings] = useState(true);
   const [pendingRequests, setPendingRequests] = useState<Meeting[]>([]);
@@ -685,7 +655,35 @@ export function useDashboardData(eventId?: string) {
     });
   }, [uid, eventId]);
 
-  // 7b. Reuniones canceladas
+  // 7b. Reuniones en standby (check-in pendiente)
+  useEffect(() => {
+    if (!uid || !eventId) return;
+    const q = query(
+      collection(db, "events", eventId, "meetings"),
+      where("status", "==", "standby"),
+      where("participants", "array-contains", uid),
+    );
+    return onSnapshot(q, async (snap) => {
+      const mts: Meeting[] = [];
+      for (const d of snap.docs) {
+        const m = { id: d.id, ...d.data() } as Meeting;
+        m.timeSlot = typeof m.timeSlot === "string" ? m.timeSlot : "";
+        mts.push(m);
+        const other = m.requesterId === uid ? m.receiverId : m.requesterId;
+        if (other && !participantsInfo[other]) {
+          try {
+            const uSnap = await getDoc(doc(db, "users", other));
+            if (uSnap.exists()) {
+              setParticipantsInfo((prev) => ({ ...prev, [other]: uSnap.data() as Assistant }));
+            }
+          } catch (e) {}
+        }
+      }
+      setStandbyMeetings(mts);
+    });
+  }, [uid, eventId]);
+
+  // 7c. Reuniones canceladas
   useEffect(() => {
     if (!uid || !eventId) return;
     const q = query(
@@ -859,7 +857,18 @@ export function useDashboardData(eventId?: string) {
         collection(db, "events", eventId, "meetings"),
         data,
       );
-      const requester = currentUser?.data;
+      const requesterSnap = await getDoc(doc(db, "users", uid));
+      const requester = requesterSnap.exists()
+        ? requesterSnap.data()
+        : currentUser?.data;
+      const requesterName = (requester?.nombre || "").trim();
+      const requesterCompany =
+        requester?.company_razonSocial ||
+        requester?.companyName ||
+        requester?.empresa ||
+        requester?.razonSocial ||
+        requester?.company ||
+        "";
       const meetingId = meetingDoc.id;
       const baseUrl = window.location.origin;
 
@@ -881,8 +890,8 @@ export function useDashboardData(eventId?: string) {
         `📩 *Nueva solicitud de reunión*\n\n` +
         eventLine +
         `Has recibido una solicitud de reunión de:\n\n` +
-        `👤 *Nombre:* ${requester?.nombre || ""}\n` +
-        `🏢 *Empresa:* ${requester?.empresa || ""}\n` +
+        `👤 *Nombre:* ${requesterName}\n` +
+        `🏢 *Empresa:* ${requesterCompany}\n` +
         `💼 *Cargo:* ${requester?.cargo || ""}\n` +
         `📧 *Correo:* ${requester?.correo || ""}\n` +
         `📞 *Teléfono:* ${requester?.telefono || ""}\n` +
@@ -901,8 +910,8 @@ export function useDashboardData(eventId?: string) {
         message: whatsappApiVersion === "v2" && context?.contextNote ? context.contextNote : message, // v2 usa contextNote, v1 usa mensaje completo
         metadata: {
           eventName: eventName || "Evento",
-          requesterName: requester?.nombre || "",
-          requesterCompany: requester?.empresa || "",
+          requesterName,
+          requesterCompany,
           requesterPosition: requester?.cargo || "",
           requesterEmail: requester?.correo || "",
           requesterPhone: requester?.telefono || "",
@@ -914,8 +923,8 @@ export function useDashboardData(eventId?: string) {
 
       // Notificación en la app
       const notificationMessage = context?.contextNote
-        ? `${requester?.nombre || "Alguien"} te ha enviado una solicitud de reunión.\n\nMensaje: "${context.contextNote}"`
-        : `${requester?.nombre || "Alguien"} te ha enviado una solicitud de reunión.`;
+        ? `${requesterName || "Alguien"} te ha enviado una solicitud de reunión.\n\nMensaje: "${context.contextNote}"`
+        : `${requesterName || "Alguien"} te ha enviado una solicitud de reunión.`;
       
       await addDoc(collection(db, "notifications"), {
         userId: assistantId,
@@ -1533,6 +1542,30 @@ export function useDashboardData(eventId?: string) {
       }
 
       setAvailableSlots(finalSlots);
+
+      // If no free slots and standby policy is active, include slots occupied by standby meetings
+      if (finalSlots.length === 0 && eventConfig?.policies?.standbyCheckInRequired) {
+        const standbySnap = await getDocs(
+          query(
+            collection(db, "events", eventId, "meetings"),
+            where("status", "==", "standby")
+          )
+        );
+        const standbySlotIds = new Set(standbySnap.docs.map((d) => d.data().slotId).filter(Boolean));
+        // Fetch all slots (including unavailable) to find standby ones
+        const allAgendaSnap = await getDocs(
+          query(
+            collection(db, "events", eventId, "agenda"),
+            where("date", "==", eventDayISO),
+            orderBy("startTime")
+          )
+        );
+        const standbySlots = allAgendaSnap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((s: any) => standbySlotIds.has(s.id));
+        setAvailableSlots(standbySlots.map((s: any) => ({ ...s, isStandbySlot: true })));
+      }
+
       setSlotModalOpened(true);
     } finally {
       setPrepareSlotSelectionLoading(false);
@@ -1581,6 +1614,32 @@ export function useDashboardData(eventId?: string) {
       const mtgRef = doc(db, "events", eventId, "meetings", meetingId);
       const slotRef = doc(db, "events", eventId, "agenda", slot.id);
 
+      // Pre-read meeting to get participants (needed for standby check outside transaction)
+      const mtgPreSnap = await getDoc(mtgRef);
+      if (!mtgPreSnap.exists()) throw new Error("Reunión no existe");
+      const mtgPreData = mtgPreSnap.data() as any;
+      const preRequesterId: string = mtgPreData.requesterId;
+      const preReceiverId: string = mtgPreData.receiverId;
+
+      // Pre-read checkedIn status outside transaction (users collection has restricted read rules)
+      let reqCheckedIn = false;
+      let recCheckedIn = false;
+      // Read policy directly from Firestore to avoid stale eventConfig closure
+      const eventDocSnap = await getDoc(doc(db, "events", eventId));
+      const standbyRequired = eventDocSnap.exists()
+        ? eventDocSnap.data()?.config?.policies?.standbyCheckInRequired === true
+        : false;
+      console.log("[confirmAcceptWithSlot] standbyRequired:", standbyRequired, "eventId:", eventId);
+      if (standbyRequired && !isEdit) {
+        const [reqUserSnap, recUserSnap] = await Promise.all([
+          getDoc(doc(db, "users", preRequesterId)),
+          getDoc(doc(db, "users", preReceiverId)),
+        ]);
+        reqCheckedIn = reqUserSnap.exists() ? !!reqUserSnap.data()?.checkedIn : false;
+        recCheckedIn = recUserSnap.exists() ? !!recUserSnap.data()?.checkedIn : false;
+        console.log("[confirmAcceptWithSlot] reqCheckedIn:", reqCheckedIn, "recCheckedIn:", recCheckedIn);
+      }
+
       // 1) TRANSACCIÓN: valida, crea locks, actualiza meeting y ocupa slot
       await runTransaction(db, async (tx) => {
         // a) Cargar meeting
@@ -1599,7 +1658,6 @@ export function useDashboardData(eventId?: string) {
         const sData = sSnap.data() as any;
         if (sData.available !== true)
           throw new Error("El slot ya está ocupado");
-
         // c) Si es edición, liberar slot previo y locks previos (si existen)
         const prevSlotId: string | undefined = mtg.slotId;
         const prevLockIds: string[] | undefined = mtg.lockIds;
@@ -1680,13 +1738,32 @@ export function useDashboardData(eventId?: string) {
           updatedAt: new Date(),
         };
         if (!isEdit) {
-          updatePayload.status = "accepted";
+          // Use pre-read checkedIn values (read outside transaction to avoid permission issues)
+          if (standbyRequired) {
+            updatePayload.status = (reqCheckedIn && recCheckedIn) ? "accepted" : "standby";
+          } else {
+            updatePayload.status = "accepted";
+          }
         }
         tx.update(mtgRef, updatePayload);
 
         // f) Ocupa el slot
         tx.update(slotRef, { available: false, meetingId });
       });
+
+      // Cancel standby meeting that was using this slot (if any)
+      if (slot.isStandbySlot) {
+        const standbySnap = await getDocs(
+          query(
+            collection(db, "events", eventId, "meetings"),
+            where("status", "==", "standby"),
+            where("slotId", "==", slot.id)
+          )
+        );
+        for (const d of standbySnap.docs) {
+          await updateDoc(d.ref, { status: "cancelled" });
+        }
+      }
 
       // 2) Si existe groupId: marca otras meetings del grupo como "taken" (fuera de la TX por simplicidad)
       const mtgAfter = await getDoc(mtgRef);
@@ -1790,15 +1867,15 @@ export function useDashboardData(eventId?: string) {
         });
       }
 
+      const whatsappApiVersion = policies.whatsappApiVersion || "v1";
       const smsMsg = isEdit
         ? `Tu reunión fue movida a ${slot.startTime} en Mesa ${slot.tableNumber}.`
         : `Tu reunión fue aceptada para ${slot.startTime} en Mesa ${slot.tableNumber}.`;
 
-      if (requester?.telefono) await sendSms(smsMsg, requester.telefono);
-      if (receiver?.telefono) await sendSms(smsMsg, receiver.telefono);
+      if (requester?.telefono) await sendSms(smsMsg, requester.telefono, whatsappApiVersion);
+      if (receiver?.telefono) await sendSms(smsMsg, receiver.telefono, whatsappApiVersion);
 
       // El receptor (uid actual) es quien acepta
-      const whatsappApiVersion = policies.whatsappApiVersion || "v1";
       const accepterName = receiver?.nombre || requester?.nombre || "";
 
       if (requester?.telefono) {
@@ -2025,6 +2102,7 @@ export function useDashboardData(eventId?: string) {
     assistants,
     filteredAssistants,
     acceptedMeetings: filteredAcceptedMeetings,
+    standbyMeetings,
     cancelledMeetings: filteredCancelledMeetings,
     loadingMeetings,
     pendingRequests: filteredPendingRequests,

@@ -95,12 +95,17 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
         : " ";
 
       // API V2: Meeting Request
+      const requesterName =
+        metadata.requesterName?.trim() || "Asistente";
+      const requesterCompany =
+        metadata.requesterCompany?.trim() || "Compañia";
+
       const payload: WhatsAppV2Payload = {
         accountId: ACCOUNT_ID,
         to: fullPhone,
         eventName: metadata.eventName || "Evento",
-        requesterName: metadata.requesterName || "Asistente",
-        requesterCompany: metadata.requesterCompany || "Compañia",
+        requesterName,
+        requesterCompany,
         requesterPosition: metadata.requesterPosition || "Cargo",
         requesterEmail: metadata.requesterEmail || "Email",
         requesterPhone: metadata.requesterPhone || "Telefono",
