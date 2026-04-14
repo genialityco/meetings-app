@@ -62,43 +62,12 @@ function slotOverlapsBreakBlock(
   });
 }
 
-function formatPhoneNumber(phone: string) {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length === 10 && digits.startsWith("3")) {
-    return "57" + digits;
-  }
-  if (digits.length === 12 && digits.startsWith("57")) {
-    return digits;
-  }
-  if (digits.length === 11 && digits.startsWith("03")) {
-    return "57" + digits.slice(1);
-  }
-  return digits;
-}
-
-async function sendSms(text: string, phone: string) {
-  const url = "https://www.onurix.com/api/v1/sms/send";
-  const data = new URLSearchParams();
-  data.append("client", "7121");
-  data.append("key", "145d2b857deea633450f5af2b42350c52288e309682f7a1904272");
-  data.append("phone", formatPhoneNumber(phone));
-  data.append("sms", text);
-
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-      },
-      body: data,
-    });
-
-    const json = await response.json();
-    // console.log("✅ SMS enviado:", json);
-  } catch (err) {
-    // console.error("❌ Error al enviar SMS:", err);
-  }
+async function sendSms(text: string, phone: string, apiVersion: "v1" | "v2" = "v1") {
+  await sendWhatsAppAPI({
+    apiVersion,
+    phone,
+    message: text,
+  });
 }
 
 function downloadVCard(participant: Assistant) {
@@ -888,7 +857,18 @@ export function useDashboardData(eventId?: string) {
         collection(db, "events", eventId, "meetings"),
         data,
       );
-      const requester = currentUser?.data;
+      const requesterSnap = await getDoc(doc(db, "users", uid));
+      const requester = requesterSnap.exists()
+        ? requesterSnap.data()
+        : currentUser?.data;
+      const requesterName = (requester?.nombre || "").trim();
+      const requesterCompany =
+        requester?.company_razonSocial ||
+        requester?.companyName ||
+        requester?.empresa ||
+        requester?.razonSocial ||
+        requester?.company ||
+        "";
       const meetingId = meetingDoc.id;
       const baseUrl = window.location.origin;
 
@@ -910,8 +890,8 @@ export function useDashboardData(eventId?: string) {
         `📩 *Nueva solicitud de reunión*\n\n` +
         eventLine +
         `Has recibido una solicitud de reunión de:\n\n` +
-        `👤 *Nombre:* ${requester?.nombre || ""}\n` +
-        `🏢 *Empresa:* ${requester?.empresa || ""}\n` +
+        `👤 *Nombre:* ${requesterName}\n` +
+        `🏢 *Empresa:* ${requesterCompany}\n` +
         `💼 *Cargo:* ${requester?.cargo || ""}\n` +
         `📧 *Correo:* ${requester?.correo || ""}\n` +
         `📞 *Teléfono:* ${requester?.telefono || ""}\n` +
@@ -930,8 +910,8 @@ export function useDashboardData(eventId?: string) {
         message: whatsappApiVersion === "v2" && context?.contextNote ? context.contextNote : message, // v2 usa contextNote, v1 usa mensaje completo
         metadata: {
           eventName: eventName || "Evento",
-          requesterName: requester?.nombre || "",
-          requesterCompany: requester?.empresa || "",
+          requesterName,
+          requesterCompany,
           requesterPosition: requester?.cargo || "",
           requesterEmail: requester?.correo || "",
           requesterPhone: requester?.telefono || "",
@@ -943,8 +923,8 @@ export function useDashboardData(eventId?: string) {
 
       // Notificación en la app
       const notificationMessage = context?.contextNote
-        ? `${requester?.nombre || "Alguien"} te ha enviado una solicitud de reunión.\n\nMensaje: "${context.contextNote}"`
-        : `${requester?.nombre || "Alguien"} te ha enviado una solicitud de reunión.`;
+        ? `${requesterName || "Alguien"} te ha enviado una solicitud de reunión.\n\nMensaje: "${context.contextNote}"`
+        : `${requesterName || "Alguien"} te ha enviado una solicitud de reunión.`;
       
       await addDoc(collection(db, "notifications"), {
         userId: assistantId,
@@ -1887,15 +1867,15 @@ export function useDashboardData(eventId?: string) {
         });
       }
 
+      const whatsappApiVersion = policies.whatsappApiVersion || "v1";
       const smsMsg = isEdit
         ? `Tu reunión fue movida a ${slot.startTime} en Mesa ${slot.tableNumber}.`
         : `Tu reunión fue aceptada para ${slot.startTime} en Mesa ${slot.tableNumber}.`;
 
-      if (requester?.telefono) await sendSms(smsMsg, requester.telefono);
-      if (receiver?.telefono) await sendSms(smsMsg, receiver.telefono);
+      if (requester?.telefono) await sendSms(smsMsg, requester.telefono, whatsappApiVersion);
+      if (receiver?.telefono) await sendSms(smsMsg, receiver.telefono, whatsappApiVersion);
 
       // El receptor (uid actual) es quien acepta
-      const whatsappApiVersion = policies.whatsappApiVersion || "v1";
       const accepterName = receiver?.nombre || requester?.nombre || "";
 
       if (requester?.telefono) {

@@ -183,7 +183,7 @@ function FreeMeetingsList({ freeMeetings, participantsInfo, getAffinityScore, to
         return (
           <div key={fm.id} style={{ marginTop: 8, paddingTop: 8, borderTop: "1px dashed #d1fae5" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-              <Badge color="black" variant="light" size="sm">Libre</Badge>
+              <Badge color="white" variant="light" size="sm">Libre</Badge>
               {affinity && (
                 <Badge variant="light" size="lg" style={{ color: "#172417ff" }}>{affinity.score}%</Badge>
               )}
@@ -1921,7 +1921,7 @@ const MatrixPage = () => {
                                       const partner = participantsInfo[partnerId];
                                       return (
                                         <div key={fm.id} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 2 }}>
-                                          <Badge color="black" variant="dot" size="xs">Libre</Badge>
+                                          <Badge color="white" variant="dot" size="xs">Libre</Badge>
                                           <Text size="xs" c="dimmed" style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                             {partner ? `${partner.empresa}` : partnerId}
                                           </Text>

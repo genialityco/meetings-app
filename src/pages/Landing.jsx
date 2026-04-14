@@ -455,6 +455,8 @@ const Landing = () => {
           };
           companyStepFields.forEach((fieldName) => {
             if (fieldName === "company_nit") return;
+            // Evita que datos de empresa sobreescriban el nombre personal del usuario
+            if (fieldName === "nombre") return;
             if (data[fieldName] !== undefined && data[fieldName] !== null) {
               updated[fieldName] = data[fieldName];
             }
