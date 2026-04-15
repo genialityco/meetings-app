@@ -183,7 +183,7 @@ function FreeMeetingsList({ freeMeetings, participantsInfo, getAffinityScore, to
         return (
           <div key={fm.id} style={{ marginTop: 8, paddingTop: 8, borderTop: "1px dashed #d1fae5" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-              <Badge color="white" variant="light" size="sm">Libre</Badge>
+              <Badge color="white" variant="light" size="sm">Rápida</Badge>
               {affinity && (
                 <Badge variant="light" size="lg" style={{ color: "#172417ff" }}>{affinity.score}%</Badge>
               )}
@@ -703,13 +703,42 @@ const MatrixPage = () => {
   }, [config, asistentes, meetings, participantsInfo, timeSlots, selectedDate]);
 
   // Filtrado usuarios
+  const filteredMatrix = useMemo(() => {
+    if (!userSearch || userSearch.trim() === "") return memoMatrix;
+    const searchTerm = userSearch.toLowerCase();
+
+    const matchesAssistant = (assistant) => {
+      return ["nombre", "empresa", "company_razonSocial", "razonSocial", "telefono", "correo", "email"].some(
+        (field) => (assistant?.[field] || "").toString().toLowerCase().includes(searchTerm)
+      );
+    };
+
+    return memoMatrix.filter((table) =>
+      table.some((cell) => {
+        const meetingMatch = (cell.meetingData?.participants || []).some((pid) => {
+          const assistant = participantsInfo[pid];
+          return assistant && matchesAssistant(assistant);
+        });
+        const freeMatch = (cell.freeMeetings || []).some((mtg) =>
+          (mtg.participants || []).some((pid) => {
+            const assistant = participantsInfo[pid];
+            return assistant && matchesAssistant(assistant);
+          })
+        );
+        return meetingMatch || freeMatch;
+      })
+    );
+  }, [memoMatrix, participantsInfo, userSearch]);
+
   const filteredMatrixUsuarios = useMemo(
     () =>
       memoMatrixUsuarios.filter(({ asistente }) => {
         const searchTerm = userSearch.toLowerCase();
         const matchesSearch =
           (asistente.nombre || "").toLowerCase().includes(searchTerm) ||
-          (asistente.empresa || "").toLowerCase().includes(searchTerm);
+          (asistente.empresa || asistente.company_razonSocial || asistente.razonSocial || "").toLowerCase().includes(searchTerm) ||
+          (asistente.correo || asistente.email || "").toLowerCase().includes(searchTerm) ||
+          (asistente.telefono || "").toLowerCase().includes(searchTerm);
         const matchesType =
           !typeFilter ||
           (asistente.tipoAsistente || "").toLowerCase() ===
@@ -1395,6 +1424,16 @@ const MatrixPage = () => {
         </Flex>
       )}
 
+      <Flex justify="center" mb="md">
+        <TextInput
+          placeholder="Buscar asistente por nombre, empresa o teléfono"
+          value={userSearch}
+          onChange={(e) => setUserSearch(e.currentTarget.value)}
+          style={{ width: 420, maxWidth: "100%" }}
+          clearable
+        />
+      </Flex>
+
       <Tabs defaultValue="mesas">
         <Tabs.List>
           <Tabs.Tab value="mesas">Por Mesas</Tabs.Tab>
@@ -1405,7 +1444,7 @@ const MatrixPage = () => {
         <Tabs.Panel value="mesas" pt="md">
           <ScrollArea>
             <Flex gap="lg" justify="center" align="flex-start" wrap="wrap">
-              {memoMatrix.map((table, ti) => (
+              {filteredMatrix.map((table, ti) => (
                 <Card
                   key={ti}
                   shadow="md"
@@ -1657,12 +1696,6 @@ const MatrixPage = () => {
         {/* Panel Usuarios */}
         <Tabs.Panel value="usuarios" pt="md">
           <Flex gap="md" mb="md" wrap="wrap">
-            <TextInput
-              placeholder="Buscar usuario por nombre..."
-              value={userSearch}
-              onChange={(e) => setUserSearch(e.currentTarget.value)}
-              style={{ maxWidth: 250 }}
-            />
             <Select
               placeholder="Filtrar por tipo"
               value={typeFilter}

@@ -23,13 +23,12 @@ import {
   Divider,
   Grid,
   Tooltip,
-  ActionIcon,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { IconEdit, IconLogout, IconChevronDown, IconPackage, IconBuilding, IconCheck, IconUserCheck } from "@tabler/icons-react";
 import { UserContext } from "../context/UserContext";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { doc, setDoc, updateDoc, getDoc } from "firebase/firestore";
+import { doc, setDoc, getDoc } from "firebase/firestore";
 import { storage, db } from "../firebase/firebaseConfig";
 import { showNotification } from "@mantine/notifications";
 import NotificationsMenu from "../pages/dashboard/NotificationsMenu";
@@ -89,12 +88,6 @@ const DashboardHeader = ({
   const [photoUploadError, setPhotoUploadError] = useState("");
 
   // Check-in state
-  const [checkedIn, setCheckedIn] = useState(false);
-  const [checkingIn, setCheckingIn] = useState(false);
-
-  useEffect(() => {
-    setCheckedIn(!!currentUser?.data?.checkedIn);
-  }, [currentUser?.data?.checkedIn]);
 
   // attendeeId: leer del contexto o directamente de Firestore si no está disponible
   const [attendeeIdLocal, setAttendeeIdLocal] = useState<string | null>(null);
@@ -298,60 +291,6 @@ const DashboardHeader = ({
     }
   }, [uid, editData, updateUser, currentUser, eventConfig]);
 
-  const handleCheckIn = useCallback(async () => {
-    if (!uid) return;
-    setCheckingIn(true);
-    try {
-      const newValue = !checkedIn;
-      await updateDoc(doc(db, "users", uid), {
-        checkedIn: newValue,
-        ...(newValue ? { checkInTime: new Date() } : { checkOutTime: new Date() }),
-      });
-      setCheckedIn(newValue);
-
-      // Resolve standby meetings if policy is active
-      const standbyEnabled = eventConfig?.policies?.standbyCheckInRequired === true;
-      if (standbyEnabled && eventId) {
-        const { getDocs, query, collection, where } = await import("firebase/firestore");
-        const standbySnap = await getDocs(
-          query(
-            collection(db, "events", eventId, "meetings"),
-            where("status", "==", newValue ? "standby" : "accepted"),
-            where("participants", "array-contains", uid)
-          )
-        );
-        for (const d of standbySnap.docs) {
-          const m = d.data();
-          const otherId = (m.participants || []).find((p: string) => p !== uid);
-          if (!otherId) continue;
-          const otherSnap = await (await import("firebase/firestore")).getDoc(
-            doc(db, "users", otherId)
-          );
-          const otherCheckedIn = otherSnap.exists() ? !!otherSnap.data()?.checkedIn : false;
-
-          if (newValue) {
-            // User just checked in — if other also checked in, promote to accepted
-            if (otherCheckedIn) {
-              await updateDoc(doc(db, "events", eventId, "meetings", d.id), { status: "accepted" });
-            }
-          } else {
-            // User unchecked — demote accepted meetings to standby
-            await updateDoc(doc(db, "events", eventId, "meetings", d.id), { status: "standby" });
-          }
-        }
-      }
-
-      showNotification({
-        title: newValue ? "Asistencia confirmada" : "Check-in revertido",
-        message: newValue ? "Tu asistencia ha sido registrada." : "Tu asistencia fue removida.",
-        color: newValue ? "green" : "gray",
-      });
-    } catch {
-      showNotification({ title: "Error", message: "No se pudo registrar la asistencia.", color: "red" });
-    } finally {
-      setCheckingIn(false);
-    }
-  }, [uid, checkedIn, eventId, eventConfig]);
 
   const handleLogout = useCallback(() => {
     logout();
@@ -492,6 +431,7 @@ const DashboardHeader = ({
     [getFieldValue, handleChange, profilePicPreview, photoUploadStatus, photoUploadError, data],
   );
 
+  const checkedIn = !!currentUser?.data?.checkedIn;
   const avatarSrc = data?.photoURL || null;
   const userName = data?.nombre || data?.name || "U";
   const attendeeId = attendeeIdLocal || data?.attendeeId || null;
@@ -550,18 +490,26 @@ const DashboardHeader = ({
 
         {/* Derecha: Notificaciones + Check-in + Avatar con Menu */}
         <Group gap="sm" align="center">
-          <Tooltip label={checkedIn ? "Asistencia confirmada" : "Confirmar asistencia"} withArrow>
-            <ActionIcon
-              size="lg"
-              radius="xl"
-              variant={checkedIn ? "filled" : "light"}
-              color={checkedIn ? "green" : "gray"}
-              loading={checkingIn}
-              onClick={handleCheckIn}
-              aria-label={checkedIn ? "Asistencia confirmada" : "Confirmar asistencia"}
+          <Tooltip
+            label={checkedIn ? "Asistencia confirmada" : "Sin check-in"}
+            withArrow
+          >
+            <Box
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 42,
+                height: 42,
+                borderRadius: 999,
+                background: checkedIn ? "#37b24d" : "transparent",
+                border: checkedIn ? "none" : "1px solid var(--mantine-color-gray-4)",
+                color: checkedIn ? "#ffffff" : "var(--mantine-color-gray-7)",
+              }}
+              aria-label={checkedIn ? "Asistencia confirmada" : "Sin check-in"}
             >
               {checkedIn ? <IconUserCheck size={20} /> : <IconCheck size={20} />}
-            </ActionIcon>
+            </Box>
           </Tooltip>
 
           <NotificationsMenu

@@ -57,6 +57,43 @@ import { UserContext } from "../../context/UserContext";
 import { showNotification } from "@mantine/notifications";
 import { trackEvent } from "../../utils/analytics";
 import { DEFAULT_SURVEY_FIELDS } from "../../pages/admin/ConfigureSurveyModal";
+import { Meeting, ParticipantInfo, EventPolicies } from "./types";
+
+interface SurveyField {
+  name: string;
+  label: string;
+  type: 'text' | 'textarea' | 'select' | 'rating' | 'number';
+  required?: boolean;
+  options?: string[];
+}
+
+interface EventConfig {
+  eventDates?: string[];
+  eventDate?: string;
+  surveyConfig?: {
+    vendedorFields?: SurveyField[];
+    compradorFields?: SurveyField[];
+  };
+}
+
+interface MeetingsTabProps {
+  acceptedMeetings: Meeting[];
+  cancelledMeetings?: Meeting[];
+  standbyMeetings?: Meeting[];
+  participantsInfo: Record<string, ParticipantInfo>;
+  uid: string;
+  expandedMeetingId: string | null;
+  setExpandedMeetingId: (id: string | null) => void;
+  downloadVCard: (participant: ParticipantInfo) => void;
+  sendWhatsAppMessage: (participant: ParticipantInfo) => void;
+  prepareSlotSelection: any; // Not used in code, keeping as any for now
+  loadingMeetings: boolean;
+  cancelMeeting: (meeting: Meeting & { slotId?: string }) => Promise<void>;
+  eventConfig: EventConfig;
+  globalDateFilter: string | null;
+  setGlobalDateFilter: (date: string | null) => void;
+  policies: EventPolicies;
+}
 
 function InfoRow({
   icon,
@@ -99,7 +136,7 @@ export default function MeetingsTab({
   globalDateFilter,
   setGlobalDateFilter,
   policies,
-}) {
+}: MeetingsTabProps) {
   const { currentUser } = useContext(UserContext);
   const theme = useMantineTheme();
 
@@ -107,7 +144,7 @@ export default function MeetingsTab({
   const surveyMode = policies?.surveyMode || "default";
   const myRole = (currentUser?.data?.tipoAsistente || "").toLowerCase();
 
-  const surveyFields: any[] = (() => {
+  const surveyFields: SurveyField[] = (() => {
     if (surveyMode === "custom") {
       const cfg = eventConfig?.surveyConfig;
       if (myRole === "vendedor" && cfg?.vendedorFields?.length) return cfg.vendedorFields;
@@ -142,17 +179,20 @@ export default function MeetingsTab({
     });
   };
 
-  const [surveyModal, setSurveyModal] = useState({
+  const [surveyModal, setSurveyModal] = useState<{
+    open: boolean;
+    meeting: Meeting | null;
+  }>({
     open: false,
     meeting: null,
   });
   const [surveyValues, setSurveyValues] = useState<Record<string, string>>({});
   const [savingSurvey, setSavingSurvey] = useState(false);
-  const [userSurveys, setUserSurveys] = useState({});
+  const [userSurveys, setUserSurveys] = useState<Record<string, any>>({});
   const [loadingSurvey, setLoadingSurvey] = useState(false);
-  const [cancellingId, setCancellingId] = useState(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
-  const handleOpenSurvey = async (meeting) => {
+  const handleOpenSurvey = async (meeting: Meeting) => {
     setSurveyModal({ open: true, meeting });
     setLoadingSurvey(true);
     try {
@@ -210,7 +250,7 @@ export default function MeetingsTab({
     setSavingSurvey(false);
   };
 
-  async function findSlotIdForMeeting(eventId, tableAssigned, timeSlot) {
+  async function findSlotIdForMeeting(eventId: string, tableAssigned: string, timeSlot: string): Promise<string | null> {
     const q = query(
       collection(db, "events", eventId, "agenda"),
       where("tableNumber", "==", Number(tableAssigned)),
@@ -224,7 +264,7 @@ export default function MeetingsTab({
     return null;
   }
 
-  const handleCancelMeeting = async (meeting) => {
+  const handleCancelMeeting = async (meeting: Meeting) => {
     if (!window.confirm("¿Seguro que deseas cancelar esta reunión?")) return;
     
     // Track meeting cancellation
@@ -265,7 +305,23 @@ export default function MeetingsTab({
     );
   }
 
-  const surveyExists = (meetingId) => !!userSurveys[meetingId];
+  const surveyExists = (meetingId: string) => !!userSurveys[meetingId];
+  const acceptedDisplayMeetings = [...acceptedMeetings, ...standbyMeetings];
+
+  const getCheckInMissingLabel = (meeting: Meeting) => {
+    const myId = uid;
+    const otherId = meeting.requesterId === myId ? meeting.receiverId : meeting.requesterId;
+    const myCheckedIn = currentUser?.data?.checkedIn;
+    const otherCheckedIn = participantsInfo[otherId]?.checkedIn;
+
+    if (myCheckedIn === false) {
+      return "Falta tu check-in";
+    }
+    if (otherCheckedIn === false) {
+      return "Falta check-in de la contraparte";
+    }
+    return "Check-in pendiente";
+  };
 
   return (
     <>
@@ -291,8 +347,8 @@ export default function MeetingsTab({
       )}
 
       <Grid gutter="sm">
-        {acceptedMeetings.length > 0 ? (
-          acceptedMeetings
+        {acceptedDisplayMeetings.length > 0 ? (
+          acceptedDisplayMeetings
             .slice()
             .sort((a, b) => {
               const [aStart] = (a.timeSlot || "").split(" - ");
@@ -307,6 +363,7 @@ export default function MeetingsTab({
                   ? meeting.receiverId
                   : meeting.requesterId;
               const participant = participantsInfo[otherUserId];
+              const isStandby = meeting.checkInStatus === "standby" || meeting.type === "standby";
               const isExpanded = expandedMeetingId === meeting.id;
 
               return (
@@ -341,6 +398,11 @@ export default function MeetingsTab({
                           {participant?.nombre || "Cargando..."}
                           {participant?.cargo ? ` • ${participant.cargo}` : ""}
                         </Text>
+                        {isStandby && (
+                          <Badge color="yellow" variant="light" size="xs" mt="xs">
+                            {getCheckInMissingLabel(meeting)}
+                          </Badge>
+                        )}
                       </Box>
                     </Group>
 
@@ -531,55 +593,6 @@ export default function MeetingsTab({
         )}
       </Grid>
 
-      {/* Reuniones en standby */}
-      {standbyMeetings.length > 0 && (
-        <Stack mt="xl" gap="sm">
-          <Divider
-            label={
-              <Group gap={6}>
-                <IconClock size={16} color="orange" />
-                <Text fw={600} size="sm" c="orange">
-                  En espera de check-in ({standbyMeetings.length})
-                </Text>
-              </Group>
-            }
-            labelPosition="left"
-          />
-          <Alert color="orange" variant="light" radius="md">
-            Estas reuniones están confirmadas pero en espera de que ambos participantes hagan check-in para activarse.
-            Haz check-in desde el botón en la parte superior para confirmar tu asistencia.
-          </Alert>
-          <Grid gutter="sm">
-            {standbyMeetings.map((meeting) => {
-              const otherUserId = meeting.requesterId === uid ? meeting.receiverId : meeting.requesterId;
-              const participant = participantsInfo[otherUserId];
-              return (
-                <Grid.Col key={meeting.id} span={{ base: 12, sm: 6, lg: 4 }}>
-                  <Card withBorder radius="lg" p="md" style={{ opacity: 0.85, borderColor: "orange" }}>
-                    <Group gap="sm" mb="xs">
-                      <Avatar src={participant?.photoURL} radius="xl" size={44} color="orange">
-                        {(participant?.nombre || "?")[0]?.toUpperCase()}
-                      </Avatar>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <Text fw={700} size="sm" lineClamp={1}>{participant?.nombre || otherUserId}</Text>
-                        <Text size="xs" c="dimmed" lineClamp={1}>{participant?.empresa || ""}</Text>
-                      </div>
-                      <Badge color="orange" variant="light" size="sm">Standby</Badge>
-                    </Group>
-                    {meeting.timeSlot && (
-                      <Group gap={6}>
-                        <IconClock size={14} color="gray" />
-                        <Text size="xs" c="dimmed">{meeting.timeSlot}</Text>
-                        {meeting.tableAssigned && <Text size="xs" c="dimmed">· Mesa {meeting.tableAssigned}</Text>}
-                      </Group>
-                    )}
-                  </Card>
-                </Grid.Col>
-              );
-            })}
-          </Grid>
-        </Stack>
-      )}
 
       {/* Reuniones canceladas */}
       {cancelledMeetings.length > 0 && (
