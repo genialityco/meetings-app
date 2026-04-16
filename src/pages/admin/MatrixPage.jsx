@@ -173,7 +173,7 @@ function ParticipantPopover({ width = 320, trigger, children }) {
   );
 }
 
-function FreeMeetingsList({ freeMeetings, participantsInfo, getAffinityScore, toggleMeetingCompleted, surveys, openSurveyModal, openUserSurveyModal, openFillSurveyModal, getSurveyStatus }) {
+function FreeMeetingsList({ freeMeetings, participantsInfo, getAffinityScore, toggleMeetingCompleted, surveys, openSurveyModal, openUserSurveyModal, openFillSurveyModal, getSurveyStatus, openEditModal }) {
   return (
     <>
       {freeMeetings.map((fm) => {
@@ -183,7 +183,7 @@ function FreeMeetingsList({ freeMeetings, participantsInfo, getAffinityScore, to
         return (
           <div key={fm.id} style={{ marginTop: 8, paddingTop: 8, borderTop: "1px dashed #d1fae5" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-              <Badge color="white" variant="light" size="sm">Libre</Badge>
+              <Badge color="white" variant="light" size="sm" style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); if (openEditModal) openEditModal(fm); }}>Rápida ✏️</Badge>
               {affinity && (
                 <Badge variant="light" size="lg" style={{ color: "#172417ff" }}>{affinity.score}%</Badge>
               )}
@@ -645,7 +645,7 @@ const MatrixPage = () => {
   // Luego las reuniones libres — se agregan a freeMeetings de la celda correspondiente por hora
   meetingsDelDia.forEach((mtg) => {
     if (mtg.status !== "accepted" || !mtg.timeSlot || !mtg.isExternal) return;
-    const [startTime] = mtg.timeSlot.split(" - ");
+    const startTime = mtg.timeSlot.split(" - ")[0].trim();
     const sIdx = timeSlots.indexOf(startTime);
     if (sIdx < 0) return;
     // Agregar a todas las mesas que coincidan con tableAssigned, o a la primera si no tiene mesa
@@ -676,8 +676,8 @@ const MatrixPage = () => {
     return asistentes.map((user) => {
       const row = timeSlots.map((slot) => {
         const mtg = meetingsDelDia.find((m) => {
-          if (!m.timeSlot) return false;
-          const [start] = m.timeSlot.split(" - ");
+          if (!m.timeSlot || m.isExternal) return false;
+          const start = m.timeSlot.split(" - ")[0].trim();
           return start === slot && m.participants.includes(user.id);
         });
 
@@ -703,13 +703,42 @@ const MatrixPage = () => {
   }, [config, asistentes, meetings, participantsInfo, timeSlots, selectedDate]);
 
   // Filtrado usuarios
+  const filteredMatrix = useMemo(() => {
+    if (!userSearch || userSearch.trim() === "") return memoMatrix;
+    const searchTerm = userSearch.toLowerCase();
+
+    const matchesAssistant = (assistant) => {
+      return ["nombre", "empresa", "company_razonSocial", "razonSocial", "telefono", "correo", "email"].some(
+        (field) => (assistant?.[field] || "").toString().toLowerCase().includes(searchTerm)
+      );
+    };
+
+    return memoMatrix.filter((table) =>
+      table.some((cell) => {
+        const meetingMatch = (cell.meetingData?.participants || []).some((pid) => {
+          const assistant = participantsInfo[pid];
+          return assistant && matchesAssistant(assistant);
+        });
+        const freeMatch = (cell.freeMeetings || []).some((mtg) =>
+          (mtg.participants || []).some((pid) => {
+            const assistant = participantsInfo[pid];
+            return assistant && matchesAssistant(assistant);
+          })
+        );
+        return meetingMatch || freeMatch;
+      })
+    );
+  }, [memoMatrix, participantsInfo, userSearch]);
+
   const filteredMatrixUsuarios = useMemo(
     () =>
       memoMatrixUsuarios.filter(({ asistente }) => {
         const searchTerm = userSearch.toLowerCase();
         const matchesSearch =
           (asistente.nombre || "").toLowerCase().includes(searchTerm) ||
-          (asistente.empresa || "").toLowerCase().includes(searchTerm);
+          (asistente.empresa || asistente.company_razonSocial || asistente.razonSocial || "").toLowerCase().includes(searchTerm) ||
+          (asistente.correo || asistente.email || "").toLowerCase().includes(searchTerm) ||
+          (asistente.telefono || "").toLowerCase().includes(searchTerm);
         const matchesType =
           !typeFilter ||
           (asistente.tipoAsistente || "").toLowerCase() ===
@@ -857,19 +886,21 @@ const MatrixPage = () => {
             haySolapamiento(m.timeSlot, nuevoSlotStr)
         );
 
-      if (hayConflicto(user1)) {
-        setGlobalMessage(
-          `El participante 1 no está disponible en el horario seleccionado.`
-        );
-        setCreatingMeeting(false);
-        return;
-      }
-      if (hayConflicto(user2)) {
-        setGlobalMessage(
-          `El participante 2 no está disponible en el horario seleccionado.`
-        );
-        setCreatingMeeting(false);
-        return;
+      if (checkDuplicates) {
+        if (hayConflicto(user1)) {
+          setGlobalMessage(
+            `El participante 1 no está disponible en el horario seleccionado.`
+          );
+          setCreatingMeeting(false);
+          return;
+        }
+        if (hayConflicto(user2)) {
+          setGlobalMessage(
+            `El participante 2 no está disponible en el horario seleccionado.`
+          );
+          setCreatingMeeting(false);
+          return;
+        }
       }
 
       // Obtener la reunión actual para liberar su slot anterior
@@ -884,18 +915,37 @@ const MatrixPage = () => {
       // Buscar slot agenda actual (para liberar)
       const slotActual = agenda.find(
         (s) =>
+          s.meetingId === meetingId &&
           s.tableNumber === Number(meetingActual.tableAssigned) &&
           s.startTime === meetingActual.timeSlot.split(" - ")[0]
       );
 
+      // Determinar si el nuevo slot ya está ocupado por OTRA reunión
+      // Si checkDuplicates es falso, se pudo haber seleccionado un slot ocupado
+      const isTargetSlotOccupied = !slot.available && slot.meetingId !== meetingId;
+
       // Actualizar reunión con nuevos datos
-      await updateDoc(doc(db, "events", eventId, "meetings", meetingId), {
+      const updateData = {
         participants: [user1, user2],
         requesterId: user1,
         receiverId: user2,
         timeSlot: nuevoSlotStr,
         tableAssigned: slot.tableNumber.toString(),
-      });
+      };
+
+      if (isTargetSlotOccupied) {
+        updateData.isExternal = true;
+        updateData.motivoMatch = "Libre";
+        updateData.razonMatch = "Reunión convertida a libre por solapamiento";
+      } else {
+        updateData.isExternal = false;
+        if (meetingActual.isExternal) {
+          updateData.motivoMatch = "Manual";
+          updateData.razonMatch = "Convertida a normal desde matriz";
+        }
+      }
+
+      await updateDoc(doc(db, "events", eventId, "meetings", meetingId), updateData);
 
       // Liberar slot anterior si existe y no es el mismo que el nuevo
       if (slotActual && slotActual.id !== slot.id) {
@@ -905,11 +955,13 @@ const MatrixPage = () => {
         });
       }
 
-      // Marcar nuevo slot como ocupado
-      await updateDoc(doc(db, "events", eventId, "agenda", slot.id), {
-        available: false,
-        meetingId,
-      });
+      // Marcar nuevo slot como ocupado SOLO si no lo convertimos a reunión libre
+      if (!isTargetSlotOccupied) {
+        await updateDoc(doc(db, "events", eventId, "agenda", slot.id), {
+          available: false,
+          meetingId,
+        });
+      }
 
       // Opcional: notificar a ambos participantes (como haces en creación)
       const receiver = asistentes.find((a) => a.id === user2);
@@ -1395,6 +1447,16 @@ const MatrixPage = () => {
         </Flex>
       )}
 
+      <Flex justify="center" mb="md">
+        <TextInput
+          placeholder="Buscar asistente por nombre, empresa o teléfono"
+          value={userSearch}
+          onChange={(e) => setUserSearch(e.currentTarget.value)}
+          style={{ width: 420, maxWidth: "100%" }}
+          clearable
+        />
+      </Flex>
+
       <Tabs defaultValue="mesas">
         <Tabs.List>
           <Tabs.Tab value="mesas">Por Mesas</Tabs.Tab>
@@ -1405,7 +1467,7 @@ const MatrixPage = () => {
         <Tabs.Panel value="mesas" pt="md">
           <ScrollArea>
             <Flex gap="lg" justify="center" align="flex-start" wrap="wrap">
-              {memoMatrix.map((table, ti) => (
+              {filteredMatrix.map((table, ti) => (
                 <Card
                   key={ti}
                   shadow="md"
@@ -1640,6 +1702,20 @@ const MatrixPage = () => {
                                 openUserSurveyModal={openUserSurveyModal}
                                 openFillSurveyModal={openFillSurveyModal}
                                 getSurveyStatus={getSurveyStatus}
+                                openEditModal={(fm) => {
+                                  const [startTime, endTime] = fm.timeSlot.split(" - ");
+                                  setEditModal({
+                                    opened: true,
+                                    meeting: fm,
+                                    slot: {
+                                      tableNumber: fm.tableAssigned,
+                                      startTime,
+                                      endTime,
+                                      id: agenda.find((s) => s.tableNumber === Number(fm.tableAssigned) && s.startTime === startTime)?.id || "",
+                                    },
+                                    lockedUserId: null,
+                                  });
+                                }}
                               />
                             )}
                           </Table.Td>
@@ -1657,12 +1733,6 @@ const MatrixPage = () => {
         {/* Panel Usuarios */}
         <Tabs.Panel value="usuarios" pt="md">
           <Flex gap="md" mb="md" wrap="wrap">
-            <TextInput
-              placeholder="Buscar usuario por nombre..."
-              value={userSearch}
-              onChange={(e) => setUserSearch(e.currentTarget.value)}
-              style={{ maxWidth: 250 }}
-            />
             <Select
               placeholder="Filtrar por tipo"
               value={typeFilter}
@@ -1910,7 +1980,7 @@ const MatrixPage = () => {
                                 const freeMeetings = meetings.filter((m) => {
                                   if (!m.isExternal || m.status !== "accepted") return false;
                                   if (!m.participants.includes(asistente.id)) return false;
-                                  const [mStart] = (m.timeSlot || "").split(" - ");
+                                  const mStart = (m.timeSlot || "").split(" - ")[0].trim();
                                   return mStart === slot && (!m.meetingDate || m.meetingDate === selectedDate);
                                 });
                                 if (freeMeetings.length === 0) return null;
@@ -1921,7 +1991,27 @@ const MatrixPage = () => {
                                       const partner = participantsInfo[partnerId];
                                       return (
                                         <div key={fm.id} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 2 }}>
-                                          <Badge color="white" variant="dot" size="xs">Libre</Badge>
+                                          <Badge 
+                                            color="white" 
+                                            variant="dot" 
+                                            size="xs"
+                                            style={{ cursor: "pointer" }}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              const [startTime, endTime] = fm.timeSlot.split(" - ");
+                                              setEditModal({
+                                                opened: true,
+                                                meeting: fm,
+                                                slot: {
+                                                  tableNumber: fm.tableAssigned,
+                                                  startTime,
+                                                  endTime,
+                                                  id: agenda.find((s) => s.tableNumber === Number(fm.tableAssigned) && s.startTime === startTime)?.id || "",
+                                                },
+                                                lockedUserId: null,
+                                              });
+                                            }}
+                                          >Libre ✏️</Badge>
                                           <Text size="xs" c="dimmed" style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                             {partner ? `${partner.empresa}` : partnerId}
                                           </Text>
@@ -2012,8 +2102,8 @@ const MatrixPage = () => {
         }}
         freeMeetingsInSlot={editModal.meeting ? meetings.filter((m) => {
           if (!m.isExternal || m.status !== "accepted") return false;
-          const [ms] = (m.timeSlot || "").split(" - ");
-          const [es] = (editModal.meeting?.timeSlot || "").split(" - ");
+          const ms = (m.timeSlot || "").split(" - ")[0].trim();
+          const es = (editModal.meeting?.timeSlot || "").split(" - ")[0].trim();
           return ms === es && (!m.meetingDate || m.meetingDate === selectedDate);
         }) : []}
       />

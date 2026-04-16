@@ -23,6 +23,7 @@ const EditMeetingModal = ({
   // Estados para editar participantes y slot
   const [user1, setUser1] = useState("");
   const [user2, setUser2] = useState("");
+  const [selectedTime, setSelectedTime] = useState("");
   const [selectedSlotId, setSelectedSlotId] = useState(slot?.id || "");
 
   // Estados para swap
@@ -46,21 +47,30 @@ const EditMeetingModal = ({
     return company?.fixedTable ? Number(company.fixedTable) : null;
   };
 
-  // Filtrar slots disponibles que coincidan con la hora del slot actual y que estén libres,
+  // Opciones de horarios únicos de la agenda
+  const timeOptions = useMemo(() => {
+    if (!agenda) return [];
+    const times = new Set();
+    agenda.forEach((s) => times.add(`${s.startTime} - ${s.endTime}`));
+    return Array.from(times).sort().map((t) => ({ value: t, label: t }));
+  }, [agenda]);
+
+  // Filtrar slots disponibles que coincidan con la hora seleccionada y que estén libres,
   // sean la mesa actual, o sean la mesa fija del participante 2 seleccionado
   const slotsFiltered = useMemo(() => {
-    if (!agenda || !slot?.startTime || !meeting) return [];
+    if (!agenda || !selectedTime || !meeting) return [];
 
+    const [start] = selectedTime.split(" - ");
     const fixedTable2 = getFixedTable(user2);
 
     return agenda.filter((s) => {
-      const isSameTime = s.startTime === slot.startTime;
+      const isSameTime = s.startTime === start;
       const isAvailable = s.available;
-      const isCurrentTable = s.tableNumber === Number(meeting.tableAssigned);
+      const isCurrentTable = s.tableNumber === Number(meeting.tableAssigned) && s.startTime === slot?.startTime;
       const isFixedTableOfUser2 = fixedTable2 && s.tableNumber === fixedTable2;
-      return isSameTime && (isAvailable || isCurrentTable || isFixedTableOfUser2);
+      return isSameTime && (isAvailable || isCurrentTable || isFixedTableOfUser2 || !checkDuplicates);
     });
-  }, [agenda, slot, meeting, user2, companies, participantsInfo, assistants]);
+  }, [agenda, selectedTime, meeting, slot, user2, companies, participantsInfo, assistants, checkDuplicates]);
 
   // Inicializa los estados cuando cambia meeting, lockedUserId, slot o slotsFiltered
   useEffect(() => {
@@ -74,10 +84,16 @@ const EditMeetingModal = ({
       }
     }
 
+    if (slot && !selectedTime) {
+      setSelectedTime(`${slot.startTime} - ${slot.endTime}`);
+    }
+
     if (slot && slotsFiltered.some((s) => s.id === slot.id)) {
       setSelectedSlotId(slot.id);
     } else if (slotsFiltered.length > 0) {
-      setSelectedSlotId(slotsFiltered[0].id);
+      // Intentar mantener la misma mesa si está disponible en el nuevo horario
+      const sameTableSlot = slotsFiltered.find((s) => s.tableNumber === Number(meeting?.tableAssigned));
+      setSelectedSlotId(sameTableSlot ? sameTableSlot.id : slotsFiltered[0].id);
     } else {
       setSelectedSlotId("");
     }
@@ -90,12 +106,13 @@ const EditMeetingModal = ({
 
   // Cuando cambia user2, auto-seleccionar su mesa fija si la tiene
   useEffect(() => {
-    if (!user2 || !slot?.startTime) return;
+    if (!user2 || !selectedTime) return;
+    const [start] = selectedTime.split(" - ");
     setDuplicateError("");
     const fixedTable = getFixedTable(user2);
     if (!fixedTable) return;
     const fixedSlot = agenda.find(
-      (s) => s.startTime === slot.startTime && s.tableNumber === fixedTable
+      (s) => s.startTime === start && s.tableNumber === fixedTable
     );
     if (fixedSlot) {
       setSelectedSlotId(fixedSlot.id);
@@ -127,7 +144,7 @@ const EditMeetingModal = ({
   // Opciones para slots disponibles (filtrados)
   const slotOptions = slotsFiltered.map((s) => ({
     value: s.id,
-    label: `Mesa ${s.tableNumber} (${s.startTime} - ${s.endTime})`,
+    label: `Mesa ${s.tableNumber}`,
   }));
 
   // Opciones para swap
@@ -207,15 +224,28 @@ const EditMeetingModal = ({
     <Modal opened={opened} onClose={onClose} title="Editar reunión">
       {!swapMode ? (
         <>
-          <Select
-            label="Selecciona la mesa"
-            data={slotOptions}
-            value={selectedSlotId}
-            onChange={setSelectedSlotId}
-            required
-            searchable
-            mb="sm"
-          />
+          <Group grow mb="sm" align="flex-start">
+            <Select
+              label="Horario"
+              data={timeOptions}
+              value={selectedTime}
+              onChange={(val) => {
+                setSelectedTime(val);
+                setDuplicateError("");
+              }}
+              required
+              searchable
+            />
+            <Select
+              label="Selecciona la mesa"
+              data={slotOptions}
+              value={selectedSlotId}
+              onChange={setSelectedSlotId}
+              required
+              searchable
+              disabled={!selectedTime}
+            />
+          </Group>
           {selectedSlotId && selectedSlot && (
             <Text mb="sm" size="sm">
               <b>Mesa: {selectedSlot.tableNumber}</b> · Hora:{" "}

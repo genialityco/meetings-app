@@ -16,10 +16,13 @@ const QuickMeetingModal = ({
   const [checkDuplicates, setCheckDuplicates] = useState(true);
   const [duplicateError, setDuplicateError] = useState("");
 
+  const [selectedTime, setSelectedTime] = useState("");
+
   useEffect(() => {
     setUser1(defaultUser ? defaultUser.id : "");
     setUser2("");
     setSelectedSlotId("");
+    setSelectedTime(slotsDisponibles.length > 0 ? `${slotsDisponibles[0].startTime} - ${slotsDisponibles[0].endTime}` : "");
     setCheckDuplicates(true);
     setDuplicateError("");
   }, [defaultUser, opened, slotsDisponibles]);
@@ -32,9 +35,17 @@ const QuickMeetingModal = ({
     label: `${a.nombre} (${a.empresa})`,
   }));
 
-  const slotOptions = slotsDisponibles.map((s) => ({
+  const timeOptions = Array.from(
+    new Set(slotsDisponibles.map((s) => `${s.startTime} - ${s.endTime}`))
+  ).map((t) => ({ value: t, label: t }));
+
+  const slotsFiltered = slotsDisponibles.filter(
+    (s) => `${s.startTime} - ${s.endTime}` === selectedTime
+  );
+
+  const slotOptions = slotsFiltered.map((s) => ({
     value: s.id,
-    label: `Mesa ${s.tableNumber} (${s.startTime} - ${s.endTime})`,
+    label: `Mesa ${s.tableNumber}`,
   }));
 
   const handleCreate = () => {
@@ -58,6 +69,18 @@ const QuickMeetingModal = ({
     <Modal opened={opened} onClose={onClose} title="Crear reunión manual">
       <Stack gap="sm">
         <Select
+          label="Horario"
+          data={timeOptions}
+          value={selectedTime}
+          onChange={(val) => {
+            setSelectedTime(val);
+            setSelectedSlotId("");
+          }}
+          required
+          searchable
+          placeholder="Elige un horario"
+        />
+        <Select
           label="Selecciona la mesa"
           data={slotOptions}
           value={selectedSlotId}
@@ -65,12 +88,12 @@ const QuickMeetingModal = ({
           required
           searchable
           placeholder="Elige una mesa"
+          disabled={!selectedTime}
         />
         {selectedSlotId && (
           <Text size="sm">
-            <b>Mesa: {slotsDisponibles.find((s) => s.id === selectedSlotId)?.tableNumber}</b>
-            {" · "}Hora: {slotsDisponibles.find((s) => s.id === selectedSlotId)?.startTime}{" - "}
-            {slotsDisponibles.find((s) => s.id === selectedSlotId)?.endTime}
+            <b>Mesa: {slotsFiltered.find((s) => s.id === selectedSlotId)?.tableNumber}</b>
+            {" · "}Hora: {selectedTime}
           </Text>
         )}
         <Select

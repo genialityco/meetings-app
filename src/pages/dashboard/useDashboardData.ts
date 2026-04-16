@@ -640,7 +640,10 @@ export function useDashboardData(eventId?: string) {
       for (const d of snap.docs) {
         const m = { id: d.id, ...d.data() } as Meeting;
         m.timeSlot = typeof m.timeSlot === "string" ? m.timeSlot : "";
-        mts.push(m);
+        const isStandby = m.checkInStatus === "standby";
+        if (!isStandby) {
+          mts.push(m);
+        }
         const other = m.requesterId === uid ? m.receiverId : m.requesterId;
         if (other && !info[other]) {
           try {
@@ -660,7 +663,8 @@ export function useDashboardData(eventId?: string) {
     if (!uid || !eventId) return;
     const q = query(
       collection(db, "events", eventId, "meetings"),
-      where("status", "==", "standby"),
+      where("status", "==", "accepted"),
+      where("checkInStatus", "==", "standby"),
       where("participants", "array-contains", uid),
     );
     return onSnapshot(q, async (snap) => {
@@ -1548,7 +1552,8 @@ export function useDashboardData(eventId?: string) {
         const standbySnap = await getDocs(
           query(
             collection(db, "events", eventId, "meetings"),
-            where("status", "==", "standby")
+            where("status", "==", "accepted"),
+            where("checkInStatus", "==", "standby")
           )
         );
         const standbySlotIds = new Set(standbySnap.docs.map((d) => d.data().slotId).filter(Boolean));
@@ -1739,10 +1744,11 @@ export function useDashboardData(eventId?: string) {
         };
         if (!isEdit) {
           // Use pre-read checkedIn values (read outside transaction to avoid permission issues)
+          updatePayload.status = "accepted";
           if (standbyRequired) {
-            updatePayload.status = (reqCheckedIn && recCheckedIn) ? "accepted" : "standby";
+            updatePayload.checkInStatus = (reqCheckedIn && recCheckedIn) ? "ready" : "standby";
           } else {
-            updatePayload.status = "accepted";
+            updatePayload.checkInStatus = "ready";
           }
         }
         tx.update(mtgRef, updatePayload);
@@ -1756,7 +1762,8 @@ export function useDashboardData(eventId?: string) {
         const standbySnap = await getDocs(
           query(
             collection(db, "events", eventId, "meetings"),
-            where("status", "==", "standby"),
+            where("status", "==", "accepted"),
+            where("checkInStatus", "==", "standby"),
             where("slotId", "==", slot.id)
           )
         );
