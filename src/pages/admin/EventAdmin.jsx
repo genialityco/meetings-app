@@ -1127,6 +1127,9 @@ const EventAdmin = () => {
           <Button component={Link} to={`/admin/event/${event.id}/checkin`} variant="default">
             Check-In
           </Button>
+          <Button component={Link} to={`/admin/event/${event.id}/optimize-agenda`} variant="filled" color="orange">
+            Optimizar Agenda
+          </Button>
         </Group>
       </Group>
 
@@ -1534,6 +1537,15 @@ const EventAdmin = () => {
 
           <Tabs.Panel value="importexport" pt="md">
             <Group gap="xs" wrap="wrap">
+              <Button
+                component={Link}
+                to={`/admin/event/${event.id}/optimize-agenda`}
+                color="orange"
+                variant="filled"
+              >
+                Optimización CP-SAT
+              </Button>
+
               <Button
                 component={Link}
                 to={`/admin/event/${event.id}/import-meetings`}

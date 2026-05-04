@@ -7,7 +7,15 @@
       "Bash(grep -r useForm d:/gen.iality/Proyectos/my-meetings-app/src --include=*.tsx --include=*.jsx -l)",
       "Bash(firebase login:list)",
       "Bash(firebase projects:list)",
-      "Bash(firebase login:use contactogeniality@gmail.com)"
+      "Bash(firebase login:use contactogeniality@gmail.com)",
+      "Read(//d/gen.iality/scripts/agenda-final/**)",
+      "Read(//d/gen.iality/Proyectos/**)",
+      "mcp__plugin_claude-mem_mcp-search__smart_outline",
+      "PowerShell(Get-ChildItem -Path \"d:\\\\gen.iality\\\\Proyectos\\\\my-meetings-app\\\\src\\\\pages\\\\admin\" | Where-Object { $_.Extension -match '\\\\.jsx$|\\\\.tsx$' } | Select-Object Name | Sort-Object Name)"
+    ],
+    "additionalDirectories": [
+      "d:\\gen.iality\\Proyectos\\agenda-optimizer-api\\app",
+      "d:\\gen.iality\\Proyectos\\agenda-optimizer-api"
     ]
   }
 }

@@ -24,6 +24,7 @@ const MeetingSurveys = lazy(() => import("./pages/admin/MeetingSurveys.jsx"));
 const CheckInPage = lazy(() => import("./pages/admin/CheckInPage.jsx"));
 const AdminLogin = lazy(() => import("./pages/admin/AdminLogin.tsx"));
 const AdminRegister = lazy(() => import("./pages/admin/AdminRegister.tsx"));
+const OptimizeAgendaPage = lazy(() => import("./pages/admin/OptimizeAgendaPage.tsx"));
 
 const App = () => {
   // Trackear automáticamente todas las vistas de página
@@ -74,6 +75,10 @@ const App = () => {
         <Route
           path="/admin/event/:eventId/checkin"
           element={<ProtectedAdminRoute><CheckInPage /></ProtectedAdminRoute>}
+        />
+        <Route
+          path="/admin/event/:eventId/optimize-agenda"
+          element={<ProtectedAdminRoute><OptimizeAgendaPage /></ProtectedAdminRoute>}
         />
       </Routes>
     </Suspense>

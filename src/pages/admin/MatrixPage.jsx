@@ -47,8 +47,18 @@ import { DEFAULT_SURVEY_FIELDS } from "./ConfigureSurveyModal";
 import { useParams } from "react-router-dom";
 import QuickMeetingModal from "./QuickMeetingModal";
 import EditMeetingModal from "./EditMeetingModal";
+import EditFreeMeetingModal from "./EditFreeMeetingModal";
+import CreateFreeMeetingModal from "./CreateFreeMeetingModal";
 import { useDashboardData } from "../dashboard/useDashboardData";
-import { IconClipboardList } from "@tabler/icons-react";
+import {
+  IconClipboardList,
+  IconClipboard,
+  IconClipboardCheck,
+  IconPhone,
+  IconX,
+  IconPencil,
+  IconPlus,
+} from "@tabler/icons-react";
 
 // ----------- UTILIDADES -----------
 
@@ -173,78 +183,92 @@ function ParticipantPopover({ width = 320, trigger, children }) {
   );
 }
 
-function FreeMeetingsList({ freeMeetings, participantsInfo, getAffinityScore, toggleMeetingCompleted, surveys, openSurveyModal, openUserSurveyModal, openFillSurveyModal, getSurveyStatus, openEditModal }) {
+function FreeMeetingsList({ freeMeetings, participantsInfo, getAffinityScore, toggleMeetingCompleted, surveys, openSurveyModal, openUserSurveyModal, openFillSurveyModal, getSurveyStatus, openEditModal, onCancelFreeMeeting }) {
   return (
-    <>
+    <Stack gap={4} mt={4}>
       {freeMeetings.map((fm) => {
         const p0 = fm.participants?.[0];
         const p1 = fm.participants?.[1];
         const affinity = p0 && p1 ? getAffinityScore(p0, p1) : null;
+        const ss = getSurveyStatus(fm.id, fm.participants);
         return (
-          <div key={fm.id} style={{ marginTop: 8, paddingTop: 8, borderTop: "1px dashed #d1fae5" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-              <Badge color="white" variant="light" size="sm" style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); if (openEditModal) openEditModal(fm); }}>Rápida ✏️</Badge>
-              {affinity && (
-                <Badge variant="light" size="lg" style={{ color: "#172417ff" }}>{affinity.score}%</Badge>
-              )}
-              <Checkbox
-                size="sm"
-                label="Realizada"
-                checked={!!fm.completed}
-                onChange={(e) => toggleMeetingCompleted(fm.id, fm.completed, e)}
-                onClick={(e) => e.stopPropagation()}
-                color="green"
-              />
-              {(() => {
-                const ss = getSurveyStatus(fm.id, fm.participants);
-                return (
-                  <Tooltip label={ss.label} withArrow>
-                    <Badge
-                      color={ss.color}
-                      variant={ss.count > 0 ? "filled" : "outline"}
-                      size="sm"
-                      style={{ cursor: ss.count > 0 ? "pointer" : "default" }}
-                      onClick={(e) => ss.count > 0 && openSurveyModal(fm.id, e)}
-                    >
-                      📋 {ss.count}/{ss.total}
-                    </Badge>
-                  </Tooltip>
-                );
-              })()}
-            </div>
+          <Paper key={fm.id} withBorder p={6} radius="sm" style={{ borderLeft: "3px solid var(--mantine-color-teal-5)", background: "var(--mantine-color-teal-0)" }}>
+            <Group justify="space-between" wrap="nowrap" mb={4}>
+              <Group gap={4}>
+                <Badge size="xs" color="teal" variant="light">Libre</Badge>
+                {affinity && <Badge size="xs" variant="light" color="green">{affinity.score}%</Badge>}
+              </Group>
+              <Group gap={4}>
+                <Checkbox
+                  size="xs"
+                  label="Realizada"
+                  checked={!!fm.completed}
+                  onChange={(e) => toggleMeetingCompleted(fm.id, fm.completed, e)}
+                  onClick={(e) => e.stopPropagation()}
+                  color="green"
+                />
+                <Tooltip label={ss.label} withArrow>
+                  <Badge
+                    color={ss.color}
+                    variant={ss.count > 0 ? "filled" : "outline"}
+                    size="xs"
+                    style={{ cursor: ss.count > 0 ? "pointer" : "default" }}
+                    onClick={(e) => ss.count > 0 && openSurveyModal(fm.id, e)}
+                  >
+                    📋 {ss.count}/{ss.total}
+                  </Badge>
+                </Tooltip>
+                <Tooltip label="Editar reunión libre" withArrow>
+                  <ActionIcon size="xs" variant="subtle" color="blue" onClick={(e) => { e.stopPropagation(); if (openEditModal) openEditModal(fm); }}>
+                    <IconPencil size={11} />
+                  </ActionIcon>
+                </Tooltip>
+                <Tooltip label="Cancelar reunión libre" withArrow>
+                  <ActionIcon size="xs" variant="subtle" color="red" onClick={(e) => onCancelFreeMeeting && onCancelFreeMeeting(fm.id, e)}>
+                    <IconX size={11} />
+                  </ActionIcon>
+                </Tooltip>
+              </Group>
+            </Group>
             <ParticipantPopover
               width={340}
               trigger={
-                <div style={{ marginTop: 6 }}>
+                <Stack gap={3}>
                   {fm.participants?.map((pid) => {
                     const info = participantsInfo[pid];
                     const hasSurvey = (surveys[fm.id] || []).some((r) => r.userId === pid);
                     return (
-                      <div key={pid} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-                        <span
-                          style={{ fontSize: 18, color: hasSurvey ? "#253b25ff" : "#e03131", flexShrink: 0, cursor: hasSurvey ? "pointer" : "default" }}
-                          title={hasSurvey ? "Ver encuesta" : "Sin encuesta"}
-                          onClick={(e) => hasSurvey && openUserSurveyModal(fm.id, pid, e)}
-                        >
-                          {hasSurvey ? "✓" : "✗"}
-                        </span>
-                        <Tooltip label="Llenar encuesta" withArrow>
-                          <ActionIcon size="md" variant="subtle" color="violet" onClick={(e) => openFillSurveyModal(fm.id, pid, fm, e)}>
-                            <IconClipboardList size={18} />
+                      <Group key={pid} gap={4} wrap="nowrap" style={{ minWidth: 0 }}>
+                        <Tooltip label={hasSurvey ? "Ver encuesta" : "Llenar encuesta"} withArrow>
+                          <ActionIcon
+                            size="xs"
+                            variant={hasSurvey ? "filled" : "light"}
+                            color={hasSurvey ? "green" : "gray"}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (hasSurvey) openUserSurveyModal(fm.id, pid, e);
+                              else openFillSurveyModal(fm.id, pid, fm, e);
+                            }}
+                          >
+                            {hasSurvey ? <IconClipboardCheck size={11} /> : <IconClipboard size={11} />}
                           </ActionIcon>
                         </Tooltip>
-                        <Text size="lg" fw={600} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 280, color: "#0b7a5e", cursor: "pointer" }}>
-                          {info ? info.empresa : pid}
-                        </Text>
-                        {info && (
-                          <Text size="md" c="dimmed" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 160 }}>
-                            {info.nombre}
-                          </Text>
-                        )}
-                      </div>
+                        <Tooltip
+                          label={info?.telefono ? `📞 ${info.telefono}${info.intencionLlamada ? `  ·  Intención: ${info.intencionLlamada}` : ""}` : "Sin teléfono"}
+                          withArrow multiline w={240}
+                        >
+                          <ActionIcon size="xs" variant="subtle" color="blue" onClick={(e) => e.stopPropagation()}>
+                            <IconPhone size={11} />
+                          </ActionIcon>
+                        </Tooltip>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <Text size="xs" fw={600} c="teal" truncate>{info ? info.empresa : pid}</Text>
+                          {info && <Text size="xs" c="dimmed" truncate>{info.nombre}</Text>}
+                        </div>
+                      </Group>
                     );
                   })}
-                </div>
+                </Stack>
               }
             >
               <b>Reunión libre — Participantes:</b>
@@ -258,24 +282,23 @@ function FreeMeetingsList({ freeMeetings, participantsInfo, getAffinityScore, to
                     <Text size="sm" fw={600}>{info.empresa}</Text>
                     <Text size="xs" c="dimmed">{info.nombre}</Text>
                     <Text size="xs"><span style={{ color: "#6c6c6c" }}>Tel: </span>{info.telefono || <i>No registrado</i>}</Text>
+                    <Text size="xs"><span style={{ color: "#6c6c6c" }}>Intención llamada: </span>{info.intencionLlamada || <i>No especificada</i>}</Text>
                     <Text size="xs"><span style={{ color: "#6c6c6c" }}>Descripción: </span>{info.descripcion || <i>No especificada</i>}</Text>
                     <Text size="xs"><span style={{ color: "#6c6c6c" }}>Necesidad: </span>{info.necesidad || <i>No especificada</i>}</Text>
                     {idx === 0 && aff && (
                       <div style={{ marginTop: 6, padding: "5px 8px", backgroundColor: "#e6fcf5", borderRadius: 4 }}>
                         <Text size="xs" fw={600} c="teal">Afinidad: {aff.score}%</Text>
-                        {aff.reasons?.length > 0 && (
-                          <Text size="xs" c="dimmed" mt={2}>{aff.reasons.join(", ")}</Text>
-                        )}
+                        {aff.reasons?.length > 0 && <Text size="xs" c="dimmed" mt={2}>{aff.reasons.join(", ")}</Text>}
                       </div>
                     )}
                   </div>
                 );
               })}
             </ParticipantPopover>
-          </div>
+          </Paper>
         );
       })}
-    </>
+    </Stack>
   );
 }
 
@@ -339,6 +362,7 @@ const MatrixPage = () => {
   const [participantsInfo, setParticipantsInfo] = useState({});
   const [asistentes, setAsistentes] = useState([]);
   const [typeFilter, setTypeFilter] = useState("");
+  const [selectedTableFilter, setSelectedTableFilter] = useState("");
   const [quickModal, setQuickModal] = useState({
     opened: false,
     slotsDisponibles: [],
@@ -352,15 +376,19 @@ const MatrixPage = () => {
     lockedUserId: null,
   });
 
+  const [editFreeMeetingModal, setEditFreeMeetingModal] = useState({
+    opened: false,
+    meeting: null,
+  });
+
   // Modal para reunión libre (sin reservar slot)
   const [freeMeetingModal, setFreeMeetingModal] = useState({
     opened: false,
     asistente: null,
     timeSlot: "",
     meetingDate: null,
+    tableNumber: null,
   });
-  const [freePartner, setFreePartner] = useState("");
-  const [freeCheckDuplicates, setFreeCheckDuplicates] = useState(true);
   const [creatingFree, setCreatingFree] = useState(false);
 
   const [creatingMeeting, setCreatingMeeting] = useState(false);
@@ -702,19 +730,22 @@ const MatrixPage = () => {
     });
   }, [config, asistentes, meetings, participantsInfo, timeSlots, selectedDate]);
 
-  // Filtrado usuarios
+  // Filtrado por mesas y búsqueda — retorna { table, originalIdx }[] para preservar número de mesa
   const filteredMatrix = useMemo(() => {
-    if (!userSearch || userSearch.trim() === "") return memoMatrix;
-    const searchTerm = userSearch.toLowerCase();
+    const indexed = memoMatrix.map((table, idx) => ({ table, originalIdx: idx }));
 
     const matchesAssistant = (assistant) => {
+      if (!userSearch || userSearch.trim() === "") return true;
+      const searchTerm = userSearch.toLowerCase();
       return ["nombre", "empresa", "company_razonSocial", "razonSocial", "telefono", "correo", "email"].some(
         (field) => (assistant?.[field] || "").toString().toLowerCase().includes(searchTerm)
       );
     };
 
-    return memoMatrix.filter((table) =>
-      table.some((cell) => {
+    return indexed.filter(({ table, originalIdx }) => {
+      if (selectedTableFilter && String(originalIdx + 1) !== selectedTableFilter) return false;
+      if (!userSearch || userSearch.trim() === "") return true;
+      return table.some((cell) => {
         const meetingMatch = (cell.meetingData?.participants || []).some((pid) => {
           const assistant = participantsInfo[pid];
           return assistant && matchesAssistant(assistant);
@@ -726,9 +757,9 @@ const MatrixPage = () => {
           })
         );
         return meetingMatch || freeMatch;
-      })
-    );
-  }, [memoMatrix, participantsInfo, userSearch]);
+      });
+    });
+  }, [memoMatrix, participantsInfo, userSearch, selectedTableFilter]);
 
   const filteredMatrixUsuarios = useMemo(
     () =>
@@ -1205,34 +1236,72 @@ const MatrixPage = () => {
     }
   };
 
+  const handleCancelFreeMeeting = async (meetingId, e) => {
+    e.stopPropagation();
+    try {
+      await updateDoc(doc(db, "events", eventId, "meetings", meetingId), {
+        status: "cancelled",
+      });
+    } catch (err) {
+      console.error("Error cancelando reunión libre:", err);
+    }
+  };
+
+  const handleCancelFreeMeetingById = async (meetingId) => {
+    try {
+      await updateDoc(doc(db, "events", eventId, "meetings", meetingId), {
+        status: "cancelled",
+      });
+      setEditFreeMeetingModal({ opened: false, meeting: null });
+    } catch (err) {
+      console.error("Error cancelando reunión libre:", err);
+    }
+  };
+
+  const handleUpdateFreeMeeting = async ({ meetingId, user1, user2, timeSlot }) => {
+    setCreatingMeeting(true);
+    try {
+      await updateDoc(doc(db, "events", eventId, "meetings", meetingId), {
+        participants: [user1, user2],
+        requesterId: user1,
+        receiverId: user2,
+        timeSlot: timeSlot || "—",
+      });
+      setGlobalMessage("Reunión libre actualizada correctamente.");
+      setEditFreeMeetingModal({ opened: false, meeting: null });
+    } catch (e) {
+      setGlobalMessage("Error actualizando la reunión libre.");
+      console.error(e);
+    }
+    setCreatingMeeting(false);
+  };
+
   const openSurveyModal = (meetingId, e) => {
     e.stopPropagation();
     const responses = surveys[meetingId] || [];
     setSurveyModal({ opened: true, meetingId, responses });
   };
 
-  const handleCreateFreeMeeting = async () => {
-    if (!freePartner || !freeMeetingModal.asistente) return;
+  const handleCreateFreeMeeting = async ({ user1, user2, timeSlot, checkDuplicates, onDuplicateFound }) => {
     setCreatingFree(true);
     try {
       const meetingDate = freeMeetingModal.meetingDate || selectedDate || null;
 
-      // Si checkDuplicates está activo, verificar si ya se reunieron ese día
-      if (freeCheckDuplicates) {
+      if (checkDuplicates) {
         const existingSnap = await getDocs(
           query(
             collection(db, "events", eventId, "meetings"),
             where("status", "==", "accepted"),
-            where("participants", "array-contains", freeMeetingModal.asistente.id)
+            where("participants", "array-contains", user1)
           )
         );
         const alreadyMet = existingSnap.docs.some((d) => {
           const m = d.data();
           const sameDay = !meetingDate || !m.meetingDate || m.meetingDate === meetingDate;
-          return sameDay && (m.participants || []).includes(freePartner);
+          return sameDay && (m.participants || []).includes(user2);
         });
         if (alreadyMet) {
-          setGlobalMessage("Los asistentes ya se han reunido ese día. Desactiva 'Verificar duplicados' para crear de todas formas.");
+          if (onDuplicateFound) onDuplicateFound();
           setCreatingFree(false);
           return;
         }
@@ -1240,13 +1309,13 @@ const MatrixPage = () => {
 
       await addDoc(collection(db, "events", eventId, "meetings"), {
         eventId,
-        requesterId: freeMeetingModal.asistente.id,
-        receiverId: freePartner,
-        participants: [freeMeetingModal.asistente.id, freePartner],
+        requesterId: user1,
+        receiverId: user2,
+        participants: [user1, user2],
         status: "accepted",
         isExternal: true,
-        timeSlot: freeMeetingModal.timeSlot || "—",
-        tableAssigned: "",
+        timeSlot: timeSlot || "—",
+        tableAssigned: freeMeetingModal.tableNumber ? String(freeMeetingModal.tableNumber) : "",
         meetingDate,
         motivoMatch: "Libre",
         razonMatch: "Reunión libre creada desde la matriz",
@@ -1254,8 +1323,7 @@ const MatrixPage = () => {
         createdAt: new Date(),
       });
       setGlobalMessage("Reunión libre creada correctamente.");
-      setFreeMeetingModal({ opened: false, asistente: null, timeSlot: "", meetingDate: null });
-      setFreePartner("");
+      setFreeMeetingModal({ opened: false, asistente: null, timeSlot: "", meetingDate: null, tableNumber: null });
     } catch (e) {
       setGlobalMessage("Error creando la reunión libre.");
       console.error(e);
@@ -1427,7 +1495,7 @@ const MatrixPage = () => {
   return (
     <Container fluid>
       <Title order={2} mt="md" mb="md" align="center">
-        Matriz Rueda de Negocios — Evento {config?.eventName || "Desconocido"}
+        Operación Mesas — {config?.eventName || "Evento"}
       </Title>
 
       {/* Selector de día para eventos multi-día */}
@@ -1465,9 +1533,19 @@ const MatrixPage = () => {
 
         {/* Panel Mesas */}
         <Tabs.Panel value="mesas" pt="md">
+          <Flex gap="md" mb="md" wrap="wrap" align="center">
+            <Select
+              placeholder="Todas las mesas"
+              value={selectedTableFilter}
+              onChange={setSelectedTableFilter}
+              data={memoMatrix.map((_, i) => ({ value: String(i + 1), label: `Mesa ${i + 1}` }))}
+              style={{ maxWidth: 200 }}
+              clearable
+            />
+          </Flex>
           <ScrollArea>
             <Flex gap="lg" justify="center" align="flex-start" wrap="wrap">
-              {filteredMatrix.map((table, ti) => (
+              {filteredMatrix.map(({ table, originalIdx: ti }) => (
                 <Card
                   key={ti}
                   shadow="md"
@@ -1482,9 +1560,28 @@ const MatrixPage = () => {
                     boxShadow: "0 2px 12px #0001",
                   }}
                 >
-                  <Title order={5} ta="center" mb="xs" style={{ letterSpacing: 0.5 }}>
-                    Mesa {ti + 1}
-                  </Title>
+                  <Group justify="space-between" mb="xs" align="center">
+                    <Title order={5} style={{ letterSpacing: 0.5 }}>
+                      Mesa {ti + 1}
+                    </Title>
+                    <Tooltip label="Crear reunión libre en esta mesa" withArrow>
+                      <ActionIcon
+                        size="sm"
+                        variant="light"
+                        color="teal"
+                        onClick={() =>
+                          setFreeMeetingModal({
+                            opened: true,
+                            asistente: null,
+                            timeSlot: "",
+                            meetingDate: selectedDate,
+                          })
+                        }
+                      >
+                        <IconPlus size={14} />
+                      </ActionIcon>
+                    </Tooltip>
+                  </Group>
                   <Divider mb="sm" />
                   <Table
                     striped
@@ -1518,205 +1615,254 @@ const MatrixPage = () => {
                         return (
                         <Table.Tr
                           key={`${ti}-${si}`}
-                          style={{
-                            backgroundColor: getColor(cell.status),
-                            borderRadius: 5,
-                            cursor:
-                              cell.status === "available"
-                                ? "pointer"
-                                : "default",
-                          }}
-                          onClick={() => {
-                            if (cell.status === "available") {
-                              const slotEncontrado = agenda.find(
-                                (s) =>
-                                  s.tableNumber === ti + 1 &&
-                                  s.startTime === timeSlots[si]
-                              );
-                              setQuickModal({
-                                opened: true,
-                                slot: slotEncontrado ? { ...slotEncontrado } : null,
-                                slotsDisponibles: slotEncontrado ? [slotEncontrado] : [],
-                                defaultUser: null,
-                              });
-                            } else if (cell.status === "accepted") {
-                              const [startTime, endTime] =
-                                cell.meetingData.timeSlot.split(" - ");
-                              setEditModal({
-                                opened: true,
-                                meeting: cell.meetingData,
-                                slot: {
-                                  tableNumber: cell.meetingData.tableAssigned,
-                                  startTime,
-                                  endTime,
-                                  id: agenda.find(
-                                    (s) =>
-                                      s.tableNumber ===
-                                        Number(
-                                          cell.meetingData.tableAssigned
-                                        ) && s.startTime === startTime
-                                  )?.id,
-                                },
-                                lockedUserId: null,
-                              });
-                            }
-                          }}
+                          style={{ backgroundColor: getColor(cell.status), borderRadius: 5 }}
                         >
                           <Table.Td style={{ fontWeight: 600, fontSize: 13, color: "#21252cff", whiteSpace: "nowrap" }}>
-                            {timeSlots[si]}
+                            <Group gap={4} wrap="nowrap">
+                              {timeSlots[si]}
+                              <Menu withinPortal position="bottom-start" shadow="md" width={170}>
+                                <Menu.Target>
+                                  <ActionIcon size="xs" variant="light" color="teal">
+                                    <IconPlus size={10} />
+                                  </ActionIcon>
+                                </Menu.Target>
+                                <Menu.Dropdown>
+                                  <Menu.Label>Crear reunión</Menu.Label>
+                                  <Menu.Item
+                                    disabled={cell.status !== "available"}
+                                    onClick={() => {
+                                      const slotEncontrado = agenda.find(
+                                        (s) => s.tableNumber === ti + 1 && s.startTime === timeSlots[si]
+                                      );
+                                      setQuickModal({
+                                        opened: true,
+                                        slot: slotEncontrado ? { ...slotEncontrado } : null,
+                                        slotsDisponibles: slotEncontrado ? [slotEncontrado] : [],
+                                        defaultUser: null,
+                                      });
+                                    }}
+                                  >
+                                    ⚡ Cita rápida
+                                  </Menu.Item>
+                                  <Menu.Item
+                                    onClick={() =>
+                                      setFreeMeetingModal({
+                                        opened: true,
+                                        asistente: null,
+                                        timeSlot: timeSlots[si],
+                                        meetingDate: selectedDate,
+                                        tableNumber: ti + 1,
+                                      })
+                                    }
+                                  >
+                                    👥 Reunión libre
+                                  </Menu.Item>
+                                </Menu.Dropdown>
+                              </Menu>
+                            </Group>
                           </Table.Td>
                           <Table.Td>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                              <StatusBadge status={cell.status} />
-                              {cell.status === "accepted" && (() => {
-                                const p0 = cell.meetingData?.participants?.[0];
-                                const p1 = cell.meetingData?.participants?.[1];
-                                const affinity = p0 && p1 ? getAffinityScore(p0, p1) : null;
-                                return (
-                                  <>
-                                    {affinity && (
-                                      <Badge  variant="light" size="lg" style={{color: "#172417ff"}}>
-                                        {affinity.score}%
-                                      </Badge>
-                                    )}
-                                    <Checkbox
-                                      size="sm"
-                                      label="Realizada"
-                                      checked={!!cell.meetingData?.completed}
-                                      onChange={(e) => toggleMeetingCompleted(cell.meetingId, cell.meetingData?.completed, e)}
-                                      onClick={(e) => e.stopPropagation()}
-                                      color="green"
-                                    />
-                                    {(() => {
-                                      const ss = getSurveyStatus(cell.meetingId, cell.meetingData?.participants);
-                                      return (
-                                        <Tooltip label={ss.label} withArrow>
-                                          <Badge
-                                            color={ss.color}
-                                            variant={ss.count > 0 ? "filled" : "outline"}
-                                            size="sm"
-                                            style={{ cursor: ss.count > 0 ? "pointer" : "default" }}
-                                            onClick={(e) => ss.count > 0 && openSurveyModal(cell.meetingId, e)}
-                                          >
-                                            📋 {ss.count}/{ss.total}
-                                          </Badge>
-                                        </Tooltip>
-                                      );
-                                    })()}
-                                  </>
-                                );
-                              })()}
-                            </div>
-                            {cell.status === "accepted" && (() => {
+                            {cell.status === "accepted" ? (() => {
                               const p0 = cell.meetingData?.participants?.[0];
                               const p1 = cell.meetingData?.participants?.[1];
                               const affinity = p0 && p1 ? getAffinityScore(p0, p1) : null;
+                              const ss = getSurveyStatus(cell.meetingId, cell.meetingData?.participants);
                               return (
-                                <ParticipantPopover
-                                  width={340}
-                                  trigger={
-                                    <div style={{ marginTop: 6 }}>
-                                      {cell.meetingData?.participants?.map((pid) => {
-                                        const info = participantsInfo[pid];
-                                        const hasSurvey = (surveys[cell.meetingId] || []).some((r) => r.userId === pid);
-                                        return (
-                                          <div key={pid} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-                                            <span
-                                              style={{ fontSize: 18, color: hasSurvey ? "#253b25ff" : "#e03131", flexShrink: 0, cursor: hasSurvey ? "pointer" : "default" }}
-                                              title={hasSurvey ? "Ver encuesta" : "Sin encuesta"}
-                                              onClick={(e) => hasSurvey && openUserSurveyModal(cell.meetingId, pid, e)}
-                                            >
-                                              {hasSurvey ? "✓" : "✗"}
-                                            </span>
-                                            <Tooltip label="Llenar encuesta" withArrow>
-                                              <ActionIcon
-                                                size="md"
-                                                variant="subtle"
-                                                color="violet"
-                                                onClick={(e) => openFillSurveyModal(cell.meetingId, pid, cell.meetingData, e)}
+                                <Stack gap={6}>
+                                  {/* Fila 1: estado + acciones */}
+                                  <Group justify="space-between" wrap="nowrap">
+                                    <Group gap={5}>
+                                      <StatusBadge status={cell.status} />
+                                      {affinity && <Badge size="xs" variant="light" color="green">{affinity.score}%</Badge>}
+                                    </Group>
+                                    <Group gap={4}>
+                                      <Tooltip label="Editar reunión" withArrow>
+                                        <ActionIcon
+                                          size="xs"
+                                          variant="subtle"
+                                          color="blue"
+                                          onClick={() => {
+                                            const [startTime, endTime] = cell.meetingData.timeSlot.split(" - ");
+                                            setEditModal({
+                                              opened: true,
+                                              meeting: cell.meetingData,
+                                              slot: {
+                                                tableNumber: cell.meetingData.tableAssigned,
+                                                startTime,
+                                                endTime,
+                                                id: agenda.find(
+                                                  (s) => s.tableNumber === Number(cell.meetingData.tableAssigned) && s.startTime === startTime
+                                                )?.id,
+                                              },
+                                              lockedUserId: null,
+                                            });
+                                          }}
+                                        >
+                                          <IconPencil size={11} />
+                                        </ActionIcon>
+                                      </Tooltip>
+                                      <Tooltip label={ss.label} withArrow>
+                                        <Badge
+                                          color={ss.color}
+                                          variant={ss.count > 0 ? "filled" : "outline"}
+                                          size="xs"
+                                          style={{ cursor: ss.count > 0 ? "pointer" : "default" }}
+                                          onClick={(e) => ss.count > 0 && openSurveyModal(cell.meetingId, e)}
+                                        >
+                                          📋 {ss.count}/{ss.total}
+                                        </Badge>
+                                      </Tooltip>
+                                    </Group>
+                                  </Group>
+
+                                  {/* Fila 2: participantes con popover */}
+                                  <ParticipantPopover
+                                    width={340}
+                                    trigger={
+                                      <Stack gap={3}>
+                                        {cell.meetingData?.participants?.map((pid) => {
+                                          const info = participantsInfo[pid];
+                                          const hasSurvey = (surveys[cell.meetingId] || []).some((r) => r.userId === pid);
+                                          return (
+                                            <Group key={pid} gap={4} wrap="nowrap" style={{ minWidth: 0 }}>
+                                              <Tooltip label={hasSurvey ? "Ver encuesta" : "Llenar encuesta"} withArrow>
+                                                <ActionIcon
+                                                  size="xs"
+                                                  variant={hasSurvey ? "filled" : "light"}
+                                                  color={hasSurvey ? "green" : "gray"}
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (hasSurvey) openUserSurveyModal(cell.meetingId, pid, e);
+                                                    else openFillSurveyModal(cell.meetingId, pid, cell.meetingData, e);
+                                                  }}
+                                                >
+                                                  {hasSurvey ? <IconClipboardCheck size={11} /> : <IconClipboard size={11} />}
+                                                </ActionIcon>
+                                              </Tooltip>
+                                              <Tooltip
+                                                label={info?.telefono ? `📞 ${info.telefono}${info.intencionLlamada ? `  ·  Intención: ${info.intencionLlamada}` : ""}` : "Sin teléfono"}
+                                                withArrow multiline w={240}
                                               >
-                                                <IconClipboardList size={18} />
-                                              </ActionIcon>
-                                            </Tooltip>
-                                            <Text
-                                              size="lg"
-                                              fw={600}
-                                              style={{
-                                                overflow: "hidden",
-                                                textOverflow: "ellipsis",
-                                                whiteSpace: "nowrap",
-                                                maxWidth: 280,
-                                                color: "#064175ff",
-                                                cursor: "pointer",
-                                              }}
-                                            >
-                                              {info ? info.empresa : pid}
-                                            </Text>
-                                            {info && (
-                                              <Text size="md" c="dimmed" style={{color: "#191c1fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 160 }}>
-                                                {info.nombre}
-                                              </Text>
-                                            )}
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  }
-                                >
-                                  <b>Participantes:</b>
-                                  {cell.meetingData?.participants?.map((pid, idx) => {
-                                    const info = participantsInfo[pid];
-                                    if (!info) return <div key={pid}>{pid}</div>;
-                                    const otherPid = cell.meetingData.participants.find(p => p !== pid);
-                                    const aff = otherPid ? getAffinityScore(pid, otherPid) : null;
-                                    return (
-                                      <div key={pid} style={{ marginBottom: 8 }}>
-                                        <Text size="sm" fw={600}>{info.empresa}</Text>
-                                        <Text size="xs" c="dimmed">{info.nombre}</Text>
-                                        <Text size="xs"><span style={{ color: "#6c6c6c" }}>Tel: </span>{info.telefono || <i>No registrado</i>}</Text>
-                                        <Text size="xs"><span style={{ color: "#6c6c6c" }}>Descripción: </span>{info.descripcion || <i>No especificada</i>}</Text>
-                                        <Text size="xs"><span style={{ color: "#6c6c6c" }}>Necesidad: </span>{info.necesidad || <i>No especificada</i>}</Text>
-                                        {idx === 0 && aff && (
-                                          <div style={{ marginTop: 6, padding: "5px 8px", backgroundColor: "#e7f5ff", borderRadius: 4 }}>
-                                            <Text size="xs" fw={600} c="blue">Afinidad: {aff.score}%</Text>
-                                            {aff.reasons?.length > 0 && (
-                                              <Text size="xs" c="dimmed" mt={2}>{aff.reasons.join(", ")}</Text>
-                                            )}
-                                          </div>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </ParticipantPopover>
+                                                <ActionIcon size="xs" variant="subtle" color="blue" onClick={(e) => e.stopPropagation()}>
+                                                  <IconPhone size={11} />
+                                                </ActionIcon>
+                                              </Tooltip>
+                                              <div style={{ flex: 1, minWidth: 0 }}>
+                                                <Text size="xs" fw={600} truncate style={{ color: "#064175ff" }}>{info ? info.empresa : pid}</Text>
+                                                {info && <Text size="xs" c="dimmed" truncate>{info.nombre}</Text>}
+                                              </div>
+                                            </Group>
+                                          );
+                                        })}
+                                      </Stack>
+                                    }
+                                  >
+                                    <b>Participantes:</b>
+                                    {cell.meetingData?.participants?.map((pid, idx) => {
+                                      const info = participantsInfo[pid];
+                                      if (!info) return <div key={pid}>{pid}</div>;
+                                      const otherPid = cell.meetingData.participants.find(p => p !== pid);
+                                      const aff = otherPid ? getAffinityScore(pid, otherPid) : null;
+                                      return (
+                                        <div key={pid} style={{ marginBottom: 8 }}>
+                                          <Text size="sm" fw={600}>{info.empresa}</Text>
+                                          <Text size="xs" c="dimmed">{info.nombre}</Text>
+                                          <Text size="xs"><span style={{ color: "#6c6c6c" }}>Tel: </span>{info.telefono || <i>No registrado</i>}</Text>
+                                          <Text size="xs"><span style={{ color: "#6c6c6c" }}>Intención llamada: </span>{info.intencionLlamada || <i>No especificada</i>}</Text>
+                                          <Text size="xs"><span style={{ color: "#6c6c6c" }}>Descripción: </span>{info.descripcion || <i>No especificada</i>}</Text>
+                                          <Text size="xs"><span style={{ color: "#6c6c6c" }}>Necesidad: </span>{info.necesidad || <i>No especificada</i>}</Text>
+                                          {idx === 0 && aff && (
+                                            <div style={{ marginTop: 6, padding: "5px 8px", backgroundColor: "#e7f5ff", borderRadius: 4 }}>
+                                              <Text size="xs" fw={600} c="blue">Afinidad: {aff.score}%</Text>
+                                              {aff.reasons?.length > 0 && <Text size="xs" c="dimmed" mt={2}>{aff.reasons.join(", ")}</Text>}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </ParticipantPopover>
+
+                                  {/* Fila 3: checkbox realizada */}
+                                  <Checkbox
+                                    size="xs"
+                                    label="Realizada"
+                                    checked={!!cell.meetingData?.completed}
+                                    onChange={(e) => toggleMeetingCompleted(cell.meetingId, cell.meetingData?.completed, e)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    color="green"
+                                  />
+
+                                  {/* Reuniones libres en este slot/mesa */}
+                                  {(cell.freeMeetings || []).length > 0 && (
+                                    <FreeMeetingsList
+                                      freeMeetings={cell.freeMeetings}
+                                      participantsInfo={participantsInfo}
+                                      getAffinityScore={getAffinityScore}
+                                      toggleMeetingCompleted={toggleMeetingCompleted}
+                                      surveys={surveys}
+                                      openSurveyModal={openSurveyModal}
+                                      openUserSurveyModal={openUserSurveyModal}
+                                      openFillSurveyModal={openFillSurveyModal}
+                                      getSurveyStatus={getSurveyStatus}
+                                      onCancelFreeMeeting={handleCancelFreeMeeting}
+                                      openEditModal={(fm) => {
+                                        if (fm.isExternal) {
+                                          setEditFreeMeetingModal({ opened: true, meeting: fm });
+                                          return;
+                                        }
+                                        const [startTime, endTime] = fm.timeSlot.split(" - ");
+                                        setEditModal({
+                                          opened: true,
+                                          meeting: fm,
+                                          slot: {
+                                            tableNumber: fm.tableAssigned,
+                                            startTime,
+                                            endTime,
+                                            id: agenda.find((s) => s.tableNumber === Number(fm.tableAssigned) && s.startTime === startTime)?.id || "",
+                                          },
+                                          lockedUserId: null,
+                                        });
+                                      }}
+                                    />
+                                  )}
+                                </Stack>
                               );
-                            })()}
-                            {/* Reuniones libres en este slot/mesa — lista desplegable */}
-                            {(cell.freeMeetings || []).length > 0 && (
-                              <FreeMeetingsList
-                                freeMeetings={cell.freeMeetings}
-                                participantsInfo={participantsInfo}
-                                getAffinityScore={getAffinityScore}
-                                toggleMeetingCompleted={toggleMeetingCompleted}
-                                surveys={surveys}
-                                openSurveyModal={openSurveyModal}
-                                openUserSurveyModal={openUserSurveyModal}
-                                openFillSurveyModal={openFillSurveyModal}
-                                getSurveyStatus={getSurveyStatus}
-                                openEditModal={(fm) => {
-                                  const [startTime, endTime] = fm.timeSlot.split(" - ");
-                                  setEditModal({
-                                    opened: true,
-                                    meeting: fm,
-                                    slot: {
-                                      tableNumber: fm.tableAssigned,
-                                      startTime,
-                                      endTime,
-                                      id: agenda.find((s) => s.tableNumber === Number(fm.tableAssigned) && s.startTime === startTime)?.id || "",
-                                    },
-                                    lockedUserId: null,
-                                  });
-                                }}
-                              />
+                            })() : (
+                              <Stack gap={4}>
+                                <StatusBadge status={cell.status} />
+                                {(cell.freeMeetings || []).length > 0 && (
+                                  <FreeMeetingsList
+                                    freeMeetings={cell.freeMeetings}
+                                    participantsInfo={participantsInfo}
+                                    getAffinityScore={getAffinityScore}
+                                    toggleMeetingCompleted={toggleMeetingCompleted}
+                                    surveys={surveys}
+                                    openSurveyModal={openSurveyModal}
+                                    openUserSurveyModal={openUserSurveyModal}
+                                    openFillSurveyModal={openFillSurveyModal}
+                                    getSurveyStatus={getSurveyStatus}
+                                    onCancelFreeMeeting={handleCancelFreeMeeting}
+                                    openEditModal={(fm) => {
+                                      if (fm.isExternal) {
+                                        setEditFreeMeetingModal({ opened: true, meeting: fm });
+                                        return;
+                                      }
+                                      const [startTime, endTime] = fm.timeSlot.split(" - ");
+                                      setEditModal({
+                                        opened: true,
+                                        meeting: fm,
+                                        slot: {
+                                          tableNumber: fm.tableAssigned,
+                                          startTime,
+                                          endTime,
+                                          id: agenda.find((s) => s.tableNumber === Number(fm.tableAssigned) && s.startTime === startTime)?.id || "",
+                                        },
+                                        lockedUserId: null,
+                                      });
+                                    }}
+                                  />
+                                )}
+                              </Stack>
                             )}
                           </Table.Td>
                         </Table.Tr>
@@ -1833,108 +1979,154 @@ const MatrixPage = () => {
                         const i = timeSlots.indexOf(rowItem.time);
                         const slot = rowItem.time;
                         const cell = i >= 0 ? row[i] : { status: "available" };
+                        const slotEndTime = (() => {
+                          const dur = config?.config?.meetingDuration || 30;
+                          const [h, m] = slot.split(":").map(Number);
+                          const endMin = h * 60 + m + dur;
+                          return `${String(Math.floor(endMin / 60)).padStart(2, "0")}:${String(endMin % 60).padStart(2, "0")}`;
+                        })();
                         return (
                           <Table.Tr
                             key={i}
-                            style={{
-                              backgroundColor: getColor(cell.status),
-                              cursor: cell.status === "available" || cell.status === "accepted" ? "pointer" : "default",
-                            }}
-                            onClick={() => {
-                              // Siempre permitir crear reunión libre en cualquier slot
-                              const slotEndTime = (() => {
-                                const dur = config?.config?.meetingDuration || 30;
-                                const [h, m] = slot.split(":").map(Number);
-                                const endMin = h * 60 + m + dur;
-                                return `${String(Math.floor(endMin / 60)).padStart(2, "0")}:${String(endMin % 60).padStart(2, "0")}`;
-                              })();
-                              setFreePartner("");
-                              setFreeMeetingModal({
-                                opened: true,
-                                asistente,
-                                timeSlot: `${slot} - ${slotEndTime}`,
-                                meetingDate: selectedDate,
-                              });
-                            }}
+                            style={{ backgroundColor: getColor(cell.status) }}
                           >
                             <Table.Td style={{ fontWeight: 600, fontSize: 13, color: "#1f2125ff", whiteSpace: "nowrap" }}>
-                              {slot}
+                              <Group gap={4} wrap="nowrap">
+                                {slot}
+                                <Menu withinPortal position="bottom-start" shadow="md" width={180}>
+                                  <Menu.Target>
+                                    <ActionIcon size="xs" variant="light" color="teal">
+                                      <IconPlus size={10} />
+                                    </ActionIcon>
+                                  </Menu.Target>
+                                  <Menu.Dropdown>
+                                    <Menu.Label>Crear reunión</Menu.Label>
+                                    <Menu.Item
+                                      disabled={cell.status === "accepted"}
+                                      onClick={() => {
+                                        const slotsForTime = agenda.filter(
+                                          (s) => s.startTime === slot && s.available && (!s.date || s.date === selectedDate)
+                                        );
+                                        setQuickModal({
+                                          opened: true,
+                                          slotsDisponibles: slotsForTime,
+                                          defaultUser: asistente.id,
+                                        });
+                                      }}
+                                    >
+                                      ⚡ Cita rápida
+                                    </Menu.Item>
+                                    <Menu.Item
+                                      onClick={() =>
+                                        setFreeMeetingModal({
+                                          opened: true,
+                                          asistente,
+                                          timeSlot: `${slot} - ${slotEndTime}`,
+                                          meetingDate: selectedDate,
+                                        })
+                                      }
+                                    >
+                                      👥 Reunión libre
+                                    </Menu.Item>
+                                  </Menu.Dropdown>
+                                </Menu>
+                              </Group>
                             </Table.Td>
                             <Table.Td>
                               {cell.status === "accepted" ? (() => {
                                 const affinity = getAffinityScore(asistente.id, cell.participants?.[0]);
+                                const ss = getSurveyStatus(cell.meetingId, [asistente.id, ...cell.participants]);
+                                const meetingDataForCell = meetings.find((m) => m.id === cell.meetingId);
                                 return (
-                                  <>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                                      <StatusBadge status={cell.status} />
-                                      <Text size="xs" c="dimmed">Mesa {cell.table}</Text>
-                                      {affinity && (
-                                        <Badge color="blue" variant="light" size="lg">{affinity.score}%</Badge>
-                                      )}
-                                      <Checkbox
-                                        size="sm"
-                                        label="Realizada"
-                                        checked={!!cell.completed}
-                                        onChange={(e) => toggleMeetingCompleted(cell.meetingId, cell.completed, e)}
-                                        onClick={(e) => e.stopPropagation()}
-                                        color="green"
-                                      />
-                                      {(() => {
-                                        const ss = getSurveyStatus(cell.meetingId, [asistente.id, ...cell.participants]);
-                                        return (
-                                          <Tooltip label={ss.label} withArrow>
-                                            <Badge
-                                              color={ss.color}
-                                              variant={ss.count > 0 ? "filled" : "outline"}
-                                              size="sm"
-                                              style={{ cursor: ss.count > 0 ? "pointer" : "default" }}
-                                              onClick={(e) => ss.count > 0 && openSurveyModal(cell.meetingId, e)}
-                                            >
-                                              📋 {ss.count}/{ss.total}
-                                            </Badge>
-                                          </Tooltip>
-                                        );
-                                      })()}
-                                    </div>
+                                  <Stack gap={6}>
+                                    {/* Fila 1: estado + mesa + acciones */}
+                                    <Group justify="space-between" wrap="nowrap">
+                                      <Group gap={5}>
+                                        <StatusBadge status={cell.status} />
+                                        <Badge size="xs" variant="outline" color="gray">Mesa {cell.table}</Badge>
+                                        {affinity && <Badge size="xs" variant="light" color="blue">{affinity.score}%</Badge>}
+                                      </Group>
+                                      <Group gap={4}>
+                                        <Tooltip label="Editar reunión" withArrow>
+                                          <ActionIcon
+                                            size="xs"
+                                            variant="subtle"
+                                            color="blue"
+                                            onClick={() => {
+                                              const mtg = meetings.find((m) => m.id === cell.meetingId);
+                                              if (mtg) {
+                                                const [startTime, endTime] = mtg.timeSlot.split(" - ");
+                                                setEditModal({
+                                                  opened: true,
+                                                  meeting: mtg,
+                                                  slot: {
+                                                    tableNumber: mtg.tableAssigned,
+                                                    startTime,
+                                                    endTime,
+                                                    id: agenda.find((s) => s.tableNumber === Number(mtg.tableAssigned) && s.startTime === startTime)?.id || "",
+                                                  },
+                                                  lockedUserId: asistente.id,
+                                                });
+                                              }
+                                            }}
+                                          >
+                                            <IconPencil size={11} />
+                                          </ActionIcon>
+                                        </Tooltip>
+                                        <Tooltip label={ss.label} withArrow>
+                                          <Badge
+                                            color={ss.color}
+                                            variant={ss.count > 0 ? "filled" : "outline"}
+                                            size="xs"
+                                            style={{ cursor: ss.count > 0 ? "pointer" : "default" }}
+                                            onClick={(e) => ss.count > 0 && openSurveyModal(cell.meetingId, e)}
+                                          >
+                                            📋 {ss.count}/{ss.total}
+                                          </Badge>
+                                        </Tooltip>
+                                      </Group>
+                                    </Group>
+
+                                    {/* Fila 2: participantes con popover */}
                                     <ParticipantPopover
                                       width={340}
                                       trigger={
-                                        <div style={{ marginTop: 6 }}>
+                                        <Stack gap={3}>
                                           {[asistente.id, ...cell.participants].map((pid) => {
                                             const info = pid === asistente.id ? asistente : participantsInfo[pid];
                                             const hasSurvey = (surveys[cell.meetingId] || []).some((r) => r.userId === pid);
-                                            const meetingDataForUser = meetings.find((m) => m.id === cell.meetingId);
                                             return (
-                                              <div key={pid} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-                                                <span
-                                                  style={{ fontSize: 13, color: hasSurvey ? "#2f9e44" : "#e03131", flexShrink: 0, cursor: hasSurvey ? "pointer" : "default" }}
-                                                  title={hasSurvey ? "Ver encuesta" : "Sin encuesta"}
-                                                  onClick={(e) => hasSurvey && openUserSurveyModal(cell.meetingId, pid, e)}
-                                                >
-                                                  {hasSurvey ? "✓" : "✗"}
-                                                </span>
-                                                <Tooltip label="Llenar encuesta" withArrow>
+                                              <Group key={pid} gap={4} wrap="nowrap" style={{ minWidth: 0 }}>
+                                                <Tooltip label={hasSurvey ? "Ver encuesta" : "Llenar encuesta"} withArrow>
                                                   <ActionIcon
-                                                    size="md"
-                                                    variant="subtle"
-                                                    color="violet"
-                                                    onClick={(e) => openFillSurveyModal(cell.meetingId, pid, meetingDataForUser, e)}
+                                                    size="xs"
+                                                    variant={hasSurvey ? "filled" : "light"}
+                                                    color={hasSurvey ? "green" : "gray"}
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      if (hasSurvey) openUserSurveyModal(cell.meetingId, pid, e);
+                                                      else openFillSurveyModal(cell.meetingId, pid, meetingDataForCell, e);
+                                                    }}
                                                   >
-                                                    <IconClipboardList size={18} />
+                                                    {hasSurvey ? <IconClipboardCheck size={11} /> : <IconClipboard size={11} />}
                                                   </ActionIcon>
                                                 </Tooltip>
-                                                <Text size="md" fw={600} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 280, color: "#1c7ed6", cursor: "pointer" }}>
-                                                  {info ? info.empresa : pid}
-                                                </Text>
-                                                {info && (
-                                                  <Text size="md" c="dimmed" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 160 }}>
-                                                    {info.nombre}
-                                                  </Text>
-                                                )}
-                                              </div>
+                                                <Tooltip
+                                                  label={info?.telefono ? `📞 ${info.telefono}${info.intencionLlamada ? `  ·  Intención: ${info.intencionLlamada}` : ""}` : "Sin teléfono"}
+                                                  withArrow multiline w={240}
+                                                >
+                                                  <ActionIcon size="xs" variant="subtle" color="blue" onClick={(e) => e.stopPropagation()}>
+                                                    <IconPhone size={11} />
+                                                  </ActionIcon>
+                                                </Tooltip>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                  <Text size="xs" fw={600} truncate style={{ color: "#1c7ed6" }}>{info ? info.empresa : pid}</Text>
+                                                  {info && <Text size="xs" c="dimmed" truncate>{info.nombre}</Text>}
+                                                </div>
+                                              </Group>
                                             );
                                           })}
-                                        </div>
+                                        </Stack>
                                       }
                                     >
                                       <div style={{ marginBottom: 10 }}>
@@ -1942,6 +2134,7 @@ const MatrixPage = () => {
                                         <Text size="sm" fw={600}>{asistente.empresa}</Text>
                                         <Text size="xs" c="dimmed">{asistente.nombre}</Text>
                                         <Text size="xs"><span style={{ color: "#6c6c6c" }}>Tel: </span>{asistente.telefono || <i>No registrado</i>}</Text>
+                                        <Text size="xs"><span style={{ color: "#6c6c6c" }}>Intención llamada: </span>{asistente.intencionLlamada || <i>No especificada</i>}</Text>
                                         <Text size="xs"><span style={{ color: "#6c6c6c" }}>Descripción: </span>{asistente.descripcion || <i>No especificada</i>}</Text>
                                         <Text size="xs"><span style={{ color: "#6c6c6c" }}>Necesidad: </span>{asistente.necesidad || <i>No especificada</i>}</Text>
                                       </div>
@@ -1956,71 +2149,86 @@ const MatrixPage = () => {
                                             <Text size="sm" fw={600}>{info.empresa}</Text>
                                             <Text size="xs" c="dimmed">{info.nombre}</Text>
                                             <Text size="xs"><span style={{ color: "#6c6c6c" }}>Tel: </span>{info.telefono || <i>No registrado</i>}</Text>
+                                            <Text size="xs"><span style={{ color: "#6c6c6c" }}>Intención llamada: </span>{info.intencionLlamada || <i>No especificada</i>}</Text>
                                             <Text size="xs"><span style={{ color: "#6c6c6c" }}>Descripción: </span>{info.descripcion || <i>No especificada</i>}</Text>
                                             <Text size="xs"><span style={{ color: "#6c6c6c" }}>Necesidad: </span>{info.necesidad || <i>No especificada</i>}</Text>
                                             {aff && (
                                               <div style={{ marginTop: 6, padding: "5px 8px", backgroundColor: "#e7f5ff", borderRadius: 4 }}>
                                                 <Text size="xs" fw={600} c="blue">Afinidad: {aff.score}%</Text>
-                                                {aff.reasons?.length > 0 && (
-                                                  <Text size="xs" c="dimmed" mt={2}>{aff.reasons.join(", ")}</Text>
-                                                )}
+                                                {aff.reasons?.length > 0 && <Text size="xs" c="dimmed" mt={2}>{aff.reasons.join(", ")}</Text>}
                                               </div>
                                             )}
                                           </div>
                                         );
                                       })}
                                     </ParticipantPopover>
-                                  </>
+
+                                    {/* Fila 3: checkbox realizada */}
+                                    <Checkbox
+                                      size="xs"
+                                      label="Realizada"
+                                      checked={!!cell.completed}
+                                      onChange={(e) => toggleMeetingCompleted(cell.meetingId, cell.completed, e)}
+                                      onClick={(e) => e.stopPropagation()}
+                                      color="green"
+                                    />
+
+                                    {/* Reuniones libres en este slot */}
+                                    {(() => {
+                                      const freeMeetings = meetings.filter((m) => {
+                                        if (!m.isExternal || m.status !== "accepted") return false;
+                                        if (!m.participants.includes(asistente.id)) return false;
+                                        const mStart = (m.timeSlot || "").split(" - ")[0].trim();
+                                        return mStart === slot && (!m.meetingDate || m.meetingDate === selectedDate);
+                                      });
+                                      if (freeMeetings.length === 0) return null;
+                                      return (
+                                        <FreeMeetingsList
+                                          freeMeetings={freeMeetings}
+                                          participantsInfo={participantsInfo}
+                                          getAffinityScore={getAffinityScore}
+                                          toggleMeetingCompleted={toggleMeetingCompleted}
+                                          surveys={surveys}
+                                          openSurveyModal={openSurveyModal}
+                                          openUserSurveyModal={openUserSurveyModal}
+                                          openFillSurveyModal={openFillSurveyModal}
+                                          getSurveyStatus={getSurveyStatus}
+                                          onCancelFreeMeeting={handleCancelFreeMeeting}
+                                          openEditModal={(fm) => setEditFreeMeetingModal({ opened: true, meeting: fm })}
+                                        />
+                                      );
+                                    })()}
+                                  </Stack>
                                 );
                               })() : (
-                                <StatusBadge status={cell.status} />
+                                <Stack gap={4}>
+                                  <StatusBadge status={cell.status} />
+                                  {(() => {
+                                    const freeMeetings = meetings.filter((m) => {
+                                      if (!m.isExternal || m.status !== "accepted") return false;
+                                      if (!m.participants.includes(asistente.id)) return false;
+                                      const mStart = (m.timeSlot || "").split(" - ")[0].trim();
+                                      return mStart === slot && (!m.meetingDate || m.meetingDate === selectedDate);
+                                    });
+                                    if (freeMeetings.length === 0) return null;
+                                    return (
+                                      <FreeMeetingsList
+                                        freeMeetings={freeMeetings}
+                                        participantsInfo={participantsInfo}
+                                        getAffinityScore={getAffinityScore}
+                                        toggleMeetingCompleted={toggleMeetingCompleted}
+                                        surveys={surveys}
+                                        openSurveyModal={openSurveyModal}
+                                        openUserSurveyModal={openUserSurveyModal}
+                                        openFillSurveyModal={openFillSurveyModal}
+                                        getSurveyStatus={getSurveyStatus}
+                                        onCancelFreeMeeting={handleCancelFreeMeeting}
+                                        openEditModal={(fm) => setEditFreeMeetingModal({ opened: true, meeting: fm })}
+                                      />
+                                    );
+                                  })()}
+                                </Stack>
                               )}
-                              {/* Reuniones libres en este slot */}
-                              {(() => {
-                                const freeMeetings = meetings.filter((m) => {
-                                  if (!m.isExternal || m.status !== "accepted") return false;
-                                  if (!m.participants.includes(asistente.id)) return false;
-                                  const mStart = (m.timeSlot || "").split(" - ")[0].trim();
-                                  return mStart === slot && (!m.meetingDate || m.meetingDate === selectedDate);
-                                });
-                                if (freeMeetings.length === 0) return null;
-                                return (
-                                  <div style={{ marginTop: 4 }}>
-                                    {freeMeetings.map((fm) => {
-                                      const partnerId = fm.participants.find((p) => p !== asistente.id);
-                                      const partner = participantsInfo[partnerId];
-                                      return (
-                                        <div key={fm.id} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 2 }}>
-                                          <Badge 
-                                            color="white" 
-                                            variant="dot" 
-                                            size="xs"
-                                            style={{ cursor: "pointer" }}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              const [startTime, endTime] = fm.timeSlot.split(" - ");
-                                              setEditModal({
-                                                opened: true,
-                                                meeting: fm,
-                                                slot: {
-                                                  tableNumber: fm.tableAssigned,
-                                                  startTime,
-                                                  endTime,
-                                                  id: agenda.find((s) => s.tableNumber === Number(fm.tableAssigned) && s.startTime === startTime)?.id || "",
-                                                },
-                                                lockedUserId: null,
-                                              });
-                                            }}
-                                          >Libre ✏️</Badge>
-                                          <Text size="xs" c="dimmed" style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                            {partner ? `${partner.empresa}` : partnerId}
-                                          </Text>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                );
-                              })()}
                             </Table.Td>
                           </Table.Tr>
                         );
@@ -2078,89 +2286,32 @@ const MatrixPage = () => {
         slotsDisponibles={slotsDisponiblesParaEdicion}
         getAffinity={getAffinityScore}
         companies={dashboard.companies || []}
-        onCreateFree={async (u1, u2, checkDups, onDupFound, onDone) => {
-          const meetingDate = editModal.slot?.date || selectedDate;
-          if (checkDups) {
-            const { getDocs: gd, query: q2, collection: col, where: wh } = await import("firebase/firestore");
-            const snap = await getDocs(query(collection(db, "events", eventId, "meetings"), where("status", "==", "accepted"), where("participants", "array-contains", u1)));
-            const met = snap.docs.some((d) => { const m = d.data(); const sd = !meetingDate || !m.meetingDate || m.meetingDate === meetingDate; return sd && (m.participants || []).includes(u2); });
-            if (met) { onDupFound(); return; }
-          }
-          try {
-            await addDoc(collection(db, "events", eventId, "meetings"), {
-              eventId, requesterId: u1, receiverId: u2,
-              participants: [u1, u2], status: "accepted", isExternal: true,
-              timeSlot: editModal.meeting?.timeSlot || "—",
-              tableAssigned: editModal.meeting?.tableAssigned || "",
-              meetingDate, motivoMatch: "Libre",
-              razonMatch: "Reunión libre creada desde la matriz",
-              isNotificated: false, createdAt: new Date(),
-            });
-            setGlobalMessage("Reunión libre creada.");
-          } catch (e) { console.error(e); }
-          if (onDone) onDone();
-        }}
-        freeMeetingsInSlot={editModal.meeting ? meetings.filter((m) => {
-          if (!m.isExternal || m.status !== "accepted") return false;
-          const ms = (m.timeSlot || "").split(" - ")[0].trim();
-          const es = (editModal.meeting?.timeSlot || "").split(" - ")[0].trim();
-          return ms === es && (!m.meetingDate || m.meetingDate === selectedDate);
-        }) : []}
       />
 
-      {/* Modal reunión libre */}
-      <Modal
+      <EditFreeMeetingModal
+        opened={editFreeMeetingModal.opened}
+        onClose={() => setEditFreeMeetingModal({ opened: false, meeting: null })}
+        meeting={editFreeMeetingModal.meeting}
+        assistants={asistentes}
+        onUpdate={handleUpdateFreeMeeting}
+        onCancel={handleCancelFreeMeetingById}
+        loading={creatingMeeting}
+        participantsInfo={participantsInfo}
+        getAffinity={getAffinityScore}
+      />
+
+      <CreateFreeMeetingModal
         opened={freeMeetingModal.opened}
-        onClose={() => { setFreeMeetingModal({ opened: false, asistente: null, timeSlot: "", meetingDate: null }); setFreePartner(""); }}
-        title="Crear reunión libre"
-        size="sm"
-        centered
-      >
-        <Stack gap="md">
-          <Text size="sm" c="dimmed">
-            Esta reunión no reserva ningún slot de agenda.
-          </Text>
-          {freeMeetingModal.asistente && (
-            <Paper withBorder p="sm" radius="md">
-              <Text size="xs" c="dimmed">Participante fijo</Text>
-              <Text size="sm" fw={600}>{freeMeetingModal.asistente.empresa}</Text>
-              <Text size="xs" c="dimmed">{freeMeetingModal.asistente.nombre}</Text>
-              {freeMeetingModal.timeSlot && <Text size="xs" mt={2}>🕐 {freeMeetingModal.timeSlot}</Text>}
-            </Paper>
-          )}
-          <Select
-            label="Segundo participante"
-            placeholder="Buscar asistente..."
-            data={asistentes
-              .filter((a) => a.id !== freeMeetingModal.asistente?.id)
-              .map((a) => ({ value: a.id, label: `${a.empresa} — ${a.nombre}` }))}
-            value={freePartner}
-            onChange={(v) => setFreePartner(v || "")}
-            searchable
-            clearable
-          />
-          <Checkbox
-            label="Verificar duplicados"
-            description="Si está activo, no permite crear la reunión si los asistentes ya se reunieron ese día"
-            checked={freeCheckDuplicates}
-            onChange={(e) => setFreeCheckDuplicates(e.currentTarget.checked)}
-            color="orange"
-          />
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => { setFreeMeetingModal({ opened: false, asistente: null, timeSlot: "", meetingDate: null }); setFreePartner(""); }}>
-              Cancelar
-            </Button>
-            <Button
-              color="teal"
-              loading={creatingFree}
-              disabled={!freePartner}
-              onClick={handleCreateFreeMeeting}
-            >
-              Crear reunión libre
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+        onClose={() => setFreeMeetingModal({ opened: false, asistente: null, timeSlot: "", meetingDate: null, tableNumber: null })}
+        fixedAttendee={freeMeetingModal.asistente}
+        timeSlot={freeMeetingModal.timeSlot}
+        assistants={asistentes}
+        getAffinity={getAffinityScore}
+        onCreate={handleCreateFreeMeeting}
+        loading={creatingFree}
+        timeSlots={timeSlots}
+        meetingDuration={config?.config?.meetingDuration || 30}
+      />
 
       {globalMessage && (
         <Alert

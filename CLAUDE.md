@@ -48,13 +48,14 @@ Defaults defined in `DEFAULT_POLICIES` in `src/pages/dashboard/types.ts`.
 
 - `src/firebase/firebaseConfig.js` — Firebase init, exports `db`, `auth`, `storage`, `messaging`
 - `src/context/UserContext.jsx` — Auth state (anonymous auth + manual login by cedula/email), exports `UserProvider` and `UserContext`
+- `src/context/AdminAuthContext.tsx` — Separate admin auth layer (Firebase email/password). Exports `AdminAuthProvider`, `useAdminAuth`. Checks `admins/{uid}` collection to verify admin status and `isSuperAdmin` flag.
 - `src/utils/companyStorage.ts` — Logo upload to Firebase Storage
 - `src/utils/analytics.ts` — Centralized GA4 event tracking (typed `AnalyticsEvent` union, used via `TrackedButton` and direct `trackEvent()` calls)
 - `src/utils/whatsappService.ts` — Client-side WhatsApp notification sender (supports v1/v2 API controlled by `whatsappApiVersion` policy)
 - `src/hooks/usePageTracking.ts` — GA4 page view tracking on route changes
-- `src/pages/admin/` — Admin panel: event management, attendees, meetings, policies config
-- `src/pages/dashboard/` — Attendee dashboard with discovery views + activity tabs
-- `src/components/` — Shared components (UserProfile, DashboardHeader, NotificationMenu, TrackedButton)
+- `src/pages/admin/` — Admin panel: event management, attendees, meetings, policies config. `AdminLogin.tsx` / `AdminRegister.tsx` for admin auth. `AdminsManagementModal.tsx` for superadmin to approve/reject admin requests.
+- `src/pages/dashboard/` — Attendee dashboard with discovery views + activity tabs. `AssistantsTab.tsx` for AI assistant view.
+- `src/components/` — Shared components (UserProfile, DashboardHeader, NotificationMenu, TrackedButton, ProtectedAdminRoute)
 
 ### Dashboard Architecture
 
@@ -91,7 +92,13 @@ Meeting requests from CompaniesView/ProductsView pass context (productId, compan
 - Optional company logo upload to Firebase Storage (`companies/{eventId}/{nitNorm}/logo.{ext}`)
 - On submit: creates/updates company doc + creates user + associates user↔company via companyId
 
+### Admin Authentication
+
+Admin routes are protected by `ProtectedAdminRoute`, which uses `useAdminAuth()` from `AdminAuthContext`. Admin users are stored in the `admins` Firestore collection with an `isSuperAdmin` boolean. New admin accounts require superadmin approval via `AdminsManagementModal.tsx` (pending → approved/rejected workflow).
+
 ### Routing (App.jsx)
+
+All admin routes (except `/admin/login` and `/admin/register`) are wrapped in `ProtectedAdminRoute`. Landing page loads eagerly; all other routes use `React.lazy`.
 
 | Route | Component | Purpose |
 |-------|-----------|---------|
@@ -100,19 +107,23 @@ Meeting requests from CompaniesView/ProductsView pass context (productId, compan
 | `/dashboard` | Dashboard | Attendee dashboard (no event filter) |
 | `/dashboard/:eventId` | Dashboard | Event-specific dashboard |
 | `/dashboard/:eventId/company/:companyNit` | CompanyLanding | Public company landing page |
-| `/admin` | AdminPanel | List all events |
-| `/admin/event/:eventId` | EventAdmin | Event management |
-| `/admin/event/:eventId/agenda` | AgendaAdminPanel | Schedule management |
-| `/admin/event/:eventId/match` | EventMatchPage | Event matching |
-| `/admin/event/:eventId/import-meetings` | ImportMeetingsFromExcelPage | Bulk meeting import |
-| `/admin/surveys` | MeetingSurveys | Survey responses |
+| `/dashboard/:eventId/my-products` | MyProductsPage | User's products page |
+| `/dashboard/:eventId/my-company` | MyCompanyPage | User's company page |
+| `/admin/login` | AdminLogin | Admin login (unprotected) |
+| `/admin/register` | AdminRegister | Admin registration request (unprotected) |
+| `/admin` | AdminPanel | List all events (protected) |
+| `/admin/event/:eventId` | EventAdmin | Event management (protected) |
+| `/admin/event/:eventId/agenda` | AgendaAdminPanel | Schedule management (protected) |
+| `/admin/event/:eventId/match` | EventMatchPage | Event matching (protected) |
+| `/admin/event/:eventId/import-meetings` | ImportMeetingsFromExcelPage | Bulk meeting import (protected) |
+| `/admin/surveys` | MeetingSurveys | Survey responses (protected) |
 | `/matrix/:eventId` | MatrixPage | Matrix view |
 | `/phonesadmin` | PhonesAdminPage | Phone management |
 | `/meeting-response/:eventId/:meetingId/:action` | MeetingAutoResponse | Auto-response handler |
 
 ### Cloud Functions (`functions/`)
 
-- `notifyMeetingsScheduled`: Runs every 5 minutes (America/Bogota timezone), sends WhatsApp/SMS notifications for meetings starting within 5 minutes via Onurix API.
+- `notifyMeetingsScheduled`: Runs every 5 minutes (America/Bogota timezone). **Currently hardcoded to a single `eventId`** — check `functions/index.js` before deploying to a new event. Requires secrets: `WHATSAPP_API_V1`, `WHATSAPP_API_V2`, `WHATSAPP_ACCOUNT_ID`.
 - `aiProxy`: HTTP function for chatbot backend. Uses Google Gemini API for intent classification (greeting, search_query, general_question, meeting_related) and context-aware search across attendees, products, companies. Requires secrets: `GEMINI_API_KEY`, `GEMINI_API_URL`, `DEFAULT_AI_MODEL`.
 - Deploy: `firebase deploy --only functions` (Node 22)
 
@@ -148,7 +159,7 @@ Firebase config via Vite env vars (prefix `VITE_`):
 - ESLint flat config (`eslint.config.js`) only targets `**/*.{js,jsx}` — TypeScript files are not linted
 - Types defined centrally in `src/pages/dashboard/types.ts`
 - Custom Mantine theme with Barlow font family (`src/index.jsx`)
-- Provider order: `UserProvider` > `BrowserRouter` > `MantineProvider` > `ModalsProvider` > `Notifications` > `App`
+- Provider order: `UserProvider` > `BrowserRouter` > `AdminAuthProvider` > `MantineProvider` > `ModalsProvider` > `Notifications` > `App`
 - StrictMode is disabled
 
 ## Extending the System
