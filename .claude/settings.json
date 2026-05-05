@@ -13,7 +13,8 @@
       "mcp__plugin_claude-mem_mcp-search__smart_outline",
       "PowerShell(Get-ChildItem -Path \"d:\\\\gen.iality\\\\Proyectos\\\\my-meetings-app\\\\src\\\\pages\\\\admin\" | Where-Object { $_.Extension -match '\\\\.jsx$|\\\\.tsx$' } | Select-Object Name | Sort-Object Name)",
       "Bash(Get-ChildItem -Path \"d:\\\\gen.iality\\\\Proyectos\\\\my-meetings-app\" -Recurse -Filter \"*atrix*\" -ErrorAction SilentlyContinue)",
-      "Bash(Select-Object -ExpandProperty FullName)"
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(npx eslint *)"
     ],
     "additionalDirectories": [
       "d:\\gen.iality\\Proyectos\\agenda-optimizer-api\\app",

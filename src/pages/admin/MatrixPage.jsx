@@ -58,6 +58,7 @@ import {
   IconPencil,
   IconPlus,
   IconInfoCircle,
+  IconCopy,
 } from "@tabler/icons-react";
 
 // ----------- UTILIDADES -----------
@@ -282,12 +283,7 @@ function FreeMeetingsList({
                   width={340}
                   trigger={
                     <Tooltip label="Ver información de participantes" withArrow>
-                      <ActionIcon
-                        size="xs"
-                        variant="subtle"
-                        color="gray"
-                        onClick={(e) => e.stopPropagation()}
-                      >
+                      <ActionIcon size="xs" variant="subtle" color="gray">
                         <IconInfoCircle size={13} />
                       </ActionIcon>
                     </Tooltip>
@@ -388,25 +384,26 @@ function FreeMeetingsList({
                         )}
                       </ActionIcon>
                     </Tooltip>
-                    <Tooltip
-                      label={
-                        info?.telefono
-                          ? `📞 ${info.telefono}${info.intencionLlamada ? `  ·  Intención: ${info.intencionLlamada}` : ""}`
-                          : "Sin teléfono"
-                      }
-                      withArrow
-                      multiline
-                      w={240}
-                    >
-                      <ActionIcon
-                        size="xs"
-                        variant="subtle"
-                        color="blue"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <IconPhone size={11} />
-                      </ActionIcon>
-                    </Tooltip>
+                    {info?.telefono ? (
+                      <>
+                        <Tooltip label={`Llamar: ${info.telefono}${info.intencionLlamada ? ` · Intención: ${info.intencionLlamada}` : ""}`} withArrow multiline w={240}>
+                          <ActionIcon size="xs" variant="subtle" color="blue" onClick={(e) => { e.stopPropagation(); window.open(`tel:${info.telefono}`); }}>
+                            <IconPhone size={11} />
+                          </ActionIcon>
+                        </Tooltip>
+                        <Tooltip label="Copiar número" withArrow>
+                          <ActionIcon size="xs" variant="subtle" color="gray" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(info.telefono); }}>
+                            <IconCopy size={11} />
+                          </ActionIcon>
+                        </Tooltip>
+                      </>
+                    ) : (
+                      <Tooltip label="Sin teléfono" withArrow>
+                        <ActionIcon size="xs" variant="subtle" color="gray" disabled>
+                          <IconPhone size={11} />
+                        </ActionIcon>
+                      </Tooltip>
+                    )}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <Text size="xs" fw={600} c="teal" truncate>
                         {info ? info.empresa : pid}
@@ -520,7 +517,7 @@ const MatrixPage = () => {
   const [creatingMeeting, setCreatingMeeting] = useState(false);
   const [globalMessage, setGlobalMessage] = useState("");
   const [userSearch, setUserSearch] = useState("");
-  const [pendingMeetings, setPendingMeetings] = useState([]);
+
   const [selectedDate, setSelectedDate] = useState(null);
   const [affinityScores, setAffinityScores] = useState({});
   // surveys: { [meetingId]: SurveyResponse[] }
@@ -599,11 +596,6 @@ const MatrixPage = () => {
         query(collection(db, "users"), where("eventId", "==", eventId)),
       );
       const loaded = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      console.log(
-        "[MatrixPage] Asistentes cargados:",
-        loaded.length,
-        loaded.map((a) => a.id),
-      );
       setAsistentes(loaded);
     })();
   }, [eventId]);
@@ -616,17 +608,11 @@ const MatrixPage = () => {
     setParticipantsInfo(users);
   }, [asistentes]);
 
-  // Solicitudes pendientes
-  useEffect(() => {
-    if (!eventId) return;
-    const q = query(
-      collection(db, "events", eventId, "meetings"),
-      where("status", "==", "pending"),
-    );
-    return onSnapshot(q, (snap) => {
-      setPendingMeetings(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
-  }, [eventId]);
+  // pendingMeetings derivado del listener principal (evita segundo onSnapshot)
+  const pendingMeetings = useMemo(
+    () => meetings.filter((m) => m.status === "pending"),
+    [meetings],
+  );
 
   // Cargar scores de afinidad de todos los usuarios
   useEffect(() => {
@@ -659,9 +645,6 @@ const MatrixPage = () => {
       }
 
       setAffinityScores(scores);
-      console.log(
-        `Loaded affinity scores for ${Object.keys(scores).length} user pairs`,
-      );
     };
 
     loadAffinityScores();
@@ -724,6 +707,12 @@ const MatrixPage = () => {
       dayConfig.breakBlocks || [],
     );
   }, [config, selectedDate, agenda]);
+
+  // Lookup O(1) para índice de timeSlot — evita indexOf en cada render de fila
+  const timeSlotIndexMap = useMemo(
+    () => Object.fromEntries(timeSlots.map((t, i) => [t, i])),
+    [timeSlots],
+  );
 
   // Genera lista de filas para la tabla: slots reales + filas de descanso intercaladas
   const slotsWithBreaks = useMemo(() => {
@@ -1812,17 +1801,17 @@ const MatrixPage = () => {
             }))}
             value={selectedDate}
             onChange={setSelectedDate}
-            style={{ width: 250 }}
+            style={{ width: "100%", maxWidth: 280 }}
           />
         </Flex>
       )}
 
-      <Flex justify="center" mb="md">
+      <Flex justify="center" mb="md" px="md">
         <TextInput
           placeholder="Buscar asistente por nombre, empresa o teléfono"
           value={userSearch}
           onChange={(e) => setUserSearch(e.currentTarget.value)}
-          style={{ width: 420, maxWidth: "100%" }}
+          style={{ width: "100%", maxWidth: 520 }}
           clearable
         />
       </Flex>
@@ -1856,10 +1845,9 @@ const MatrixPage = () => {
                   shadow="md"
                   radius="lg"
                   style={{
-                    minWidth: 480,
+                    minWidth: "min(100%, 480px)",
                     maxWidth: 680,
                     width: "100%",
-                    margin: "0 16px 16px 0",
                     background: "#f9fafb",
                     border: "1px solid #e5e7eb",
                     boxShadow: "0 2px 12px #0001",
@@ -1871,12 +1859,13 @@ const MatrixPage = () => {
                     </Title>
                   </Group>
                   <Divider mb="sm" />
+                  <ScrollArea>
                   <Table
                     striped
                     highlightOnHover
-                    horizontalSpacing="md"
-                    verticalSpacing={10}
-                    style={{ borderRadius: 12, overflow: "hidden" }}
+                    horizontalSpacing="sm"
+                    verticalSpacing={8}
+                    style={{ borderRadius: 12, overflow: "hidden", minWidth: 320 }}
                   >
                     <Table.Thead>
                       <Table.Tr>
@@ -1927,7 +1916,7 @@ const MatrixPage = () => {
                             </Table.Tr>
                           );
                         }
-                        const si = timeSlots.indexOf(row.time);
+                        const si = timeSlotIndexMap[row.time] ?? -1;
                         const cell =
                           si >= 0
                             ? table[si]
@@ -2146,9 +2135,6 @@ const MatrixPage = () => {
                                                       size="xs"
                                                       variant="subtle"
                                                       color="gray"
-                                                      onClick={(e) =>
-                                                        e.stopPropagation()
-                                                      }
                                                     >
                                                       <IconInfoCircle
                                                         size={13}
@@ -2357,27 +2343,26 @@ const MatrixPage = () => {
                                                         )}
                                                       </ActionIcon>
                                                     </Tooltip>
-                                                    <Tooltip
-                                                      label={
-                                                        info?.telefono
-                                                          ? `📞 ${info.telefono}${info.intencionLlamada ? `  ·  Intención: ${info.intencionLlamada}` : ""}`
-                                                          : "Sin teléfono"
-                                                      }
-                                                      withArrow
-                                                      multiline
-                                                      w={240}
-                                                    >
-                                                      <ActionIcon
-                                                        size="xs"
-                                                        variant="subtle"
-                                                        color="blue"
-                                                        onClick={(e) =>
-                                                          e.stopPropagation()
-                                                        }
-                                                      >
-                                                        <IconPhone size={11} />
-                                                      </ActionIcon>
-                                                    </Tooltip>
+                                                    {info?.telefono ? (
+                                                      <>
+                                                        <Tooltip label={`Llamar: ${info.telefono}${info.intencionLlamada ? ` · Intención: ${info.intencionLlamada}` : ""}`} withArrow multiline w={240}>
+                                                          <ActionIcon size="xs" variant="subtle" color="blue" onClick={(e) => { e.stopPropagation(); window.open(`tel:${info.telefono}`); }}>
+                                                            <IconPhone size={11} />
+                                                          </ActionIcon>
+                                                        </Tooltip>
+                                                        <Tooltip label="Copiar número" withArrow>
+                                                          <ActionIcon size="xs" variant="subtle" color="gray" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(info.telefono); }}>
+                                                            <IconCopy size={11} />
+                                                          </ActionIcon>
+                                                        </Tooltip>
+                                                      </>
+                                                    ) : (
+                                                      <Tooltip label="Sin teléfono" withArrow>
+                                                        <ActionIcon size="xs" variant="subtle" color="gray" disabled>
+                                                          <IconPhone size={11} />
+                                                        </ActionIcon>
+                                                      </Tooltip>
+                                                    )}
                                                     <div
                                                       style={{
                                                         flex: 1,
@@ -2536,6 +2521,7 @@ const MatrixPage = () => {
                       })}
                     </Table.Tbody>
                   </Table>
+                  </ScrollArea>
                 </Card>
               ))}
             </Flex>
@@ -2567,10 +2553,9 @@ const MatrixPage = () => {
                   shadow="md"
                   radius="lg"
                   style={{
-                    minWidth: 480,
+                    minWidth: "min(100%, 480px)",
                     maxWidth: 680,
                     width: "100%",
-                    margin: "0 16px 16px 0",
                     background: "#f9fafb",
                     border: "1px solid #e5e7eb",
                     boxShadow: "0 2px 12px #0001",
@@ -2652,12 +2637,13 @@ const MatrixPage = () => {
                   </Menu>
 
                   <Divider mb="sm" />
+                  <ScrollArea>
                   <Table
                     striped
                     highlightOnHover
-                    horizontalSpacing="md"
-                    verticalSpacing={10}
-                    style={{ borderRadius: 12, overflow: "hidden" }}
+                    horizontalSpacing="sm"
+                    verticalSpacing={8}
+                    style={{ borderRadius: 12, overflow: "hidden", minWidth: 320 }}
                   >
                     <Table.Thead>
                       <Table.Tr>
@@ -2708,7 +2694,7 @@ const MatrixPage = () => {
                             </Table.Tr>
                           );
                         }
-                        const i = timeSlots.indexOf(rowItem.time);
+                        const i = timeSlotIndexMap[rowItem.time] ?? -1;
                         const slot = rowItem.time;
                         const cell = i >= 0 ? row[i] : { status: "available" };
                         const slotEndTime = (() => {
@@ -2923,9 +2909,6 @@ const MatrixPage = () => {
                                                       size="xs"
                                                       variant="subtle"
                                                       color="gray"
-                                                      onClick={(e) =>
-                                                        e.stopPropagation()
-                                                      }
                                                     >
                                                       <IconInfoCircle
                                                         size={13}
@@ -3201,27 +3184,26 @@ const MatrixPage = () => {
                                                       )}
                                                     </ActionIcon>
                                                   </Tooltip>
-                                                  <Tooltip
-                                                    label={
-                                                      info?.telefono
-                                                        ? `📞 ${info.telefono}${info.intencionLlamada ? `  ·  Intención: ${info.intencionLlamada}` : ""}`
-                                                        : "Sin teléfono"
-                                                    }
-                                                    withArrow
-                                                    multiline
-                                                    w={240}
-                                                  >
-                                                    <ActionIcon
-                                                      size="xs"
-                                                      variant="subtle"
-                                                      color="blue"
-                                                      onClick={(e) =>
-                                                        e.stopPropagation()
-                                                      }
-                                                    >
-                                                      <IconPhone size={11} />
-                                                    </ActionIcon>
-                                                  </Tooltip>
+                                                  {info?.telefono ? (
+                                                    <>
+                                                      <Tooltip label={`Llamar: ${info.telefono}${info.intencionLlamada ? ` · Intención: ${info.intencionLlamada}` : ""}`} withArrow multiline w={240}>
+                                                        <ActionIcon size="xs" variant="subtle" color="blue" onClick={(e) => { e.stopPropagation(); window.open(`tel:${info.telefono}`); }}>
+                                                          <IconPhone size={11} />
+                                                        </ActionIcon>
+                                                      </Tooltip>
+                                                      <Tooltip label="Copiar número" withArrow>
+                                                        <ActionIcon size="xs" variant="subtle" color="gray" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(info.telefono); }}>
+                                                          <IconCopy size={11} />
+                                                        </ActionIcon>
+                                                      </Tooltip>
+                                                    </>
+                                                  ) : (
+                                                    <Tooltip label="Sin teléfono" withArrow>
+                                                      <ActionIcon size="xs" variant="subtle" color="gray" disabled>
+                                                        <IconPhone size={11} />
+                                                      </ActionIcon>
+                                                    </Tooltip>
+                                                  )}
                                                   <div
                                                     style={{
                                                       flex: 1,
@@ -3404,6 +3386,7 @@ const MatrixPage = () => {
                       })}
                     </Table.Tbody>
                   </Table>
+                  </ScrollArea>
                 </Card>
               ))}
             </Flex>
