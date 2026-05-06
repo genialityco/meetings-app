@@ -463,7 +463,7 @@ const DashboardHeader = ({
               fit="contain"
             />
           ) : null}
-          {!isMobile && (
+          {!isMobile && !(dashboardLogo || eventImage) && (
             <Title order={5} lineClamp={1}>
               {eventName || "Dashboard"}
             </Title>
