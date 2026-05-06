@@ -1269,10 +1269,18 @@ const Landing = () => {
                     </Box>
 
                     {/* Info */}
-                    <Stack gap={4} ta="center">
-                      <Title order={2} style={{ lineHeight: 1.05 }}>
-                        {event.eventName || "Encuentro de afiliados"}
-                      </Title>
+                    <Stack gap={4} ta="center" align="center">
+                      {event.config?.landingTitleType === 'image' && event.config?.landingTitleImage ? (
+                        <img 
+                          src={event.config.landingTitleImage} 
+                          alt={event.eventName || "Evento"} 
+                          style={{ maxWidth: "100%", maxHeight: 100, objectFit: "contain", marginBottom: 8 }} 
+                        />
+                      ) : (
+                        <Title order={2} style={{ lineHeight: 1.05 }}>
+                          {event.eventName || "Encuentro de afiliados"}
+                        </Title>
+                      )}
 
                       {/* Mostrar fechas del evento (multi-día o single) */}
                       {event?.config?.eventDates && event.config.eventDates.length > 0 ? (
@@ -1670,11 +1678,19 @@ const Landing = () => {
                             justifyContent: "center",
                           }}
                         >
-                          <Title order={1} style={{ lineHeight: 1.05 }}>
-                            {event.eventName || "Encuentro de afiliados"}
-                          </Title>
-
                           <Stack gap={4}>
+                            {event.config?.landingTitleType === 'image' && event.config?.landingTitleImage ? (
+                              <img 
+                                src={event.config.landingTitleImage} 
+                                alt={event.eventName || "Evento"} 
+                                style={{ maxWidth: "100%", maxHeight: 120, objectFit: "contain", marginBottom: 8 }} 
+                              />
+                            ) : (
+                              <Title order={1} style={{ lineHeight: 1.05 }}>
+                                {event.eventName || "Encuentro de afiliados"}
+                              </Title>
+                            )}
+
                             {/* Mostrar fechas del evento (multi-día o single) */}
                             {event?.config?.eventDates && event.config.eventDates.length > 0 ? (
                               <Stack gap="xs">

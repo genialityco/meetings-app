@@ -11,6 +11,7 @@ import {
   Group,
   Divider,
   ColorInput,
+  SegmentedControl,
 } from "@mantine/core";
 import { doc, setDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -75,6 +76,9 @@ const EditEventConfigModal = ({
   const [eventLocation, setEventLocation] = useState(event.config?.eventLocation || "");
   const [eventImageUrl, setEventImageUrl] = useState(event.eventImage || "");
   const [eventImageFile, setEventImageFile] = useState(null);
+  const [landingTitleType, setLandingTitleType] = useState(event.config?.landingTitleType || "text");
+  const [landingTitleImageUrl, setLandingTitleImageUrl] = useState(event.config?.landingTitleImage || "");
+  const [landingTitleImageFile, setLandingTitleImageFile] = useState(null);
   const [backgroundImageUrl, setBackgroundImageUrl] = useState(event.backgroundImage || "");
   const [backgroundMobileImageUrl, setBackgroundMobileImageUrl] = useState(event.backgroundMobileImage || "");
   const [backgroundImageFile, setBackgroundImageFile] = useState(null);
@@ -117,6 +121,9 @@ const EditEventConfigModal = ({
   };
   const handleBackgroundFileChange = (e) => {
     if (e.target.files && e.target.files[0]) setBackgroundImageFile(e.target.files[0]);
+  };
+  const handleLandingTitleImageFileChange = (e) => {
+    if (e.target.files && e.target.files[0]) setLandingTitleImageFile(e.target.files[0]);
   };
   const handleBackgroundMobileFileChange = (e) => {
     if (e.target.files && e.target.files[0]) setBackgroundMobileImageFile(e.target.files[0]);
@@ -210,6 +217,7 @@ const EditEventConfigModal = ({
   // ------ GUARDADO ------
   const saveConfig = async () => {
     let finalEventImage = eventImageUrl;
+    let finalLandingTitleImage = landingTitleImageUrl;
     let finalBackgroundImage = backgroundImageUrl;
     let finalBackgroundMobileImage = backgroundMobileImageUrl;
     let finalDashboardLogo = dashboardLogoUrl;
@@ -217,6 +225,7 @@ const EditEventConfigModal = ({
 
     try {
       if (eventImageFile) finalEventImage = await uploadImage(eventImageFile);
+      if (landingTitleImageFile) finalLandingTitleImage = await uploadImage(landingTitleImageFile);
       if (backgroundImageFile) finalBackgroundImage = await uploadImage(backgroundImageFile);
       if (backgroundMobileImageFile) finalBackgroundMobileImage = await uploadImage(backgroundMobileImageFile);
       if (dashboardLogoFile) finalDashboardLogo = await uploadImage(dashboardLogoFile);
@@ -279,6 +288,8 @@ const EditEventConfigModal = ({
       dailyConfig, // NUEVO: configuración específica por día
       eventLocation,
       primaryColor,
+      landingTitleType,
+      landingTitleImage: finalLandingTitleImage,
     };
 
     try {
@@ -471,6 +482,27 @@ const EditEventConfigModal = ({
           format="hex"
           swatches={['#228be6','#e64980','#be4bdb','#7950f2','#4c6ef5','#15aabf','#12b886','#40c057','#fab005','#fd7e14','#fa5252']}
         />
+
+        <Divider label="Título de la Landing Page" my="sm" />
+        <Text size="sm" fw={500} mb={4}>Tipo de título en Landing</Text>
+        <SegmentedControl
+          value={landingTitleType}
+          onChange={setLandingTitleType}
+          data={[
+            { label: 'Texto', value: 'text' },
+            { label: 'Imagen', value: 'image' },
+          ]}
+        />
+        {landingTitleType === 'image' && (
+          <>
+            <TextInput
+              label="URL de la imagen del título"
+              value={landingTitleImageUrl}
+              onChange={(e) => setLandingTitleImageUrl(e.target.value)}
+            />
+            <input type="file" accept="image/*" onChange={handleLandingTitleImageFileChange} style={{ marginTop: 8, marginBottom: 12 }} />
+          </>
+        )}
 
         <Divider label="Imágenes del evento" my="sm" />
         <TextInput
