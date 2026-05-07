@@ -3484,16 +3484,12 @@ export const generateOptimalMatches = onRequest(
 async function sendWhatsAppMessage(apiVersion, phone, message, metadata = {}) {
   try {
     if (apiVersion === "v2") {
-      // Limpiar las URLs quitando el primer slash
-      const cleanAcceptUrl = metadata.acceptUrl 
-        ? metadata.acceptUrl.replace(/^\//, '') 
-        : "";
-      const cleanCancelUrl = metadata.cancelUrl 
-        ? metadata.cancelUrl.replace(/^\//, '') 
-        : "";
+
+      const cleanAcceptUrl = metadata.acceptUrl || "";
+      const cleanCancelUrl = metadata.cancelUrl || "";
 
       // Limpiar el mensaje para evitar errores con newlines/tabs en la plantilla V2
-      const rawMessage = metadata.contextNote || message || "Sin mensaje adicional";
+      const rawMessage = metadata.contextNote || "Hola";
       const cleanMessage = String(rawMessage)
         .replace(/[\r\n\t]+/g, " ")
         .replace(/\s{2,}/g, " ")

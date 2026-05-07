@@ -89,10 +89,10 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
       // Limpiar las URLs quitando el primer slash
       const cleanAcceptUrl = metadata.acceptUrl 
         ? metadata.acceptUrl.replace(/^\//, '') 
-        : " ";
+        : "dashboard";
       const cleanCancelUrl = metadata.cancelUrl 
         ? metadata.cancelUrl.replace(/^\//, '') 
-        : " ";
+        : "dashboard";
 
       // Limpiar el mensaje para evitar errores con newlines/tabs en la plantilla V2
       const cleanMessage = (message || "Sin mensaje adicional")

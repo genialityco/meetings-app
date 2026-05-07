@@ -49,6 +49,8 @@ import EventPoliciesModal from "./EventPoliciesModal";
 import ConfigureSurveyModal from "./ConfigureSurveyModal";
 import ExternalMeetingModal from "./ExternalMeetingModal";
 
+import SendWaRemindersModal from "./SendWaRemindersModal";
+
 const EventAdmin = () => {
   const { eventId } = useParams();
   const navigate = useNavigate();
@@ -100,6 +102,7 @@ const EventAdmin = () => {
     rechazadas: 0,
   });
   const [meetingsCountLoading, setMeetingsCountLoading] = useState(false);
+  const [waRemindersModalOpened, setWaRemindersModalOpened] = useState(false);
 
   useEffect(() => {
     fetchEvent();
@@ -1323,6 +1326,14 @@ const EventAdmin = () => {
               </Button>
 
               <Button
+                onClick={() => setWaRemindersModalOpened(true)}
+                variant="light"
+                color="green"
+              >
+                Recordatorios WhatsApp
+              </Button>
+
+              <Button
                 onClick={() => setConfigureFieldsModalOpened(true)}
                 loading={actionLoading}
                 disabled={actionLoading}
@@ -2089,6 +2100,13 @@ const EventAdmin = () => {
           )}
         </Stack>
       </Modal>
+
+      {/* Modal de recordatorios WhatsApp */}
+      <SendWaRemindersModal
+        opened={waRemindersModalOpened}
+        onClose={() => setWaRemindersModalOpened(false)}
+        event={event}
+      />
 
     </Container>
   );
