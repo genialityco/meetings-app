@@ -109,7 +109,7 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
         requesterPosition: metadata.requesterPosition || "Cargo",
         requesterEmail: metadata.requesterEmail || "Email",
         requesterPhone: metadata.requesterPhone || "Telefono",
-        message: message || " ", // Usar el message que se pasó (que ya viene con contextNote si aplica)
+        message: message || "Mensaje", // Usar el message que se pasó (que ya viene con contextNote si aplica)
         acceptUrl: cleanAcceptUrl,
         cancelUrl: cleanCancelUrl,
       };
