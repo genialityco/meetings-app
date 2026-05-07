@@ -557,20 +557,26 @@ export function useDashboardData(eventId?: string) {
         });
 
       setAssistants(list);
-      setFilteredAssistants(list);
     });
   }, [uid, eventId]);
 
   // 5. Filtro de asistentes por searchTerm y showOnlyToday
   // Filtrar asistentes usando todos los campos visibles en formFields
   useEffect(() => {
-    const term = searchTerm.toLowerCase();
-    let filtered = assistants.filter((a) =>
-      formFields.some((f) => {
+    const term = searchTerm.toLowerCase().trim();
+    let filtered = assistants.filter((a) => {
+      if (!term) return true;
+      // Buscar siempre en campos clave aunque no estén en formFields
+      const inKeyFields =
+        (a.empresa ?? "").toString().toLowerCase().includes(term) ||
+        (a.nombre ?? "").toString().toLowerCase().includes(term) ||
+        (a.cargo ?? "").toString().toLowerCase().includes(term);
+      const inFormFields = formFields.some((f) => {
         const value = (a[f.name] ?? "").toString().toLowerCase();
         return value.includes(term);
-      }),
-    );
+      });
+      return inKeyFields || inFormFields;
+    });
     // (puedes mantener el filtro por interés si quieres)
     if (interestFilter) {
       filtered = filtered.filter(

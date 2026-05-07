@@ -287,10 +287,17 @@ export default function CompaniesView({
         }
 
         const data = await response.json();
-        setVectorResults(data.results);
-        setUseVectorSearch(true);
-        
-        console.log(`Vector search found ${data.results.length} companies`);
+
+        if (data.results && data.results.length > 0) {
+          setVectorResults(data.results);
+          setUseVectorSearch(true);
+          console.log(`Vector search found ${data.results.length} companies`);
+        } else {
+          // Sin resultados vectoriales: mantener búsqueda textual
+          setUseVectorSearch(false);
+          setVectorResults([]);
+          console.log("Vector search returned 0 results, falling back to text search");
+        }
       } catch (error) {
         console.error("Vector search error:", error);
         // Fallback a búsqueda normal
