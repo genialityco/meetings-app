@@ -36,10 +36,11 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
   const [representatives, setRepresentatives] = useState<CompanyRepresentative[]>([]);
   const [eventConfig, setEventConfig] = useState<any>(null);
   const [eventName, setEventName] = useState("");
-  const [eventImage, setEventImage] = useState("");
+  const [eventImage, setEventImage] = useState<string | null>(null);
   const [dashboardLogo, setDashboardLogo] = useState("");
-  const [loading, setLoading] = useState(true);
   const [policies, setPolicies] = useState<EventPolicies>(DEFAULT_POLICIES);
+  const [loading, setLoading] = useState(true);
+  const [userMeetings, setUserMeetings] = useState<any[]>([]);
 
   // 1. Event config (for theme + event info)
   useEffect(() => {
@@ -98,6 +99,28 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
       setRepresentatives(list);
     });
   }, [eventId, companyNit]);
+
+  // Cargar reuniones del usuario actual para ver si hay solicitudes pendientes
+  useEffect(() => {
+    if (!eventId || !companyNit) return;
+    let unsubscribeMeetings = () => {};
+    if (currentUser?.uid) {
+      const qMeetings = query(
+        collection(db, "events", eventId, "meetings"),
+        where("participants", "array-contains", currentUser.uid),
+      );
+      unsubscribeMeetings = onSnapshot(qMeetings, (snap) => {
+        const meetingsData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setUserMeetings(meetingsData);
+      });
+    }
+
+    setLoading(false);
+
+    return () => {
+      unsubscribeMeetings();
+    };
+  }, [eventId, companyNit, currentUser?.uid]);
 
   // Send meeting request (simplified version)
   const sendMeetingRequest = useCallback(
@@ -229,6 +252,7 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
     dashboardLogo,
     loading,
     currentUser,
+    userMeetings,
     sendMeetingRequest,
   };
 }

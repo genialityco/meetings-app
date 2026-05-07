@@ -21,6 +21,7 @@ import {
   SegmentedControl,
   Select,
   TextInput,
+  NumberInput,
 } from "@mantine/core";
 import {
   doc,
@@ -95,6 +96,10 @@ const EventAdmin = () => {
   const [expandDate, setExpandDate] = useState(null);
   const [expandStartTime, setExpandStartTime] = useState("");
   const [expandEndTime, setExpandEndTime] = useState("");
+
+  // Estado para añadir nueva mesa
+  const [addTableModalOpened, setAddTableModalOpened] = useState(false);
+  const [newTableNumber, setNewTableNumber] = useState("");
 
   const [meetingsCounts, setMeetingsCounts] = useState({
     aceptadas: 0,
@@ -261,6 +266,84 @@ const EventAdmin = () => {
     } catch (error) {
       console.log(error);
       setGlobalMessage("Error al generar la agenda.");
+    } finally {
+      setActionLoading(false);
+      setExpandAgendaModalOpened(false);
+    }
+  };
+
+  // Añadir una nueva mesa copiando la estructura de slots existentes
+  const handleAddNewTable = async () => {
+    try {
+      setActionLoading(true);
+      const tableNum = parseInt(newTableNumber, 10);
+      if (isNaN(tableNum) || tableNum <= 0) {
+        setGlobalMessage("Ingresa un número de mesa válido.");
+        return;
+      }
+
+      // Cargar agenda existente
+      const agendaSnap = await getDocs(collection(db, "events", event.id, "agenda"));
+      const existingSlots = agendaSnap.docs.map(d => d.data());
+
+      if (existingSlots.length === 0) {
+        setGlobalMessage("No hay una agenda generada de donde copiar los horarios.");
+        return;
+      }
+
+      // Comprobar si la mesa ya existe
+      const tableExists = existingSlots.some(s => s.tableNumber === tableNum);
+      if (tableExists) {
+        setGlobalMessage(`La mesa ${tableNum} ya tiene slots en la agenda.`);
+        return;
+      }
+
+      // Encontrar todos los horarios únicos (fecha, inicio, fin)
+      const uniqueTimes = new Set();
+      const slotsToCreate = [];
+
+      existingSlots.forEach(slot => {
+        // Ignorar posibles slots vacíos o corruptos
+        if (!slot.startTime || !slot.endTime) return;
+        
+        // Usar la fecha si existe (soporte para multi-día) o una cadena vacía
+        const dateKey = slot.date || "none";
+        const key = `${dateKey}_${slot.startTime}_${slot.endTime}`;
+        
+        if (!uniqueTimes.has(key)) {
+          uniqueTimes.add(key);
+          slotsToCreate.push({
+            date: slot.date, // Puede ser undefined
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+          });
+        }
+      });
+
+      let createdCount = 0;
+      
+      // Crear la nueva mesa para cada horario único encontrado
+      for (const t of slotsToCreate) {
+        const slotData = {
+          tableNumber: tableNum,
+          startTime: t.startTime,
+          endTime: t.endTime,
+          available: true,
+        };
+        // Incluir la fecha solo si existe en el evento (para soporte multi-día)
+        if (t.date) slotData.date = t.date;
+
+        await addDoc(collection(db, "events", event.id, "agenda"), slotData);
+        createdCount++;
+      }
+
+      setGlobalMessage(`Nueva mesa ${tableNum} añadida con éxito. Se crearon ${createdCount} slots.`);
+      setAddTableModalOpened(false);
+      setNewTableNumber("");
+
+    } catch (error) {
+      console.error(error);
+      setGlobalMessage("Error al añadir nueva mesa.");
     } finally {
       setActionLoading(false);
     }
@@ -1533,6 +1616,19 @@ const EventAdmin = () => {
                   </Button>
 
                   <Button
+                    onClick={() => {
+                      setNewTableNumber("");
+                      setAddTableModalOpened(true);
+                    }}
+                    loading={actionLoading}
+                    disabled={actionLoading}
+                    color="grape"
+                    variant="light"
+                  >
+                    Añadir Mesa
+                  </Button>
+
+                  <Button
                     component={Link}
                     to={`/admin/event/${event.id}/agenda`}
                     loading={actionLoading}
@@ -1778,107 +1874,41 @@ const EventAdmin = () => {
         </Stack>
       </Modal>
 
-      {/* Modal de importar reuniones desde JSON */}
-      {/* <Modal
-        opened={importMeetingsModalOpened}
-        onClose={() => setImportMeetingsModalOpened(false)}
-        title="Importar Reuniones desde JSON"
-        size="xl"
+      {/* Modal para añadir nueva mesa */}
+      <Modal
+        opened={addTableModalOpened}
+        onClose={() => setAddTableModalOpened(false)}
+        title="Añadir nueva mesa a la agenda"
         centered
       >
         <Stack gap="md">
-          <textarea
-            rows={8}
-            style={{ width: "100%", fontFamily: "monospace", fontSize: 12, padding: 8, borderRadius: 4, border: "1px solid #ced4da" }}
-            placeholder='[{"bloque":"08:30-08:45","turno":"mañana","comprador_id":"...","vendedor_id":"...",...}]'
-            value={importMeetingsJson}
-            onChange={(e) => handleImportMeetingsJsonChange(e.target.value)}
+          <Text size="sm" c="dimmed">
+            Esta función copiará todos los horarios existentes en la agenda actual y creará slots nuevos idénticos pero asignados a la mesa que elijas. Así podrás incrementar tu capacidad sin afectar la agenda ya generada.
+          </Text>
+          <NumberInput
+            label="Número de la nueva mesa"
+            placeholder="Ej. 15"
+            value={newTableNumber === "" ? "" : Number(newTableNumber)}
+            onChange={(val) => setNewTableNumber(val === "" ? "" : String(val))}
+            min={1}
+            required
+            data-autofocus
           />
-
-          {importMeetingsError && (
-            <Alert color="red" title="Error">{importMeetingsError}</Alert>
-          )}
-
-          {importMeetingsPreview.length > 0 && (
-            <>
-              <Text size="sm" fw={600}>
-                Vista previa: {importMeetingsPreview.length} reuniones a importar
-              </Text>
-              <Table.ScrollContainer minWidth={500}>
-                <Table striped highlightOnHover>
-                  <Table.Thead>
-                    <Table.Tr>
-                      <Table.Th>Bloque</Table.Th>
-                      <Table.Th>Turno</Table.Th>
-                      <Table.Th>Comprador</Table.Th>
-                      <Table.Th>Vendedor</Table.Th>
-                      <Table.Th>Afinidad</Table.Th>
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
-                    {importMeetingsPreview.map((item, i) => (
-                      <Table.Tr key={i}>
-                        <Table.Td>{item.bloque}</Table.Td>
-                        <Table.Td>{item.turno}</Table.Td>
-                        <Table.Td>
-                          <Text size="xs">{item.comprador_nombre}</Text>
-                          <Text size="xs" c="dimmed">{item.comprador_empresa}</Text>
-                        </Table.Td>
-                        <Table.Td>
-                          <Text size="xs">{item.vendedor_nombre}</Text>
-                          <Text size="xs" c="dimmed">{item.vendedor_empresa}</Text>
-                        </Table.Td>
-                        <Table.Td>
-                          <Badge color={item.afinidad >= 89 ? "green" : "yellow"} size="sm">
-                            {item.afinidad}%
-                          </Badge>
-                        </Table.Td>
-                      </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                </Table>
-              </Table.ScrollContainer>
-            </>
-          )}
-
-          {importMeetingsResult && (
-            <Stack gap="xs">
-              <Alert
-                color={importMeetingsResult.errors > 0 || importMeetingsResult.skipped > 0 ? "orange" : "green"}
-                title="Resultado"
-              >
-                {importMeetingsResult.created} importadas
-                {importMeetingsResult.skipped > 0 && `, ${importMeetingsResult.skipped} omitidas (usuarios no encontrados)`}
-                {importMeetingsResult.errors > 0 && `, ${importMeetingsResult.errors} errores`}.
-              </Alert>
-              {importMeetingsResult.skippedDetails?.length > 0 && (
-                <Stack gap={4}>
-                  <Text size="xs" fw={600} c="orange">Reuniones omitidas por usuarios inexistentes:</Text>
-                  {importMeetingsResult.skippedDetails.map((s, i) => (
-                    <Text key={i} size="xs" style={{ fontFamily: "monospace" }}>
-                      {s.bloque} — {s.missingComprador && `comprador: ${s.comprador_id}`}{s.missingComprador && s.missingVendedor && ", "}{s.missingVendedor && `vendedor: ${s.vendedor_id}`}
-                    </Text>
-                  ))}
-                </Stack>
-              )}
-            </Stack>
-          )}
-
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setImportMeetingsModalOpened(false)}>
+          <Group justify="flex-end" mt="md">
+            <Button variant="default" onClick={() => setAddTableModalOpened(false)}>
               Cancelar
             </Button>
             <Button
-              color="violet"
-              onClick={handleConfirmImportMeetings}
-              loading={importingMeetings}
-              disabled={importMeetingsPreview.length === 0 || !!importMeetingsError}
+              color="grape"
+              onClick={handleAddNewTable}
+              loading={actionLoading}
+              disabled={newTableNumber === ""}
             >
-              Importar {importMeetingsPreview.length > 0 ? `(${importMeetingsPreview.length})` : ""}
+              Crear Mesa
             </Button>
           </Group>
         </Stack>
-      </Modal> */}
+      </Modal>
 
       {/* Modal de reuniones huérfanas */}
       <Modal

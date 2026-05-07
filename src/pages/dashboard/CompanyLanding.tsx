@@ -77,6 +77,7 @@ export default function CompanyLanding() {
     eventImage,
     loading,
     currentUser,
+    userMeetings,
     sendMeetingRequest,
   } = useCompanyData(eventId, companyNit);
 
@@ -281,11 +282,11 @@ export default function CompanyLanding() {
                         <Group gap="sm" wrap="nowrap" align="flex-start">
                           <Avatar
                             src={rep.photoURL}
-                            size={50}
                             radius="xl"
-                            style={{ flexShrink: 0 }}
+                            size={48}
+                            color="gray"
                           >
-                            {(rep.nombre || "U")[0]?.toUpperCase()}
+                            {(rep.nombre || "R")[0]?.toUpperCase()}
                           </Avatar>
                           <Stack gap={2} style={{ minWidth: 0, flex: 1 }}>
                             <Text fw={600} lineClamp={1}>
@@ -317,17 +318,52 @@ export default function CompanyLanding() {
                             )}
                           </Stack>
                         </Group>
-                        <Button
-                          mt="sm"
-                          size="compact-sm"
-                          fullWidth
-                          variant="light"
-                          disabled={isSelf || loadingId === `rep-${rep.id}`}
-                          loading={loadingId === `rep-${rep.id}`}
-                          onClick={() => handleSendMeeting(rep)}
-                        >
-                          {isSelf ? "Eres tú" : "Solicitar reunión"}
-                        </Button>
+                        {(() => {
+                          const existingMeeting = userMeetings?.find(m => 
+                            (m.participants || []).includes(rep.id)
+                          );
+                          const isPendingReceiver = existingMeeting?.status === "pending" && existingMeeting?.receiverId === myUid;
+                          const isPendingRequester = existingMeeting?.status === "pending" && existingMeeting?.requesterId === myUid;
+                          const isAccepted = existingMeeting?.status === "accepted";
+                          
+                          let buttonText = "Solicitar reunión";
+                          let buttonColor = undefined;
+                          let buttonVariant = "light";
+                          let isDisabled = isSelf || loadingId === `rep-${rep.id}`;
+                          let onClick = () => handleSendMeeting(rep);
+                          
+                          if (isSelf) {
+                            buttonText = "Eres tú";
+                          } else if (isAccepted) {
+                            buttonText = "Reunión aceptada";
+                            buttonColor = "teal";
+                            isDisabled = true;
+                          } else if (isPendingReceiver) {
+                            buttonText = "Aceptar solicitud";
+                            buttonColor = "green";
+                            buttonVariant = "filled";
+                            onClick = async () => { window.open(`/meeting-response/${eventId}/${existingMeeting.id}/accept`, "_blank"); };
+                          } else if (isPendingRequester) {
+                            buttonText = "Solicitud pendiente";
+                            buttonColor = "yellow";
+                            isDisabled = true;
+                          }
+
+                          return (
+                            <Button
+                              mt="sm"
+                              size="compact-sm"
+                              fullWidth
+                              variant={buttonVariant}
+                              color={buttonColor}
+                              disabled={isDisabled}
+                              loading={loadingId === `rep-${rep.id}`}
+                              onClick={onClick}
+                            >
+                              {buttonText}
+                            </Button>
+                          );
+                        })()}
                       </Card>
                     </Grid.Col>
                   );
@@ -411,18 +447,54 @@ export default function CompanyLanding() {
                             {p.description}
                           </Text>
                           <Divider my={2} />
-                          <Button
-                            mt="auto"
-                            size="compact-sm"
-                            radius="md"
-                            fullWidth
-                            variant={isMine ? "light" : "filled"}
-                            disabled={isMine || loadingId === key}
-                            loading={loadingId === key}
-                            onClick={() => handleProductMeeting(p)}
-                          >
-                            {isMine ? "Tu producto" : "Solicitar reunión"}
-                          </Button>
+                          {(() => {
+                            const existingMeeting = userMeetings?.find(m => 
+                              (m.participants || []).includes(p.ownerUserId)
+                            );
+                            const isPendingReceiver = existingMeeting?.status === "pending" && existingMeeting?.receiverId === myUid;
+                            const isPendingRequester = existingMeeting?.status === "pending" && existingMeeting?.requesterId === myUid;
+                            const isAccepted = existingMeeting?.status === "accepted";
+                            
+                            let buttonText = "Solicitar reunión";
+                            let buttonColor = undefined;
+                            let buttonVariant = isMine ? "light" : "filled";
+                            let isDisabled = isMine || loadingId === key;
+                            let onClick = () => handleProductMeeting(p);
+                            
+                            if (isMine) {
+                              buttonText = "Tu producto";
+                            } else if (isAccepted) {
+                              buttonText = "Reunión aceptada";
+                              buttonColor = "teal";
+                              isDisabled = true;
+                            } else if (isPendingReceiver) {
+                              buttonText = "Aceptar solicitud";
+                              buttonColor = "green";
+                              buttonVariant = "filled";
+                              onClick = async () => { window.open(`/meeting-response/${eventId}/${existingMeeting.id}/accept`, "_blank"); };
+                            } else if (isPendingRequester) {
+                              buttonText = "Solicitud pendiente";
+                              buttonColor = "yellow";
+                              buttonVariant = "light";
+                              isDisabled = true;
+                            }
+
+                            return (
+                              <Button
+                                mt="auto"
+                                size="compact-sm"
+                                radius="md"
+                                fullWidth
+                                variant={buttonVariant}
+                                color={buttonColor}
+                                disabled={isDisabled}
+                                loading={loadingId === key}
+                                onClick={onClick}
+                              >
+                                {buttonText}
+                              </Button>
+                            );
+                          })()}
                         </Stack>
                       </Card>
                     </Grid.Col>

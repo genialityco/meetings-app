@@ -282,7 +282,19 @@ export default function TabsPanel({
             />
           </Tabs.Panel>
           <Tabs.Panel value="reuniones" pt="md">
-            <MeetingsTab {...dashboard} />
+            <MeetingsTab 
+              {...dashboard} 
+              onNavigateToCompany={(companyNit) => {
+                // Change main view to "companies"
+                setTopView("companies");
+                // Set the persistent highlight to trigger scroll and highlight in CompaniesView
+                dashboard.setPersistentHighlight({
+                  entityType: "company",
+                  entityId: companyNit,
+                  timestamp: Date.now()
+                });
+              }}
+            />
           </Tabs.Panel>
           <Tabs.Panel value="solicitudes" pt="md">
             <RequestsTab {...dashboard} />

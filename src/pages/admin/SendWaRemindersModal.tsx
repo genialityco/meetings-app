@@ -71,19 +71,38 @@ export default function SendWaRemindersModal({
     }
   };
 
-  // Filter meetings based on status and timeSlot
+  // Helper to determine the "slot" or "franja" to filter by
+  const getMeetingSlotLabel = (m: any) => {
+    if (m.status === "accepted" && m.timeSlot) return m.timeSlot;
+    if (m.createdAt) {
+      try {
+        const date = m.createdAt.toDate ? m.createdAt.toDate() : new Date(m.createdAt);
+        if (isNaN(date.getTime())) return "Sin horario asignado";
+        const day = date.toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric" });
+        const hour = date.getHours().toString().padStart(2, "0");
+        return `${day} (Creada ${hour}:00 - ${hour}:59)`;
+      } catch (e) {
+        return "Sin horario asignado";
+      }
+    }
+    return "Sin horario asignado";
+  };
+
+  // Filter meetings based on status and timeSlot/createdAt
   const filteredMeetings = meetings.filter((m) => {
     if (statusFilter && m.status !== statusFilter) return false;
-    if (selectedSlot && m.timeSlot !== selectedSlot) return false;
+    
+    const slotLabel = getMeetingSlotLabel(m);
+    if (selectedSlot && slotLabel !== selectedSlot) return false;
     return true;
   });
 
-  // Extract unique time slots for the current status
+  // Extract unique time slots for the current status (using timeSlot or createdAt)
   const timeSlots = Array.from(
     new Set(
       meetings
-        .filter((m) => m.status === statusFilter && m.timeSlot)
-        .map((m) => m.timeSlot)
+        .filter((m) => m.status === statusFilter)
+        .map((m) => getMeetingSlotLabel(m))
     )
   ).sort();
 
@@ -137,25 +156,53 @@ export default function SendWaRemindersModal({
         const user = users[userId];
         if (!user || !user.telefono) continue;
 
-        // Como un usuario puede tener multiples reuniones, le enviamos un enlace general al dashboard del evento
-        // Y en V1 lo enviamos a /dashboard, en v2 la api completa la url base con el cancel/accept
+        // Obtener la primera reunión asociada a este usuario en el filtro actual
+        // para poder adjuntar el meetingId a la URL de WhatsApp
+        const userMeeting = filteredMeetings.find((m) => 
+          statusFilter === "pending" 
+            ? m.receiverId === userId 
+            : (m.participants || []).includes(userId)
+        );
+        const meetingId = userMeeting ? userMeeting.id : "";
+
         const baseUrl = window.location.origin;
+        const acceptUrl = meetingId 
+          ? `meeting-response/${event.id}/${meetingId}/accept` 
+          : `${baseUrl}/dashboard/${event.id}`;
+        
+        // El usuario solicitó /cancel para cancelar, o /reject si el sistema usa reject
+        const cancelUrl = meetingId 
+          ? `meeting-response/${event.id}/${meetingId}/reject` 
+          : `${baseUrl}/dashboard/${event.id}`;
+
+        // Identificar quién es la contraparte en la reunión (el solicitante real) para llenar los datos
+        let counterpartId = null;
+        if (userMeeting) {
+          // Si es el receptor, la contraparte es el requesterId. Si es el requester, es el receiverId.
+          counterpartId = userMeeting.requesterId === userId ? userMeeting.receiverId : userMeeting.requesterId;
+        }
+        const counterpart = counterpartId ? users[counterpartId] : null;
+
+        const reqName = counterpart?.nombre || "Un asistente";
+        const reqCompany = counterpart?.empresa || counterpart?.company_razonSocial || "Una empresa";
+        const reqPosition = counterpart?.cargo || "-";
+        const reqEmail = counterpart?.correo || "-";
+        const reqPhone = counterpart?.telefono || "-";
 
         const success = await sendWhatsAppMessage({
           apiVersion: whatsappApiVersion,
           phone: user.telefono,
-          message: "Tienes reuniones pendientes por revisar en el evento. Por favor ingresa para gestionarlas.", // Mensaje vacío / fallback
+          message: "Tienes una solicitud de reunión pendiente por revisar en el evento. Por favor ingresa para gestionarla.", // Mensaje vacío / fallback
           metadata: {
             eventName: event.eventName || "Evento",
-            requesterName: "La Organización",
-            requesterCompany: event.eventName || "Evento",
-            requesterPosition: "Administración",
-            requesterEmail: "-",
-            requesterPhone: "-",
-            // La API v2 completa los botones con la URL, por eso se coloca toda la ruta
-            acceptUrl: `${baseUrl}/dashboard/${event.id}`,
-            cancelUrl: `${baseUrl}/dashboard/${event.id}`,
-            contextNote: "Tienes reuniones pendientes por revisar en el evento.", // Para V2
+            requesterName: reqName,
+            requesterCompany: reqCompany,
+            requesterPosition: reqPosition,
+            requesterEmail: reqEmail,
+            requesterPhone: reqPhone,
+            acceptUrl: acceptUrl,
+            cancelUrl: cancelUrl,
+            contextNote: "Tienes una solicitud de reunión pendiente por revisar en el evento.", // Para V2
           }
         });
         

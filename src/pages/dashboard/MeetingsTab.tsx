@@ -93,6 +93,7 @@ interface MeetingsTabProps {
   globalDateFilter: string | null;
   setGlobalDateFilter: (date: string | null) => void;
   policies: EventPolicies;
+  onNavigateToCompany?: (companyNit: string) => void; // <--- Añadimos prop opcional
 }
 
 function InfoRow({
@@ -136,6 +137,7 @@ export default function MeetingsTab({
   globalDateFilter,
   setGlobalDateFilter,
   policies,
+  onNavigateToCompany,
 }: MeetingsTabProps) {
   const { currentUser } = useContext(UserContext);
   const theme = useMantineTheme();
@@ -380,7 +382,17 @@ export default function MeetingsTab({
                     }}
                   >
                     {/* Header */}
-                    <Group wrap="nowrap" align="center" gap="sm">
+                    <Group 
+                      wrap="nowrap" 
+                      align="center" 
+                      gap="sm" 
+                      style={{ cursor: onNavigateToCompany && participant?.company_nit ? 'pointer' : 'default' }}
+                      onClick={() => {
+                        if (onNavigateToCompany && participant?.company_nit) {
+                          onNavigateToCompany(participant.company_nit);
+                        }
+                      }}
+                    >
                       <Avatar
                         src={participant?.photoURL}
                         radius="xl"
@@ -625,7 +637,17 @@ export default function MeetingsTab({
                     shadow="sm"
                     style={{ opacity: 0.7 }}
                   >
-                    <Group wrap="nowrap" align="center" gap="sm">
+                    <Group 
+                      wrap="nowrap" 
+                      align="center" 
+                      gap="sm"
+                      style={{ cursor: onNavigateToCompany && participant?.company_nit ? 'pointer' : 'default' }}
+                      onClick={() => {
+                        if (onNavigateToCompany && participant?.company_nit) {
+                          onNavigateToCompany(participant.company_nit);
+                        }
+                      }}
+                    >
                       <Avatar
                         src={participant?.photoURL}
                         radius="xl"

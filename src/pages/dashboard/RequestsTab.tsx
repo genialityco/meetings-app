@@ -52,6 +52,8 @@ interface RequestsTabProps {
   prepareSlotSelection: (meetingId: string) => void;
 }
 
+import { useNavigate } from "react-router-dom";
+
 function InfoRow({
   icon,
   label,
@@ -88,6 +90,7 @@ function RequestCard({
   statusBadge?: React.ReactNode;
 }) {
   const theme = useMantineTheme();
+  const navigate = useNavigate();
 
   if (!user) {
     return (
@@ -120,6 +123,12 @@ function RequestCard({
           radius="xl"
           size={52}
           color={theme.primaryColor}
+          style={{ cursor: user.company_nit && user.eventId ? 'pointer' : 'default' }}
+          onClick={() => {
+            if (user.company_nit && user.eventId) {
+              navigate(`/dashboard/${user.eventId}/company/${user.company_nit}`);
+            }
+          }}
         >
           {(user.nombre || "U")[0]?.toUpperCase()}
         </Avatar>
@@ -130,7 +139,19 @@ function RequestCard({
           </Title>
           <Text size="sm" c="dimmed" lineClamp={1}>
             {user.cargo || "Asistente"}
-            {user.empresa ? ` • ${user.empresa}` : ""}
+            {/* Si no tiene empresa pero la card quiere mostrar algo se quita la q esta en line y se pone clickable  */}
+          </Text>
+          <Text
+            size="sm"
+            c="dimmed"
+            style={{ textDecoration: user.company_nit && user.eventId ? "underline" : "none", cursor: user.company_nit && user.eventId ? "pointer" : "default" }}
+            onClick={() => {
+              if (user.company_nit && user.eventId) {
+                navigate(`/dashboard/${user.eventId}/company/${user.company_nit}`);
+              }
+            }}
+          >
+            {user.empresa || "Sin empresa"}
           </Text>
         </Box>
       </Group>
