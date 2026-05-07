@@ -2459,6 +2459,9 @@ async function calculateAffinityWithEmbeddings(userA, userB, vectorA = null, vec
         (tipoA === "vendedor" && tipoB === "comprador")) {
       roleBoost = 1; // Boost de 25% para roles complementarios
       roleReason = "Roles complementarios (comprador-vendedor)";
+    } else if (tipoA === "asistente" && tipoB === "asistente") {
+      roleBoost = 1; // Sin penalización si ambos son Asistentes
+      roleReason = "Ambos son asistentes";
     } else if (tipoA === tipoB && tipoA !== "") {
       roleBoost = 0.7 // Boost menor para mismo rol
       roleReason = `Mismo rol: ${tipoA}`;
