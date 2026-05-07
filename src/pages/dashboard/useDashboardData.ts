@@ -911,7 +911,7 @@ export function useDashboardData(eventId?: string) {
       await sendWhatsAppAPI({
         apiVersion: whatsappApiVersion,
         phone: assistantPhone.replace(/[^\d]/g, ""),
-        message: whatsappApiVersion === "v2" && context?.contextNote ? context.contextNote : message, // v2 usa contextNote, v1 usa mensaje completo
+        message: whatsappApiVersion === "v2" ? (context?.contextNote || "Sin mensaje adicional") : message, // v2 usa contextNote o texto por defecto, v1 usa mensaje completo
         metadata: {
           eventName: eventName || "Evento",
           requesterName,
