@@ -97,10 +97,6 @@ const EventAdmin = () => {
   const [expandStartTime, setExpandStartTime] = useState("");
   const [expandEndTime, setExpandEndTime] = useState("");
 
-  // Estado para añadir nueva mesa
-  const [addTableModalOpened, setAddTableModalOpened] = useState(false);
-  const [newTableNumber, setNewTableNumber] = useState("");
-
   const [meetingsCounts, setMeetingsCounts] = useState({
     aceptadas: 0,
     pendientes: 0,
@@ -430,6 +426,67 @@ const EventAdmin = () => {
     } catch (error) {
       console.log(error);
       setGlobalMessage("Error al expandir la agenda.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Eliminar slots de agenda en un rango horario (solo los que no tienen reunión activa)
+  const deleteAgendaSlotsForEvent = async () => {
+    try {
+      setActionLoading(true);
+      const date = deleteDate;
+      const startTime = deleteStartTime.trim();
+      const endTime = deleteEndTime.trim();
+
+      if (!date || !startTime || !endTime) {
+        setGlobalMessage("Debes completar fecha, hora de inicio y hora de fin.");
+        return;
+      }
+
+      const timeRegex = /^\d{2}:\d{2}$/;
+      if (!timeRegex.test(startTime) || !timeRegex.test(endTime)) {
+        setGlobalMessage("Formato de hora inválido. Usa HH:MM (ej: 13:00).");
+        return;
+      }
+
+      const rangeStart = timeToMinutes(startTime);
+      const rangeEnd = timeToMinutes(endTime);
+
+      if (rangeStart >= rangeEnd) {
+        setGlobalMessage("La hora de inicio debe ser anterior a la hora de fin.");
+        return;
+      }
+
+      const agendaSnap = await getDocs(collection(db, "events", event.id, "agenda"));
+      const slotsInRange = agendaSnap.docs.filter((d) => {
+        const data = d.data();
+        if (data.date !== date) return false;
+        const slotMin = timeToMinutes(data.startTime);
+        return slotMin >= rangeStart && slotMin < rangeEnd;
+      });
+
+      let deletedCount = 0;
+      let skippedCount = 0;
+
+      for (const slotDoc of slotsInRange) {
+        const data = slotDoc.data();
+        if (data.meetingId) {
+          skippedCount++;
+          continue;
+        }
+        await deleteDoc(slotDoc.ref);
+        deletedCount++;
+      }
+
+      const msg = skippedCount > 0
+        ? `Eliminación completada: ${deletedCount} slots borrados, ${skippedCount} omitidos por tener reunión activa.`
+        : `Eliminación completada: ${deletedCount} slots borrados.`;
+      setGlobalMessage(msg);
+      setDeleteAgendaModalOpened(false);
+    } catch (error) {
+      console.log(error);
+      setGlobalMessage("Error al eliminar los slots.");
     } finally {
       setActionLoading(false);
     }
@@ -1616,19 +1673,6 @@ const EventAdmin = () => {
                   </Button>
 
                   <Button
-                    onClick={() => {
-                      setNewTableNumber("");
-                      setAddTableModalOpened(true);
-                    }}
-                    loading={actionLoading}
-                    disabled={actionLoading}
-                    color="grape"
-                    variant="light"
-                  >
-                    Añadir Mesa
-                  </Button>
-
-                  <Button
                     component={Link}
                     to={`/admin/event/${event.id}/agenda`}
                     loading={actionLoading}
@@ -1869,6 +1913,85 @@ const EventAdmin = () => {
               onClick={expandAgendaForEvent}
             >
               Expandir
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* Modal para eliminar horario de agenda */}
+      <Modal
+        opened={deleteAgendaModalOpened}
+        onClose={() => setDeleteAgendaModalOpened(false)}
+        title="Eliminar horario de agenda"
+        centered
+      >
+        <Stack gap="md">
+          <Text size="sm" c="dimmed">
+            Elimina los slots de un rango horario. Los slots que tengan una reunión activa no serán borrados.
+          </Text>
+
+          {(() => {
+            const dates = event?.config?.eventDates || (event?.config?.eventDate ? [event.config.eventDate] : []);
+            if (dates.length > 1) {
+              return (
+                <Select
+                  label="Día"
+                  data={dates.map((d) => ({ value: d, label: d }))}
+                  value={deleteDate}
+                  onChange={setDeleteDate}
+                  required
+                />
+              );
+            }
+            return (
+              <Text size="sm">
+                Fecha: <strong>{dates[0] || "—"}</strong>
+              </Text>
+            );
+          })()}
+
+          <Group grow>
+            <TextInput
+              label="Hora de inicio"
+              placeholder="13:00"
+              value={deleteStartTime}
+              onChange={(e) => setDeleteStartTime(e.currentTarget.value)}
+              required
+            />
+            <TextInput
+              label="Hora de fin"
+              placeholder="15:00"
+              value={deleteEndTime}
+              onChange={(e) => setDeleteEndTime(e.currentTarget.value)}
+              required
+            />
+          </Group>
+
+          {deleteStartTime && deleteEndTime && (() => {
+            const timeRegex = /^\d{2}:\d{2}$/;
+            if (!timeRegex.test(deleteStartTime) || !timeRegex.test(deleteEndTime)) return null;
+            const startMin = timeToMinutes(deleteStartTime);
+            const endMin = timeToMinutes(deleteEndTime);
+            if (startMin >= endMin) return (
+              <Alert color="orange">La hora de inicio debe ser anterior a la hora de fin.</Alert>
+            );
+            return (
+              <Alert color="red" variant="light">
+                Se eliminarán todos los slots sin reunión entre <strong>{deleteStartTime}</strong> y <strong>{deleteEndTime}</strong>. Esta acción no se puede deshacer.
+              </Alert>
+            );
+          })()}
+
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setDeleteAgendaModalOpened(false)}>
+              Cancelar
+            </Button>
+            <Button
+              color="red"
+              loading={actionLoading}
+              onClick={deleteAgendaSlotsForEvent}
+            >
+              Eliminar slots
             </Button>
           </Group>
         </Stack>
