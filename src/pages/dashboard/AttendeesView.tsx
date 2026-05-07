@@ -16,7 +16,6 @@ import {
   ThemeIcon,
   Box,
   useMantineTheme,
-  Loader,
   Badge,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
@@ -34,7 +33,6 @@ import {
   IconPhone,
   IconId,
   IconUsers,
-  IconSparkles,
   IconHeart,
   IconFileTypePdf,
 } from "@tabler/icons-react";
@@ -46,7 +44,6 @@ interface MeetingContext {
   contextNote?: string;
 }
 
-const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
 
 const FIELD_ICONS: Record<string, any> = {
   empresa: IconBuildingStore,
@@ -83,8 +80,6 @@ function formatFieldValue(fieldName: string, data: any): string | null {
 
 interface AttendeesViewProps {
   filteredAssistants: Assistant[];
-  searchTerm: string;
-  setSearchTerm: (v: string) => void;
   showOnlyToday: boolean;
   setShowOnlyToday: (v: any) => void;
   interestOptions: { value: string; label: string }[];
@@ -133,8 +128,6 @@ function InfoRow({
 
 export default function AttendeesView({
   filteredAssistants,
-  searchTerm,
-  setSearchTerm,
   showOnlyToday,
   setShowOnlyToday,
   interestOptions,
@@ -152,10 +145,8 @@ export default function AttendeesView({
   highlightEntityId,
 }: AttendeesViewProps) {
   const theme = useMantineTheme();
+  const [searchTerm, setSearchTerm] = useState("");
   const [loadingId, setLoadingId] = useState<string | null>(null);
-  const [vectorResults, setVectorResults] = useState<Assistant[]>([]);
-  const [isVectorSearching, setIsVectorSearching] = useState(false);
-  const [useVectorSearch, setUseVectorSearch] = useState(false);
   const [modalOpened, setModalOpened] = useState(false);
   const [selectedAssistant, setSelectedAssistant] = useState<Assistant | null>(null);
   const [sortBy, setSortBy] = useState<"affinity" | "date">("affinity");
@@ -194,163 +185,36 @@ export default function AttendeesView({
     return String(n);
   }, [eventConfig]);
 
-  // Búsqueda por vectores con debounce
-  useEffect(() => {
-    const trimmed = searchTerm.trim();
-    
-    // Si no hay eventId, no podemos hacer búsqueda
-    if (!eventId) {
-      setUseVectorSearch(false);
-      setVectorResults([]);
-      return;
-    }
-    
-    // Si no hay texto de búsqueda, resetear
-    if (!trimmed) {
-      setUseVectorSearch(false);
-      setVectorResults([]);
-      return;
-    }
-
-    // Si el texto es muy corto, no usar vectores
-    if (trimmed.length < 3) {
-      setUseVectorSearch(false);
-      return;
-    }
-
-    // Debounce: esperar 500ms después de que el usuario deje de escribir
-    const timeoutId = setTimeout(async () => {
-      setIsVectorSearching(true);
-      console.log("--------tipo: ",currentUser.tipoAsistente)
-      try {
-        const requestBody = {
-          text: trimmed,
-          category: "assistants",
-          tipoAsistente: currentUser.data?.tipoAsistente,
-          eventId: eventId,
-          userId: myUid,
-          limit: 50,
-          threshold: 0.55,
-        };
-        
-        console.log("Vector search request:", requestBody);
-        
-        const response = await fetch(VECTOR_SEARCH_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(requestBody),
-        });
-
-        if (!response.ok) {
-          throw new Error("Vector search failed");
-        }
-
-        const data = await response.json();
-        console.log("Vector search response:", data);
-        
-        // Los resultados de vectorSearch ya vienen con todos los campos necesarios
-        setVectorResults(data.results as Assistant[]);
-        setUseVectorSearch(true);
-        
-        console.log(`Vector search found ${data.results.length} assistants`);
-      } catch (error) {
-        console.error("Vector search error:", error);
-        // Fallback a búsqueda normal
-        setUseVectorSearch(false);
-        setVectorResults([]);
-      } finally {
-        setIsVectorSearching(false);
-      }
-    }, 500);
-
-    return () => clearTimeout(timeoutId);
-  }, [searchTerm, eventId, myUid, filteredAssistants]);
-
-  // Aplicar búsqueda por vectores si está activa
   const displayedAssistants = useMemo(() => {
-    console.log("=== displayedAssistants useMemo ===");
-    console.log("useVectorSearch:", useVectorSearch);
-    console.log("searchTerm:", searchTerm);
-    console.log("vectorResults.length:", vectorResults.length);
-    console.log("filteredAssistants.length:", filteredAssistants.length);
-    console.log("interestFilter:", interestFilter);
-    console.log("showOnlyToday:", showOnlyToday);
-    console.log("currentEventId:", eventId);
-    console.log("sortBy:", sortBy);
-    
-    // Si NO estamos usando búsqueda por vectores, devolver filteredAssistants
-    if (!useVectorSearch || searchTerm.trim().length < 3) {
-      console.log("Using filteredAssistants (no vector search)");
-      let results = [...filteredAssistants];
-      
-      // Aplicar ordenamiento por afinidad o fecha
-      if (sortBy === "affinity") {
-        results.sort((a, b) => {
-          const scoreA = affinityScores[a.id] || 0;
-          const scoreB = affinityScores[b.id] || 0;
-          return scoreB - scoreA; // Mayor score primero
-        });
-        console.log("Sorted by affinity");
-      } else {
-        results.sort((a, b) => {
-          const timeA = a.createdAt?.toMillis?.() || 0;
-          const timeB = b.createdAt?.toMillis?.() || 0;
-          return timeB - timeA; // Más reciente primero
-        });
-        console.log("Sorted by date");
-      }
-      
-      return results;
-    }
-    
-    // Si estamos usando búsqueda por vectores, empezar con vectorResults
-    let results = [...vectorResults]; // Crear copia para no mutar el original
-    console.log("Starting with vectorResults:", results.length);
-    
-    // Log de los primeros resultados para debugging
-    if (results.length > 0) {
-      console.log("First result:", {
-        id: results[0].id,
-        nombre: results[0].nombre,
-        interesPrincipal: results[0].interesPrincipal,
-        lastLogin: results[0].lastLogin,
-        eventId: results[0].eventId
-      });
-    }
-    
-    // Aplicar filtro de interés si existe
-    if (interestFilter) {
-      const beforeFilter = results.length;
-      results = results.filter(a => a.interesPrincipal === interestFilter);
-      console.log(`After interest filter (${interestFilter}): ${beforeFilter} -> ${results.length}`);
-    }
-    
-    // Aplicar filtro de "solo hoy" si está activo
+    const term = searchTerm.trim().toLowerCase();
+    let results = filteredAssistants.filter((a) => {
+      if (!term) return true;
+      return (
+        (a.empresa ?? "").toString().toLowerCase().includes(term) ||
+        (a.nombre ?? "").toString().toLowerCase().includes(term) ||
+        (a.cargo ?? "").toString().toLowerCase().includes(term) ||
+        formFields.some((f) =>
+          (a[f.name] ?? "").toString().toLowerCase().includes(term)
+        )
+      );
+    });
+
     if (showOnlyToday) {
-      const beforeFilter = results.length;
-      const today = new Date().toISOString().split("T")[0];
-      results = results.filter(a => {
-        const lastLogin = a.lastLogin;
-        if (!lastLogin) {
-          console.log(`Filtering out ${a.nombre} - no lastLogin`);
-          return false;
-        }
-        const loginDate = new Date(lastLogin).toISOString().split("T")[0];
-        const matches = loginDate === today;
-        if (!matches) {
-          console.log(`Filtering out ${a.nombre} - lastLogin: ${loginDate}, today: ${today}`);
-        }
-        return matches;
-      });
-      console.log(`After showOnlyToday filter: ${beforeFilter} -> ${results.length}`);
+      results = results.filter(a => a.connectedToday === true);
     }
-    
-    console.log("Final displayedAssistants:", results.length);
-    console.log("=== End useMemo ===");
+
+    if (sortBy === "affinity") {
+      results.sort((a, b) => (affinityScores[b.id] || 0) - (affinityScores[a.id] || 0));
+    } else {
+      results.sort((a, b) => {
+        const timeA = a.createdAt?.toMillis?.() || 0;
+        const timeB = b.createdAt?.toMillis?.() || 0;
+        return timeB - timeA;
+      });
+    }
+
     return results;
-  }, [useVectorSearch, searchTerm, vectorResults, filteredAssistants, interestFilter, showOnlyToday, eventId, sortBy, affinityScores]);
+  }, [filteredAssistants, searchTerm, formFields, showOnlyToday, sortBy, affinityScores]);
 
   const handleOpenModal = (assistant: Assistant) => {
     setSelectedAssistant(assistant);
@@ -419,15 +283,7 @@ export default function AttendeesView({
               placeholder="Buscar por cualquier campo..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              leftSection={
-                isVectorSearching ? (
-                  <Loader size={16} />
-                ) : useVectorSearch ? (
-                  <IconSparkles size={16} style={{ color: "var(--mantine-color-blue-6)" }} />
-                ) : (
-                  <IconSearch size={16} />
-                )
-              }
+              leftSection={<IconSearch size={16} />}
               rightSection={
                 hasSearch ? (
                   <ActionIcon
@@ -466,11 +322,6 @@ export default function AttendeesView({
                 >
                   {showOnlyToday ? "Solo conectados hoy" : "Todos"}
                 </Button>
-                {useVectorSearch && (
-                  <Badge size="sm" variant="light" color="blue" leftSection={<IconSparkles size={10} />}>
-                    Búsqueda inteligente
-                  </Badge>
-                )}
               </Group>
 
               <Group gap="xs">
@@ -535,10 +386,6 @@ export default function AttendeesView({
               loadingId === assistant.id ||
               isMine;
 
-            // Verificar si tiene similarity score (viene de búsqueda por vectores)
-            const hasSimilarity = typeof (assistant as any).similarity === 'number';
-            const similarityScore = hasSimilarity ? Math.round((assistant as any).similarity * 100) : null;
-
             // Verificar si esta card debe ser resaltada (usando el estado temporal)
             const isHighlighted = highlightedId === assistant.id;
 
@@ -567,27 +414,8 @@ export default function AttendeesView({
                     animation: isHighlighted ? "pulse 2s ease-in-out 3" : undefined,
                   }}
                 >
-                  {/* Badge de concordancia */}
-                  {hasSimilarity && (
-                    <Badge
-                      variant="gradient"
-                      gradient={{ from: 'blue', to: 'cyan', deg: 90 }}
-                      size="sm"
-                      radius="md"
-                      style={{
-                        position: "absolute",
-                        top: 10,
-                        right: 10,
-                        zIndex: 1,
-                      }}
-                    >
-                      {similarityScore}% match
-                    </Badge>
-                  )}
-
                   {/* Badge de afinidad */}
-                  {!hasSimilarity  &&  (
-                    <Badge
+                  <Badge
                       variant="gradient"
                       gradient={{ from: 'teal', to: 'green', deg: 90 }}
                       size="sm"
@@ -602,7 +430,6 @@ export default function AttendeesView({
                     >
                       {affinityScores[assistant.id]}% afinidad
                     </Badge>
-                  )}
 
                   {/* Badge NUEVO cuando está resaltado */}
                   {isHighlighted && (

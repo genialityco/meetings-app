@@ -557,21 +557,13 @@ export function useDashboardData(eventId?: string) {
         });
 
       setAssistants(list);
-      setFilteredAssistants(list);
     });
   }, [uid, eventId]);
 
-  // 5. Filtro de asistentes por searchTerm y showOnlyToday
-  // Filtrar asistentes usando todos los campos visibles en formFields
+  // 5. Filtro de asistentes por rol/interés (sin filtro de texto — cada vista aplica el suyo)
   useEffect(() => {
-    const term = searchTerm.toLowerCase();
-    let filtered = assistants.filter((a) =>
-      formFields.some((f) => {
-        const value = (a[f.name] ?? "").toString().toLowerCase();
-        return value.includes(term);
-      }),
-    );
-    // (puedes mantener el filtro por interés si quieres)
+    let filtered = [...assistants];
+
     if (interestFilter) {
       filtered = filtered.filter(
         (a) =>
@@ -591,7 +583,7 @@ export function useDashboardData(eventId?: string) {
     }
 
     setFilteredAssistants(filtered);
-  }, [assistants, searchTerm, interestFilter, formFields, policies.discoveryMode]);
+  }, [assistants, interestFilter, formFields, policies.discoveryMode]);
 
   // 6. Solicitudes enviadas por usuario actual (pendientes + rechazadas)
   useEffect(() => {
