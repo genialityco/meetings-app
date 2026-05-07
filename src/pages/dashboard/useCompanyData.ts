@@ -194,7 +194,7 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
       await sendWhatsAppAPI({
         apiVersion: whatsappApiVersion,
         phone: receiverPhone.replace(/[^\d]/g, ""),
-        message: context?.contextNote || message, // Usar contextNote si existe, sino el mensaje completo
+        message: whatsappApiVersion === "v2" ? (context?.contextNote || "Sin mensaje adicional") : message,
         metadata: {
           eventName: eventName || "Evento",
           requesterName: requester?.nombre || "",

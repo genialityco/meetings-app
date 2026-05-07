@@ -3492,6 +3492,13 @@ async function sendWhatsAppMessage(apiVersion, phone, message, metadata = {}) {
         ? metadata.cancelUrl.replace(/^\//, '') 
         : "";
 
+      // Limpiar el mensaje para evitar errores con newlines/tabs en la plantilla V2
+      const rawMessage = metadata.contextNote || message || "Sin mensaje adicional";
+      const cleanMessage = String(rawMessage)
+        .replace(/[\r\n\t]+/g, " ")
+        .replace(/\s{2,}/g, " ")
+        .trim() || "Sin mensaje adicional";
+
       // API V2: Meeting Request
       const response = await fetch(`${WHATSAPP_API_V2.value()}/api/send-meeting-request`, {
         method: "POST",
@@ -3505,7 +3512,7 @@ async function sendWhatsAppMessage(apiVersion, phone, message, metadata = {}) {
           requesterPosition: metadata.requesterPosition || "",
           requesterEmail: metadata.requesterEmail || "",
           requesterPhone: metadata.requesterPhone || "",
-          message: metadata.contextNote || message,
+          message: cleanMessage,
           acceptUrl: cleanAcceptUrl,
           cancelUrl: cleanCancelUrl,
         }),
