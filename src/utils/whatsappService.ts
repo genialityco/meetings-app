@@ -94,6 +94,12 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
         ? metadata.cancelUrl.replace(/^\//, '') 
         : " ";
 
+      // Limpiar el mensaje para evitar errores con newlines/tabs en la plantilla V2
+      const cleanMessage = (message || "Sin mensaje adicional")
+        .replace(/[\r\n\t]+/g, " ")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+
       // API V2: Meeting Request
       const requesterName =
         metadata.requesterName?.trim() || "Asistente";
@@ -109,7 +115,7 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
         requesterPosition: metadata.requesterPosition || "Cargo",
         requesterEmail: metadata.requesterEmail || "Email",
         requesterPhone: metadata.requesterPhone || "Telefono",
-        message: message || "Mensaje", // Usar el message que se pasó (que ya viene con contextNote si aplica)
+        message: cleanMessage || " ", // Mensaje limpio sin saltos de línea ni excesos de espacios
         acceptUrl: cleanAcceptUrl,
         cancelUrl: cleanCancelUrl,
       };
