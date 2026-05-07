@@ -80,8 +80,6 @@ function formatFieldValue(fieldName: string, data: any): string | null {
 
 interface AttendeesViewProps {
   filteredAssistants: Assistant[];
-  searchTerm: string;
-  setSearchTerm: (v: string) => void;
   showOnlyToday: boolean;
   setShowOnlyToday: (v: any) => void;
   interestOptions: { value: string; label: string }[];
@@ -130,8 +128,6 @@ function InfoRow({
 
 export default function AttendeesView({
   filteredAssistants,
-  searchTerm,
-  setSearchTerm,
   showOnlyToday,
   setShowOnlyToday,
   interestOptions,
@@ -149,6 +145,7 @@ export default function AttendeesView({
   highlightEntityId,
 }: AttendeesViewProps) {
   const theme = useMantineTheme();
+  const [searchTerm, setSearchTerm] = useState("");
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [modalOpened, setModalOpened] = useState(false);
   const [selectedAssistant, setSelectedAssistant] = useState<Assistant | null>(null);
@@ -189,7 +186,18 @@ export default function AttendeesView({
   }, [eventConfig]);
 
   const displayedAssistants = useMemo(() => {
-    let results = [...filteredAssistants];
+    const term = searchTerm.trim().toLowerCase();
+    let results = filteredAssistants.filter((a) => {
+      if (!term) return true;
+      return (
+        (a.empresa ?? "").toString().toLowerCase().includes(term) ||
+        (a.nombre ?? "").toString().toLowerCase().includes(term) ||
+        (a.cargo ?? "").toString().toLowerCase().includes(term) ||
+        formFields.some((f) =>
+          (a[f.name] ?? "").toString().toLowerCase().includes(term)
+        )
+      );
+    });
 
     if (showOnlyToday) {
       results = results.filter(a => a.connectedToday === true);
@@ -206,7 +214,7 @@ export default function AttendeesView({
     }
 
     return results;
-  }, [filteredAssistants, showOnlyToday, sortBy, affinityScores]);
+  }, [filteredAssistants, searchTerm, formFields, showOnlyToday, sortBy, affinityScores]);
 
   const handleOpenModal = (assistant: Assistant) => {
     setSelectedAssistant(assistant);

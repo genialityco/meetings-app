@@ -147,8 +147,6 @@ export default function TabsPanel({
       {topView === "attendees" && (
         <AttendeesView
           filteredAssistants={dashboard.filteredAssistants}
-          searchTerm={dashboard.searchTerm}
-          setSearchTerm={dashboard.setSearchTerm}
           showOnlyToday={dashboard.showOnlyToday}
           setShowOnlyToday={dashboard.setShowOnlyToday}
           interestOptions={dashboard.interestOptions}
