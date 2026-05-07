@@ -138,16 +138,7 @@ export default function MeetingAutoResponse() {
       const meetingData = mtgSnap.data();
       const { receiverId, requesterId, status: meetingStatus } = meetingData;
 
-      // 3. Validar que la reunión pertenece al usuario actual
-      if (receiverId !== userId) {
-        setValidationError(
-          "No tienes permiso para acceder a esta reunión. Esta reunión no te fue solicitada."
-        );
-        setTimeout(() => navigate(`/event/${eventId}`), 3000);
-        return false;
-      }
-
-      // 4. Validar que la reunión no ha sido procesada aún
+      // 3. Validar que la reunión no ha sido procesada aún
       if (meetingStatus && meetingStatus !== "pending") {
         setValidationError(
           `Esta reunión ya fue ${
