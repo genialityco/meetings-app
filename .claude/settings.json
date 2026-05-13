@@ -14,7 +14,9 @@
       "PowerShell(Get-ChildItem -Path \"d:\\\\gen.iality\\\\Proyectos\\\\my-meetings-app\\\\src\\\\pages\\\\admin\" | Where-Object { $_.Extension -match '\\\\.jsx$|\\\\.tsx$' } | Select-Object Name | Sort-Object Name)",
       "Bash(Get-ChildItem -Path \"d:\\\\gen.iality\\\\Proyectos\\\\my-meetings-app\" -Recurse -Filter \"*atrix*\" -ErrorAction SilentlyContinue)",
       "Bash(Select-Object -ExpandProperty FullName)",
-      "Bash(npx eslint *)"
+      "Bash(npx eslint *)",
+      "Bash(dir src *)",
+      "Bash(findstr /E \"\\(types\\\\.ts|EventPoliciesModal\\\\.tsx|whatsappService\\\\.ts\\)\")"
     ],
     "additionalDirectories": [
       "d:\\gen.iality\\Proyectos\\agenda-optimizer-api\\app",

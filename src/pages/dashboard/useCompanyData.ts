@@ -191,30 +191,34 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
         `🔗 Ir al evento: \n${landingUrl}`;
 
       const whatsappApiVersion = policies.whatsappApiVersion || "v1";
-      await sendWhatsAppAPI({
-        apiVersion: whatsappApiVersion,
-        phone: receiverPhone.replace(/[^\d]/g, ""),
-        message: whatsappApiVersion === "v2" ? (context?.contextNote || "Sin mensaje adicional") : message,
-        metadata: {
-          eventName: eventName || "Evento",
-          requesterName: requester?.nombre || "",
-          requesterCompany: requester?.empresa || "",
-          requesterPosition: requester?.cargo || "",
-          requesterEmail: requester?.correo || "",
-          requesterPhone: requester?.telefono || "",
-          acceptUrl: acceptPath, // Solo la ruta
-          cancelUrl: rejectPath, // Solo la ruta
-        },
-      });
+      if (policies.whatsappNotificationsEnabled !== false) {
+        await sendWhatsAppAPI({
+          apiVersion: whatsappApiVersion,
+          phone: receiverPhone.replace(/[^\d]/g, ""),
+          message: whatsappApiVersion === "v2" ? (context?.contextNote || "Sin mensaje adicional") : message,
+          metadata: {
+            eventName: eventName || "Evento",
+            requesterName: requester?.nombre || "",
+            requesterCompany: requester?.empresa || "",
+            requesterPosition: requester?.cargo || "",
+            requesterEmail: requester?.correo || "",
+            requesterPhone: requester?.telefono || "",
+            acceptUrl: acceptPath,
+            cancelUrl: rejectPath,
+          },
+        });
+      }
 
-      await addDoc(collection(db, "notifications"), {
-        userId: receiverId,
-        title: "Nueva solicitud de reunión",
-        message: `${requester?.nombre || "Alguien"} te ha enviado una solicitud de reunión.`,
-        timestamp: new Date(),
-        read: false,
-        type: "meeting_request",
-      });
+      if (policies.dashboardNotificationsEnabled !== false) {
+        await addDoc(collection(db, "notifications"), {
+          userId: receiverId,
+          title: "Nueva solicitud de reunión",
+          message: `${requester?.nombre || "Alguien"} te ha enviado una solicitud de reunión.`,
+          timestamp: new Date(),
+          read: false,
+          type: "meeting_request",
+        });
+      }
     },
     [uid, eventId, currentUser, eventName, policies],
   );

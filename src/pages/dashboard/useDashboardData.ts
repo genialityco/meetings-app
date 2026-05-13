@@ -391,12 +391,10 @@ export function useDashboardData(eventId?: string) {
 
   // ---------------------- EFECTOS PRINCIPALES ----------------------
 
-  // 1. Configuración del evento (eventConfig + policies)
+  // 1. Configuración del evento (eventConfig + policies) — real-time para reflejar cambios de admin
   useEffect(() => {
     if (!eventId) return;
-    (async () => {
-      const ref = doc(db, "events", eventId);
-      const snap = await getDoc(ref);
+    return onSnapshot(doc(db, "events", eventId), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
         const config = data.config || {};
@@ -407,7 +405,7 @@ export function useDashboardData(eventId?: string) {
         setFormFields(config.formFields || []);
         setPolicies({ ...DEFAULT_POLICIES, ...(config.policies || {}) });
       }
-    })();
+    });
   }, [eventId]);
 
   // 1b. Suscripción real-time a empresas del evento
@@ -900,36 +898,39 @@ export function useDashboardData(eventId?: string) {
 
       // WhatsApp backend - usar API configurada en políticas
       const whatsappApiVersion = policies.whatsappApiVersion || "v1";
-      await sendWhatsAppAPI({
-        apiVersion: whatsappApiVersion,
-        phone: assistantPhone.replace(/[^\d]/g, ""),
-        message: whatsappApiVersion === "v2" ? (context?.contextNote || "Sin mensaje adicional") : message, // v2 usa contextNote o texto por defecto, v1 usa mensaje completo
-        metadata: {
-          eventName: eventName || "Evento",
-          requesterName,
-          requesterCompany,
-          requesterPosition: requester?.cargo || "",
-          requesterEmail: requester?.correo || "",
-          requesterPhone: requester?.telefono || "",
-          acceptUrl: acceptPath, // Solo la ruta
-          cancelUrl: rejectPath, // Solo la ruta
-          contextNote: context?.contextNote, // Agregar contextNote a metadata para v2
-        },
-      });
+      if (policies.whatsappNotificationsEnabled !== false) {
+        await sendWhatsAppAPI({
+          apiVersion: whatsappApiVersion,
+          phone: assistantPhone.replace(/[^\d]/g, ""),
+          message: whatsappApiVersion === "v2" ? (context?.contextNote || "Sin mensaje adicional") : message,
+          metadata: {
+            eventName: eventName || "Evento",
+            requesterName,
+            requesterCompany,
+            requesterPosition: requester?.cargo || "",
+            requesterEmail: requester?.correo || "",
+            requesterPhone: requester?.telefono || "",
+            acceptUrl: acceptPath,
+            cancelUrl: rejectPath,
+            contextNote: context?.contextNote,
+          },
+        });
+      }
 
       // Notificación en la app
-      const notificationMessage = context?.contextNote
-        ? `${requesterName || "Alguien"} te ha enviado una solicitud de reunión.\n\nMensaje: "${context.contextNote}"`
-        : `${requesterName || "Alguien"} te ha enviado una solicitud de reunión.`;
-      
-      await addDoc(collection(db, "notifications"), {
-        userId: assistantId,
-        title: "Nueva solicitud de reunión",
-        message: notificationMessage,
-        timestamp: new Date(),
-        read: false,
-        type: "meeting_request",
-      });
+      if (policies.dashboardNotificationsEnabled !== false) {
+        const notificationMessage = context?.contextNote
+          ? `${requesterName || "Alguien"} te ha enviado una solicitud de reunión.\n\nMensaje: "${context.contextNote}"`
+          : `${requesterName || "Alguien"} te ha enviado una solicitud de reunión.`;
+        await addDoc(collection(db, "notifications"), {
+          userId: assistantId,
+          title: "Nueva solicitud de reunión",
+          message: notificationMessage,
+          timestamp: new Date(),
+          read: false,
+          type: "meeting_request",
+        });
+      }
 
       // Trackear evento de analytics
       meetingAnalytics.requestSent(assistantId, !!context?.contextNote);
@@ -987,38 +988,42 @@ export function useDashboardData(eventId?: string) {
 
       // 7. Notifica a ambos por WhatsApp
       const whatsappApiVersion = policies.whatsappApiVersion || "v1";
-      if (requester?.telefono) {
-        await sendMeetingCancelledWhatsapp(requester.telefono, receiver, {
-          timeSlot: meeting.timeSlot,
-          tableAssigned: meeting.tableAssigned,
-          meetingDate: meeting.meetingDate,
-        }, eventName, cancellerName, whatsappApiVersion);
-      }
-      if (receiver?.telefono) {
-        await sendMeetingCancelledWhatsapp(receiver.telefono, requester, {
-          timeSlot: meeting.timeSlot,
-          tableAssigned: meeting.tableAssigned,
-          meetingDate: meeting.meetingDate,
-        }, eventName, cancellerName, whatsappApiVersion);
+      if (policies.whatsappNotificationsEnabled !== false) {
+        if (requester?.telefono) {
+          await sendMeetingCancelledWhatsapp(requester.telefono, receiver, {
+            timeSlot: meeting.timeSlot,
+            tableAssigned: meeting.tableAssigned,
+            meetingDate: meeting.meetingDate,
+          }, eventName, cancellerName, whatsappApiVersion);
+        }
+        if (receiver?.telefono) {
+          await sendMeetingCancelledWhatsapp(receiver.telefono, requester, {
+            timeSlot: meeting.timeSlot,
+            tableAssigned: meeting.tableAssigned,
+            meetingDate: meeting.meetingDate,
+          }, eventName, cancellerName, whatsappApiVersion);
+        }
       }
 
       // 8. Notifica por la app
-      await addDoc(collection(db, "notifications"), {
-        userId: meeting.requesterId,
-        title: "Reunión cancelada",
-        message: "Tu reunión fue cancelada.",
-        timestamp: new Date(),
-        read: false,
-        type: "meeting_cancelled",
-      });
-      await addDoc(collection(db, "notifications"), {
-        userId: meeting.receiverId,
-        title: "Reunión cancelada",
-        message: "Tu reunión fue cancelada.",
-        timestamp: new Date(),
-        read: false,
-        type: "meeting_cancelled",
-      });
+      if (policies.dashboardNotificationsEnabled !== false) {
+        await addDoc(collection(db, "notifications"), {
+          userId: meeting.requesterId,
+          title: "Reunión cancelada",
+          message: "Tu reunión fue cancelada.",
+          timestamp: new Date(),
+          read: false,
+          type: "meeting_cancelled",
+        });
+        await addDoc(collection(db, "notifications"), {
+          userId: meeting.receiverId,
+          title: "Reunión cancelada",
+          message: "Tu reunión fue cancelada.",
+          timestamp: new Date(),
+          read: false,
+          type: "meeting_cancelled",
+        });
+      }
 
       // 9. Si la política autoReassignOnCancel está activa, llamar la función Firebase
       if (policies.autoReassignOnCancel) {
@@ -1145,14 +1150,16 @@ export function useDashboardData(eventId?: string) {
         });
 
         // 4. Notificar al solicitante
-        await addDoc(collection(db, "notifications"), {
-          userId: data.requesterId,
-          title: "Reunión aceptada",
-          message: "Tu reunión fue aceptada.",
-          timestamp: new Date(),
-          read: false,
-          type: "meeting_accepted",
-        });
+        if (policies.dashboardNotificationsEnabled !== false) {
+          await addDoc(collection(db, "notifications"), {
+            userId: data.requesterId,
+            title: "Reunión aceptada",
+            message: "Tu reunión fue aceptada.",
+            timestamp: new Date(),
+            read: false,
+            type: "meeting_accepted",
+          });
+        }
 
         // 5. Enviar SMS a ambos participantes
         const requesterSnap = await getDoc(doc(db, "users", data.requesterId));
@@ -1188,7 +1195,7 @@ export function useDashboardData(eventId?: string) {
         // Enviar WhatsApp a ambos participantes
         const whatsappApiVersion = policies.whatsappApiVersion || "v1";
         const accepterName = receiver?.nombre || "";
-        if (requester && receiver) {
+        if (policies.whatsappNotificationsEnabled !== false && requester && receiver) {
           await sendMeetingAcceptedWhatsapp(
             requester.telefono || "",
             receiver,
@@ -1233,18 +1240,20 @@ export function useDashboardData(eventId?: string) {
           ? (receiverSnap.data() as Assistant)
           : null;
 
-        await addDoc(collection(db, "notifications"), {
-          userId: data.requesterId,
-          title: "Reunión rechazada",
-          message: `${receiver?.nombre || "Un participante"} ha rechazado tu solicitud de reunión.`,
-          timestamp: new Date(),
-          read: false,
-          type: "meeting_rejected",
-        });
+        if (policies.dashboardNotificationsEnabled !== false) {
+          await addDoc(collection(db, "notifications"), {
+            userId: data.requesterId,
+            title: "Reunión rechazada",
+            message: `${receiver?.nombre || "Un participante"} ha rechazado tu solicitud de reunión.`,
+            timestamp: new Date(),
+            read: false,
+            type: "meeting_rejected",
+          });
+        }
 
         // Enviar WhatsApp al solicitante informando del rechazo
         const whatsappApiVersion = policies.whatsappApiVersion || "v1";
-        if (requester?.telefono && receiver) {
+        if (policies.whatsappNotificationsEnabled !== false && requester?.telefono && receiver) {
           await sendMeetingRejectedWhatsapp(
             requester.telefono,
             receiver,
@@ -1858,12 +1867,14 @@ export function useDashboardData(eventId?: string) {
             },
           ];
 
-      for (const notif of notificationsBatch) {
-        await addDoc(collection(db, "notifications"), {
-          ...notif,
-          timestamp: new Date(),
-          read: false,
-        });
+      if (policies.dashboardNotificationsEnabled !== false) {
+        for (const notif of notificationsBatch) {
+          await addDoc(collection(db, "notifications"), {
+            ...notif,
+            timestamp: new Date(),
+            read: false,
+          });
+        }
       }
 
       const whatsappApiVersion = policies.whatsappApiVersion || "v1";
@@ -1871,25 +1882,27 @@ export function useDashboardData(eventId?: string) {
         ? `Tu reunión fue movida a ${slot.startTime} en Mesa ${slot.tableNumber}.`
         : `Tu reunión fue aceptada para ${slot.startTime} en Mesa ${slot.tableNumber}.`;
 
-      if (requester?.telefono) await sendSms(smsMsg, requester.telefono, whatsappApiVersion);
-      if (receiver?.telefono) await sendSms(smsMsg, receiver.telefono, whatsappApiVersion);
-
       // El receptor (uid actual) es quien acepta
       const accepterName = receiver?.nombre || requester?.nombre || "";
 
-      if (requester?.telefono) {
-        await sendMeetingAcceptedWhatsapp(requester.telefono, receiver!, {
-          timeSlot: `${slot.startTime} - ${slot.endTime}`,
-          tableAssigned: slot.tableNumber,
-          meetingDate: eventDateISO,
-        }, eventName, accepterName, whatsappApiVersion, requester);
-      }
-      if (receiver?.telefono) {
-        await sendMeetingAcceptedWhatsapp(receiver.telefono, requester!, {
-          timeSlot: `${slot.startTime} - ${slot.endTime}`,
-          tableAssigned: slot.tableNumber,
-          meetingDate: eventDateISO,
-        }, eventName, accepterName, whatsappApiVersion, receiver);
+      if (policies.whatsappNotificationsEnabled !== false) {
+        if (requester?.telefono) await sendSms(smsMsg, requester.telefono, whatsappApiVersion);
+        if (receiver?.telefono) await sendSms(smsMsg, receiver.telefono, whatsappApiVersion);
+
+        if (requester?.telefono) {
+          await sendMeetingAcceptedWhatsapp(requester.telefono, receiver!, {
+            timeSlot: `${slot.startTime} - ${slot.endTime}`,
+            tableAssigned: slot.tableNumber,
+            meetingDate: eventDateISO,
+          }, eventName, accepterName, whatsappApiVersion, requester);
+        }
+        if (receiver?.telefono) {
+          await sendMeetingAcceptedWhatsapp(receiver.telefono, requester!, {
+            timeSlot: `${slot.startTime} - ${slot.endTime}`,
+            tableAssigned: slot.tableNumber,
+            meetingDate: eventDateISO,
+          }, eventName, accepterName, whatsappApiVersion, receiver);
+        }
       }
 
       // 4) Cierra los modales y limpia estado
