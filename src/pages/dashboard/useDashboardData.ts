@@ -580,8 +580,24 @@ export function useDashboardData(eventId?: string) {
       }
     }
 
+    // Enriquecer empresa cuando el campo está vacío en el user doc
+    filtered = filtered.map((a) => {
+      if (a.empresa) return a;
+      // Caso 1: tiene NIT → buscar en colección de empresas del evento
+      const nit = a.companyId || a.company_nit;
+      if (nit && companies.length > 0) {
+        const companyDoc = companies.find((c) => c.nitNorm === nit);
+        const razonSocial = companyDoc?.razonSocial as string | undefined;
+        if (razonSocial) return { ...a, empresa: razonSocial };
+      }
+      // Caso 2: sin NIT → usar company_razonSocial guardado directamente en el doc
+      const razonDirecta = (a as any).company_razonSocial as string | undefined;
+      if (razonDirecta?.trim()) return { ...a, empresa: razonDirecta.trim() };
+      return a;
+    });
+
     setFilteredAssistants(filtered);
-  }, [assistants, interestFilter, formFields, policies.discoveryMode]);
+  }, [assistants, interestFilter, formFields, policies.discoveryMode, companies]);
 
   // 6. Solicitudes enviadas por usuario actual (pendientes + rechazadas)
   useEffect(() => {

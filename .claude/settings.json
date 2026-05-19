@@ -16,7 +16,8 @@
       "Bash(Select-Object -ExpandProperty FullName)",
       "Bash(npx eslint *)",
       "Bash(dir src *)",
-      "Bash(findstr /E \"\\(types\\\\.ts|EventPoliciesModal\\\\.tsx|whatsappService\\\\.ts\\)\")"
+      "Bash(findstr /E \"\\(types\\\\.ts|EventPoliciesModal\\\\.tsx|whatsappService\\\\.ts\\)\")",
+      "Bash(node -e \"const d = require\\('country-telephone-data'\\); console.log\\(JSON.stringify\\(d.allCountries.slice\\(0,3\\)\\)\\)\")"
     ],
     "additionalDirectories": [
       "d:\\gen.iality\\Proyectos\\agenda-optimizer-api\\app",
