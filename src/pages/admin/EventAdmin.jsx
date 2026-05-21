@@ -97,6 +97,16 @@ const EventAdmin = () => {
   const [expandStartTime, setExpandStartTime] = useState("");
   const [expandEndTime, setExpandEndTime] = useState("");
 
+  // Estado para eliminar agenda
+  const [deleteAgendaModalOpened, setDeleteAgendaModalOpened] = useState(false);
+  const [deleteDate, setDeleteDate] = useState(null);
+  const [deleteStartTime, setDeleteStartTime] = useState("");
+  const [deleteEndTime, setDeleteEndTime] = useState("");
+
+  // Estado para añadir nueva mesa
+  const [addTableModalOpened, setAddTableModalOpened] = useState(false);
+  const [newTableNumber, setNewTableNumber] = useState("");
+
   const [meetingsCounts, setMeetingsCounts] = useState({
     aceptadas: 0,
     pendientes: 0,

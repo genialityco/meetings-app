@@ -60,15 +60,23 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
 
   // 2. Company doc
   useEffect(() => {
-    if (!eventId || !companyNit) return;
-    (async () => {
-      const snap = await getDoc(
-        doc(db, "events", eventId, "companies", companyNit),
-      );
-      if (snap.exists()) {
-        setCompany({ nitNorm: snap.id, ...snap.data() } as Company);
-      }
+    if (!eventId || !companyNit) {
       setLoading(false);
+      return;
+    }
+    (async () => {
+      try {
+        const snap = await getDoc(
+          doc(db, "events", eventId, "companies", companyNit),
+        );
+        if (snap.exists()) {
+          setCompany({ nitNorm: snap.id, ...snap.data() } as Company);
+        }
+      } catch (error) {
+        console.error("Error fetching company doc:", error);
+      } finally {
+        setLoading(false);
+      }
     })();
   }, [eventId, companyNit]);
 
@@ -114,8 +122,6 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
         setUserMeetings(meetingsData);
       });
     }
-
-    setLoading(false);
 
     return () => {
       unsubscribeMeetings();
