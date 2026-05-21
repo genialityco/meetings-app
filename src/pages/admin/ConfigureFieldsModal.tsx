@@ -153,11 +153,7 @@ const AVAILABLE_FIELDS = [
   {
     name: "telefono",
     label: "Teléfono",
-    type: "text",
-    validation: {
-      pattern: /^[0-9]{7,10}$/,
-      errorMessage: "Debe contener entre 7 y 10 dígitos",
-    },
+    type: "phone",
   },
   {
     name: "brochure",
@@ -318,7 +314,9 @@ function SortableFieldItem({
                       ? "Foto"
                       : field.type === "file"
                         ? "Archivo"
-                        : "Texto"}
+                        : field.type === "phone"
+                          ? "Teléfono"
+                          : "Texto"}
         </Text>
         {isCustomField(field) && (
           <ActionIcon

@@ -1,5 +1,12 @@
-import { Modal, Stack, TextInput, Textarea, Select, Checkbox, Button } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { Modal, Stack, TextInput, Textarea, Select, Checkbox, Button, Group, Box, Text } from "@mantine/core";
+import { useEffect, useMemo, useState } from "react";
+import {
+  COUNTRY_CODES,
+  detectDefaultIso2,
+  getDialCodeForIso2,
+  parsePhoneValue,
+  isPhoneField,
+} from "../../utils/phoneUtils";
 
 const ModalEditAttendee = ({
   opened,
@@ -10,6 +17,7 @@ const ModalEditAttendee = ({
 }) => {
   const [values, setValues] = useState(attendee || {});
   const [saving, setSaving] = useState(false);
+  const defaultIso2 = useMemo(() => detectDefaultIso2(), []);
 
   // Sincroniza cuando cambia el asistente
   useEffect(() => {
@@ -75,6 +83,53 @@ const ModalEditAttendee = ({
               />
             );
           }
+          if (isPhoneField(f)) {
+            const { iso2, dialCode, number: phoneNumber } = parsePhoneValue(
+              values[f.name] || "",
+              defaultIso2,
+            );
+            return (
+              <Box key={f.name}>
+                <Text size="sm" fw={500} mb={4}>
+                  {f.label}
+                  {f.required && (
+                    <Text component="span" c="red" ml={2}>*</Text>
+                  )}
+                </Text>
+                <Group gap={6} align="flex-start" wrap="nowrap">
+                  <Select
+                    data={COUNTRY_CODES}
+                    value={iso2}
+                    onChange={(newIso2) => {
+                      if (!newIso2) return;
+                      const dc = getDialCodeForIso2(newIso2);
+                      handleChange(
+                        f.name,
+                        phoneNumber ? `${dc} ${phoneNumber}` : dc,
+                      );
+                    }}
+                    style={{ width: 104 }}
+                    searchable
+                    radius="md"
+                    comboboxProps={{ width: 300 }}
+                    allowDeselect={false}
+                  />
+                  <TextInput
+                    placeholder="Número"
+                    value={phoneNumber}
+                    onChange={(e) => {
+                      const num = e.target.value.replace(/\D/g, "");
+                      handleChange(f.name, `${dialCode} ${num}`.trim());
+                    }}
+                    required={f.required}
+                    style={{ flex: 1 }}
+                    radius="md"
+                  />
+                </Group>
+              </Box>
+            );
+          }
+
           // text por defecto
           return (
             <TextInput

@@ -52,6 +52,8 @@ export default function EventPoliciesModal({
   const [cancelMeetingDisabled, setCancelMeetingDisabled] = useState(false);
   const [standbyCheckInRequired, setStandbyCheckInRequired] = useState(false);
   const [attendeeIdEnabled, setAttendeeIdEnabled] = useState(false);
+  const [whatsappNotificationsEnabled, setWhatsappNotificationsEnabled] = useState(true);
+  const [dashboardNotificationsEnabled, setDashboardNotificationsEnabled] = useState(true);
 
   // Empresas y asignación de mesas fijas
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -80,6 +82,8 @@ export default function EventPoliciesModal({
     setCancelMeetingDisabled(p.cancelMeetingDisabled ?? false);
     setStandbyCheckInRequired(p.standbyCheckInRequired ?? false);
     setAttendeeIdEnabled(p.attendeeIdEnabled ?? false);
+    setWhatsappNotificationsEnabled(p.whatsappNotificationsEnabled ?? true);
+    setDashboardNotificationsEnabled(p.dashboardNotificationsEnabled ?? true);
   }, [event]);
 
   // Cargar empresas cuando se abre el modal y tableMode es "fixed"
@@ -155,6 +159,8 @@ export default function EventPoliciesModal({
               cancelMeetingDisabled,
               standbyCheckInRequired,
               attendeeIdEnabled,
+              whatsappNotificationsEnabled,
+              dashboardNotificationsEnabled,
             },
           },
         },
@@ -321,6 +327,22 @@ export default function EventPoliciesModal({
           description="Al registrarse, cada asistente recibe un número de identificación visible en el header (ej: 1C para comprador, 1V para vendedor)"
           checked={attendeeIdEnabled}
           onChange={(e) => setAttendeeIdEnabled(e.currentTarget.checked)}
+        />
+
+        <Divider label="Notificaciones" labelPosition="left" />
+
+        <Switch
+          label="Notificaciones por WhatsApp"
+          description="Envía mensajes de WhatsApp al solicitar, aceptar, rechazar o cancelar reuniones"
+          checked={whatsappNotificationsEnabled}
+          onChange={(e) => setWhatsappNotificationsEnabled(e.currentTarget.checked)}
+        />
+
+        <Switch
+          label="Notificaciones en el dashboard"
+          description="Genera notificaciones internas visibles en el menú de notificaciones del asistente"
+          checked={dashboardNotificationsEnabled}
+          onChange={(e) => setDashboardNotificationsEnabled(e.currentTarget.checked)}
         />
 
         <Select

@@ -1,7 +1,14 @@
-import { Card, Table, Button, Loader, Text, Group, Title, MultiSelect, Modal, Image, Tabs, Stack, TextInput } from "@mantine/core";
+import { Card, Table, Button, Loader, Text, Group, Title, MultiSelect, Modal, Image, Tabs, Stack, TextInput, Select, Badge } from "@mantine/core";
 import { collection, query, where, getDocs, deleteDoc, doc, addDoc, updateDoc, writeBatch, setDoc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  COUNTRY_CODES,
+  detectDefaultIso2,
+  getDialCodeForIso2,
+  parsePhoneValue,
+  isPhoneField,
+} from "../../utils/phoneUtils";
 import PropTypes from "prop-types";
 import * as XLSX from "xlsx";
 import { IconSearch, IconX } from "@tabler/icons-react";
@@ -189,6 +196,7 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
 
   // Estado para edición inline
   const [editingCell, setEditingCell] = useState(null); // { id, fieldName, value }
+  const defaultIso2 = useMemo(() => detectDefaultIso2(), []);
   const [savingCell, setSavingCell] = useState(false);
 
   // Estado para actualización masiva
@@ -413,6 +421,10 @@ function parseFirestoreTimestamp(input) {
       );
     }
 
+    const parsedPhone = isPhoneField(field)
+      ? parsePhoneValue(editingCell?.value || value || "", defaultIso2)
+      : null;
+
     if (isEditing) {
       return (
         <Group gap="xs">
@@ -433,15 +445,60 @@ function parseFirestoreTimestamp(input) {
             <textarea
               value={editingCell.value}
               onChange={(e) => setEditingCell({ ...editingCell, value: e.target.value })}
-              style={{ 
-                padding: "4px 8px", 
-                borderRadius: "4px", 
+              style={{
+                padding: "4px 8px",
+                borderRadius: "4px",
                 border: "1px solid #ced4da",
                 minWidth: "200px",
                 minHeight: "60px"
               }}
               autoFocus
             />
+          ) : isPhoneField(field) ? (
+            <Group gap={4} wrap="nowrap">
+              <Select
+                data={COUNTRY_CODES}
+                value={parsedPhone.iso2}
+                onChange={(newIso2) => {
+                  if (!newIso2) return;
+                  const dc = getDialCodeForIso2(newIso2);
+                  const newVal = parsedPhone.number
+                    ? `${dc} ${parsedPhone.number}`
+                    : dc;
+                  setEditingCell({ ...editingCell, value: newVal });
+                }}
+                style={{ width: 100 }}
+                size="xs"
+                searchable
+                comboboxProps={{ width: 164 }}
+                allowDeselect={false}
+              />
+              <input
+                type="text"
+                value={parsedPhone.number}
+                onChange={(e) => {
+                  const num = e.target.value.replace(/\D/g, "");
+                  setEditingCell({
+                    ...editingCell,
+                    value: `${parsedPhone.dialCode} ${num}`.trim(),
+                  });
+                }}
+                style={{
+                  padding: "4px 8px",
+                  borderRadius: "4px",
+                  border: "1px solid #ced4da",
+                  width: "120px",
+                }}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleSaveInlineEdit(item.id, field.name, editingCell.value, entityType);
+                  } else if (e.key === "Escape") {
+                    setEditingCell(null);
+                  }
+                }}
+              />
+            </Group>
           ) : (
             <input
               type="text"
@@ -498,6 +555,24 @@ function parseFirestoreTimestamp(input) {
         ) : field.type === "richtext" ? (
           value ? (
             <Text size="sm" lineClamp={2}>{value}</Text>
+          ) : (
+            <Text size="sm" c="dimmed">-</Text>
+          )
+        ) : isPhoneField(field) ? (
+          value ? (
+            (() => {
+              const { dialCode, number } = parsePhoneValue(value, "");
+              return (
+                <Group gap={4} wrap="nowrap">
+                  {dialCode && (
+                    <Badge size="xs" variant="light" color="gray" radius="sm" style={{ fontFamily: "monospace" }}>
+                      {dialCode}
+                    </Badge>
+                  )}
+                  <Text size="sm">{number || value}</Text>
+                </Group>
+              );
+            })()
           ) : (
             <Text size="sm" c="dimmed">-</Text>
           )

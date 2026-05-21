@@ -117,9 +117,31 @@ All admin routes (except `/admin/login` and `/admin/register`) are wrapped in `P
 | `/admin/event/:eventId/match` | EventMatchPage | Event matching (protected) |
 | `/admin/event/:eventId/import-meetings` | ImportMeetingsFromExcelPage | Bulk meeting import (protected) |
 | `/admin/surveys` | MeetingSurveys | Survey responses (protected) |
+| `/admin/event/:eventId/checkin` | CheckInPage | QR code attendee check-in (protected) |
+| `/admin/event/:eventId/optimize-agenda` | OptimizeAgendaPage | AI-powered agenda optimizer (protected) |
 | `/matrix/:eventId` | MatrixPage | Matrix view |
 | `/phonesadmin` | PhonesAdminPage | Phone management |
 | `/meeting-response/:eventId/:meetingId/:action` | MeetingAutoResponse | Auto-response handler |
+
+### Multi-Day Event Support
+
+Events support multiple days via two Firestore fields on the event document:
+- `eventDates`: string[] — list of ISO date strings for event days
+- `dailyConfig`: `{ [date: string]: { startTime, endTime, breakBlocks: [{start, end}][] } }` — per-day schedule
+
+`AgendaSlot` has a `date: string` field and `isBreak?: boolean`. The `EditEventConfigModal.jsx` reads `dailyConfig` or falls back to legacy `eventDate` (single-day). Migration scripts in `scripts/` handle data migrations for existing events.
+
+### Agenda Optimizer (`OptimizeAgendaPage.tsx`)
+
+Calls a separate FastAPI service (`agenda-optimizer-api` repo) to auto-generate an optimal meeting schedule using affinity scores and OR-Tools. The service URL is `VITE_OPTIMIZER_API_URL` (default `http://127.0.0.1:8080` for local dev). The page loads attendees + affinity pairs from Firestore, sends them to the optimizer, and writes results back to `events/{eventId}/agenda`.
+
+### Migration Scripts (`scripts/`)
+
+Node.js scripts using Firebase Admin SDK. Require `scripts/serviceAccountKey.json` (not in repo — download from Firebase console). Run with `node scripts/<script>.js`:
+- `migrate-agenda.js` — migrates legacy single-day agenda slots to multi-day format
+- `migrate-multi-day-events.js` — backfills `dailyConfig` for existing multi-day events
+- `cleanup-old-agenda.js` — removes deprecated agenda fields
+- `seed-admin.js` — creates initial superadmin account
 
 ### Cloud Functions (`functions/`)
 
@@ -146,7 +168,10 @@ All admin routes (except `/admin/login` and `/admin/register`) are wrapped in `P
 Firebase config via Vite env vars (prefix `VITE_`):
 - `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`
 - `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`
+- `VITE_FIREBASE_VAPID_KEY` — VAPID key for FCM push notification subscriptions
 - `VITE_ENABLE_CHATBOT` — toggles chatbot tab availability (separate from policy toggle)
+- `VITE_AI_PROXY_URL` — deployed URL of the `aiProxy` Cloud Function (chatbot backend)
+- `VITE_OPTIMIZER_API_URL` — agenda optimizer FastAPI service URL (local: `http://127.0.0.1:8080`)
 
 ## npm Configuration
 

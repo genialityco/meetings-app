@@ -276,21 +276,24 @@ export default function MeetingAutoResponse() {
       const requester = requesterSnap.exists() ? requesterSnap.data() : {};
       const receiver = receiverSnap.exists() ? receiverSnap.data() : {};
 
-      // Obtener nombre del evento
+      // Obtener nombre del evento y políticas
       const eventSnap = await getDoc(doc(db, "events", eventId));
       const evName = eventSnap.exists() ? eventSnap.data().eventName || "" : "";
+      const evPolicies = eventSnap.exists() ? eventSnap.data().config?.policies || {} : {};
 
-      await addDoc(collection(db, "notifications"), {
-        userId: mtgData.requesterId,
-        title: "Reunión rechazada",
-        message: `${receiver?.nombre || "Un participante"} ha rechazado tu solicitud de reunión.`,
-        timestamp: new Date(),
-        read: false,
-        type: "meeting_rejected",
-      });
+      if (evPolicies.dashboardNotificationsEnabled !== false) {
+        await addDoc(collection(db, "notifications"), {
+          userId: mtgData.requesterId,
+          title: "Reunión rechazada",
+          message: `${receiver?.nombre || "Un participante"} ha rechazado tu solicitud de reunión.`,
+          timestamp: new Date(),
+          read: false,
+          type: "meeting_rejected",
+        });
+      }
 
       // Enviar WhatsApp al solicitante informando del rechazo
-      if (requester?.telefono) {
+      if (evPolicies.whatsappNotificationsEnabled !== false && requester?.telefono) {
         const phone = (requester.telefono || "").toString().replace(/[^\d]/g, "");
         const eventLine = evName ? `📌 *Evento:* ${evName}\n` : "";
         const message =
@@ -441,94 +444,99 @@ export default function MeetingAutoResponse() {
       // Reutilizar eventSnap que ya fue declarado arriba
       const evName = eventSnap.exists() ? eventSnap.data().eventName || "" : "";
       const eventConfig = eventSnap.exists() ? eventSnap.data().config || {} : {};
+      const evPolicies = eventConfig.policies || {};
 
       // Notificación in-app
-      await addDoc(collection(db, "notifications"), {
-        userId: mtgData.requesterId,
-        title: "Reunión aceptada",
-        message: `${receiver?.nombre || "Un participante"} ha aceptado tu reunión para ${slot.startTime} en mesa ${slot.tableNumber}.`,
-        timestamp: new Date(),
-        read: false,
-        type: "meeting_accepted",
-      });
+      if (evPolicies.dashboardNotificationsEnabled !== false) {
+        await addDoc(collection(db, "notifications"), {
+          userId: mtgData.requesterId,
+          title: "Reunión aceptada",
+          message: `${receiver?.nombre || "Un participante"} ha aceptado tu reunión para ${slot.startTime} en mesa ${slot.tableNumber}.`,
+          timestamp: new Date(),
+          read: false,
+          type: "meeting_accepted",
+        });
+      }
 
       // Enviar WhatsApp a ambos participantes
-      const whatsappApiVersion = eventConfig.policies?.whatsappApiVersion || "v1";
+      const whatsappApiVersion = evPolicies.whatsappApiVersion || "v1";
       const accepterName = receiver?.nombre || "";
       const meetingInfo = {
         timeSlot: `${slot.startTime} - ${slot.endTime}`,
         tableAssigned: String(slot.tableNumber),
       };
 
-      if (whatsappApiVersion === "v2") {
-        // Usar API v2 con el endpoint de confirmación
-        const { sendMeetingConfirmation } = await import("../utils/whatsappService");
-        
-        if (requester?.telefono) {
-          await sendMeetingConfirmation({
-            phone: requester.telefono,
-            eventName: evName,
-            acceptedBy: accepterName,
-            meetingWith: receiver?.nombre || "Participante",
-            company: receiver?.empresa || "Empresa",
-            schedule: meetingInfo.timeSlot,
-            table: meetingInfo.tableAssigned,
-          });
-        }
-        
-        if (receiver?.telefono) {
-          await sendMeetingConfirmation({
-            phone: receiver.telefono,
-            eventName: evName,
-            acceptedBy: accepterName,
-            meetingWith: requester?.nombre || "Participante",
-            company: requester?.empresa || "Empresa",
-            schedule: meetingInfo.timeSlot,
-            table: meetingInfo.tableAssigned,
-          });
-        }
-      } else {
-        // Usar API v1 (método anterior)
-        const buildAcceptedMsg = (otherParticipant) => {
-          const eventLine = evName ? `📌 *Evento:* ${evName}\n` : "";
-          const acceptedLine = accepterName
-            ? `✅ *${accepterName}* ha aceptado la reunión.\n\n`
-            : "";
-          return (
-            `🤝 *¡Reunión confirmada!*\n\n` +
-            eventLine +
-            acceptedLine +
-            `👤 *Con:* ${otherParticipant?.nombre || ""}\n` +
-            `🏢 *Empresa:* ${otherParticipant?.empresa || ""}\n` +
-            `🕐 *Horario:* ${meetingInfo.timeSlot}\n` +
-            `🪑 *Mesa:* ${meetingInfo.tableAssigned}\n\n` +
-            `¡Te esperamos!`
-          );
-        };
+      if (evPolicies.whatsappNotificationsEnabled !== false) {
+        if (whatsappApiVersion === "v2") {
+          // Usar API v2 con el endpoint de confirmación
+          const { sendMeetingConfirmation } = await import("../utils/whatsappService");
 
-        if (requester?.telefono) {
-          const phone = (requester.telefono || "").toString().replace(/[^\d]/g, "");
-          fetch(API_WP_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              clientId: CLIENT_ID,
-              phone: `57${phone}`,
-              message: buildAcceptedMsg(receiver),
-            }),
-          }).catch(() => {});
-        }
-        if (receiver?.telefono) {
-          const phone = (receiver.telefono || "").toString().replace(/[^\d]/g, "");
-          fetch(API_WP_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              clientId: CLIENT_ID,
-              phone: `57${phone}`,
-              message: buildAcceptedMsg(requester),
-            }),
-          }).catch(() => {});
+          if (requester?.telefono) {
+            await sendMeetingConfirmation({
+              phone: requester.telefono,
+              eventName: evName,
+              acceptedBy: accepterName,
+              meetingWith: receiver?.nombre || "Participante",
+              company: receiver?.empresa || "Empresa",
+              schedule: meetingInfo.timeSlot,
+              table: meetingInfo.tableAssigned,
+            });
+          }
+
+          if (receiver?.telefono) {
+            await sendMeetingConfirmation({
+              phone: receiver.telefono,
+              eventName: evName,
+              acceptedBy: accepterName,
+              meetingWith: requester?.nombre || "Participante",
+              company: requester?.empresa || "Empresa",
+              schedule: meetingInfo.timeSlot,
+              table: meetingInfo.tableAssigned,
+            });
+          }
+        } else {
+          // Usar API v1 (método anterior)
+          const buildAcceptedMsg = (otherParticipant) => {
+            const eventLine = evName ? `📌 *Evento:* ${evName}\n` : "";
+            const acceptedLine = accepterName
+              ? `✅ *${accepterName}* ha aceptado la reunión.\n\n`
+              : "";
+            return (
+              `🤝 *¡Reunión confirmada!*\n\n` +
+              eventLine +
+              acceptedLine +
+              `👤 *Con:* ${otherParticipant?.nombre || ""}\n` +
+              `🏢 *Empresa:* ${otherParticipant?.empresa || ""}\n` +
+              `🕐 *Horario:* ${meetingInfo.timeSlot}\n` +
+              `🪑 *Mesa:* ${meetingInfo.tableAssigned}\n\n` +
+              `¡Te esperamos!`
+            );
+          };
+
+          if (requester?.telefono) {
+            const phone = (requester.telefono || "").toString().replace(/[^\d]/g, "");
+            fetch(API_WP_URL, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                clientId: CLIENT_ID,
+                phone: `57${phone}`,
+                message: buildAcceptedMsg(receiver),
+              }),
+            }).catch(() => {});
+          }
+          if (receiver?.telefono) {
+            const phone = (receiver.telefono || "").toString().replace(/[^\d]/g, "");
+            fetch(API_WP_URL, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                clientId: CLIENT_ID,
+                phone: `57${phone}`,
+                message: buildAcceptedMsg(requester),
+              }),
+            }).catch(() => {});
+          }
         }
       }
 

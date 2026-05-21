@@ -56,6 +56,13 @@ import { storage } from "../firebase/firebaseConfig";
 import { UserContext } from "../context/UserContext";
 import { uploadCompanyLogo } from "../utils/companyStorage";
 import { trackEvent } from "../utils/analytics";
+import {
+  COUNTRY_CODES,
+  detectDefaultIso2,
+  getDialCodeForIso2,
+  parsePhoneValue,
+  isPhoneField,
+} from "../utils/phoneUtils";
 
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
 
@@ -119,6 +126,8 @@ function formatDate(dateString) {
 const validateField = (field, value) => {
   const { validation = {}, required = true } = field;
 
+  const isPhone = isPhoneField(field);
+
   if (required) {
     if (typeof value === "boolean") {
       if (!value)
@@ -126,13 +135,20 @@ const validateField = (field, value) => {
           validation?.errorMessage || `El campo ${field.label} es obligatorio`
         );
     } else {
-      if (!value || String(value).trim() === "") {
+      let checkValue = value;
+      if (isPhone && value) {
+        const m = String(value).trim().match(/^(\+\d{1,4})\s?(.*)$/);
+        checkValue = m ? m[2].trim() : String(value).replace(/\D/g, "");
+      }
+      if (!checkValue || String(checkValue).trim() === "") {
         return (
           validation?.errorMessage || `El campo ${field.label} es obligatorio`
         );
       }
     }
   }
+
+  if (isPhone) return null;
 
   if (validation?.minLength && value?.length < validation.minLength) {
     return (
@@ -204,6 +220,8 @@ const Landing = () => {
 
   // PDF document fields state: { [fieldName]: File }
   const [pdfFiles, setPdfFiles] = useState({});
+
+  const defaultIso2 = useMemo(() => detectDefaultIso2(), []);
 
   // AI description improvement state
   const [improvingDescription, setImprovingDescription] = useState(false);
@@ -647,12 +665,17 @@ const Landing = () => {
       }
 
       const nitNorm = normalizeNit(formValues.company_nit || "");
-      const razon = String(formValues.company_razonSocial || "").trim();
+      let razon = String(formValues.company_razonSocial || formValues.empresa || "").trim();
 
       if (eventId && nitNorm) {
         try {
           const companyRef = doc(db, "events", eventId, "companies", nitNorm);
           const snap = await getDoc(companyRef);
+
+          // If no name provided locally, use existing Firestore razonSocial
+          if (!razon && snap.exists()) {
+            razon = String(snap.data()?.razonSocial || "").trim();
+          }
 
           const companyFieldData = {};
           companyStepFields.forEach((fieldName) => {
@@ -704,7 +727,12 @@ const Landing = () => {
         dataToUpdate.companyId = nitNorm;
         dataToUpdate.company_nit = nitNorm;
         dataToUpdate.company_razonSocial = razon || null;
-        if (razon) dataToUpdate.empresa = razon;
+        dataToUpdate.empresa = razon || nitNorm;
+      }
+
+      // Sin NIT: si hay razón social en el formulario, guardarla como empresa
+      if (!nitNorm && razon && !dataToUpdate.empresa) {
+        dataToUpdate.empresa = razon;
       }
 
       // Generar attendeeId si la política está activa y el usuario no tiene uno
@@ -1071,6 +1099,67 @@ const Landing = () => {
           );
         }
 
+        if (isPhoneField(field)) {
+          const rawValue = getValueForField(field.name);
+          const { iso2, dialCode, number: phoneNumber } = parsePhoneValue(
+            rawValue,
+            defaultIso2,
+          );
+
+          return (
+            <Box key={field.name}>
+              <Text size="sm" fw={500} mb={4}>
+                {field.label}
+                {field.required && (
+                  <Text component="span" c="red" ml={2}>
+                    *
+                  </Text>
+                )}
+              </Text>
+              <Group gap={6} align="flex-start" wrap="nowrap">
+                <Select
+                  data={COUNTRY_CODES}
+                  value={iso2}
+                  onChange={(newIso2) => {
+                    if (!newIso2) return;
+                    const dc = getDialCodeForIso2(newIso2);
+                    const combined = phoneNumber ? `${dc} ${phoneNumber}` : dc;
+                    handleDynamicChange(field.name, combined);
+                    setFormErrors((prev) => ({ ...prev, [field.name]: null }));
+                  }}
+                  style={{ width: 104 }}
+                  searchable
+                  radius="md"
+                  comboboxProps={{ width: 300 }}
+                  allowDeselect={false}
+                />
+                <TextInput
+                  placeholder={field.placeholder || "Número"}
+                  value={phoneNumber}
+                  onChange={(e) => {
+                    const num = e.target.value.replace(/\D/g, "");
+                    const combined = `${dialCode} ${num}`.trim(); // dialCode viene del parsePhoneValue
+                    handleDynamicChange(field.name, combined);
+                    const err =
+                      field.required && !num
+                        ? field.validation?.errorMessage ||
+                          `El campo ${field.label} es obligatorio`
+                        : null;
+                    setFormErrors((prev) => ({
+                      ...prev,
+                      [field.name]: err,
+                    }));
+                  }}
+                  required={field.required}
+                  error={fieldError}
+                  style={{ flex: 1 }}
+                  radius="md"
+                />
+              </Group>
+            </Box>
+          );
+        }
+
         return (
           <TextInput
             key={field.name}
@@ -1105,6 +1194,7 @@ const Landing = () => {
       photoUploadError,
       pdfFiles,
       formValues,
+      defaultIso2,
     ],
   );
 

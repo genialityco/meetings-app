@@ -119,6 +119,10 @@ export interface EventPolicies {
   standbyCheckInRequired?: boolean;
   /** Asignar número de identificación al registrarse (ej: 1C, 2V) */
   attendeeIdEnabled?: boolean;
+  /** Habilitar envío de notificaciones por WhatsApp */
+  whatsappNotificationsEnabled?: boolean;
+  /** Habilitar notificaciones internas en el dashboard */
+  dashboardNotificationsEnabled?: boolean;
 }
 
 /** Empresa (events/{eventId}/companies/{nitNorm}) */
@@ -173,4 +177,6 @@ export const DEFAULT_POLICIES: EventPolicies = {
   meetingConfirmationEnabled: false,
   standbyCheckInRequired: false,
   attendeeIdEnabled: false,
+  whatsappNotificationsEnabled: true,
+  dashboardNotificationsEnabled: true,
 };
