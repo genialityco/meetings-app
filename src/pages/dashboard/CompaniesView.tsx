@@ -157,10 +157,13 @@ export default function CompaniesView({
     const grouped = new Map<string, Assistant[]>();
 
     filteredAssistants.forEach((assistant) => {
-      const companyKey =
-        assistant.companyId ||
-        assistant.company_nit ||
-        (() => {
+      let companyKey = assistant.companyId || assistant.company_nit;
+      
+      if (policies.groupByRazonSocial) {
+         companyKey = assistant.company_razonSocial || assistant.empresa || companyKey;
+      }
+
+      companyKey = companyKey || (() => {
           const nitField = Object.keys(assistant).find((k) =>
             k.startsWith("custom_nit_"),
           );
@@ -171,27 +174,32 @@ export default function CompaniesView({
             : "sin-nit";
         })();
 
-      if (!grouped.has(companyKey)) grouped.set(companyKey, []);
-      grouped.get(companyKey)!.push(assistant);
+      // Convert to string to avoid object keys issues if undefined
+      const keyString = String(companyKey);
+
+      if (!grouped.has(keyString)) grouped.set(keyString, []);
+      grouped.get(keyString)!.push(assistant);
     });
 
-    return Array.from(grouped.entries()).map(([nit, asistentes]) => {
-      const companyDoc = companiesByNit.get(nit);
+    return Array.from(grouped.entries()).map(([keyStr, asistentes]) => {
+      // Find the companyDoc by NIT just in case, but if grouped by razonSocial, it might not match perfectly by keyStr if it's not a NIT.
+      // We look up by NIT using the first assistant's companyId
+      const nitForLookup = asistentes[0]?.companyId || asistentes[0]?.company_nit || keyStr;
+      const companyDoc = companiesByNit.get(nitForLookup);
+      
       const empresa =
-        companyDoc?.razonSocial ||
-        asistentes[0]?.empresa?.trim() ||
-        "Sin empresa";
+        policies.groupByRazonSocial ? keyStr : (companyDoc?.razonSocial || asistentes[0]?.empresa?.trim() || "Sin empresa");
 
       return {
-        nit,
+        nit: keyStr, // Used as ID
         empresa,
         logoUrl: companyDoc?.logoUrl || null,
         fixedTable: companyDoc?.fixedTable || null,
         asistentes,
-        similarity: undefined as number | undefined, // Add similarity field
+        similarity: undefined as number | undefined,
       };
     });
-  }, [filteredAssistants, companiesByNit]);
+  }, [filteredAssistants, companiesByNit, policies.groupByRazonSocial]);
 
   // Filtrar por búsqueda
   const filtered = useMemo(() => {

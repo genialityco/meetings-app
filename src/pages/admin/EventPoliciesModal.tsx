@@ -54,6 +54,7 @@ export default function EventPoliciesModal({
   const [attendeeIdEnabled, setAttendeeIdEnabled] = useState(false);
   const [whatsappNotificationsEnabled, setWhatsappNotificationsEnabled] = useState(true);
   const [dashboardNotificationsEnabled, setDashboardNotificationsEnabled] = useState(true);
+  const [groupByRazonSocial, setGroupByRazonSocial] = useState(false);
 
   // Empresas y asignación de mesas fijas
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -84,6 +85,7 @@ export default function EventPoliciesModal({
     setAttendeeIdEnabled(p.attendeeIdEnabled ?? false);
     setWhatsappNotificationsEnabled(p.whatsappNotificationsEnabled ?? true);
     setDashboardNotificationsEnabled(p.dashboardNotificationsEnabled ?? true);
+    setGroupByRazonSocial(p.groupByRazonSocial ?? false);
   }, [event]);
 
   // Cargar empresas cuando se abre el modal y tableMode es "fixed"
@@ -161,6 +163,7 @@ export default function EventPoliciesModal({
               attendeeIdEnabled,
               whatsappNotificationsEnabled,
               dashboardNotificationsEnabled,
+              groupByRazonSocial,
             },
           },
         },
@@ -367,6 +370,13 @@ export default function EventPoliciesModal({
           ]}
           value={surveyBlockedFor}
           onChange={(v) => setSurveyBlockedFor((v as EventPolicies["surveyBlockedFor"]) ?? "none")}
+        />
+
+        <Switch
+          label="Agrupar empresas por nombre"
+          description="Agrupa asistentes en la vista de empresas por 'company_razonSocial' en lugar de por su NIT"
+          checked={groupByRazonSocial}
+          onChange={(e) => setGroupByRazonSocial(e.currentTarget.checked)}
         />
 
         <Divider label="Vistas habilitadas en el dashboard" labelPosition="left" />
