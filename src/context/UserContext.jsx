@@ -117,14 +117,16 @@ export const UserProvider = ({ children }) => {
 
   useEffect(() => {
     // Escuchar mensajes en primer plano
-    onMessage(messaging, (payload) => {
-      console.log("Notificación recibida:", payload);
-      showNotification({
-        title: payload.notification.title,
-        message: payload.notification.body,
-        color: "blue",
+    if (messaging) {
+      onMessage(messaging, (payload) => {
+        console.log("Notificación recibida:", payload);
+        showNotification({
+          title: payload.notification.title,
+          message: payload.notification.body,
+          color: "blue",
+        });
       });
-    });
+    }
   }, []);
 
   const updateUser = async (uid, data) => {

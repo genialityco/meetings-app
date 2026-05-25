@@ -27,7 +27,9 @@ import {
   ActionIcon,
   Loader,
   Group,
+  Pagination,
 } from "@mantine/core";
+import { useDebouncedValue } from "@mantine/hooks";
 import { db } from "../../firebase/firebaseConfig";
 import {
   collection,
@@ -517,6 +519,11 @@ const MatrixPage = () => {
   const [creatingMeeting, setCreatingMeeting] = useState(false);
   const [globalMessage, setGlobalMessage] = useState("");
   const [userSearch, setUserSearch] = useState("");
+  const [debouncedSearch] = useDebouncedValue(userSearch, 300);
+
+  const [mesasPage, setMesasPage] = useState(1);
+  const [usuariosPage, setUsuariosPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
 
   const [selectedDate, setSelectedDate] = useState(null);
   const [affinityScores, setAffinityScores] = useState({});
@@ -824,8 +831,8 @@ const MatrixPage = () => {
       if (mtg.status !== "accepted" || !mtg.timeSlot || mtg.isExternal) return;
       const [startTime] = mtg.timeSlot.split(" - ");
       const tIdx = Number(mtg.tableAssigned) - 1;
-      const sIdx = timeSlots.indexOf(startTime);
-      if (tIdx >= 0 && tIdx < numTables && sIdx >= 0) {
+      const sIdx = timeSlotIndexMap[startTime];
+      if (tIdx >= 0 && tIdx < numTables && sIdx !== undefined && sIdx >= 0) {
         baseMatrix[tIdx][sIdx] = {
           status: "accepted",
           participants: mtg.participants.map((id) =>
@@ -844,8 +851,8 @@ const MatrixPage = () => {
     meetingsDelDia.forEach((mtg) => {
       if (mtg.status !== "accepted" || !mtg.timeSlot || !mtg.isExternal) return;
       const startTime = mtg.timeSlot.split(" - ")[0].trim();
-      const sIdx = timeSlots.indexOf(startTime);
-      if (sIdx < 0) return;
+      const sIdx = timeSlotIndexMap[startTime];
+      if (sIdx === undefined || sIdx < 0) return;
       // Agregar a todas las mesas que coincidan con tableAssigned, o a la primera si no tiene mesa
       const tIdx = mtg.tableAssigned ? Number(mtg.tableAssigned) - 1 : 0;
       if (tIdx >= 0 && tIdx < numTables) {
@@ -861,26 +868,27 @@ const MatrixPage = () => {
   // Memoize matriz por usuarios - filtrar por fecha seleccionada
   const memoMatrixUsuarios = useMemo(() => {
     if (!config || asistentes.length === 0 || !selectedDate) return [];
-    const { meetingDuration } = config.config;
-
-    // Obtener breakBlocks del día seleccionado
-    const dayConfig = config.config.dailyConfig?.[selectedDate] || {
-      breakBlocks: config.config.breakBlocks || [],
-    };
-    const breakBlocks = dayConfig.breakBlocks || [];
 
     // Filtrar reuniones por fecha
     const meetingsDelDia = meetings.filter(
       (mtg) => !mtg.meetingDate || mtg.meetingDate === selectedDate,
     );
 
+    // Optimización: Crear un mapa de reuniones por usuario y por slot para evitar O(N) dentro de O(N^2)
+    const userMeetingLookup = {};
+    meetingsDelDia.forEach((m) => {
+      if (!m.timeSlot || m.isExternal) return;
+      const start = m.timeSlot.split(" - ")[0].trim();
+      m.participants.forEach((pid) => {
+        if (!userMeetingLookup[pid]) userMeetingLookup[pid] = {};
+        userMeetingLookup[pid][start] = m;
+      });
+    });
+
     return asistentes.map((user) => {
+      const userMeetings = userMeetingLookup[user.id] || {};
       const row = timeSlots.map((slot) => {
-        const mtg = meetingsDelDia.find((m) => {
-          if (!m.timeSlot || m.isExternal) return false;
-          const start = m.timeSlot.split(" - ")[0].trim();
-          return start === slot && m.participants.includes(user.id);
-        });
+        const mtg = userMeetings[slot];
 
         if (mtg && mtg.status === "accepted") {
           return {
@@ -901,7 +909,7 @@ const MatrixPage = () => {
       });
       return { asistente: user, row };
     });
-  }, [config, asistentes, meetings, participantsInfo, timeSlots, selectedDate]);
+  }, [config, asistentes, meetings, timeSlots, selectedDate]);
 
   // Filtrado por mesas y búsqueda — retorna { table, originalIdx }[] para preservar número de mesa
   const filteredMatrix = useMemo(() => {
@@ -911,8 +919,8 @@ const MatrixPage = () => {
     }));
 
     const matchesAssistant = (assistant) => {
-      if (!userSearch || userSearch.trim() === "") return true;
-      const searchTerm = userSearch.toLowerCase();
+      if (!debouncedSearch || debouncedSearch.trim() === "") return true;
+      const searchTerm = debouncedSearch.toLowerCase();
       return [
         "nombre",
         "empresa",
@@ -935,7 +943,7 @@ const MatrixPage = () => {
         String(originalIdx + 1) !== selectedTableFilter
       )
         return false;
-      if (!userSearch || userSearch.trim() === "") return true;
+      if (!debouncedSearch || debouncedSearch.trim() === "") return true;
       return table.some((cell) => {
         const meetingMatch = (cell.meetingData?.participants || []).some(
           (pid) => {
@@ -952,13 +960,14 @@ const MatrixPage = () => {
         return meetingMatch || freeMatch;
       });
     });
-  }, [memoMatrix, participantsInfo, userSearch, selectedTableFilter]);
+  }, [memoMatrix, participantsInfo, debouncedSearch, selectedTableFilter]);
 
   const filteredMatrixUsuarios = useMemo(
     () =>
       memoMatrixUsuarios.filter(({ asistente }) => {
-        const searchTerm = userSearch.toLowerCase();
+        const searchTerm = (debouncedSearch || "").toLowerCase();
         const matchesSearch =
+          !searchTerm ||
           (asistente.nombre || "").toLowerCase().includes(searchTerm) ||
           (
             asistente.empresa ||
@@ -979,8 +988,19 @@ const MatrixPage = () => {
 
         return matchesSearch && matchesType;
       }),
-    [memoMatrixUsuarios, userSearch, typeFilter],
+    [memoMatrixUsuarios, debouncedSearch, typeFilter],
   );
+
+  useEffect(() => { setMesasPage(1); }, [debouncedSearch, selectedTableFilter, selectedDate]);
+  useEffect(() => { setUsuariosPage(1); }, [debouncedSearch, typeFilter, selectedDate]);
+
+  const paginatedMesas = useMemo(() => 
+    filteredMatrix.slice((mesasPage - 1) * ITEMS_PER_PAGE, mesasPage * ITEMS_PER_PAGE),
+  [filteredMatrix, mesasPage]);
+
+  const paginatedUsuarios = useMemo(() => 
+    filteredMatrixUsuarios.slice((usuariosPage - 1) * ITEMS_PER_PAGE, usuariosPage * ITEMS_PER_PAGE),
+  [filteredMatrixUsuarios, usuariosPage]);
 
   // --------- FILTRAR SLOTS DISPONIBLES PARA EDICIÓN ---------
   const slotsDisponiblesParaEdicion = useMemo(() => {
@@ -1839,18 +1859,18 @@ const MatrixPage = () => {
           </Flex>
           <ScrollArea>
             <Flex gap="lg" justify="center" align="flex-start" wrap="wrap">
-              {filteredMatrix.map(({ table, originalIdx: ti }) => (
+              {paginatedMesas.map(({ table, originalIdx: ti }) => (
                 <Card
                   key={ti}
-                  shadow="md"
-                  radius="lg"
+                  shadow="sm"
+                  radius="md"
+                  padding="xs"
                   style={{
-                    minWidth: "min(100%, 480px)",
                     maxWidth: 680,
                     width: "100%",
                     background: "#f9fafb",
                     border: "1px solid #e5e7eb",
-                    boxShadow: "0 2px 12px #0001",
+                    boxShadow: "0 2px 8px #0001",
                   }}
                 >
                   <Group justify="space-between" mb="xs" align="center">
@@ -1863,27 +1883,29 @@ const MatrixPage = () => {
                   <Table
                     striped
                     highlightOnHover
-                    horizontalSpacing="sm"
+                    horizontalSpacing="xs"
                     verticalSpacing={8}
-                    style={{ borderRadius: 12, overflow: "hidden", minWidth: 320 }}
+                    style={{ borderRadius: 12, overflow: "hidden", minWidth: 200 }}
                   >
                     <Table.Thead>
                       <Table.Tr>
                         <Table.Th
                           style={{
-                            fontSize: 12,
+                            fontSize: 11,
                             color: "#6b7280",
                             fontWeight: 600,
-                            width: 90,
+                            width: 30,
+                            padding: "1px 1px"
                           }}
                         >
                           Hora
                         </Table.Th>
                         <Table.Th
                           style={{
-                            fontSize: 12,
+                            fontSize: 11,
                             color: "#6b7280",
                             fontWeight: 600,
+                            padding: "1px 1px"
                           }}
                         >
                           Estado / Participantes
@@ -1901,14 +1923,15 @@ const MatrixPage = () => {
                               <Table.Td
                                 style={{
                                   fontWeight: 600,
-                                  fontSize: 12,
+                                  fontSize: 11,
                                   color: "#1565c0",
                                   whiteSpace: "nowrap",
+                                  padding: "1px 1px"
                                 }}
                               >
                                 {row.start} - {row.end}
                               </Table.Td>
-                              <Table.Td>
+                              <Table.Td style={{ padding: "1px 1px" }}>
                                 <Badge color="blue" variant="light" size="sm">
                                   {row.label}
                                 </Badge>
@@ -1929,12 +1952,13 @@ const MatrixPage = () => {
                             <Table.Td
                               style={{
                                 fontWeight: 600,
-                                fontSize: 13,
+                                fontSize: 10,
                                 color: "#21252cff",
                                 whiteSpace: "nowrap",
+                                padding: "2px"
                               }}
                             >
-                              <Group gap={4} wrap="nowrap">
+                              <Stack gap={1} align="center">
                                 {timeSlots[si]}
                                 <Menu
                                   withinPortal
@@ -1990,9 +2014,9 @@ const MatrixPage = () => {
                                     </Menu.Item>
                                   </Menu.Dropdown>
                                 </Menu>
-                              </Group>
+                              </Stack>
                             </Table.Td>
-                            <Table.Td>
+                            <Table.Td style={{ padding: "1px" }}>
                               {cell.status === "accepted" ? (
                                 (() => {
                                   const p0 =
@@ -2020,7 +2044,7 @@ const MatrixPage = () => {
                                           {/* Fila 1: estado + acciones */}
                                           <Group
                                             justify="space-between"
-                                            wrap="nowrap"
+                                            wrap="wrap"
                                           >
                                             <Group gap={5}>
                                               <StatusBadge
@@ -2525,6 +2549,11 @@ const MatrixPage = () => {
                 </Card>
               ))}
             </Flex>
+            {filteredMatrix.length > ITEMS_PER_PAGE && (
+              <Flex justify="center" mt="xl" mb="md">
+                <Pagination total={Math.ceil(filteredMatrix.length / ITEMS_PER_PAGE)} value={mesasPage} onChange={setMesasPage} />
+              </Flex>
+            )}
           </ScrollArea>
         </Tabs.Panel>
 
@@ -2547,18 +2576,18 @@ const MatrixPage = () => {
 
           <ScrollArea>
             <Flex gap="lg" justify="center" align="flex-start" wrap="wrap">
-              {filteredMatrixUsuarios.map(({ asistente, row }) => (
+              {paginatedUsuarios.map(({ asistente, row }) => (
                 <Card
                   key={asistente.id}
-                  shadow="md"
-                  radius="lg"
+                  shadow="sm"
+                  radius="md"
+                  padding="xs"
                   style={{
-                    minWidth: "min(100%, 480px)",
                     maxWidth: 680,
                     width: "100%",
                     background: "#f9fafb",
                     border: "1px solid #e5e7eb",
-                    boxShadow: "0 2px 12px #0001",
+                    boxShadow: "0 2px 8px #0001",
                   }}
                 >
                   <Title
@@ -2641,27 +2670,29 @@ const MatrixPage = () => {
                   <Table
                     striped
                     highlightOnHover
-                    horizontalSpacing="sm"
+                    horizontalSpacing="xs"
                     verticalSpacing={8}
-                    style={{ borderRadius: 12, overflow: "hidden", minWidth: 320 }}
+                    style={{ borderRadius: 12, overflow: "hidden", minWidth: 260 }}
                   >
                     <Table.Thead>
                       <Table.Tr>
                         <Table.Th
                           style={{
-                            fontSize: 12,
+                            fontSize: 11,
                             color: "#6b7280",
                             fontWeight: 600,
-                            width: 90,
+                            width: 30,
+                            padding: "4px 8px"
                           }}
                         >
                           Hora
                         </Table.Th>
                         <Table.Th
                           style={{
-                            fontSize: 12,
+                            fontSize: 11,
                             color: "#6b7280",
                             fontWeight: 600,
+                            padding: "4px 8px"
                           }}
                         >
                           Estado / Contraparte
@@ -2679,14 +2710,15 @@ const MatrixPage = () => {
                               <Table.Td
                                 style={{
                                   fontWeight: 600,
-                                  fontSize: 12,
+                                  fontSize: 11,
                                   color: "#1565c0",
                                   whiteSpace: "nowrap",
+                                  padding: "4px 8px"
                                 }}
                               >
                                 {rowItem.start} - {rowItem.end}
                               </Table.Td>
-                              <Table.Td>
+                              <Table.Td style={{ padding: "4px 8px" }}>
                                 <Badge color="blue" variant="light" size="sm">
                                   {rowItem.label}
                                 </Badge>
@@ -2708,12 +2740,13 @@ const MatrixPage = () => {
                             <Table.Td
                               style={{
                                 fontWeight: 600,
-                                fontSize: 13,
+                                fontSize: 10,
                                 color: "#1f2125ff",
                                 whiteSpace: "nowrap",
+                                padding: "2px"
                               }}
                             >
-                              <Group gap={4} wrap="nowrap">
+                              <Stack gap={1} align="center">
                                 {slot}
                                 <Menu
                                   withinPortal
@@ -2765,9 +2798,9 @@ const MatrixPage = () => {
                                     </Menu.Item>
                                   </Menu.Dropdown>
                                 </Menu>
-                              </Group>
+                              </Stack>
                             </Table.Td>
-                            <Table.Td>
+                            <Table.Td style={{ padding: "4px" }}>
                               {cell.status === "accepted" ? (
                                 (() => {
                                   const affinity = getAffinityScore(
@@ -2796,7 +2829,7 @@ const MatrixPage = () => {
                                           {/* Fila 1: estado + mesa + acciones */}
                                           <Group
                                             justify="space-between"
-                                            wrap="nowrap"
+                                            wrap="wrap"
                                           >
                                             <Group gap={5}>
                                               <StatusBadge
@@ -3390,6 +3423,11 @@ const MatrixPage = () => {
                 </Card>
               ))}
             </Flex>
+            {filteredMatrixUsuarios.length > ITEMS_PER_PAGE && (
+              <Flex justify="center" mt="xl" mb="md">
+                <Pagination total={Math.ceil(filteredMatrixUsuarios.length / ITEMS_PER_PAGE)} value={usuariosPage} onChange={setUsuariosPage} />
+              </Flex>
+            )}
           </ScrollArea>
         </Tabs.Panel>
       </Tabs>

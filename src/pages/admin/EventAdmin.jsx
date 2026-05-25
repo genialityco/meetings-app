@@ -586,11 +586,12 @@ const EventAdmin = () => {
     try {
       setActionLoading(true);
 
-      const [meetingsSnap, agendaSnap, asistentesSnap, usersSnap] = await Promise.all([
+      const [meetingsSnap, agendaSnap, asistentesSnap, usersSnap, surveysSnap] = await Promise.all([
         getDocs(collection(db, "events", event.id, "meetings")),
         getDocs(collection(db, "events", event.id, "agenda")),
         getDocs(collection(db, "events", event.id, "asistentes")),
         getDocs(query(collection(db, "users"), where("eventId", "==", event.id))),
+        getDocs(collection(db, "meetingSurveys")),
       ]);
 
       // meetingId -> agendaSlot
@@ -598,6 +599,33 @@ const EventAdmin = () => {
       agendaSnap.forEach((d) => {
         const data = d.data();
         if (data.meetingId) agendaByMeetingId[data.meetingId] = data;
+      });
+
+      // Extraer labels de surveyConfig
+      const surveyLabelsMap = {};
+      const surveyConfig = event.config?.surveyConfig || {};
+      const addFieldsToMap = (fields = []) => {
+        fields.forEach(f => {
+          if (f.name && f.label) {
+            surveyLabelsMap[f.name] = f.label;
+          }
+        });
+      };
+      addFieldsToMap(surveyConfig.compradorFields);
+      addFieldsToMap(surveyConfig.vendedorFields);
+
+      // meetingId_userId -> survey string
+      const surveysMap = {};
+      const excludedSurveyKeys = new Set(["id", "meetingId", "userId", "otherUserId", "otherUserName", "otherUserEmpresa", "userEmpresa", "userName", "createdAt", "filledByAdmin"]);
+      surveysSnap.forEach((d) => {
+        const data = d.data();
+        if (data.meetingId && data.userId) {
+          const fields = Object.entries(data).filter(([k, v]) => !excludedSurveyKeys.has(k) && v !== "" && v != null);
+          surveysMap[`${data.meetingId}_${data.userId}`] = fields.map(([k, v]) => {
+            const label = surveyLabelsMap[k] || k;
+            return `${label}: ${v}`;
+          }).join(" | ");
+        }
       });
 
       // userId -> asistente (info base)
@@ -622,12 +650,14 @@ const EventAdmin = () => {
           "Participante 1 (Nombre)",
           "Participante 1 (Rol)",
           "Participante 1 (Necesidad)",
+          "Participante 1 (Encuesta)",
           "Participante 2 (NIT)",
           "Participante 2 (Empresa)",
           "Participante 2 (Cédula)",
           "Participante 2 (Nombre)",
           "Participante 2 (Rol)",
           "Participante 2 (Necesidad)",
+          "Participante 2 (Encuesta)",
           "Estado",
           "Realizada",
           "Fecha creación",
@@ -635,8 +665,13 @@ const EventAdmin = () => {
         ...meetingsSnap.docs.map((d) => {
           const meeting = d.data();
           const agendaSlot = agendaByMeetingId[d.id];
-          const p1 = meeting.participants?.[0] ? usersMap[meeting.participants[0]] : null;
-          const p2 = meeting.participants?.[1] ? usersMap[meeting.participants[1]] : null;
+          const p1Id = meeting.participants?.[0];
+          const p2Id = meeting.participants?.[1];
+          const p1 = p1Id ? usersMap[p1Id] : null;
+          const p2 = p2Id ? usersMap[p2Id] : null;
+
+          const p1Survey = p1Id ? (surveysMap[`${d.id}_${p1Id}`] || "Sin diligenciar") : "";
+          const p2Survey = p2Id ? (surveysMap[`${d.id}_${p2Id}`] || "Sin diligenciar") : "";
 
           let createdAt = "";
           if (meeting.createdAt?.toDate) createdAt = meeting.createdAt.toDate().toLocaleString();
@@ -652,12 +687,14 @@ const EventAdmin = () => {
             p1?.nombre || "",
             p1?.tipoAsistente || "",
             p1?.necesidad || "",
+            p1Survey,
             p2?.companyId || "",
             p2?.empresa || "",
             p2?.cedula || "",
             p2?.nombre || "",
             p2?.tipoAsistente || "",
             p2?.necesidad || "",
+            p2Survey,
             meeting.status || "",
             meeting.completed ? "Sí" : "No",
             createdAt,
