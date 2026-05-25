@@ -144,6 +144,38 @@ function StatusBadge({ status }) {
   );
 }
 
+// Componente para actualizar el checkbox instantáneamente en UI antes de que Firestore lo procese
+function OptimisticCheckbox({ checked, onChange, label, size, color, onClick }) {
+  const [localChecked, setLocalChecked] = useState(checked);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  useEffect(() => {
+    if (!isUpdating) setLocalChecked(checked);
+  }, [checked, isUpdating]);
+
+  const handleChange = async (e) => {
+    const newVal = e.currentTarget.checked;
+    setLocalChecked(newVal);
+    setIsUpdating(true);
+    try {
+      await onChange(e, !checked);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  return (
+    <Checkbox
+      size={size}
+      label={label}
+      checked={localChecked}
+      onChange={handleChange}
+      onClick={onClick}
+      color={color}
+    />
+  );
+}
+
 function ParticipantsChips({ participants }) {
   return (
     <Flex gap="xs" wrap="wrap">
@@ -235,13 +267,11 @@ function FreeMeetingsList({
                 )}
               </Group>
               <Group gap={4}>
-                <Checkbox
+                <OptimisticCheckbox
                   size="xs"
                   label="Realizada"
                   checked={!!fm.completed}
-                  onChange={(e) =>
-                    toggleMeetingCompleted(fm.id, fm.completed, e)
-                  }
+                  onChange={(e) => toggleMeetingCompleted(fm.id, fm.completed, e)}
                   onClick={(e) => e.stopPropagation()}
                   color="green"
                 />
@@ -2061,22 +2091,12 @@ const MatrixPage = () => {
                                               )}
                                             </Group>
                                             <Group gap={4}>
-                                              <Checkbox
+                                              <OptimisticCheckbox
                                                 size="xs"
                                                 label="Realizada"
-                                                checked={
-                                                  !!cell.meetingData?.completed
-                                                }
-                                                onChange={(e) =>
-                                                  toggleMeetingCompleted(
-                                                    cell.meetingId,
-                                                    cell.meetingData?.completed,
-                                                    e,
-                                                  )
-                                                }
-                                                onClick={(e) =>
-                                                  e.stopPropagation()
-                                                }
+                                                checked={!!cell.meetingData?.completed}
+                                                onChange={(e) => toggleMeetingCompleted(cell.meetingId, cell.meetingData?.completed, e)}
+                                                onClick={(e) => e.stopPropagation()}
                                                 color="green"
                                               />
                                               <Tooltip
@@ -3271,17 +3291,11 @@ const MatrixPage = () => {
                                           </Stack>
 
                                           {/* Fila 3: checkbox realizada */}
-                                          <Checkbox
+                                          <OptimisticCheckbox
                                             size="xs"
                                             label="Realizada"
                                             checked={!!cell.completed}
-                                            onChange={(e) =>
-                                              toggleMeetingCompleted(
-                                                cell.meetingId,
-                                                cell.completed,
-                                                e,
-                                              )
-                                            }
+                                            onChange={(e) => toggleMeetingCompleted(cell.meetingId, cell.completed, e)}
                                             onClick={(e) => e.stopPropagation()}
                                             color="green"
                                           />
