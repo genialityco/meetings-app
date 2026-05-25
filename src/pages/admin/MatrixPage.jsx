@@ -26,9 +26,9 @@ import {
   ActionIcon,
   Loader,
   Group,
-  Pagination,
 } from "@mantine/core";
-import { useDebouncedValue } from "@mantine/hooks";
+import { useDebouncedValue, useMediaQuery } from "@mantine/hooks";
+import { Virtuoso } from "react-virtuoso";
 import { db } from "../../firebase/firebaseConfig";
 import {
   collection,
@@ -557,9 +557,9 @@ const MatrixPage = () => {
   const [userSearch, setUserSearch] = useState("");
   const [debouncedSearch] = useDebouncedValue(userSearch, 300);
 
-  const [mesasPage, setMesasPage] = useState(1);
-  const [usuariosPage, setUsuariosPage] = useState(1);
-  const ITEMS_PER_PAGE = 25;
+  const isDesktop = useMediaQuery('(min-width: 900px)');
+  const isLarge = useMediaQuery('(min-width: 1400px)');
+  const cols = Math.max(1, isLarge ? 3 : isDesktop ? 2 : 1);
 
   const [selectedDate, setSelectedDate] = useState(null);
   const [affinityScores, setAffinityScores] = useState({});
@@ -1033,16 +1033,21 @@ const MatrixPage = () => {
     [memoMatrixUsuarios, debouncedSearch, typeFilter],
   );
 
-  useEffect(() => { setMesasPage(1); }, [debouncedSearch, selectedTableFilter, selectedDate]);
-  useEffect(() => { setUsuariosPage(1); }, [debouncedSearch, typeFilter, selectedDate]);
+  const chunkedMesas = useMemo(() => {
+    const result = [];
+    for (let i = 0; i < filteredMatrix.length; i += cols) {
+      result.push(filteredMatrix.slice(i, i + cols));
+    }
+    return result;
+  }, [filteredMatrix, cols]);
 
-  const paginatedMesas = useMemo(() => 
-    filteredMatrix.slice((mesasPage - 1) * ITEMS_PER_PAGE, mesasPage * ITEMS_PER_PAGE),
-  [filteredMatrix, mesasPage]);
-
-  const paginatedUsuarios = useMemo(() => 
-    filteredMatrixUsuarios.slice((usuariosPage - 1) * ITEMS_PER_PAGE, usuariosPage * ITEMS_PER_PAGE),
-  [filteredMatrixUsuarios, usuariosPage]);
+  const chunkedUsuarios = useMemo(() => {
+    const result = [];
+    for (let i = 0; i < filteredMatrixUsuarios.length; i += cols) {
+      result.push(filteredMatrixUsuarios.slice(i, i + cols));
+    }
+    return result;
+  }, [filteredMatrixUsuarios, cols]);
 
   // --------- FILTRAR SLOTS DISPONIBLES PARA EDICIÓN ---------
   const slotsDisponiblesParaEdicion = useMemo(() => {
@@ -1899,29 +1904,39 @@ const MatrixPage = () => {
               clearable
             />
           </Flex>
-          <ScrollArea>
-            <Flex gap="lg" justify="center" align="flex-start" wrap="wrap">
-              {paginatedMesas.map(({ table, originalIdx: ti }) => (
-                <Card
-                  key={ti}
-                  shadow="sm"
-                  radius="md"
-                  padding="xs"
-                  style={{
-                    flex: "1 1 480px",
-                    maxWidth: 1000,
-                    background: "#f9fafb",
-                    border: "1px solid #e5e7eb",
-                    boxShadow: "0 2px 8px #0001",
-                  }}
+          <div style={{ height: "calc(100vh - 280px)" }}>
+            <Virtuoso
+              style={{ height: "100%" }}
+              data={chunkedMesas}
+              itemContent={(index, rowItems) => (
+                <Flex
+                  gap="lg"
+                  px="md"
+                  mb="lg"
+                  wrap="nowrap"
+                  style={{ width: "100%" }}
                 >
-                  <Group justify="space-between" mb="xs" align="center">
+                  {rowItems.map(({ table, originalIdx: ti }) => (
+                    <Card
+                      key={ti}
+                      shadow="sm"
+                      radius="md"
+                      padding="xs"
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        background: "#f9fafb",
+                        border: "1px solid #e5e7eb",
+                        boxShadow: "0 2px 8px #0001",
+                      }}
+                    >
+                      <Group justify="space-between" mb="xs" align="center">
                     <Title order={5} style={{ letterSpacing: 0.5 }}>
                       {config?.config?.tableNames?.[ti] || `Mesa ${ti + 1}`}
                     </Title>
                   </Group>
                   <Divider mb="sm" />
-                  <ScrollArea>
+                  <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
                   <Table
                     striped
                     highlightOnHover
@@ -2577,16 +2592,16 @@ const MatrixPage = () => {
                       })}
                     </Table.Tbody>
                   </Table>
-                  </ScrollArea>
-                </Card>
-              ))}
-            </Flex>
-          </ScrollArea>
-          {filteredMatrix.length > ITEMS_PER_PAGE && (
-            <Flex justify="center" mt="xl" mb="md">
-              <Pagination total={Math.ceil(filteredMatrix.length / ITEMS_PER_PAGE)} value={mesasPage} onChange={setMesasPage} />
-            </Flex>
-          )}
+                  </div>
+                    </Card>
+                  ))}
+                  {Array.from({ length: cols - rowItems.length }).map((_, i) => (
+                    <div key={`empty-${i}`} style={{ flex: 1 }} />
+                  ))}
+                </Flex>
+              )}
+            />
+          </div>
         </Tabs.Panel>
 
         {/* Panel Usuarios */}
@@ -2606,23 +2621,33 @@ const MatrixPage = () => {
             />
           </Flex>
 
-          <ScrollArea>
-            <Flex gap="lg" justify="center" align="flex-start" wrap="wrap">
-              {paginatedUsuarios.map(({ asistente, row }) => (
-                <Card
-                  key={asistente.id}
-                  shadow="sm"
-                  radius="md"
-                  padding="xs"
-                  style={{
-                    flex: "1 1 480px",
-                    maxWidth: 1000,
-                    background: "#f9fafb",
-                    border: "1px solid #e5e7eb",
-                    boxShadow: "0 2px 8px #0001",
-                  }}
+          <div style={{ height: "calc(100vh - 280px)" }}>
+            <Virtuoso
+              style={{ height: "100%" }}
+              data={chunkedUsuarios}
+              itemContent={(index, rowItems) => (
+                <Flex
+                  gap="lg"
+                  px="md"
+                  mb="lg"
+                  wrap="nowrap"
+                  style={{ width: "100%" }}
                 >
-                  <Title
+                  {rowItems.map(({ asistente, row }) => (
+                    <Card
+                      key={asistente.id}
+                      shadow="sm"
+                      radius="md"
+                      padding="xs"
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        background: "#f9fafb",
+                        border: "1px solid #e5e7eb",
+                        boxShadow: "0 2px 8px #0001",
+                      }}
+                    >
+                      <Title
                     order={5}
                     ta="center"
                     mb={4}
@@ -2698,7 +2723,7 @@ const MatrixPage = () => {
                   </Menu>
 
                   <Divider mb="sm" />
-                  <ScrollArea>
+                  <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
                   <Table
                     striped
                     highlightOnHover
@@ -3445,16 +3470,16 @@ const MatrixPage = () => {
                       })}
                     </Table.Tbody>
                   </Table>
-                  </ScrollArea>
-                </Card>
-              ))}
-            </Flex>
-          </ScrollArea>
-          {filteredMatrixUsuarios.length > ITEMS_PER_PAGE && (
-            <Flex justify="center" mt="xl" mb="md">
-              <Pagination total={Math.ceil(filteredMatrixUsuarios.length / ITEMS_PER_PAGE)} value={usuariosPage} onChange={setUsuariosPage} />
-            </Flex>
-          )}
+                  </div>
+                    </Card>
+                  ))}
+                  {Array.from({ length: cols - rowItems.length }).map((_, i) => (
+                    <div key={`empty-${i}`} style={{ flex: 1 }} />
+                  ))}
+                </Flex>
+              )}
+            />
+          </div>
         </Tabs.Panel>
       </Tabs>
 
