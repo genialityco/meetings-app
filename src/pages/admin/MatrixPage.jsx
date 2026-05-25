@@ -29,6 +29,7 @@ import {
   Pagination,
 } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
+import { Virtuoso } from "react-virtuoso";
 import { db } from "../../firebase/firebaseConfig";
 import {
   collection,
@@ -1899,11 +1900,12 @@ const MatrixPage = () => {
               clearable
             />
           </Flex>
-          <ScrollArea>
-            <Flex gap="lg" justify="center" align="flex-start" wrap="wrap">
-              {paginatedMesas.map(({ table, originalIdx: ti }) => (
+          <Virtuoso
+            useWindowScroll
+            data={paginatedMesas}
+            itemContent={(index, { table, originalIdx: ti }) => (
+              <Flex justify="center" mb="lg">
                 <Card
-                  key={ti}
                   shadow="sm"
                   radius="md"
                   padding="xs"
@@ -2579,14 +2581,14 @@ const MatrixPage = () => {
                   </Table>
                   </ScrollArea>
                 </Card>
-              ))}
-            </Flex>
-            {filteredMatrix.length > ITEMS_PER_PAGE && (
-              <Flex justify="center" mt="xl" mb="md">
-                <Pagination total={Math.ceil(filteredMatrix.length / ITEMS_PER_PAGE)} value={mesasPage} onChange={setMesasPage} />
               </Flex>
             )}
-          </ScrollArea>
+          />
+          {filteredMatrix.length > ITEMS_PER_PAGE && (
+            <Flex justify="center" mt="xl" mb="md">
+              <Pagination total={Math.ceil(filteredMatrix.length / ITEMS_PER_PAGE)} value={mesasPage} onChange={setMesasPage} />
+            </Flex>
+          )}
         </Tabs.Panel>
 
         {/* Panel Usuarios */}
@@ -2606,11 +2608,12 @@ const MatrixPage = () => {
             />
           </Flex>
 
-          <ScrollArea>
-            <Flex gap="lg" justify="center" align="flex-start" wrap="wrap">
-              {paginatedUsuarios.map(({ asistente, row }) => (
+          <Virtuoso
+            useWindowScroll
+            data={paginatedUsuarios}
+            itemContent={(index, { asistente, row }) => (
+              <Flex justify="center" mb="lg">
                 <Card
-                  key={asistente.id}
                   shadow="sm"
                   radius="md"
                   padding="xs"
@@ -3447,14 +3450,14 @@ const MatrixPage = () => {
                   </Table>
                   </ScrollArea>
                 </Card>
-              ))}
-            </Flex>
-            {filteredMatrixUsuarios.length > ITEMS_PER_PAGE && (
-              <Flex justify="center" mt="xl" mb="md">
-                <Pagination total={Math.ceil(filteredMatrixUsuarios.length / ITEMS_PER_PAGE)} value={usuariosPage} onChange={setUsuariosPage} />
               </Flex>
             )}
-          </ScrollArea>
+          />
+          {filteredMatrixUsuarios.length > ITEMS_PER_PAGE && (
+            <Flex justify="center" mt="xl" mb="md">
+              <Pagination total={Math.ceil(filteredMatrixUsuarios.length / ITEMS_PER_PAGE)} value={usuariosPage} onChange={setUsuariosPage} />
+            </Flex>
+          )}
         </Tabs.Panel>
       </Tabs>
 

@@ -123,6 +123,8 @@ export interface EventPolicies {
   whatsappNotificationsEnabled?: boolean;
   /** Habilitar notificaciones internas en el dashboard */
   dashboardNotificationsEnabled?: boolean;
+  /** Agrupar empresas por nombre (company_razonSocial) en lugar de por NIT */
+  groupByRazonSocial?: boolean;
 }
 
 /** Empresa (events/{eventId}/companies/{nitNorm}) */
@@ -179,4 +181,5 @@ export const DEFAULT_POLICIES: EventPolicies = {
   attendeeIdEnabled: false,
   whatsappNotificationsEnabled: true,
   dashboardNotificationsEnabled: true,
+  groupByRazonSocial: false,
 };
