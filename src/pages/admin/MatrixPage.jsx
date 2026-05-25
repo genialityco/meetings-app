@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Container,
   Title,
@@ -23,7 +23,6 @@ import {
   Modal,
   Stack,
   Paper,
-  Tooltip,
   ActionIcon,
   Loader,
   Group,
@@ -64,6 +63,13 @@ import {
 } from "@tabler/icons-react";
 
 // ----------- UTILIDADES -----------
+
+const Tooltip = ({ label, children }) => {
+  if (React.isValidElement(children)) {
+    return React.cloneElement(children, { title: label });
+  }
+  return <span title={label}>{children}</span>;
+};
 
 const generateTimeSlots = (
   start,
@@ -218,7 +224,7 @@ function ParticipantPopover({ width = 320, trigger, children }) {
         </div>
       </Popover.Target>
       <Popover.Dropdown onClick={(e) => e.stopPropagation()}>
-        {children}
+        {opened && children}
       </Popover.Dropdown>
     </Popover>
   );
@@ -553,7 +559,7 @@ const MatrixPage = () => {
 
   const [mesasPage, setMesasPage] = useState(1);
   const [usuariosPage, setUsuariosPage] = useState(1);
-  const ITEMS_PER_PAGE = 10;
+  const ITEMS_PER_PAGE = 25;
 
   const [selectedDate, setSelectedDate] = useState(null);
   const [affinityScores, setAffinityScores] = useState({});
@@ -658,27 +664,33 @@ const MatrixPage = () => {
     const loadAffinityScores = async () => {
       const scores = {};
 
-      // Cargar afinidad para cada usuario
-      for (const user of asistentes) {
-        try {
-          const affinitySnap = await getDocs(
-            collection(db, "users", user.id, "affinityScores"),
-          );
+      // Cargar afinidad para cada usuario (paralelizado en lotes)
+      const chunkSize = 30;
+      for (let i = 0; i < asistentes.length; i += chunkSize) {
+        const chunk = asistentes.slice(i, i + chunkSize);
+        await Promise.all(
+          chunk.map(async (user) => {
+            try {
+              const affinitySnap = await getDocs(
+                collection(db, "users", user.id, "affinityScores"),
+              );
 
-          affinitySnap.docs.forEach((doc) => {
-            const data = doc.data();
-            if (data.targetUserId && typeof data.score === "number") {
-              // Crear clave única para el par de usuarios (ordenada para ser simétrica)
-              const key = [user.id, data.targetUserId].sort().join("_");
-              scores[key] = {
-                score: data.score,
-                reasons: data.reasons || [],
-              };
+              affinitySnap.docs.forEach((doc) => {
+                const data = doc.data();
+                if (data.targetUserId && typeof data.score === "number") {
+                  // Crear clave única para el par de usuarios (ordenada para ser simétrica)
+                  const key = [user.id, data.targetUserId].sort().join("_");
+                  scores[key] = {
+                    score: data.score,
+                    reasons: data.reasons || [],
+                  };
+                }
+              });
+            } catch (error) {
+              console.error(`Error loading affinity for user ${user.id}:`, error);
             }
-          });
-        } catch (error) {
-          console.error(`Error loading affinity for user ${user.id}:`, error);
-        }
+          })
+        );
       }
 
       setAffinityScores(scores);
