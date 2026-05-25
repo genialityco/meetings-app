@@ -288,7 +288,7 @@ export default function TabsPanel({
                 // Change main view to "companies"
                 setTopView("companies");
                 // Set the persistent highlight to trigger scroll and highlight in CompaniesView
-                dashboard.setPersistentHighlight({
+                setPersistentHighlight({
                   entityType: "company",
                   entityId: companyNit,
                   timestamp: Date.now()

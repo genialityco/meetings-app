@@ -386,10 +386,11 @@ export default function MeetingsTab({
                       wrap="nowrap" 
                       align="center" 
                       gap="sm" 
-                      style={{ cursor: onNavigateToCompany && participant?.company_nit ? 'pointer' : 'default' }}
+                      style={{ cursor: onNavigateToCompany && (participant?.company_nit || participant?.companyId) ? 'pointer' : 'default' }}
                       onClick={() => {
-                        if (onNavigateToCompany && participant?.company_nit) {
-                          onNavigateToCompany(participant.company_nit);
+                        const targetCompany = participant?.company_nit || participant?.companyId;
+                        if (onNavigateToCompany && targetCompany) {
+                          onNavigateToCompany(targetCompany);
                         }
                       }}
                     >
@@ -641,10 +642,11 @@ export default function MeetingsTab({
                       wrap="nowrap" 
                       align="center" 
                       gap="sm"
-                      style={{ cursor: onNavigateToCompany && participant?.company_nit ? 'pointer' : 'default' }}
+                      style={{ cursor: onNavigateToCompany && (participant?.company_nit || participant?.companyId) ? 'pointer' : 'default' }}
                       onClick={() => {
-                        if (onNavigateToCompany && participant?.company_nit) {
-                          onNavigateToCompany(participant.company_nit);
+                        const targetCompany = participant?.company_nit || participant?.companyId;
+                        if (onNavigateToCompany && targetCompany) {
+                          onNavigateToCompany(targetCompany);
                         }
                       }}
                     >
