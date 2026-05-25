@@ -15,18 +15,25 @@ const isoToFlag = (iso2: string): string =>
     .map((c) => String.fromCodePoint(c.charCodeAt(0) + 127397))
     .join("");
 
-const cleanName = (name: string): string =>
-  name.replace(/\s*\(.*?\)\s*/g, "").trim();
+const spanishNames = new Intl.DisplayNames(["es"], { type: "region" });
 
-// Unique per iso2, sorted alphabetically
+const getSpanishName = (iso2: string): string => {
+  try {
+    return spanishNames.of(iso2.toUpperCase()) || iso2;
+  } catch {
+    return iso2;
+  }
+};
+
+// Unique per iso2, sorted alphabetically by Spanish name
 export const COUNTRY_CODES: { value: string; label: string; dialCode: string }[] = (
   rawCountries as RawCountry[]
 )
   .slice()
-  .sort((a, b) => cleanName(a.name).localeCompare(cleanName(b.name)))
+  .sort((a, b) => getSpanishName(a.iso2).localeCompare(getSpanishName(b.iso2), "es"))
   .map((c) => ({
     value: c.iso2,
-    label: `${isoToFlag(c.iso2)} +${c.dialCode} ${cleanName(c.name)}`,
+    label: `${isoToFlag(c.iso2)} +${c.dialCode} ${getSpanishName(c.iso2)}`,
     dialCode: `+${c.dialCode}`,
   }));
 
