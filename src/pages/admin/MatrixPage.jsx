@@ -1893,7 +1893,7 @@ const MatrixPage = () => {
               onChange={setSelectedTableFilter}
               data={memoMatrix.map((_, i) => ({
                 value: String(i + 1),
-                label: `Mesa ${i + 1}`,
+                label: config?.config?.tableNames?.[i] || `Mesa ${i + 1}`,
               }))}
               style={{ maxWidth: 200 }}
               clearable
@@ -1917,7 +1917,7 @@ const MatrixPage = () => {
                 >
                   <Group justify="space-between" mb="xs" align="center">
                     <Title order={5} style={{ letterSpacing: 0.5 }}>
-                      Mesa {ti + 1}
+                      {config?.config?.tableNames?.[ti] || `Mesa ${ti + 1}`}
                     </Title>
                   </Group>
                   <Divider mb="sm" />
