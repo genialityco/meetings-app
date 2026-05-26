@@ -58,12 +58,13 @@ export default function ProductsView({
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
-  const [vectorResults, setVectorResults] = useState<Product[]>([]);
-  const [isVectorSearching, setIsVectorSearching] = useState(false);
-  const [useVectorSearch, setUseVectorSearch] = useState(false);
   const [modalOpened, setModalOpened] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<{ product: Product; assistantId: string; assistantPhone: string } | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
+
+  const [vectorResults, setVectorResults] = useState<any[]>([]);
+  const [isVectorSearching, setIsVectorSearching] = useState(false);
+  const [hasSearchedVector, setHasSearchedVector] = useState(false);
 
   const myUid = currentUser?.uid;
 
@@ -111,20 +112,12 @@ export default function ProductsView({
   useEffect(() => {
     const trimmed = searchTerm.trim();
     
-    // Si no hay texto de búsqueda, resetear
-    if (!trimmed) {
-      setUseVectorSearch(false);
+    if (!trimmed || trimmed.length < 3) {
       setVectorResults([]);
+      setHasSearchedVector(false);
       return;
     }
 
-    // Si el texto es muy corto, no usar vectores
-    if (trimmed.length < 3) {
-      setUseVectorSearch(false);
-      return;
-    }
-
-    // Debounce: esperar 500ms después de que el usuario deje de escribir
     const timeoutId = setTimeout(async () => {
       setIsVectorSearching(true);
       
@@ -138,8 +131,7 @@ export default function ProductsView({
             text: trimmed,
             category: "products",
             eventId: eventId,
-            userId: myUid,
-            limit: 50,
+            limit: 30,
             threshold: 0.3,
           }),
         });
@@ -149,70 +141,74 @@ export default function ProductsView({
         }
 
         const data = await response.json();
-        
-        // Enriquecer resultados con datos completos de products
-        const enrichedResults = data.results
-          .map((result: any) => {
-            const fullProduct = products.find(p => p.id === result.id);
-            return fullProduct ? { ...fullProduct, similarity: result.similarity } : null;
-          })
-          .filter(Boolean) as Product[];
 
-        setVectorResults(enrichedResults);
-        setUseVectorSearch(true);
-        
-        console.log(`Vector search found ${enrichedResults.length} products`);
+        if (data.results && data.results.length > 0) {
+          setVectorResults(data.results);
+        } else {
+          setVectorResults([]);
+        }
       } catch (error) {
         console.error("Vector search error:", error);
-        // Fallback a búsqueda normal
-        setUseVectorSearch(false);
         setVectorResults([]);
       } finally {
         setIsVectorSearching(false);
+        setHasSearchedVector(true);
       }
     }, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [searchTerm, eventId, myUid, products]);
+  }, [searchTerm, eventId]);
 
   const filteredProducts = useMemo(() => {
-    let results: Product[] = [];
+    const t = searchTerm.trim().toLowerCase();
     
-    // Si estamos usando búsqueda por vectores
-    if (useVectorSearch && searchTerm.trim().length >= 3) {
-      // Aplicar solo filtro de categoría si existe
-      if (categoryFilter) {
-        results = vectorResults.filter(p => p.category === categoryFilter);
-      } else {
-        results = vectorResults;
-      }
-    } else {
-      // Búsqueda tradicional (keyword-based)
-      const t = searchTerm.toLowerCase().trim();
-      results = (products || []).filter((p) => {
-        if (categoryFilter && p.category !== categoryFilter) return false;
-        if (!t) return true;
-
-        return (
-          (p.title || "").toLowerCase().includes(t) ||
-          (p.description || "").toLowerCase().includes(t) ||
-          (p.category || "").toLowerCase().includes(t) ||
-          (p.ownerCompany || "").toLowerCase().includes(t)
-        );
-      });
+    let baseProducts = products || [];
+    if (categoryFilter) {
+      baseProducts = baseProducts.filter(p => p.category === categoryFilter);
     }
     
-    // Ordenar por afinidad del dueño del producto (si no hay búsqueda por vectores activa)
-    if (!useVectorSearch) {
+    if (!t) {
+      let results = [...baseProducts];
       results.sort((a, b) => {
         const scoreA = a.ownerUserId ? (affinityScores[a.ownerUserId] || 0) : 0;
         const scoreB = b.ownerUserId ? (affinityScores[b.ownerUserId] || 0) : 0;
-        return scoreB - scoreA; // Mayor afinidad primero
+        return scoreB - scoreA;
       });
+      return results;
     }
-    
-    return results;
-  }, [products, searchTerm, categoryFilter, useVectorSearch, vectorResults, affinityScores]);
+
+    const exactMatches = baseProducts.filter((p) => {
+      return (
+        (p.title || "").toLowerCase().includes(t) ||
+        (p.description || "").toLowerCase().includes(t) ||
+        (p.category || "").toLowerCase().includes(t) ||
+        (p.ownerCompany || "").toLowerCase().includes(t)
+      );
+    });
+
+    let semanticMatches: any[] = [];
+    if (vectorResults.length > 0) {
+      const exactIds = new Set(exactMatches.map((p) => p.id));
+      
+      semanticMatches = vectorResults
+        .map((v) => {
+          const found = baseProducts.find((p) => p.id === v.id);
+          if (found) {
+            return {
+              ...found,
+              _similarity: v.similarity,
+              _isSemantic: true,
+            };
+          }
+          return null;
+        })
+        .filter(Boolean);
+        
+      semanticMatches = semanticMatches.filter((p) => !exactIds.has(p.id));
+    }
+
+    return [...exactMatches, ...semanticMatches];
+  }, [products, searchTerm, categoryFilter, vectorResults, affinityScores]);
 
   const handleOpenModal = (
     assistantId: string,
@@ -258,11 +254,10 @@ export default function ProductsView({
   const clearFilters = () => {
     setSearchTerm("");
     setCategoryFilter(null);
-    setUseVectorSearch(false);
     setVectorResults([]);
   };
 
-  const renderProductCard = (p: Product) => {
+  const renderProductCard = (p: any) => {
     const companyDoc = p.companyId ? companiesByNit.get(p.companyId) : undefined;
 
     const isMine = !!myUid && p.ownerUserId === myUid;
@@ -279,8 +274,8 @@ export default function ProductsView({
         : "Solicitar reunión";
 
     // Verificar si tiene similarity score (viene de búsqueda por vectores)
-    const hasSimilarity = typeof (p as any).similarity === 'number';
-    const similarityScore = hasSimilarity ? Math.round((p as any).similarity * 100) : null;
+    const hasSimilarity = p._isSemantic && typeof p._similarity === 'number';
+    const similarityScore = hasSimilarity ? Math.round(p._similarity * 100) : null;
 
     // Verificar si esta card debe ser resaltada (usando el estado temporal)
     const isHighlighted = highlightedId === p.id;
@@ -526,7 +521,7 @@ export default function ProductsView({
               leftSection={
                 isVectorSearching ? (
                   <Loader size={16} />
-                ) : useVectorSearch ? (
+                ) : vectorResults.length > 0 ? (
                   <IconSparkles size={16} style={{ color: "var(--mantine-color-blue-6)" }} />
                 ) : (
                   <IconSearch size={16} />
@@ -566,7 +561,7 @@ export default function ProductsView({
                   <Text size="xs" c="dimmed">
                     Mostrando {filteredProducts.length} resultado(s)
                   </Text>
-                  {useVectorSearch && (
+                  {vectorResults.length > 0 && (
                     <Badge size="xs" variant="light" color="blue" leftSection={<IconSparkles size={10} />}>
                       Búsqueda inteligente
                     </Badge>

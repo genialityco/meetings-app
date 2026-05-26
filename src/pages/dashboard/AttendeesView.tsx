@@ -17,6 +17,7 @@ import {
   Box,
   useMantineTheme,
   Badge,
+  Loader,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import { useState, useMemo, useEffect } from "react";
@@ -35,6 +36,7 @@ import {
   IconUsers,
   IconHeart,
   IconFileTypePdf,
+  IconSparkles,
 } from "@tabler/icons-react";
 import type { Assistant } from "./types";
 import { useNavigate, useParams } from "react-router-dom";
@@ -44,6 +46,7 @@ interface MeetingContext {
   contextNote?: string;
 }
 
+const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
 
 const FIELD_ICONS: Record<string, any> = {
   empresa: IconBuildingStore,
@@ -152,6 +155,10 @@ export default function AttendeesView({
   const [sortBy, setSortBy] = useState<"affinity" | "date">("affinity");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
+  const [vectorResults, setVectorResults] = useState<any[]>([]);
+  const [isVectorSearching, setIsVectorSearching] = useState(false);
+  const [hasSearchedVector, setHasSearchedVector] = useState(false);
+
   // Efecto para hacer scroll y resaltar la card cuando viene de notificación
   useEffect(() => {
     if (highlightEntityId) {
@@ -179,6 +186,57 @@ export default function AttendeesView({
   const { eventId: eventIdFromParams } = useParams<{ eventId: string }>();
   const eventId = currentUser?.eventId || eventIdFromParams;
 
+  // Búsqueda por vectores con debounce
+  useEffect(() => {
+    const trimmed = searchTerm.trim();
+    
+    if (!trimmed || trimmed.length < 3) {
+      setVectorResults([]);
+      setHasSearchedVector(false);
+      return;
+    }
+
+    const timeoutId = setTimeout(async () => {
+      setIsVectorSearching(true);
+      
+      try {
+        const response = await fetch(VECTOR_SEARCH_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text: trimmed,
+            category: "assistants",
+            eventId: eventId,
+            limit: 30,
+            threshold: 0.3,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Vector search failed");
+        }
+
+        const data = await response.json();
+
+        if (data.results && data.results.length > 0) {
+          setVectorResults(data.results);
+        } else {
+          setVectorResults([]);
+        }
+      } catch (error) {
+        console.error("Vector search error:", error);
+        setVectorResults([]);
+      } finally {
+        setIsVectorSearching(false);
+        setHasSearchedVector(true);
+      }
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, eventId]);
+
   const maxMeetingsText = useMemo(() => {
     const n = eventConfig?.maxMeetingsPerUser;
     if (n === undefined || n === null) return "∞";
@@ -187,8 +245,27 @@ export default function AttendeesView({
 
   const displayedAssistants = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
-    let results = filteredAssistants.filter((a) => {
-      if (!term) return true;
+    
+    let baseAssistants = filteredAssistants;
+    if (showOnlyToday) {
+      baseAssistants = baseAssistants.filter((a) => a.connectedToday === true);
+    }
+    
+    if (!term) {
+      let results = [...baseAssistants];
+      if (sortBy === "affinity") {
+        results.sort((a, b) => (affinityScores[b.id] || 0) - (affinityScores[a.id] || 0));
+      } else {
+        results.sort((a, b) => {
+          const timeA = a.createdAt?.toMillis?.() || 0;
+          const timeB = b.createdAt?.toMillis?.() || 0;
+          return timeB - timeA;
+        });
+      }
+      return results;
+    }
+
+    const exactMatches = baseAssistants.filter((a) => {
       return (
         (a.empresa ?? "").toString().toLowerCase().includes(term) ||
         (a.nombre ?? "").toString().toLowerCase().includes(term) ||
@@ -199,22 +276,29 @@ export default function AttendeesView({
       );
     });
 
-    if (showOnlyToday) {
-      results = results.filter(a => a.connectedToday === true);
+    let semanticMatches: any[] = [];
+    if (vectorResults.length > 0) {
+      const exactIds = new Set(exactMatches.map((a) => a.id));
+      
+      semanticMatches = vectorResults
+        .map((v) => {
+          const found = baseAssistants.find((a) => a.id === v.id);
+          if (found) {
+            return {
+              ...found,
+              _similarity: v.similarity,
+              _isSemantic: true,
+            };
+          }
+          return null;
+        })
+        .filter(Boolean);
+        
+      semanticMatches = semanticMatches.filter((a) => !exactIds.has(a.id));
     }
 
-    if (sortBy === "affinity") {
-      results.sort((a, b) => (affinityScores[b.id] || 0) - (affinityScores[a.id] || 0));
-    } else {
-      results.sort((a, b) => {
-        const timeA = a.createdAt?.toMillis?.() || 0;
-        const timeB = b.createdAt?.toMillis?.() || 0;
-        return timeB - timeA;
-      });
-    }
-
-    return results;
-  }, [filteredAssistants, searchTerm, formFields, showOnlyToday, sortBy, affinityScores]);
+    return [...exactMatches, ...semanticMatches];
+  }, [filteredAssistants, searchTerm, formFields, showOnlyToday, sortBy, affinityScores, vectorResults]);
 
   const handleOpenModal = (assistant: Assistant) => {
     setSelectedAssistant(assistant);
@@ -283,7 +367,15 @@ export default function AttendeesView({
               placeholder="Buscar por cualquier campo..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              leftSection={<IconSearch size={16} />}
+              leftSection={
+                isVectorSearching ? (
+                  <Loader size={16} />
+                ) : vectorResults.length > 0 ? (
+                  <IconSparkles size={16} style={{ color: "var(--mantine-color-blue-6)" }} />
+                ) : (
+                  <IconSearch size={16} />
+                )
+              }
               rightSection={
                 hasSearch ? (
                   <ActionIcon
@@ -428,8 +520,27 @@ export default function AttendeesView({
                         zIndex: 1,
                       }}
                     >
-                      {affinityScores[assistant.id]}% afinidad
+                      {affinityScores[assistant.id] || 0}% afinidad
                     </Badge>
+
+                  {/* Badge Búsqueda Inteligente */}
+                  {(assistant as any)._isSemantic && (
+                    <Badge
+                      variant="gradient"
+                      gradient={{ from: 'blue', to: 'cyan', deg: 90 }}
+                      size="sm"
+                      radius="md"
+                      leftSection={<IconSparkles size={12} />}
+                      style={{
+                        position: "absolute",
+                        top: 40,
+                        right: 10,
+                        zIndex: 1,
+                      }}
+                    >
+                      {Math.round(((assistant as any)._similarity || 0) * 100)}% Match
+                    </Badge>
+                  )}
 
                   {/* Badge NUEVO cuando está resaltado */}
                   {isHighlighted && (

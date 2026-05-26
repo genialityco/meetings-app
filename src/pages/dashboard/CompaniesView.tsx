@@ -113,12 +113,13 @@ export default function CompaniesView({
   const [selectedAssistantPerCompany, setSelectedAssistantPerCompany] =
     useState<Record<string, string | null>>({});
   const [searchTerm, setSearchTerm] = useState("");
-  const [vectorResults, setVectorResults] = useState<Company[]>([]);
-  const [isVectorSearching, setIsVectorSearching] = useState(false);
-  const [useVectorSearch, setUseVectorSearch] = useState(false);
   const [modalOpened, setModalOpened] = useState(false);
   const [selectedMeeting, setSelectedMeeting] = useState<{ assistant: Assistant; companyNit: string } | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
+
+  const [vectorResults, setVectorResults] = useState<any[]>([]);
+  const [isVectorSearching, setIsVectorSearching] = useState(false);
+  const [hasSearchedVector, setHasSearchedVector] = useState(false);
 
   const myUid = currentUser?.uid;
 
@@ -201,77 +202,16 @@ export default function CompaniesView({
     });
   }, [filteredAssistants, companiesByNit, policies.groupByRazonSocial]);
 
-  // Filtrar por búsqueda
-  const filtered = useMemo(() => {
-    let results: typeof companiesData = [];
-    
-    // Si estamos usando búsqueda por vectores
-    if (useVectorSearch && searchTerm.trim().length >= 3) {
-      // Mapear resultados de vectores a companiesData, preservando similarity
-      results = vectorResults
-        .map(vectorCompany => {
-          const companyData = companiesData.find(c => c.nit === vectorCompany.nitNorm);
-          if (companyData) {
-            return {
-              ...companyData,
-              similarity: (vectorCompany as any).similarity, // Preservar similarity
-            };
-          }
-          return null;
-        })
-        .filter(Boolean) as typeof companiesData;
-    } else {
-      // Búsqueda tradicional
-      const t = searchTerm.toLowerCase().trim();
-      if (!t) {
-        results = companiesData;
-      } else {
-        results = companiesData.filter(
-          (c) =>
-            c.empresa.toLowerCase().includes(t) ||
-            c.nit.includes(t) ||
-            c.asistentes.some((a) =>
-              (a.nombre || "").toLowerCase().includes(t),
-            ),
-        );
-      }
-    }
-    
-    // Ordenar por afinidad promedio de los asistentes de la empresa (si no hay búsqueda por vectores)
-    if (!useVectorSearch) {
-      results.sort((a, b) => {
-        // Calcular afinidad promedio de los asistentes de cada empresa
-        const avgAffinityA = a.asistentes.length > 0
-          ? a.asistentes.reduce((sum, assistant) => sum + (affinityScores[assistant.id] || 0), 0) / a.asistentes.length
-          : 0;
-        const avgAffinityB = b.asistentes.length > 0
-          ? b.asistentes.reduce((sum, assistant) => sum + (affinityScores[assistant.id] || 0), 0) / b.asistentes.length
-          : 0;
-        return avgAffinityB - avgAffinityA; // Mayor afinidad primero
-      });
-    }
-    
-    return results;
-  }, [companiesData, searchTerm, useVectorSearch, vectorResults, affinityScores]);
-
   // Búsqueda por vectores con debounce
   useEffect(() => {
     const trimmed = searchTerm.trim();
     
-    // Si no hay texto de búsqueda, resetear
-    if (!trimmed) {
-      setUseVectorSearch(false);
+    if (!trimmed || trimmed.length < 3) {
       setVectorResults([]);
+      setHasSearchedVector(false);
       return;
     }
 
-    // Si el texto es muy corto, no usar vectores
-    if (trimmed.length < 3) {
-      setUseVectorSearch(false);
-      return;
-    }
-
-    // Debounce: esperar 500ms después de que el usuario deje de escribir
     const timeoutId = setTimeout(async () => {
       setIsVectorSearching(true);
       
@@ -285,7 +225,7 @@ export default function CompaniesView({
             text: trimmed,
             category: "companies",
             eventId: eventId,
-            limit: 50,
+            limit: 30,
             threshold: 0.3,
           }),
         });
@@ -298,26 +238,72 @@ export default function CompaniesView({
 
         if (data.results && data.results.length > 0) {
           setVectorResults(data.results);
-          setUseVectorSearch(true);
-          console.log(`Vector search found ${data.results.length} companies`);
         } else {
-          // Sin resultados vectoriales: mantener búsqueda textual
-          setUseVectorSearch(false);
           setVectorResults([]);
-          console.log("Vector search returned 0 results, falling back to text search");
         }
       } catch (error) {
         console.error("Vector search error:", error);
-        // Fallback a búsqueda normal
-        setUseVectorSearch(false);
         setVectorResults([]);
       } finally {
         setIsVectorSearching(false);
+        setHasSearchedVector(true);
       }
     }, 500);
 
     return () => clearTimeout(timeoutId);
   }, [searchTerm, eventId]);
+
+  // Filtrar por búsqueda
+  const filtered = useMemo(() => {
+    const t = searchTerm.trim().toLowerCase();
+    
+    if (!t) {
+      let results = [...companiesData];
+      results.sort((a, b) => {
+        const avgAffinityA = a.asistentes.length > 0
+          ? a.asistentes.reduce((sum, assistant) => sum + (affinityScores[assistant.id] || 0), 0) / a.asistentes.length
+          : 0;
+        const avgAffinityB = b.asistentes.length > 0
+          ? b.asistentes.reduce((sum, assistant) => sum + (affinityScores[assistant.id] || 0), 0) / b.asistentes.length
+          : 0;
+        return avgAffinityB - avgAffinityA;
+      });
+      return results;
+    }
+
+    const exactMatches = companiesData.filter(
+      (c) =>
+        c.empresa.toLowerCase().includes(t) ||
+        c.nit.includes(t) ||
+        c.asistentes.some((a) =>
+          (a.nombre || "").toLowerCase().includes(t) ||
+          (a.cargo || "").toLowerCase().includes(t)
+        )
+    );
+
+    let semanticMatches: any[] = [];
+    if (vectorResults.length > 0) {
+      const exactIds = new Set(exactMatches.map((c) => c.nit));
+      
+      semanticMatches = vectorResults
+        .map((v) => {
+          const found = companiesData.find((c) => c.nit === v.nitNorm || c.nit === v.id);
+          if (found) {
+            return {
+              ...found,
+              _similarity: v.similarity,
+              _isSemantic: true,
+            };
+          }
+          return null;
+        })
+        .filter(Boolean);
+        
+      semanticMatches = semanticMatches.filter((c) => !exactIds.has(c.nit));
+    }
+
+    return [...exactMatches, ...semanticMatches];
+  }, [companiesData, searchTerm, vectorResults, affinityScores]);
 
   const handleOpenModal = (assistant: Assistant, companyNit: string) => {
     setSelectedMeeting({ assistant, companyNit });
@@ -434,7 +420,7 @@ export default function CompaniesView({
             leftSection={
               isVectorSearching ? (
                 <Loader size={16} />
-              ) : useVectorSearch ? (
+              ) : vectorResults.length > 0 ? (
                 <IconSparkles size={16} style={{ color: "var(--mantine-color-blue-6)" }} />
               ) : (
                 <IconSearch size={16} />
@@ -454,17 +440,12 @@ export default function CompaniesView({
             radius="md"
             style={{ flex: 1 }}
           />
-          {useVectorSearch && (
-            <Badge size="sm" variant="light" color="blue" leftSection={<IconSparkles size={10} />}>
-              Búsqueda inteligente
-            </Badge>
-          )}
         </Group>
       </Paper>
 
       <Grid gutter="sm">
         {filtered.length > 0 ? (
-          filtered.map(({ nit, empresa, logoUrl, fixedTable, asistentes, similarity }) => {
+          filtered.map(({ nit, empresa, logoUrl, fixedTable, asistentes, _similarity, _isSemantic }: any) => {
             const companyKey = nit; // clave estable
             const selectedId = selectedAssistantPerCompany[companyKey];
 
@@ -475,8 +456,8 @@ export default function CompaniesView({
             const isMulti = asistentes.length > 1;
 
             // Verificar si tiene similarity score (viene de búsqueda por vectores)
-            const hasSimilarity = typeof similarity === 'number';
-            const similarityScore = hasSimilarity ? Math.round(similarity * 100) : null;
+            const hasSimilarity = _isSemantic && typeof _similarity === 'number';
+            const similarityScore = hasSimilarity ? Math.round(_similarity * 100) : null;
 
             // Verificar si esta card debe ser resaltada (usando el estado temporal)
             const isHighlighted = highlightedId === nit;
