@@ -686,6 +686,7 @@ const Landing = () => {
             }
           });
           if (razon) companyFieldData.razonSocial = razon;
+          if (formValues.descripcion) companyFieldData.descripcion = formValues.descripcion;
 
           if (!snap.exists()) {
             await setDoc(companyRef, {
