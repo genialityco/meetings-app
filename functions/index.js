@@ -792,22 +792,24 @@ function cosineSimilarity(vecA, vecB) {
  * @param {number} topK - Número de resultados a retornar
  * @param {number} threshold - Umbral mínimo de similitud (0-1)
  */
-function searchByVectorSimilarity(queryVector, documents, topK = 10, threshold = 0.65) {
+function searchByVectorSimilarity(queryVector, documents, topK = 10, threshold = 0.65, vectorField = 'vector') {
   const results = documents
     .filter(doc => {
       // Filtro estricto: debe tener vector, ser array, tener elementos, y misma dimensión
-      if (!doc.vector) {
+      const vec = doc[vectorField];
+      if (!vec) {
         
         return false;
       }
-      if (doc?.vector.length !== queryVector?.length) {
-        console.log(`Skipping doc ${doc.id || 'unknown'}: vector dimension mismatch (${doc.vector.length} vs ${queryVector.length})`);
+      if (vec.length !== queryVector?.length) {
+        console.log(`Skipping doc ${doc.id || 'unknown'}: vector dimension mismatch (${vec.length} vs ${queryVector.length})`);
         return false;
       }
       return true;
     })
     .map(doc => {
-      const similarity = cosineSimilarity(queryVector, doc.vector);
+      const vec = doc[vectorField];
+      const similarity = cosineSimilarity(queryVector, vec);
       return {
         ...doc,
         similarity,
@@ -828,9 +830,9 @@ function searchByVectorSimilarity(queryVector, documents, topK = 10, threshold =
  * NUEVA FUNCIÓN: Combina búsqueda por keywords Y vectores
  * Útil para hacer búsquedas híbridas que aprovechan ambos métodos
  */
-function hybridSearch(queryVector, documents, keywords, topK = 10) {
+function hybridSearch(queryVector, documents, keywords, topK = 10, vectorField = 'vector') {
   // Primero obtener resultados por vector con threshold más alto
-  const vectorResults = searchByVectorSimilarity(queryVector, documents, topK * 2, 0.65);
+  const vectorResults = searchByVectorSimilarity(queryVector, documents, topK * 2, 0.65, vectorField);
   
   console.log(`Hybrid search: ${vectorResults.length} vector results, keywords: ${keywords.join(', ')}`);
   
@@ -1272,7 +1274,7 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
 
         // Usar búsqueda híbrida si hay vector, sino keywords
         if (queryVector) {
-          results.assistants = hybridSearch(queryVector, filteredUsers, keywords, 20);
+          results.assistants = hybridSearch(queryVector, filteredUsers, keywords, 20, 'search_vector');
           console.log(`Found ${results.assistants.length} assistants via hybrid search`);
         } else {
           // Fallback a búsqueda por keywords
@@ -2005,7 +2007,7 @@ export const vectorSearch = onRequest(
 
           console.log(`Loaded ${allUsers.length} users for vector search`);
 
-          results = searchByVectorSimilarity(queryVector, allUsers, limit, threshold);
+          results = searchByVectorSimilarity(queryVector, allUsers, limit, threshold, 'search_vector');
           
           // Aplicar boost de rol si tipoAsistente está disponible
           if (tipoAsistente && (tipoAsistente === "comprador" || tipoAsistente === "vendedor")) {
@@ -2285,6 +2287,99 @@ export const vectorizeDocuments = onRequest(
     } catch (error) {
       console.error("Error during vectorization:", error);
       return res.status(500).send("Error during vectorization");
+    }
+  }
+);
+
+/**
+ * Función HTTP para generar el vector dedicado a BÚSQUEDAS (search_vector) para todos los usuarios de un evento.
+ * Este vector agrupa todos los campos necesarios para ser encontrado en el buscador (nombre, empresa, cargo, necesidad, etc).
+ */
+export const generateAllSearchVectors = onRequest(
+  {
+    secrets: ["GEMINI_API_KEY", "GEMINI_API_URL", "DEFAULT_AI_MODEL"],
+    memory: "512MiB",
+    timeoutSeconds: 300,
+    region: "us-central1"
+  },
+  async (req, res) => {
+    // CORS headers
+    const origin = req.headers.origin || "*";
+    res.set({
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "POST,OPTIONS,GET",
+      "Access-Control-Allow-Headers": "Content-Type,Authorization",
+    });
+
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+
+    const eventId = req.body?.eventId || req.query?.eventId;
+    if (!eventId) {
+      res.status(400).send({ error: "Missing eventId" });
+      return;
+    }
+
+    const db = getFirestore();
+
+    try {
+      console.log(`Starting search_vector generation for eventId: ${eventId}`);
+      const usersSnap = await db.collection("users").where("eventId", "==", eventId).get();
+      console.log(`Found ${usersSnap.size} users to process`);
+
+      let successCount = 0;
+      let errorCount = 0;
+
+      const promises = usersSnap.docs.map(async (doc) => {
+        const data = doc.data();
+        const textParts = [
+          data.nombre,
+          data.empresa,
+          data.company_razonSocial,
+          data.cargo,
+          data.tipoAsistente,
+          data.interesPrincipal,
+          data.necesidad,
+          data.descripcion
+        ].filter(Boolean);
+
+        const textToEmbed = textParts.join(". ").trim();
+        
+        if (!textToEmbed) {
+          errorCount++;
+          return;
+        }
+
+        try {
+          const vector = await generateEmbedding(textToEmbed);
+          if (vector) {
+            await doc.ref.update({ 
+              search_vector: vector,
+              search_vectorGeneratedAt: new Date(),
+              search_vectorText: textToEmbed
+            });
+            successCount++;
+          } else {
+            errorCount++;
+          }
+        } catch (err) {
+          console.error(`Error embedding for user ${doc.id}:`, err.message);
+          errorCount++;
+        }
+      });
+
+      await Promise.all(promises);
+
+      console.log(`Completed. Success: ${successCount}, Errors: ${errorCount}`);
+      res.status(200).send({
+        success: true,
+        message: `search_vector generated for ${successCount} users. Errors: ${errorCount}`
+      });
+    } catch (error) {
+      console.error("Error generating search_vector:", error);
+      res.status(500).send({ error: "Internal error", details: error.message });
     }
   }
 );
@@ -2773,13 +2868,37 @@ export const calculateAffinityOnUserCreate = onDocumentCreated(
       const embeddingResult = await generateUserEmbedding(newUserData);
       
       if (embeddingResult) {
+        // Generar search_vector específico para búsquedas (con más campos de texto)
+        const textParts = [
+          newUserData.nombre,
+          newUserData.empresa,
+          newUserData.company_razonSocial,
+          newUserData.cargo,
+          newUserData.tipoAsistente,
+          newUserData.interesPrincipal,
+          newUserData.necesidad,
+          newUserData.descripcion
+        ].filter(Boolean);
+        const searchVectorText = textParts.join(". ").trim();
+        
+        let searchVector = null;
+        if (searchVectorText) {
+          try {
+            searchVector = await generateEmbedding(searchVectorText);
+          } catch (err) {
+            console.error("Failed to generate search_vector for new user", err);
+          }
+        }
+
         // Guardar el embedding y el texto condensado en el documento del usuario
         await db.collection("users").doc(newUserId).update({
           vector: embeddingResult.vector,
           condensedText: embeddingResult.condensedText,
           vectorGeneratedAt: new Date(),
+          search_vector: searchVector || embeddingResult.vector,
+          search_vectorText: searchVectorText,
         });
-        console.log(`Embedding and condensed text saved for user ${newUserId}`);
+        console.log(`Embedding, search_vector and condensed text saved for user ${newUserId}`);
       } else {
         console.warn(`Failed to generate embedding for user ${newUserId}`);
       }
