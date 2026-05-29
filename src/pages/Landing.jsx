@@ -63,6 +63,7 @@ import {
   parsePhoneValue,
   isPhoneField,
 } from "../utils/phoneUtils";
+import { sendWelcomeNotification } from "../utils/whatsappService";
 
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
 
@@ -630,6 +631,7 @@ const Landing = () => {
 
       if (!currentUser?.data?.createdAt) {
         dataToUpdate.createdAt = new Date().toISOString();
+        dataToUpdate.welcomePopupSeen = false; // Solo para usuarios nuevos
       }
 
       if (formValues._photoFile) {
@@ -768,6 +770,42 @@ const Landing = () => {
             method: "form",
           },
         });
+
+        // Enviar mensaje de WhatsApp de bienvenida al registrarse por primera vez (solo si la política lo permite)
+        if (dataToUpdate.telefono && event?.config?.policies?.welcomeMessageEnabled === true) {
+          try {
+            const eventName = event?.eventName || "el evento";
+            const badgeUrl = `badge/${eventId}/${uid}`;
+            
+            // Format date for notification
+            let formattedDate = "Por definir";
+            let formattedTime = "Por definir";
+            
+            if (event?.config?.eventDates && event.config.eventDates.length > 0) {
+              formattedDate = formatDate(event.config.eventDates[0]);
+              const firstDayConfig = event.config.dailyConfig?.[event.config.eventDates[0]];
+              if (firstDayConfig?.startTime) {
+                formattedTime = formatTime(firstDayConfig.startTime);
+              }
+            } else if (event?.config?.eventDate) {
+              formattedDate = formatDate(event.config.eventDate);
+              if (event?.config?.eventStartTime) {
+                formattedTime = formatTime(event.config.eventStartTime);
+              }
+            }
+            
+            await sendWelcomeNotification({
+              phone: dataToUpdate.telefono,
+              name: dataToUpdate.nombre || "Asistente",
+              eventName: eventName,
+              badgeUrl,
+              date: formattedDate,
+              time: formattedTime
+            });
+          } catch (err) {
+            console.error("No se pudo enviar la notificación de bienvenida:", err);
+          }
+        }
       } else {
         trackEvent({
           name: "profile_updated",

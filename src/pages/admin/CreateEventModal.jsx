@@ -1,6 +1,6 @@
 /* eslint-disable react/prop-types */
 import { useState, useContext } from "react";
-import { Modal, Stack, TextInput, Button } from "@mantine/core";
+import { Modal, Stack, TextInput, Button, Select } from "@mantine/core";
 import { collection, addDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../../firebase/firebaseConfig";
@@ -9,6 +9,7 @@ import { AdminAuthContext } from "../../context/AdminAuthContext";
 const CreateEventModal = ({ opened, onClose, refreshEvents, setGlobalMessage }) => {
   const { adminUser } = useContext(AdminAuthContext);
   const [eventName, setEventName] = useState("");
+  const [eventType, setEventType] = useState("Networking");
   const [eventImageUrl, setEventImageUrl] = useState("");
   const [eventImageFile, setEventImageFile] = useState(null);
 
@@ -39,6 +40,7 @@ const CreateEventModal = ({ opened, onClose, refreshEvents, setGlobalMessage }) 
       }
       const newEvent = {
         eventName,
+        eventType,
         eventImage: imageUrl,
         createdBy: adminUser?.uid || null,
         owners: adminUser?.uid ? [adminUser.uid] : [],
@@ -58,6 +60,7 @@ const CreateEventModal = ({ opened, onClose, refreshEvents, setGlobalMessage }) 
       setGlobalMessage("Evento creado correctamente.");
       // Reiniciar campos
       setEventName("");
+      setEventType("Networking");
       setEventImageUrl("");
       setEventImageFile(null);
       onClose();
@@ -75,6 +78,15 @@ const CreateEventModal = ({ opened, onClose, refreshEvents, setGlobalMessage }) 
           label="Nombre del Evento"
           value={eventName}
           onChange={(e) => setEventName(e.target.value)}
+        />
+        <Select
+          label="Tipo de Evento"
+          data={[
+            { value: "Networking", label: "Networking" },
+            { value: "Rueda de negocios", label: "Rueda de negocios" }
+          ]}
+          value={eventType}
+          onChange={setEventType}
         />
         <TextInput
           label="URL de Imagen del Evento (opcional)"

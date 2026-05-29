@@ -52,6 +52,20 @@ interface WhatsAppV2RejectionPayload {
   rejectedByCompany: string;
 }
 
+interface WhatsAppV2NotificationPayload {
+  accountId: string;
+  userId: string;
+  message: string;
+}
+
+interface WhatsAppV2TemplatePayload {
+  accountId: string;
+  to: string;
+  templateName: string;
+  language: string;
+  parameters: string[];
+}
+
 interface SendWhatsAppOptions {
   apiVersion: "v1" | "v2";
   phone: string;
@@ -302,6 +316,55 @@ export async function sendMeetingRejection(options: {
     return true;
   } catch (error) {
     console.error("Error sending meeting rejection:", error);
+    return false;
+  }
+}
+
+/**
+ * Envía una notificación genérica de bienvenida o información usando WhatsApp API V2
+ */
+export async function sendWelcomeNotification(options: {
+  phone: string;
+  name: string;
+  eventName: string;
+  badgeUrl?: string;
+  date?: string;
+  time?: string;
+}): Promise<boolean> {
+  const { phone, name, eventName, badgeUrl, date, time } = options;
+
+  // Limpiar número de teléfono
+  const digits = phone.replace(/[^\d]/g, "");
+  // Evitar duplicar el código de país si ya lo tiene (específicamente el 57 de Colombia)
+  const fullPhone = (digits.length === 10 || (digits.length > 10 && !digits.startsWith("57"))) 
+    ? `57${digits.slice(-10)}` // Asumiendo que los últimos 10 dígitos son el número local
+    : digits.startsWith("57") ? digits : `57${digits}`;
+
+  try {
+    const payload = {
+      accountId: ACCOUNT_ID,
+      to: fullPhone,
+      userName: name,
+      eventName: eventName,
+      badgeUrl: badgeUrl,
+      date: date || "Por definir",
+      time: time || "Por definir",
+    };
+
+    const response = await fetch(`${API_V2_URL}/api/send-welcome`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      console.error("Error sending welcome notification:", await response.text());
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Error sending welcome notification:", error);
     return false;
   }
 }

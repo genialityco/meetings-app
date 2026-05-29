@@ -10,10 +10,11 @@ import AvatarModal from "./AvatarModal";
 import SlotModal from "./SlotModal";
 import ConfirmModal from "./ConfirmModal";
 import MeetingConfirmationGuard from "./MeetingConfirmationGuard";
-import { useCallback, useContext, useMemo, useState } from "react";
+import { useCallback, useContext, useMemo, useState, useEffect } from "react";
 import { UserContext } from "../../context/UserContext";
 import DashboardHeader from "../../components/DashboardHeader";
 import type { Notification, NotificationType } from "./types";
+import { Modal, Text, Button } from "@mantine/core";
 
 const NOTIF_NAV_MAP: Record<string, { view: string; tab?: string }> = {
   meeting_request: { view: "activity", tab: "solicitudes" },
@@ -27,7 +28,31 @@ const NOTIF_NAV_MAP: Record<string, { view: string; tab?: string }> = {
 export default function Dashboard() {
   const { eventId } = useParams();
   const dashboard = useDashboardData(eventId);
-    const { currentUser } = useContext(UserContext);
+  const { currentUser, updateUser } = useContext(UserContext);
+
+  const [welcomeModalOpened, setWelcomeModalOpened] = useState(false);
+
+  useEffect(() => {
+    // Si el usuario acaba de registrarse, no ha visto el popup, y la política está habilitada
+    if (
+      currentUser?.data &&
+      currentUser.data.welcomePopupSeen === false &&
+      dashboard.policies?.welcomeMessageEnabled === true
+    ) {
+      setWelcomeModalOpened(true);
+    }
+  }, [currentUser?.data, dashboard.policies?.welcomeMessageEnabled]);
+
+  const handleCloseWelcomeModal = async () => {
+    setWelcomeModalOpened(false);
+    if (currentUser?.uid) {
+      try {
+        await updateUser(currentUser.uid, { welcomePopupSeen: true });
+      } catch (err) {
+        console.error("Error updating welcomePopupSeen:", err);
+      }
+    }
+  };
 
   const [viewRequest, setViewRequest] = useState<{
     view: string;
@@ -145,6 +170,22 @@ export default function Dashboard() {
           eventConfig={dashboard.eventConfig}
         />
       )}
+
+      <Modal
+        opened={welcomeModalOpened}
+        onClose={handleCloseWelcomeModal}
+        title="¡Bienvenido al Evento!"
+        centered
+        radius="md"
+        overlayProps={{ blur: 3 }}
+      >
+        <Text size="sm" mb="md">
+          Nos alegra tenerte aquí. Recuerda que todas tus <b>reuniones</b> y <b>confirmaciones</b> serán notificadas a tu <b>WhatsApp</b> para que no te pierdas de nada.
+        </Text>
+        <Button fullWidth onClick={handleCloseWelcomeModal} color={dashboard.eventConfig?.primaryColor || "blue"}>
+          Entendido
+        </Button>
+      </Modal>
     </Container>
     </MantineProvider>
   );

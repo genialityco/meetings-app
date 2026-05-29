@@ -123,6 +123,8 @@ export interface EventPolicies {
   whatsappNotificationsEnabled?: boolean;
   /** Habilitar notificaciones internas en el dashboard */
   dashboardNotificationsEnabled?: boolean;
+  /** Habilitar el popup y mensaje de bienvenida de WhatsApp (por defecto falso) */
+  welcomeMessageEnabled?: boolean;
   /** Agrupar empresas por nombre (company_razonSocial) en lugar de por NIT */
   groupByRazonSocial?: boolean;
 }
@@ -181,5 +183,6 @@ export const DEFAULT_POLICIES: EventPolicies = {
   attendeeIdEnabled: false,
   whatsappNotificationsEnabled: true,
   dashboardNotificationsEnabled: true,
+  welcomeMessageEnabled: false,
   groupByRazonSocial: false,
 };

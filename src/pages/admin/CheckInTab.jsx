@@ -7,11 +7,13 @@ import {
 } from "@mantine/core";
 import {
   IconSearch, IconX, IconCheck, IconUserCheck,
-  IconChevronDown, IconChevronUp, IconEdit, IconDeviceFloppy,
+  IconChevronDown, IconChevronUp, IconEdit, IconDeviceFloppy, IconDownload,
 } from "@tabler/icons-react";
+import { notifications } from "@mantine/notifications";
 import { collection, query, where, onSnapshot, doc, updateDoc, getDocs, getDoc, addDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../../firebase/firebaseConfig";
+import * as XLSX from "xlsx";
 
 // Campos básicos siempre visibles
 const BASIC_FIELDS = [
@@ -516,6 +518,62 @@ export default function CheckInTab({ event }) {
     }
   };
 
+  useEffect(() => {
+    const trimmed = search.trim();
+    if (!trimmed) return;
+
+    let scannedId = trimmed;
+    if (trimmed.includes("/checkin/")) {
+      const parts = trimmed.split("/");
+      scannedId = parts[parts.length - 1];
+    }
+
+    const matched = attendees.find((a) => a.id === scannedId || a.attendeeId === scannedId);
+    
+    if (matched && !matched.checkedIn) {
+      handleToggle(matched);
+      setSearch("");
+      
+      notifications.show({
+        title: "Check-In Automático",
+        message: `${matched.nombre} marcado como presente.`,
+        color: "green",
+        icon: <IconCheck size={18} />
+      });
+    } else if (matched && matched.checkedIn) {
+      setSearch("");
+      notifications.show({
+        title: "Ya estaba presente",
+        message: `${matched.nombre} ya tenía check-in.`,
+        color: "blue",
+        icon: <IconCheck size={18} />
+      });
+    }
+  }, [search, attendees]); // handleToggle omitted from deps intentionally
+
+  const exportToExcel = () => {
+    const wsData = [
+      ["ID_USUARIO", "CHECKIN", "NOMBRE", "CORREO", "EMPRESA", "TELEFONO", "TIPO_ASISTENTE"]
+    ];
+
+    attendees.forEach((a) => {
+      wsData.push([
+        a.id,
+        a.checkedIn ? "SI" : "NO",
+        a.nombre || "",
+        a.correo || "",
+        a.empresa || "",
+        a.telefono || "",
+        a.tipoAsistente || "",
+      ]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "CheckIn");
+    XLSX.writeFile(wb, `CheckIn_${event?.id || "Evento"}.xlsx`);
+  };
+
   return (
     <Stack gap={0}>
       {/* Buscador */}
@@ -536,6 +594,9 @@ export default function CheckInTab({ event }) {
           <Badge color="green" variant="light">{checkedIn.length} presentes</Badge>
           <Badge color="gray" variant="light">{notCheckedIn.length} pendientes</Badge>
           <Badge color="blue" variant="light">{filtered.length} total</Badge>
+          <Button size="xs" variant="outline" leftSection={<IconDownload size={14} />} onClick={exportToExcel} color="green">
+            Exportar a Excel
+          </Button>
           <Button size="xs" variant="outline" onClick={() => { resetCreateUserForm(); setCreateUserOpened(true); }}>
             Crear usuario
           </Button>

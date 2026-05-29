@@ -25,6 +25,8 @@ const CheckInPage = lazy(() => import("./pages/admin/CheckInPage.jsx"));
 const AdminLogin = lazy(() => import("./pages/admin/AdminLogin.tsx"));
 const AdminRegister = lazy(() => import("./pages/admin/AdminRegister.tsx"));
 const OptimizeAgendaPage = lazy(() => import("./pages/admin/OptimizeAgendaPage.tsx"));
+const BadgePage = lazy(() => import("./pages/dashboard/BadgePage.tsx"));
+const QuickCheckInPage = lazy(() => import("./pages/admin/QuickCheckInPage.tsx"));
 
 const App = () => {
   // Trackear automáticamente todas las vistas de página
@@ -48,6 +50,7 @@ const App = () => {
         <Route path="/admin/register" element={<AdminRegister />} />
         <Route path="/admin" element={<ProtectedAdminRoute><AdminPanel /></ProtectedAdminRoute>} />
         <Route path="/matrix/:eventId" element={<MatrixPage />} />
+        <Route path="/badge/:eventId/:userId" element={<BadgePage />} />
         <Route
           path="/admin/event/:eventId/match"
           element={<ProtectedAdminRoute><EventMatchPage /></ProtectedAdminRoute>}
@@ -75,6 +78,10 @@ const App = () => {
         <Route
           path="/admin/event/:eventId/checkin"
           element={<ProtectedAdminRoute><CheckInPage /></ProtectedAdminRoute>}
+        />
+        <Route
+          path="/admin/event/:eventId/checkin/:userId"
+          element={<ProtectedAdminRoute><QuickCheckInPage /></ProtectedAdminRoute>}
         />
         <Route
           path="/admin/event/:eventId/optimize-agenda"

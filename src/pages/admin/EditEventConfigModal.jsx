@@ -12,6 +12,7 @@ import {
   Divider,
   ColorInput,
   SegmentedControl,
+  Select,
 } from "@mantine/core";
 import { doc, setDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -35,6 +36,7 @@ const EditEventConfigModal = ({
 }) => {
   // ---- Estados ----
   const [eventName, setEventName] = useState(event.eventName || "");
+  const [eventType, setEventType] = useState(event.eventType || "Networking");
   // Soporte multi-día con configuración por día
   const [eventDays, setEventDays] = useState(() => {
     // Si existe dailyConfig, usarlo
@@ -297,6 +299,7 @@ const EditEventConfigModal = ({
         doc(db, "events", event.id),
         {
           eventName,
+          eventType,
           eventImage: finalEventImage,
           backgroundImage: finalBackgroundImage,
           backgroundMobileImage: finalBackgroundMobileImage,
@@ -324,6 +327,16 @@ const EditEventConfigModal = ({
           label="Nombre del Evento"
           value={eventName}
           onChange={(e) => setEventName(e.target.value)}
+        />
+        
+        <Select
+          label="Tipo de Evento"
+          data={[
+            { value: "Networking", label: "Networking" },
+            { value: "Rueda de negocios", label: "Rueda de negocios" }
+          ]}
+          value={eventType}
+          onChange={setEventType}
         />
         
         <Divider label="Fechas y horarios del evento (multi-día)" my="sm" />

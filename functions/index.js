@@ -1,6 +1,6 @@
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onRequest } from "firebase-functions/v2/https";
-import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
@@ -2042,7 +2042,9 @@ export const vectorSearch = onRequest(
             // Re-ordenar por similitud boosteada y limitar nuevamente
             results.sort((a, b) => b.similarity - a.similarity);
             results = results.slice(0, limit);
+            results = normalizeScores(results);
           }
+          
           
           // Devolver todos los campos necesarios
           results = results.map(user => ({
@@ -2335,14 +2337,14 @@ export const generateAllSearchVectors = onRequest(
       const promises = usersSnap.docs.map(async (doc) => {
         const data = doc.data();
         const textParts = [
-          data.nombre,
-          data.empresa,
-          data.company_razonSocial,
-          data.cargo,
-          data.tipoAsistente,
-          data.interesPrincipal,
+         data.descripcion,           
+          data.descripcion,           
           data.necesidad,
-          data.descripcion
+          data.necesidad,             
+          data.interesPrincipal,
+          data.empresa,
+          data.cargo,
+          data.nombre,
         ].filter(Boolean);
 
         const textToEmbed = textParts.join(". ").trim();
@@ -2868,37 +2870,13 @@ export const calculateAffinityOnUserCreate = onDocumentCreated(
       const embeddingResult = await generateUserEmbedding(newUserData);
       
       if (embeddingResult) {
-        // Generar search_vector específico para búsquedas (con más campos de texto)
-        const textParts = [
-          newUserData.nombre,
-          newUserData.empresa,
-          newUserData.company_razonSocial,
-          newUserData.cargo,
-          newUserData.tipoAsistente,
-          newUserData.interesPrincipal,
-          newUserData.necesidad,
-          newUserData.descripcion
-        ].filter(Boolean);
-        const searchVectorText = textParts.join(". ").trim();
-        
-        let searchVector = null;
-        if (searchVectorText) {
-          try {
-            searchVector = await generateEmbedding(searchVectorText);
-          } catch (err) {
-            console.error("Failed to generate search_vector for new user", err);
-          }
-        }
-
         // Guardar el embedding y el texto condensado en el documento del usuario
         await db.collection("users").doc(newUserId).update({
           vector: embeddingResult.vector,
           condensedText: embeddingResult.condensedText,
           vectorGeneratedAt: new Date(),
-          search_vector: searchVector || embeddingResult.vector,
-          search_vectorText: searchVectorText,
         });
-        console.log(`Embedding, search_vector and condensed text saved for user ${newUserId}`);
+        console.log(`Embedding and condensed text saved for user ${newUserId}`);
       } else {
         console.warn(`Failed to generate embedding for user ${newUserId}`);
       }
@@ -3128,6 +3106,158 @@ export const calculateAffinityOnUserCreate = onDocumentCreated(
     } catch (error) {
       console.error("Error calculating affinity:", error);
       throw error;
+    }
+  }
+);
+
+/**
+ * Trigger: Calcular afinidad y regenerar vectores cuando se ACTUALIZA un usuario existente
+ */
+export const calculateAffinityOnUserUpdate = onDocumentUpdated(
+  {
+    document: "users/{userId}",
+    region: "us-central1",
+    memory: "512MiB",
+    secrets: ["GEMINI_API_KEY", "GEMINI_API_URL", "DEFAULT_AI_MODEL"],
+  },
+  async (event) => {
+    const beforeData = event.data.before.data();
+    const afterData = event.data.after.data();
+
+    // Check if relevant fields changed
+    const relevantFields = [
+      'nombre', 'empresa', 'company_razonSocial', 'cargo', 
+      'tipoAsistente', 'interesPrincipal', 'necesidad', 'descripcion'
+    ];
+
+    const hasRelevantChanges = relevantFields.some(field => beforeData[field] !== afterData[field]);
+
+    if (!hasRelevantChanges) {
+      console.log(`User ${event.params.userId} updated, but no relevant fields changed. Skipping vector regeneration.`);
+      return;
+    }
+
+    const userId = event.params.userId;
+    const eventId = afterData.eventId;
+
+    if (!eventId) {
+      console.log(`User ${userId} has no eventId, skipping vector calculation`);
+      return;
+    }
+
+    console.log(`Regenerating vectors and affinity for updated user ${userId} in event ${eventId}`);
+
+    const db = getFirestore();
+
+    try {
+      // 1. Regenerar embedding base (afinidad)
+      const embeddingResult = await generateUserEmbedding(afterData);
+      
+      let vectorToSave = null;
+      let condensedTextToSave = null;
+      let searchVectorToSave = null;
+      let searchVectorTextToSave = null;
+
+      if (embeddingResult) {
+        vectorToSave = embeddingResult.vector;
+        condensedTextToSave = embeddingResult.condensedText;
+
+        // 2. Regenerar search_vector (búsqueda híbrida)
+        const textParts = [
+          afterData.nombre,
+          afterData.empresa,
+          afterData.company_razonSocial,
+          afterData.cargo,
+          afterData.tipoAsistente,
+          afterData.interesPrincipal,
+          afterData.necesidad,
+          afterData.descripcion
+        ].filter(Boolean);
+        const searchVectorText = textParts.join(". ").trim();
+        
+        searchVectorTextToSave = searchVectorText;
+
+        if (searchVectorText) {
+          try {
+            searchVectorToSave = await generateEmbedding(searchVectorText);
+          } catch (err) {
+            console.error("Failed to generate search_vector for updated user", err);
+          }
+        }
+
+        // 3. Guardar vectores en Firestore
+        await db.collection("users").doc(userId).update({
+          vector: vectorToSave,
+          condensedText: condensedTextToSave,
+          vectorGeneratedAt: new Date(),
+          search_vector: searchVectorToSave || vectorToSave,
+          search_vectorText: searchVectorTextToSave,
+        });
+        console.log(`Vectors successfully updated for user ${userId}`);
+      }
+
+      // === Recálculo Rápido de Afinidad ===
+      const usersSnap = await db.collection("users").where("eventId", "==", eventId).get();
+      const otherUsers = usersSnap.docs
+        .filter(doc => doc.id !== userId)
+        .map(doc => ({ id: doc.id, ...doc.data() }));
+
+      if (otherUsers.length === 0) return;
+
+      let batch = db.batch();
+      let calculatedCount = 0;
+
+      for (const otherUser of otherUsers) {
+        let otherUserEmbedding = otherUser.vector;
+        if (!otherUserEmbedding) continue; // Si el otro no tiene vector, saltar o regenerar
+
+        const affinity = await calculateAffinityWithEmbeddings(
+          afterData, 
+          otherUser,
+          vectorToSave,
+          otherUserEmbedding
+        );
+
+        // Guardar user -> otro
+        batch.set(db.collection("users").doc(userId).collection("affinityScores").doc(otherUser.id), {
+          targetUserId: otherUser.id,
+          targetName: otherUser.nombre || "Sin nombre",
+          targetCompany: otherUser.empresa || otherUser.company_razonSocial || "Sin empresa",
+          score: affinity.score,
+          reasons: affinity.reasons,
+          aiGenerated: affinity.aiGenerated || false,
+          eventId: eventId,
+          calculatedAt: new Date(),
+        });
+
+        // Guardar otro -> user
+        batch.set(db.collection("users").doc(otherUser.id).collection("affinityScores").doc(userId), {
+          targetUserId: userId,
+          targetName: afterData.nombre || "Sin nombre",
+          targetCompany: afterData.empresa || afterData.company_razonSocial || "Sin empresa",
+          score: affinity.score,
+          reasons: affinity.reasons,
+          aiGenerated: affinity.aiGenerated || false,
+          eventId: eventId,
+          calculatedAt: new Date(),
+        });
+
+        calculatedCount += 2;
+        if (calculatedCount >= 450) {
+          await batch.commit();
+          batch = db.batch();
+          calculatedCount = 0;
+        }
+      }
+
+      if (calculatedCount > 0) {
+        await batch.commit();
+      }
+
+      console.log(`Affinity recalculation complete for updated user ${userId}`);
+
+    } catch (error) {
+      console.error("Error updating vectors and affinity:", error);
     }
   }
 );
@@ -3664,6 +3794,17 @@ async function sendWhatsAppMessage(apiVersion, phone, message, metadata = {}) {
     console.error("sendWhatsAppMessage error:", error);
     return false;
   }
+}
+
+function normalizeScores(results) {
+  const min = results[results.length - 1].similarity
+  const max = results[0].similarity
+  const range = max - min || 1
+
+  return results.map(r => ({
+    ...r,
+    displayScore: Math.round(((r.similarity - min) / range) * 100)
+  }))
 }
 
 

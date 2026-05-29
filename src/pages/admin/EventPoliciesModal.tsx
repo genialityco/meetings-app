@@ -54,6 +54,7 @@ export default function EventPoliciesModal({
   const [attendeeIdEnabled, setAttendeeIdEnabled] = useState(false);
   const [whatsappNotificationsEnabled, setWhatsappNotificationsEnabled] = useState(true);
   const [dashboardNotificationsEnabled, setDashboardNotificationsEnabled] = useState(true);
+  const [welcomeMessageEnabled, setWelcomeMessageEnabled] = useState(false);
   const [groupByRazonSocial, setGroupByRazonSocial] = useState(false);
 
   // Empresas y asignación de mesas fijas
@@ -85,6 +86,7 @@ export default function EventPoliciesModal({
     setAttendeeIdEnabled(p.attendeeIdEnabled ?? false);
     setWhatsappNotificationsEnabled(p.whatsappNotificationsEnabled ?? true);
     setDashboardNotificationsEnabled(p.dashboardNotificationsEnabled ?? true);
+    setWelcomeMessageEnabled(p.welcomeMessageEnabled ?? false);
     setGroupByRazonSocial(p.groupByRazonSocial ?? false);
   }, [event]);
 
@@ -163,6 +165,7 @@ export default function EventPoliciesModal({
               attendeeIdEnabled,
               whatsappNotificationsEnabled,
               dashboardNotificationsEnabled,
+              welcomeMessageEnabled,
               groupByRazonSocial,
             },
           },
@@ -346,6 +349,13 @@ export default function EventPoliciesModal({
           description="Genera notificaciones internas visibles en el menú de notificaciones del asistente"
           checked={dashboardNotificationsEnabled}
           onChange={(e) => setDashboardNotificationsEnabled(e.currentTarget.checked)}
+        />
+
+        <Switch
+          label="Mensaje y popup de bienvenida"
+          description="Muestra el popup de bienvenida en el dashboard y envía el mensaje de WhatsApp al registrarse por primera vez"
+          checked={welcomeMessageEnabled}
+          onChange={(e) => setWelcomeMessageEnabled(e.currentTarget.checked)}
         />
 
         <Select
