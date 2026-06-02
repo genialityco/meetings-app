@@ -369,7 +369,7 @@ export function useDashboardData(eventId?: string) {
   const [expandedMeetingId, setExpandedMeetingId] = useState<string | null>(
     null,
   );
-  const [showOnlyToday, setShowOnlyToday] = useState(true);
+  const [showOnlyToday, setShowOnlyToday] = useState(false);
   const [slotModalOpened, setSlotModalOpened] = useState(false);
   const [meetingToAccept, setMeetingToAccept] = useState<any>(null);
   const [meetingToEdit, setMeetingToEdit] = useState<any>(null);

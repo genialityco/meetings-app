@@ -792,38 +792,24 @@ function cosineSimilarity(vecA, vecB) {
  * @param {number} topK - Número de resultados a retornar
  * @param {number} threshold - Umbral mínimo de similitud (0-1)
  */
-function searchByVectorSimilarity(queryVector, documents, topK = 10, threshold = 0.65, vectorField = 'vector') {
-  const results = documents
-    .filter(doc => {
-      // Filtro estricto: debe tener vector, ser array, tener elementos, y misma dimensión
-      const vec = doc[vectorField];
-      if (!vec) {
-        
-        return false;
-      }
-      if (vec.length !== queryVector?.length) {
-        console.log(`Skipping doc ${doc.id || 'unknown'}: vector dimension mismatch (${vec.length} vs ${queryVector.length})`);
-        return false;
-      }
-      return true;
-    })
-    .map(doc => {
-      const vec = doc[vectorField];
-      const similarity = cosineSimilarity(queryVector, vec);
-      return {
-        ...doc,
-        similarity,
-      };
-    })
-    .filter(doc => doc.similarity >= threshold)
-    .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, topK);
+function searchByVectorSimilarity(queryVector, documents, topK = 10, vectorField = 'vector') {
+const scored = documents
+    .filter(doc => Array.isArray(doc[vectorField]) && doc[vectorField].length === queryVector?.length)
+    .map(doc => ({ ...doc, similarity: cosineSimilarity(queryVector, doc[vectorField]) }))
+    .sort((a, b) => b.similarity - a.similarity);
 
-  console.log(`Vector search: ${documents.length} docs, ${results.length} above threshold ${threshold}`);
-  if (results.length > 0) {
-    console.log(`Top result similarity: ${results[0].similarity.toFixed(3)}, Lowest: ${results[results.length - 1].similarity.toFixed(3)}`);
-  }
-  return results;
+  if (scored.length === 0) return [];
+
+  // Normalización min-max sobre el conjunto recuperado: expande la banda 0.40-0.59 a 0-1
+  const max = scored[0].similarity;
+  const min = scored[scored.length - 1].similarity;
+  const span = max - min || 1e-6;
+
+  return scored.slice(0, topK).map(doc => ({
+    ...doc,
+    rawSimilarity: doc.similarity,
+    similarity: (doc.similarity - min) / span, // score relativo legible
+  }));
 }
 
 /**
@@ -832,7 +818,7 @@ function searchByVectorSimilarity(queryVector, documents, topK = 10, threshold =
  */
 function hybridSearch(queryVector, documents, keywords, topK = 10, vectorField = 'vector') {
   // Primero obtener resultados por vector con threshold más alto
-  const vectorResults = searchByVectorSimilarity(queryVector, documents, topK * 2, 0.65, vectorField);
+  const vectorResults = searchByVectorSimilarity(queryVector, documents, topK * 2, vectorField);
   
   console.log(`Hybrid search: ${vectorResults.length} vector results, keywords: ${keywords.join(', ')}`);
   
@@ -1957,6 +1943,8 @@ export const vectorSearch = onRequest(
       const tipoAsistente = body.tipoAsistente?.toLowerCase() || null;
       const limit = body.limit || 10;
       const threshold = body.threshold || 0.35;
+      const W_SEMANTIC = 0.7;
+      const W_ROLE = 0.3;
 
       // Validación de parámetros
       if (!text || !category || !eventId) {
@@ -2007,37 +1995,24 @@ export const vectorSearch = onRequest(
 
           console.log(`Loaded ${allUsers.length} users for vector search`);
 
-          results = searchByVectorSimilarity(queryVector, allUsers, limit, threshold, 'search_vector');
+          results = searchByVectorSimilarity(queryVector, allUsers, limit, 'search_vector');
           
           // Aplicar boost de rol si tipoAsistente está disponible
           if (tipoAsistente && (tipoAsistente === "comprador" || tipoAsistente === "vendedor")) {
             console.log(`Applying role boost for tipoAsistente: ${tipoAsistente}`);
             
-            results = results.map(user => {
-              const userTipo = user.tipoAsistente?.toLowerCase();
-              const isComplementary = 
-                (tipoAsistente !== userTipo) 
-                
-              
-              if (isComplementary) {
-                const originalSimilarity = user.similarity;
-                const boostedSimilarity = Math.min(1.0, originalSimilarity * 1.25);
-                console.log(`Role boost applied: ${user.nombre} (${userTipo}) - ${originalSimilarity.toFixed(3)} -> ${boostedSimilarity.toFixed(3)}`);
-                
-                return {
-                  ...user,
-                  similarity: boostedSimilarity,
-                  originalSimilarity,
-                  roleBoostApplied: true,
-                };
-              }
-              
-              return {
-                ...user,
-                originalSimilarity: user.similarity,
-                roleBoostApplied: false,
-              };
-            });
+           results = results.map(user => {
+  const userTipo = user.tipoAsistente?.toLowerCase();
+  const isComplementary = tipoAsistente && userTipo && tipoAsistente !== userTipo;
+  const roleScore = isComplementary ? 1 : 0;
+  return {
+    ...user,
+    finalScore: W_SEMANTIC * user.similarity + W_ROLE * roleScore,
+    roleBoostApplied: isComplementary,
+  };
+});
+results.sort((a, b) => b.finalScore - a.finalScore);
+results = results.slice(0, limit);
             
             // Re-ordenar por similitud boosteada y limitar nuevamente
             results.sort((a, b) => b.similarity - a.similarity);
@@ -2093,7 +2068,7 @@ export const vectorSearch = onRequest(
 
           console.log(`Loaded ${allProducts.length} products for vector search`);
 
-          results = searchByVectorSimilarity(queryVector, allProducts, limit, threshold);
+          results = searchByVectorSimilarity(queryVector, allProducts, limit);
           
           // Formatear resultados
           results = results.map(product => ({
@@ -2127,7 +2102,7 @@ export const vectorSearch = onRequest(
 
           console.log(`Loaded ${allCompanies.length} companies for vector search`);
 
-          results = searchByVectorSimilarity(queryVector, allCompanies, limit, threshold);
+          results = searchByVectorSimilarity(queryVector, allCompanies, limit);
           
           // Formatear resultados
           results = results.map(company => ({
@@ -2337,8 +2312,10 @@ export const generateAllSearchVectors = onRequest(
       const promises = usersSnap.docs.map(async (doc) => {
         const data = doc.data();
         const textParts = [
-         data.descripcion,           
-          
+         data.descripcion, 
+         data.descripcion, 
+         data.necesidad          
+       
         ].filter(Boolean);
 
         const textToEmbed = textParts.join(". ").trim();
@@ -3158,13 +3135,7 @@ export const calculateAffinityOnUserUpdate = onDocumentUpdated(
 
         // 2. Regenerar search_vector (búsqueda híbrida)
         const textParts = [
-          afterData.nombre,
-          afterData.empresa,
-          afterData.company_razonSocial,
-          afterData.cargo,
-          afterData.tipoAsistente,
-          afterData.interesPrincipal,
-          afterData.necesidad,
+       
           afterData.descripcion
         ].filter(Boolean);
         const searchVectorText = textParts.join(". ").trim();

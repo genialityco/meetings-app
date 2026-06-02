@@ -18,6 +18,7 @@ import {
   useMantineTheme,
   Badge,
   Loader,
+  Highlight,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import { useState, useMemo, useEffect } from "react";
@@ -109,10 +110,12 @@ function InfoRow({
   icon,
   label,
   value,
+  highlightText,
 }: {
   icon: React.ReactNode;
   label: string;
   value?: string | null;
+  highlightText?: string;
 }) {
   return (
     <Group gap={8} wrap="nowrap" align="flex-start">
@@ -123,7 +126,17 @@ function InfoRow({
         <Text span fw={700}>
           {label}:
         </Text>{" "}
-        {value && String(value).trim().length > 0 ? value : "No disponible"}
+        {value && String(value).trim().length > 0 ? (
+          highlightText ? (
+            <Highlight highlight={highlightText} component="span" size="sm">
+              {value}
+            </Highlight>
+          ) : (
+            value
+          )
+        ) : (
+          "No disponible"
+        )}
       </Text>
     </Group>
   );
@@ -538,7 +551,7 @@ export default function AttendeesView({
                         zIndex: 1,
                       }}
                     >
-                      {Math.round(((assistant as any)._similarity || 0) * 100)}% Match
+                      {Math.round(((assistant as any)._similarity || 0) * 100)}% Match IA
                     </Badge>
                   )}
 
@@ -579,15 +592,20 @@ export default function AttendeesView({
 
                     <Box style={{ minWidth: 0, flex: 1 }}>
                       <Title order={6} lineClamp={1}>
-                        {assistant.nombre || "Sin nombre"}
+                        <Highlight highlight={searchTerm} component="span">
+                          {assistant.nombre || "Sin nombre"}
+                        </Highlight>
                       </Title>
-                      <Text size="sm" c="dimmed" lineClamp={1}>
-                        {assistant.cargo || "Asistente"}
+                      <Text size="sm" c="dimmed" lineClamp={1} component="div">
+                        <Highlight highlight={searchTerm} component="span" size="sm">
+                          {assistant.cargo || "Asistente"}
+                        </Highlight>
                       </Text>
                       <Text
                         size="sm"
                         c="dimmed"
-                        style={{textDecoration: "underline"}}
+                        component="div"
+                        style={{textDecoration: "underline", cursor: assistant.nitNorm !== "sin-nit" && assistant.eventId ? "pointer" : "default"}}
                         onClick={
                           assistant.nitNorm !== "sin-nit" && assistant.eventId
                             ? () =>
@@ -597,7 +615,9 @@ export default function AttendeesView({
                             : undefined
                         }
                       >
-                        {assistant.empresa || "Sin empresa"}
+                        <Highlight highlight={searchTerm} component="span" size="sm">
+                          {assistant.empresa || "Sin empresa"}
+                        </Highlight>
                       </Text>
                     </Box>
                   </Group>
@@ -653,6 +673,7 @@ export default function AttendeesView({
                           icon={<Icon size={14} />}
                           label={label}
                           value={formatFieldValue(fieldName, assistant)}
+                          highlightText={searchTerm}
                         />
                       );
                     })}
@@ -681,11 +702,21 @@ export default function AttendeesView({
           })
         ) : (
           <Grid.Col span={12}>
-            <Paper withBorder radius="lg" p="lg">
-              <Text c="dimmed">
+            <Paper withBorder radius="lg" p="lg" style={{ textAlign: "center" }}>
+              <Text c="dimmed" mb="md">
                 No se encontraron asistentes. Intenta ajustar los filtros de
                 búsqueda.
               </Text>
+              <Button
+                variant="light"
+                onClick={() => {
+                  setSearchTerm("");
+                  setInterestFilter(null);
+                  setShowOnlyToday(false);
+                }}
+              >
+                Limpiar filtros
+              </Button>
             </Paper>
           </Grid.Col>
         )}

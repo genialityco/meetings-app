@@ -775,8 +775,8 @@ const Landing = () => {
         if (dataToUpdate.telefono && event?.config?.policies?.welcomeMessageEnabled === true) {
           try {
             const eventName = event?.eventName || "el evento";
-            const baseUrl = window.location.origin;
-            const badgeUrl = `${baseUrl}/badge/${eventId}/${uid}`;
+
+            const badgeUrl = `badge/${eventId}/${uid}`;
             
             // Format date for notification
             let formattedDate = "Por definir";
@@ -800,7 +800,7 @@ const Landing = () => {
               name: dataToUpdate.nombre || "Asistente",
               eventName: eventName,
               badgeUrl,
-              headerImageUrl: event?.eventImage,
+              headerImageUrl: event?.eventImage || event?.config?.landingTitleImage,
               date: formattedDate,
               time: formattedTime
             });
