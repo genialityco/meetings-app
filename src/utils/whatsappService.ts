@@ -328,10 +328,11 @@ export async function sendWelcomeNotification(options: {
   name: string;
   eventName: string;
   badgeUrl?: string;
+  headerImageUrl?: string;
   date?: string;
   time?: string;
 }): Promise<boolean> {
-  const { phone, name, eventName, badgeUrl, date, time } = options;
+  const { phone, name, eventName, badgeUrl, headerImageUrl, date, time } = options;
 
   // Limpiar número de teléfono
   const digits = phone.replace(/[^\d]/g, "");
@@ -347,6 +348,7 @@ export async function sendWelcomeNotification(options: {
       userName: name,
       eventName: eventName,
       badgeUrl: badgeUrl,
+      headerImageUrl: headerImageUrl,
       date: date || "Por definir",
       time: time || "Por definir",
     };

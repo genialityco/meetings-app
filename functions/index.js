@@ -2338,13 +2338,7 @@ export const generateAllSearchVectors = onRequest(
         const data = doc.data();
         const textParts = [
          data.descripcion,           
-          data.descripcion,           
-          data.necesidad,
-          data.necesidad,             
-          data.interesPrincipal,
-          data.empresa,
-          data.cargo,
-          data.nombre,
+          
         ].filter(Boolean);
 
         const textToEmbed = textParts.join(". ").trim();

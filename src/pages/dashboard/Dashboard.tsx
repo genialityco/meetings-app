@@ -14,7 +14,7 @@ import { useCallback, useContext, useMemo, useState, useEffect } from "react";
 import { UserContext } from "../../context/UserContext";
 import DashboardHeader from "../../components/DashboardHeader";
 import type { Notification, NotificationType } from "./types";
-import { Modal, Text, Button } from "@mantine/core";
+import { Modal, Text, Button, TextInput } from "@mantine/core";
 
 const NOTIF_NAV_MAP: Record<string, { view: string; tab?: string }> = {
   meeting_request: { view: "activity", tab: "solicitudes" },
@@ -31,6 +31,8 @@ export default function Dashboard() {
   const { currentUser, updateUser } = useContext(UserContext);
 
   const [welcomeModalOpened, setWelcomeModalOpened] = useState(false);
+  const [welcomePhone, setWelcomePhone] = useState("");
+  const [phoneError, setPhoneError] = useState("");
 
   useEffect(() => {
     // Si el usuario acaba de registrarse, no ha visto el popup, y la política está habilitada
@@ -39,15 +41,25 @@ export default function Dashboard() {
       currentUser.data.welcomePopupSeen === false &&
       dashboard.policies?.welcomeMessageEnabled === true
     ) {
+      setWelcomePhone(currentUser.data.telefono || currentUser.data.contacto?.telefono || "");
       setWelcomeModalOpened(true);
     }
   }, [currentUser?.data, dashboard.policies?.welcomeMessageEnabled]);
 
   const handleCloseWelcomeModal = async () => {
+    const cleanedPhone = welcomePhone.replace(/\D/g, "");
+    if (!cleanedPhone || cleanedPhone.length < 10) {
+      setPhoneError("Por favor ingresa un número de teléfono válido (mínimo 10 dígitos).");
+      return;
+    }
+
     setWelcomeModalOpened(false);
     if (currentUser?.uid) {
       try {
-        await updateUser(currentUser.uid, { welcomePopupSeen: true });
+        await updateUser(currentUser.uid, { 
+          welcomePopupSeen: true,
+          telefono: welcomePhone
+        });
       } catch (err) {
         console.error("Error updating welcomePopupSeen:", err);
       }
@@ -173,17 +185,34 @@ export default function Dashboard() {
 
       <Modal
         opened={welcomeModalOpened}
-        onClose={handleCloseWelcomeModal}
+        onClose={() => {}}
+        withCloseButton={false}
+        closeOnClickOutside={false}
+        closeOnEscape={false}
         title="¡Bienvenido al Evento!"
         centered
         radius="md"
         overlayProps={{ blur: 3 }}
       >
-        <Text size="sm" mb="md">
-          Nos alegra tenerte aquí. Recuerda que todas tus <b>reuniones</b> y <b>confirmaciones</b> serán notificadas a tu <b>WhatsApp</b> para que no te pierdas de nada.
+        <Text size="sm" mb="sm">
+          ¡Hola <b>{currentUser?.data?.nombre}</b>! Nos alegra tenerte aquí.
         </Text>
+        <Text size="sm" mb="md">
+          Recuerda que todas tus <b>reuniones</b> y <b>confirmaciones</b> serán notificadas a tu <b>WhatsApp</b> para que no te pierdas de nada. Por favor confirma tu número:
+        </Text>
+        <TextInput
+          label="Número de WhatsApp"
+          placeholder="Ej: +573001234567"
+          value={welcomePhone}
+          onChange={(e) => {
+            setWelcomePhone(e.currentTarget.value);
+            setPhoneError("");
+          }}
+          error={phoneError}
+          mb="md"
+        />
         <Button fullWidth onClick={handleCloseWelcomeModal} color={dashboard.eventConfig?.primaryColor || "blue"}>
-          Entendido
+          Confirmar y Entrar
         </Button>
       </Modal>
     </Container>
