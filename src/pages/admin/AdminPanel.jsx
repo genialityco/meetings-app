@@ -15,38 +15,29 @@ import {
   Grid,
   Badge,
   Modal,
-  MultiSelect,
   Switch,
 } from "@mantine/core";
-import { IconLogout, IconUsers, IconUserPlus, IconTrash, IconArrowLeft, IconCalendarEvent } from "@tabler/icons-react";
+import { IconUserPlus, IconTrash, IconArrowLeft, IconCalendarEvent } from "@tabler/icons-react";
 import { useMediaQuery } from "@mantine/hooks";
 import { collection, getDocs, query, where, doc, updateDoc, deleteDoc, getDoc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import CreateEventModal from "./CreateEventModal";
-import AdminsManagementModal from "./AdminsManagementModal";
 import { Link } from "react-router-dom";
 import { AdminAuthContext } from "../../context/AdminAuthContext";
 
 const AdminPanel = () => {
   const { orgId } = useParams();
   const navigate = useNavigate();
-  const { adminUser, isSuperAdmin, adminProfile, logoutAdmin } = useContext(AdminAuthContext);
+  const { adminUser, isSuperAdmin } = useContext(AdminAuthContext);
   const [events, setEvents] = useState([]);
   const [organization, setOrganization] = useState(null);
   const [globalMessage, setGlobalMessage] = useState("");
   const [createModalOpened, setCreateModalOpened] = useState(false);
-  const [adminsModalOpened, setAdminsModalOpened] = useState(false);
   const [loadingEvents, setLoadingEvents] = useState(false);
 
   // Estado para modal de confirmación de eliminación
   const [deleteEvent, setDeleteEvent] = useState(null);
   const [deleting, setDeleting] = useState(false);
-
-  // Estado para modal de asignación de owners
-  const [assignEvent, setAssignEvent] = useState(null);
-  const [allAdmins, setAllAdmins] = useState([]);
-  const [selectedOwners, setSelectedOwners] = useState([]);
-  const [savingOwners, setSavingOwners] = useState(false);
 
   const isMobile = useMediaQuery("(max-width: 600px)");
 
@@ -59,7 +50,19 @@ const AdminPanel = () => {
       if (orgId) {
         const orgDoc = await getDoc(doc(db, "organizations", orgId));
         if (orgDoc.exists()) {
-          setOrganization({ id: orgDoc.id, ...orgDoc.data() });
+          const orgData = orgDoc.data();
+          if (!isSuperAdmin && !(orgData.owners || []).includes(adminUser.uid)) {
+            setGlobalMessage("No tienes permiso para ver esta organización.");
+            setEvents([]);
+            setLoadingEvents(false);
+            return;
+          }
+          setOrganization({ id: orgDoc.id, ...orgData });
+        } else {
+          setGlobalMessage("Organización no encontrada.");
+          setEvents([]);
+          setLoadingEvents(false);
+          return;
         }
       }
 
@@ -67,9 +70,10 @@ const AdminPanel = () => {
       let conditions = [];
       if (orgId) {
         conditions.push(where("organizationId", "==", orgId));
-      }
-      if (!isSuperAdmin) {
-        conditions.push(where("owners", "array-contains", adminUser.uid));
+      } else {
+        if (!isSuperAdmin) {
+          conditions.push(where("owners", "array-contains", adminUser.uid));
+        }
       }
 
       const q = query(collection(db, "events"), ...conditions);
@@ -147,79 +151,15 @@ const AdminPanel = () => {
     }
   };
 
-  // ── Asignación de owners ──────────────────────────────────────────────────
-  const openAssignOwners = async (event) => {
-    try {
-      const snap = await getDocs(collection(db, "admins"));
-      const adminsList = snap.docs.map((d) => ({
-        value: d.id,
-        label: `${d.data().displayName} (${d.data().email})`,
-      }));
-      setAllAdmins(adminsList);
-      setSelectedOwners(event.owners || []);
-      setAssignEvent(event);
-    } catch (err) {
-      console.error(err);
-      setGlobalMessage("Error al cargar admins.");
-    }
-  };
-
-  const saveOwners = async () => {
-    if (!assignEvent) return;
-    setSavingOwners(true);
-    try {
-      await updateDoc(doc(db, "events", assignEvent.id), { owners: selectedOwners });
-      setGlobalMessage(`Owners actualizados para "${assignEvent.eventName}".`);
-      setAssignEvent(null);
-      fetchEvents();
-    } catch (err) {
-      console.error(err);
-      setGlobalMessage("Error al guardar owners.");
-    } finally {
-      setSavingOwners(false);
-    }
-  };
-
   return (
     <Container fluid>
-      <Group justify="space-between" align="center" mt={isMobile ? "sm" : "md"} wrap="wrap" gap="xs">
-        <Group align="center">
-          {orgId && (
-            <Button variant="subtle" onClick={() => navigate("/admin")} px={0} mr="sm">
-              <IconArrowLeft size={24} />
-            </Button>
-          )}
-          <Title order={isMobile ? 3 : 2}>
-            {orgId && organization ? `Eventos: ${organization.name}` : "Todos los Eventos"}
-          </Title>
-        </Group>
-        <Group gap="xs" align="center">
-          {adminProfile?.email && (
-            <Text size="sm" c="dimmed">{adminProfile.email}</Text>
-          )}
-          {isSuperAdmin && (
-            <Badge color="violet" variant="light">Super Admin</Badge>
-          )}
-          {isSuperAdmin && (
-            <Button
-              variant="light"
-              size="xs"
-              leftSection={<IconUsers size={14} />}
-              onClick={() => setAdminsModalOpened(true)}
-            >
-              Admins
-            </Button>
-          )}
-          <Button
-            variant="subtle"
-            color="red"
-            size="xs"
-            leftSection={<IconLogout size={14} />}
-            onClick={logoutAdmin}
-          >
-            Salir
-          </Button>
-        </Group>
+      <Group align="center" mt={isMobile ? "sm" : "md"} mb="md">
+        <Button variant="subtle" onClick={() => navigate("/admin")} px={0} mr="sm">
+          <IconArrowLeft size={24} />
+        </Button>
+        <Title order={isMobile ? 3 : 2}>
+          {orgId && organization ? `Eventos: ${organization.name}` : "Todos los Eventos"}
+        </Title>
       </Group>
 
       {loadingEvents ? (
@@ -323,11 +263,6 @@ const AdminPanel = () => {
                             Creado: {formatDate(event.createdAt)}
                           </Text>
                         )}
-                        {isSuperAdmin && event.owners && event.owners.length > 0 && (
-                          <Text size="xs" c="dimmed">
-                            {event.owners.length} admin(s) asignado(s)
-                          </Text>
-                        )}
                         
                         <Group mt="sm">
                           <Switch
@@ -348,17 +283,6 @@ const AdminPanel = () => {
                         >
                           Administrar Evento
                         </Button>
-                        {isSuperAdmin && (
-                          <Button
-                            variant="light"
-                            size="xs"
-                            leftSection={<IconUserPlus size={14} />}
-                            fullWidth={isMobile}
-                            onClick={() => openAssignOwners(event)}
-                          >
-                            Asignar admins
-                          </Button>
-                        )}
                         <Button
                           variant="subtle"
                           color="red"
@@ -369,7 +293,7 @@ const AdminPanel = () => {
                         >
                           Eliminar evento
                         </Button>
-                      </Stack>
+                      </Stack>>
                     </Group>
                   </Card>
                 </Grid.Col>
@@ -386,11 +310,6 @@ const AdminPanel = () => {
         refreshEvents={fetchEvents}
         setGlobalMessage={setGlobalMessage}
         orgId={orgId}
-      />
-
-      <AdminsManagementModal
-        opened={adminsModalOpened}
-        onClose={() => setAdminsModalOpened(false)}
       />
 
       {/* Modal confirmación de eliminación */}
@@ -415,36 +334,6 @@ const AdminPanel = () => {
             </Button>
             <Button color="red" onClick={confirmDeleteEvent} loading={deleting}>
               Eliminar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
-
-      {/* Modal asignación de owners */}
-      <Modal
-        opened={!!assignEvent}
-        onClose={() => setAssignEvent(null)}
-        title={`Asignar admins — ${assignEvent?.eventName || ""}`}
-      >
-        <Stack>
-          <Text size="sm" c="dimmed">
-            Selecciona los administradores que podrán gestionar este evento.
-          </Text>
-          <MultiSelect
-            label="Administradores"
-            placeholder="Selecciona admins..."
-            data={allAdmins}
-            value={selectedOwners}
-            onChange={setSelectedOwners}
-            searchable
-            clearable
-          />
-          <Group justify="flex-end" mt="xs">
-            <Button variant="subtle" onClick={() => setAssignEvent(null)}>
-              Cancelar
-            </Button>
-            <Button onClick={saveOwners} loading={savingOwners}>
-              Guardar
             </Button>
           </Group>
         </Stack>

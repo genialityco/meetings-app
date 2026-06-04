@@ -13,20 +13,25 @@ import {
   Grid,
   Modal,
   MultiSelect,
+  Badge,
 } from "@mantine/core";
-import { IconBuildingCommunity, IconPlus, IconTrash, IconUserPlus } from "@tabler/icons-react";
+import { IconBuildingCommunity, IconPlus, IconTrash, IconUserPlus, IconLogout, IconUsers } from "@tabler/icons-react";
 import { collection, getDocs, query, where, doc, deleteDoc, addDoc, updateDoc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { Link } from "react-router-dom";
 import { AdminAuthContext } from "../../context/AdminAuthContext";
 import CreateOrganizationModal from "./CreateOrganizationModal";
+import AdminsManagementModal from "./AdminsManagementModal";
+import { useMediaQuery } from "@mantine/hooks";
 
 const OrganizationsPanel = () => {
-  const { adminUser, isSuperAdmin } = useContext(AdminAuthContext);
+  const { adminUser, isSuperAdmin, adminProfile, logoutAdmin } = useContext(AdminAuthContext);
   const [organizations, setOrganizations] = useState([]);
   const [globalMessage, setGlobalMessage] = useState("");
   const [createModalOpened, setCreateModalOpened] = useState(false);
+  const [adminsModalOpened, setAdminsModalOpened] = useState(false);
   const [loadingOrgs, setLoadingOrgs] = useState(false);
+  const isMobile = useMediaQuery("(max-width: 600px)");
 
   const [deleteOrg, setDeleteOrg] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -132,16 +137,44 @@ const OrganizationsPanel = () => {
 
   return (
     <Container size="xl" py="xl">
-      <Group justify="space-between" mb="xl">
-        <Title order={2}>Mis Organizaciones</Title>
-        <Group>
-          <Button variant="light" component={Link} to="/admin/events" mr="sm">
-            Ver Todos los Eventos (Heredados)
-          </Button>
-          <Button leftSection={<IconPlus size={16} />} onClick={() => setCreateModalOpened(true)}>
-            Crear Organización
+      <Group justify="space-between" align="center" mb="xl" wrap="wrap" gap="xs">
+        <Title order={isMobile ? 3 : 2}>Mis Organizaciones</Title>
+        <Group gap="xs" align="center">
+          {adminProfile?.email && (
+            <Text size="sm" c="dimmed">{adminProfile.email}</Text>
+          )}
+          {isSuperAdmin && (
+            <Badge color="violet" variant="light">Super Admin</Badge>
+          )}
+          {isSuperAdmin && (
+            <Button
+              variant="light"
+              size="xs"
+              leftSection={<IconUsers size={14} />}
+              onClick={() => setAdminsModalOpened(true)}
+            >
+              Admins
+            </Button>
+          )}
+          <Button
+            variant="subtle"
+            color="red"
+            size="xs"
+            leftSection={<IconLogout size={14} />}
+            onClick={logoutAdmin}
+          >
+            Salir
           </Button>
         </Group>
+      </Group>
+
+      <Group mb="xl">
+        <Button variant="light" component={Link} to="/admin/events" mr="sm">
+          Ver Todos los Eventos (Heredados)
+        </Button>
+        <Button leftSection={<IconPlus size={16} />} onClick={() => setCreateModalOpened(true)}>
+          Crear Organización
+        </Button>
       </Group>
 
       {globalMessage && (
@@ -253,6 +286,11 @@ const OrganizationsPanel = () => {
         onClose={() => setCreateModalOpened(false)}
         refreshOrgs={fetchOrganizations}
         setGlobalMessage={setGlobalMessage}
+      />
+
+      <AdminsManagementModal
+        opened={adminsModalOpened}
+        onClose={() => setAdminsModalOpened(false)}
       />
     </Container>
   );

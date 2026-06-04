@@ -117,12 +117,28 @@ const EventAdmin = () => {
       const eventSnap = await getDoc(doc(db, "events", eventId));
       if (eventSnap.exists()) {
         const eventData = eventSnap.data();
-        // Verificar permisos: solo owners o super-admin pueden acceder
-        const isOwner = (eventData.owners || []).includes(adminUser?.uid);
-        if (!isSuperAdmin && !isOwner) {
+        
+        // Verificar permisos:
+        let isAuthorized = isSuperAdmin;
+        
+        if (!isAuthorized) {
+          if (eventData.organizationId) {
+            const orgDoc = await getDoc(doc(db, "organizations", eventData.organizationId));
+            if (orgDoc.exists()) {
+              const orgData = orgDoc.data();
+              isAuthorized = (orgData.owners || []).includes(adminUser?.uid);
+            }
+          } else {
+            // Heredados
+            isAuthorized = (eventData.owners || []).includes(adminUser?.uid);
+          }
+        }
+        
+        if (!isAuthorized) {
           navigate("/admin", { replace: true });
           return;
         }
+        
         setEvent({ id: eventSnap.id, ...eventData });
       }
     } catch (error) {

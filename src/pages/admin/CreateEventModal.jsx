@@ -43,7 +43,7 @@ const CreateEventModal = ({ opened, onClose, refreshEvents, setGlobalMessage, or
         eventType,
         eventImage: imageUrl,
         createdBy: adminUser?.uid || null,
-        owners: adminUser?.uid ? [adminUser.uid] : [],
+        owners: orgId ? [] : (adminUser?.uid ? [adminUser.uid] : []),
         createdAt: new Date(),
         organizationId: orgId || null,
         status: "abierto",
