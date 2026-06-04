@@ -398,7 +398,8 @@ const Landing = () => {
         if (eventDoc.exists()) {
           const eventData = eventDoc.data();
           setEvent(eventData);
-          setRegistrationEnabled(eventData.config?.registrationEnabled ?? true);
+          const isEventOpen = eventData.status === "abierto" || (eventData.config?.registrationEnabled ?? true);
+      setRegistrationEnabled(isEventOpen);
           setActiveStep(0);
         }
       },
@@ -548,7 +549,7 @@ const Landing = () => {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            tipoAsistente: formValues.tipoAsistente,
+            tipoAsistente: event?.eventType === "Networking" ? "Asistente" : formValues.tipoAsistente,
             interesPrincipal: formValues.interesPrincipal,
             necesidad: formValues.necesidad,
             cargo: formValues.cargo,
@@ -597,6 +598,8 @@ const Landing = () => {
       let dataToUpdate = Object.fromEntries(
         Object.entries({
           ...formValues,
+          // Si es networking forzamos tipoAsistente a 'Asistente'
+          tipoAsistente: event?.eventType === "Networking" ? "Asistente" : formValues.tipoAsistente,
           correo: String(formValues["correo"] || "")
             .toLowerCase()
             .trim(),
@@ -838,6 +841,10 @@ const Landing = () => {
   const renderFieldsForNames = useCallback(
     (names = []) => {
       return names.map((name) => {
+        if (event?.eventType === "Networking" && name === "tipoAsistente") {
+          return null;
+        }
+        
         const field = fieldsByName.get(name);
         if (!field) return null;
         if (!isFieldVisible(field)) return null;
@@ -932,7 +939,7 @@ const Landing = () => {
                     size="lg"
                     onClick={handleImproveDescription}
                     loading={improvingDescription}
-                    disabled={improvingDescription || !formValues.tipoAsistente}
+                    disabled={improvingDescription || (event?.eventType !== "Networking" && !formValues.tipoAsistente)}
                   >
                     <IconSparkles size={18} />
                   </ActionIcon>
@@ -941,7 +948,7 @@ const Landing = () => {
               <RichTextEditor editor={editor}>
                 <RichTextEditor.Content />
               </RichTextEditor>
-              {!formValues.tipoAsistente && (
+              {event?.eventType !== "Networking" && !formValues.tipoAsistente && (
                 <Text size="xs" c="dimmed" mt="xs">
                   💡 Completa el campo "Tipo de asistente" para usar la IA
                 </Text>

@@ -9,7 +9,6 @@ import {
   IconSearch, IconX, IconCheck, IconUserCheck,
   IconChevronDown, IconChevronUp, IconEdit, IconDeviceFloppy, IconDownload,
 } from "@tabler/icons-react";
-import { notifications } from "@mantine/notifications";
 import { collection, query, where, onSnapshot, doc, updateDoc, getDocs, getDoc, addDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../../firebase/firebaseConfig";
@@ -517,39 +516,6 @@ export default function CheckInTab({ event }) {
       setUpdating(null);
     }
   };
-
-  useEffect(() => {
-    const trimmed = search.trim();
-    if (!trimmed) return;
-
-    let scannedId = trimmed;
-    if (trimmed.includes("/checkin/")) {
-      const parts = trimmed.split("/");
-      scannedId = parts[parts.length - 1];
-    }
-
-    const matched = attendees.find((a) => a.id === scannedId || a.attendeeId === scannedId);
-    
-    if (matched && !matched.checkedIn) {
-      handleToggle(matched);
-      setSearch("");
-      
-      notifications.show({
-        title: "Check-In Automático",
-        message: `${matched.nombre} marcado como presente.`,
-        color: "green",
-        icon: <IconCheck size={18} />
-      });
-    } else if (matched && matched.checkedIn) {
-      setSearch("");
-      notifications.show({
-        title: "Ya estaba presente",
-        message: `${matched.nombre} ya tenía check-in.`,
-        color: "blue",
-        icon: <IconCheck size={18} />
-      });
-    }
-  }, [search, attendees]); // handleToggle omitted from deps intentionally
 
   const exportToExcel = () => {
     const wsData = [

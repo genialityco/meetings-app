@@ -13,11 +13,20 @@ import {
   ColorInput,
   SegmentedControl,
   Select,
+  Tabs,
+  Paper,
+  Box,
+  Title,
+  Grid
 } from "@mantine/core";
+import { IconSettings, IconCalendarTime, IconPalette, IconCalendarEvent, IconUsers, IconChecklist } from "@tabler/icons-react";
 import { doc, setDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../../firebase/firebaseConfig";
 import QRCode from "qrcode";
+import ConfigureFieldsModal from "./ConfigureFieldsModal";
+import EventPoliciesModal from "./EventPoliciesModal";
+import ConfigureSurveyModal from "./ConfigureSurveyModal";
 
 // Aux: "HH:mm" a minutos
 function timeToMinutes(timeStr) {
@@ -311,7 +320,6 @@ const EditEventConfigModal = ({
         { merge: true }
       )
       setGlobalMessage?.("Configuración actualizada correctamente");
-      onClose();
       refreshEvents();
     } catch (error) {
       console.error(error);
@@ -322,303 +330,448 @@ const EditEventConfigModal = ({
   // ---------- UI ----------
   return (
     <Modal opened={opened} onClose={onClose} title="Configuración del evento" size="xl">
-      <Stack>
-        <TextInput
-          label="Nombre del Evento"
-          value={eventName}
-          onChange={(e) => setEventName(e.target.value)}
-        />
-        
-        <Select
-          label="Tipo de Evento"
-          data={[
-            { value: "Networking", label: "Networking" },
-            { value: "Rueda de negocios", label: "Rueda de negocios" }
-          ]}
-          value={eventType}
-          onChange={setEventType}
-        />
-        
-        <Divider label="Fechas y horarios del evento (multi-día)" my="sm" />
-        <Text size="sm" c="dimmed">
-          Configura uno o más días para el evento. Cada día puede tener horarios y descansos diferentes.
-        </Text>
-        
-        {eventDays.map((day, dayIdx) => (
-          <Stack key={dayIdx} p="md" style={{ border: "1px solid #e0e0e0", borderRadius: 8 }}>
-            <Group justify="space-between" align="center">
-              <Text fw={600} size="sm">Día {dayIdx + 1}</Text>
-              <Button
-                variant="subtle"
-                color="red"
-                size="xs"
-                onClick={() => setEventDays(eventDays.filter((_, i) => i !== dayIdx))}
-                disabled={eventDays.length === 1}
-              >
-                Eliminar día
-              </Button>
-            </Group>
-            
+      <Tabs defaultValue="general" variant="outline">
+        <Tabs.List mb="md">
+          <Tabs.Tab value="general" leftSection={<IconSettings size={14} />}>General</Tabs.Tab>
+          <Tabs.Tab value="horarios" leftSection={<IconCalendarTime size={14} />}>Fechas y Horarios</Tabs.Tab>
+          <Tabs.Tab value="apariencia" leftSection={<IconPalette size={14} />}>Apariencia</Tabs.Tab>
+          <Tabs.Tab value="agendamiento" leftSection={<IconCalendarEvent size={14} />}>Agendamiento</Tabs.Tab>
+          <Tabs.Tab value="campos" leftSection={<IconUsers size={14} />}>Campos</Tabs.Tab>
+          <Tabs.Tab value="politicas" leftSection={<IconSettings size={14} />}>Políticas</Tabs.Tab>
+          <Tabs.Tab value="encuesta" leftSection={<IconChecklist size={14} />}>Encuesta</Tabs.Tab>
+        </Tabs.List>
+
+        <Tabs.Panel value="general">
+          <Stack>
+            <Alert title="Información General" color="blue" variant="light">
+              Datos básicos que identifican al evento frente a los asistentes.
+            </Alert>
             <TextInput
-              label="Fecha"
-              type="date"
-              value={day.date}
-              onChange={(e) => {
-                const updated = [...eventDays];
-                updated[dayIdx].date = e.target.value;
-                setEventDays(updated);
-              }}
-              required
+              label="Nombre del Evento"
+              value={eventName}
+              description="El título principal del evento (ej: Gran Rueda de Negocios 2026)."
+              onChange={(e) => setEventName(e.target.value)}
             />
             
-            <Group grow>
-              <TextInput
-                label="Hora de inicio"
-                type="time"
-                value={day.startTime}
-                onChange={(e) => {
-                  const updated = [...eventDays];
-                  updated[dayIdx].startTime = e.target.value;
-                  setEventDays(updated);
-                }}
-              />
-              <TextInput
-                label="Hora de fin"
-                type="time"
-                value={day.endTime}
-                onChange={(e) => {
-                  const updated = [...eventDays];
-                  updated[dayIdx].endTime = e.target.value;
-                  setEventDays(updated);
-                }}
-              />
+            <Select
+              label="Tipo de Evento"
+              description="Define cómo interactúan los usuarios. En Networking todos son iguales; en Rueda de Negocios se usan roles como Comprador/Vendedor."
+              data={[
+                { value: "Networking", label: "Networking" },
+                { value: "Rueda de negocios", label: "Rueda de negocios" }
+              ]}
+              value={eventType}
+              onChange={setEventType}
+            />
+
+            <TextInput
+              label="Lugar del evento"
+              value={eventLocation}
+              placeholder="Ej: Centro de Convenciones, Hotel XYZ, etc."
+              onChange={(e) => setEventLocation(e.target.value)}
+              description="Ubicación física donde se realizará el evento. Se mostrará a los asistentes."
+            />
+            <TextInput
+              label="URL del Landing"
+              value={landingUrl}
+              placeholder="https://ejemplo.com/landing"
+              onChange={(e) => setLandingUrl(e.target.value)}
+              description="Página promocional del evento. Se generará automáticamente un código QR con esta URL al guardar."
+            />
+            {landingQR && (
+              <Alert color="green" variant="light">
+                <Text size="sm">Código QR actual generado</Text>
+                <img src={landingQR} alt="QR Code" style={{ width: 150, marginTop: 8 }} />
+              </Alert>
+            )}
+            <Group justify="flex-end" mt="md">
+              <Button variant="default" onClick={onClose}>Cancelar</Button>
+              <Button onClick={saveConfig}>Guardar configuración básica</Button>
             </Group>
+          </Stack>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="horarios">
+          <Stack>
+            <Alert title="Días y Horarios del Evento" color="blue" variant="light">
+              Configura uno o más días para el evento. Cada día puede tener horarios de inicio/fin y bloques de descanso independientes (ej: hora de almuerzo).
+            </Alert>
             
-            <Divider label="Bloques de descanso (opcional)" my="xs" />
-            {(day.breakBlocks || []).map((block, blockIdx) => (
-              <Group key={blockIdx} align="flex-end" spacing="xs" wrap="nowrap">
-                <Text size="xs">Descanso #{blockIdx + 1}</Text>
+            {eventDays.map((day, dayIdx) => (
+              <Stack key={dayIdx} p="md" style={{ border: "1px solid #e0e0e0", borderRadius: 8 }}>
+                <Group justify="space-between" align="center">
+                  <Text fw={600} size="sm">Día {dayIdx + 1}</Text>
+                  <Button
+                    variant="subtle"
+                    color="red"
+                    size="xs"
+                    onClick={() => setEventDays(eventDays.filter((_, i) => i !== dayIdx))}
+                    disabled={eventDays.length === 1}
+                  >
+                    Eliminar día
+                  </Button>
+                </Group>
+                
                 <TextInput
-                  label="Inicio"
-                  type="time"
-                  value={block.start}
+                  label="Fecha"
+                  type="date"
+                  value={day.date}
                   onChange={(e) => {
                     const updated = [...eventDays];
-                    updated[dayIdx].breakBlocks[blockIdx].start = e.target.value;
+                    updated[dayIdx].date = e.target.value;
                     setEventDays(updated);
                   }}
-                  style={{ width: 120 }}
+                  required
                 />
-                <TextInput
-                  label="Fin"
-                  type="time"
-                  value={block.end}
-                  onChange={(e) => {
-                    const updated = [...eventDays];
-                    updated[dayIdx].breakBlocks[blockIdx].end = e.target.value;
-                    setEventDays(updated);
-                  }}
-                  style={{ width: 120 }}
-                />
+                
+                <Group grow>
+                  <TextInput
+                    label="Hora de inicio"
+                    type="time"
+                    value={day.startTime}
+                    onChange={(e) => {
+                      const updated = [...eventDays];
+                      updated[dayIdx].startTime = e.target.value;
+                      setEventDays(updated);
+                    }}
+                  />
+                  <TextInput
+                    label="Hora de fin"
+                    type="time"
+                    value={day.endTime}
+                    onChange={(e) => {
+                      const updated = [...eventDays];
+                      updated[dayIdx].endTime = e.target.value;
+                      setEventDays(updated);
+                    }}
+                  />
+                </Group>
+                
+                <Divider label="Bloques de descanso (opcional)" my="xs" />
+                <Text size="xs" c="dimmed" mb="xs">
+                  Añade espacios donde no se agendarán reuniones (ej: 12:00 a 13:00 para almuerzo).
+                </Text>
+                {(day.breakBlocks || []).map((block, blockIdx) => (
+                  <Group key={blockIdx} align="flex-end" spacing="xs" wrap="nowrap">
+                    <Text size="xs">Descanso #{blockIdx + 1}</Text>
+                    <TextInput
+                      label="Inicio"
+                      type="time"
+                      value={block.start}
+                      onChange={(e) => {
+                        const updated = [...eventDays];
+                        updated[dayIdx].breakBlocks[blockIdx].start = e.target.value;
+                        setEventDays(updated);
+                      }}
+                      style={{ width: 120 }}
+                    />
+                    <TextInput
+                      label="Fin"
+                      type="time"
+                      value={block.end}
+                      onChange={(e) => {
+                        const updated = [...eventDays];
+                        updated[dayIdx].breakBlocks[blockIdx].end = e.target.value;
+                        setEventDays(updated);
+                      }}
+                      style={{ width: 120 }}
+                    />
+                    <Button
+                      variant="subtle"
+                      color="red"
+                      size="xs"
+                      onClick={() => {
+                        const updated = [...eventDays];
+                        updated[dayIdx].breakBlocks = updated[dayIdx].breakBlocks.filter((_, i) => i !== blockIdx);
+                        setEventDays(updated);
+                      }}
+                    >
+                      Eliminar
+                    </Button>
+                  </Group>
+                ))}
                 <Button
-                  variant="subtle"
-                  color="red"
+                  variant="outline"
                   size="xs"
                   onClick={() => {
                     const updated = [...eventDays];
-                    updated[dayIdx].breakBlocks = updated[dayIdx].breakBlocks.filter((_, i) => i !== blockIdx);
+                    if (!updated[dayIdx].breakBlocks) updated[dayIdx].breakBlocks = [];
+                    updated[dayIdx].breakBlocks.push({ start: "", end: "" });
                     setEventDays(updated);
                   }}
+                  style={{ width: 200 }}
                 >
-                  Eliminar
+                  Añadir descanso a este día
                 </Button>
-              </Group>
+              </Stack>
             ))}
+            
             <Button
               variant="outline"
-              size="xs"
-              onClick={() => {
-                const updated = [...eventDays];
-                if (!updated[dayIdx].breakBlocks) updated[dayIdx].breakBlocks = [];
-                updated[dayIdx].breakBlocks.push({ start: "", end: "" });
-                setEventDays(updated);
-              }}
-              style={{ width: 200 }}
+              size="sm"
+              onClick={() => setEventDays([...eventDays, { 
+                date: "", 
+                startTime: "09:00", 
+                endTime: "18:00",
+                breakBlocks: []
+              }])}
+              fullWidth
             >
-              Añadir descanso a este día
+              Añadir día al evento
             </Button>
+            <Group justify="flex-end" mt="md">
+              <Button variant="default" onClick={onClose}>Cancelar</Button>
+              <Button onClick={saveConfig}>Guardar fechas y horarios</Button>
+            </Group>
           </Stack>
-        ))}
-        
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setEventDays([...eventDays, { 
-            date: "", 
-            startTime: "09:00", 
-            endTime: "18:00",
-            breakBlocks: []
-          }])}
-          fullWidth
-        >
-          Añadir día al evento
-        </Button>
-        
-        <Divider label="Información del evento" my="sm" />
-        <TextInput
-          label="Lugar del evento"
-          value={eventLocation}
-          placeholder="Ej: Centro de Convenciones, Hotel XYZ, etc."
-          onChange={(e) => setEventLocation(e.target.value)}
-          description="Ubicación física donde se realizará el evento"
-        />
-        <TextInput
-          label="URL del Landing"
-          value={landingUrl}
-          placeholder="https://ejemplo.com/landing"
-          onChange={(e) => setLandingUrl(e.target.value)}
-          description="Se generará automáticamente un código QR con esta URL al guardar"
-        />
-        {landingQR && (
-          <Alert color="green" variant="light">
-            <Text size="sm">Código QR actual generado</Text>
-            <img src={landingQR} alt="QR Code" style={{ width: 150, marginTop: 8 }} />
-          </Alert>
-        )}
-        
-        <Divider label="Color principal" my="sm" />
-        <ColorInput
-          label="Color primario"
-          description="Define el color primario de la interfaz para Landing y Dashboard"
-          value={primaryColor}
-          onChange={setPrimaryColor}
-          format="hex"
-          swatches={['#228be6','#e64980','#be4bdb','#7950f2','#4c6ef5','#15aabf','#12b886','#40c057','#fab005','#fd7e14','#fa5252']}
-        />
+        </Tabs.Panel>
 
-        <Divider label="Título de la Landing Page" my="sm" />
-        <Text size="sm" fw={500} mb={4}>Tipo de título en Landing</Text>
-        <SegmentedControl
-          value={landingTitleType}
-          onChange={setLandingTitleType}
-          data={[
-            { label: 'Texto', value: 'text' },
-            { label: 'Imagen', value: 'image' },
-          ]}
-        />
-        {landingTitleType === 'image' && (
-          <>
-            <TextInput
-              label="URL de la imagen del título"
-              value={landingTitleImageUrl}
-              onChange={(e) => setLandingTitleImageUrl(e.target.value)}
+        <Tabs.Panel value="apariencia">
+          <Grid>
+            <Grid.Col span={{ base: 12, md: 7 }}>
+              <Stack>
+                <Alert title="Diseño Visual" color="blue" variant="light">
+                  Personaliza cómo se ve la plataforma para los asistentes de tu evento.
+                </Alert>
+                
+                <ColorInput
+                  label="Color primario"
+                  description="Afecta botones, enlaces, y elementos destacados de la interfaz."
+                  value={primaryColor}
+                  onChange={setPrimaryColor}
+                  format="hex"
+                  swatches={['#228be6','#e64980','#be4bdb','#7950f2','#4c6ef5','#15aabf','#12b886','#40c057','#fab005','#fd7e14','#fa5252']}
+                />
+
+                <Divider label="Título de la Landing Page" my="sm" />
+                <Text size="sm" fw={500} mb={4}>Tipo de título en Landing</Text>
+                <SegmentedControl
+                  value={landingTitleType}
+                  onChange={setLandingTitleType}
+                  data={[
+                    { label: 'Usar Texto', value: 'text' },
+                    { label: 'Usar Logo/Imagen', value: 'image' },
+                  ]}
+                />
+                {landingTitleType === 'image' && (
+                  <>
+                    <TextInput
+                      label="URL de la imagen del título"
+                      value={landingTitleImageUrl}
+                      onChange={(e) => setLandingTitleImageUrl(e.target.value)}
+                    />
+                    <input type="file" accept="image/*" onChange={handleLandingTitleImageFileChange} style={{ marginTop: 8, marginBottom: 12 }} />
+                  </>
+                )}
+
+                <Divider label="Imágenes de la Plataforma" my="sm" />
+                <TextInput
+                  label="Logo del Dashboard (Opcional)"
+                  description="Aparecerá en la parte superior izquierda dentro del panel de asistentes."
+                  value={dashboardLogoUrl}
+                  onChange={(e) => setDashboardLogoUrl(e.target.value)}
+                />
+                <input type="file" accept="image/*" onChange={handleDashboardLogoFileChange} style={{ marginBottom: 12 }} />
+                
+                <TextInput
+                  label="Imagen del Evento (Opcional)"
+                  description="Imagen principal que representa al evento en listados."
+                  value={eventImageUrl}
+                  onChange={(e) => setEventImageUrl(e.target.value)}
+                />
+                <input type="file" accept="image/*" onChange={handleFileChange} style={{ marginBottom: 12 }} />
+                {(eventImageUrl || eventImageFile) && (
+                  <img src={eventImageFile ? URL.createObjectURL(eventImageFile) : eventImageUrl} alt="Evento" style={{ height: 40, objectFit: "contain", marginBottom: 12 }} />
+                )}
+                
+                <TextInput
+                  label="URL imagen de fondo en escritorio (Opcional)"
+                  description="Fondo de pantalla para la landing page (login/registro)."
+                  value={backgroundImageUrl}
+                  onChange={(e) => setBackgroundImageUrl(e.target.value)}
+                />
+                <input type="file" accept="image/*" onChange={handleBackgroundFileChange} style={{ marginBottom: 12 }} />
+                {(backgroundImageUrl || backgroundImageFile) && (
+                  <img src={backgroundImageFile ? URL.createObjectURL(backgroundImageFile) : backgroundImageUrl} alt="Fondo" style={{ height: 40, objectFit: "contain", marginBottom: 12 }} />
+                )}
+                
+                <TextInput
+                  label="URL imagen de fondo en móviles (Opcional)"
+                  description="Fondo optimizado para teléfonos."
+                  value={backgroundMobileImageUrl}
+                  onChange={(e) => setBackgroundMobileImageUrl(e.target.value)}
+                />
+                <input type="file" accept="image/*" onChange={handleBackgroundMobileFileChange} style={{ marginBottom: 12 }} />
+                {(backgroundMobileImageUrl || backgroundMobileImageFile) && (
+                  <img src={backgroundMobileImageFile ? URL.createObjectURL(backgroundMobileImageFile) : backgroundMobileImageUrl} alt="Fondo Mobile" style={{ height: 40, objectFit: "contain", marginBottom: 12 }} />
+                )}
+              </Stack>
+            </Grid.Col>
+
+            {/* Columna de Vista Previa */}
+            <Grid.Col span={{ base: 12, md: 5 }}>
+              <Paper p="md" withBorder style={{ borderColor: primaryColor || "#228be6", backgroundColor: "#f8f9fa", position: "sticky", top: 20 }}>
+                <Text fw={700} c="dimmed" mb="md" size="xs" tt="uppercase">Vista Previa Simulada</Text>
+                
+                {/* Header Simulado */}
+                <Group justify="space-between" mb="xl" p="xs" style={{ backgroundColor: "#fff", borderRadius: 8, boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }}>
+                  {dashboardLogoUrl || dashboardLogoFile ? (
+                    <img src={dashboardLogoFile ? URL.createObjectURL(dashboardLogoFile) : dashboardLogoUrl} alt="Logo" style={{ height: 24, objectFit: "contain" }} />
+                  ) : (
+                    <Text fw={700} size="sm">Logo Genérico</Text>
+                  )}
+                  <Box w={24} h={24} style={{ borderRadius: "50%", backgroundColor: primaryColor }} />
+                </Group>
+
+                {/* Contenido Landing Simulado */}
+                <Stack align="center" ta="center" mb="xl">
+                  {landingTitleType === 'image' && (landingTitleImageUrl || landingTitleImageFile) ? (
+                    <Box 
+                      p="xs" 
+                      style={{ width: "100%", minHeight: 60, display: "flex", alignItems: "center", justifyContent: "center" }}
+                    >
+                      <img 
+                        src={landingTitleImageFile ? URL.createObjectURL(landingTitleImageFile) : landingTitleImageUrl} 
+                        alt="Título del Landing" 
+                        style={{ maxHeight: 60, maxWidth: "100%", objectFit: "contain" }} 
+                      />
+                    </Box>
+                  ) : (
+                    <Title order={3}>{eventName || "Título del Evento"}</Title>
+                  )}
+                  <Text size="xs" c="dimmed">
+                    Así se verá el encabezado de bienvenida para tus asistentes en la página principal.
+                  </Text>
+                </Stack>
+
+                <Button fullWidth color={primaryColor || "#228be6"} mb="sm">
+                  Botón Primario de Ejemplo
+                </Button>
+                <Button fullWidth variant="outline" color={primaryColor || "#228be6"}>
+                  Botón Secundario de Ejemplo
+                </Button>
+                
+                <Text ta="center" size="xs" mt="md" c={primaryColor || "#228be6"} style={{ textDecoration: "underline" }}>
+                  Enlace con color primario
+                </Text>
+              </Paper>
+            </Grid.Col>
+          </Grid>
+          <Group justify="flex-end" mt="md">
+            <Button variant="default" onClick={onClose}>Cancelar</Button>
+            <Button onClick={saveConfig}>Guardar apariencia</Button>
+          </Group>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="agendamiento">
+          <Stack>
+            <Alert title="Configuración de la Agenda" color="blue" variant="light">
+              Define las reglas matemáticas para la generación de reuniones. Modificar esto recalculará los cupos disponibles.
+            </Alert>
+            
+            <NumberInput
+              label="Cantidad de mesas físicas disponibles"
+              description="El total de espacios simultáneos donde pueden ocurrir reuniones (ej. 50 mesas)."
+              value={numTables}
+              onChange={setNumTables}
+              min={1}
             />
-            <input type="file" accept="image/*" onChange={handleLandingTitleImageFileChange} style={{ marginTop: 8, marginBottom: 12 }} />
-          </>
-        )}
+            <TextInput
+              label="Nombres de las mesas (Opcional)"
+              description="Si quieres dar nombres específicos, sepáralos por coma (ej: VIP 1, VIP 2). Si no, se llamarán Mesa 1, Mesa 2..."
+              value={tableNamesInput}
+              placeholder="Ejemplo: Mesa 1, Mesa 2, VIP, ..."
+              onChange={(e) => setTableNamesInput(e.target.value)}
+            />
+            <Group grow>
+              <NumberInput
+                label="Duración de cada cita"
+                description="Tiempo neto de la reunión en minutos (ej: 15)."
+                value={meetingDuration}
+                onChange={setMeetingDuration}
+                min={5}
+              />
+              <NumberInput
+                label="Tiempo de transición"
+                description="Minutos entre citas para que las personas cambien de mesa (ej: 5)."
+                value={breakTime}
+                onChange={setBreakTime}
+                min={0}
+              />
+            </Group>
+            
+            <NumberInput
+              label="Límite de citas por usuario"
+              description="Máximo de reuniones que una sola persona puede tener en todo el evento."
+              value={maxMeetingsPerUser}
+              onChange={setMaxMeetingsPerUser}
+              min={1}
+            />
+            
+            <Alert color="gray" mt="md">
+              <Text><b>Resumen de Capacidad del Evento:</b></Text>
+              <Text size="sm">
+                • Días del evento: {configSummary.numDays}
+              </Text>
+              <Text size="sm">
+                • Bloques de reunión generados por día: {configSummary.avgBlocksPerDay}
+              </Text>
+              <Text size="sm">
+                • Capacidad total (Mesas × Bloques): <strong>{configSummary.totalSlots} cupos de reunión.</strong>
+              </Text>
+              <Text size="sm">
+                • Tiempo total asignado a descansos: {configSummary.totalBreakMinutes} minutos.
+              </Text>
+            </Alert>
+            <Group justify="flex-end" mt="md">
+              <Button variant="default" onClick={onClose}>Cancelar</Button>
+              <Button onClick={saveConfig}>Guardar agendamiento</Button>
+            </Group>
+          </Stack>
+        </Tabs.Panel>
 
-        <Divider label="Imágenes del evento" my="sm" />
-        <TextInput
-          label="URL de la imagen del Evento (opcional)"
-          value={eventImageUrl}
-          onChange={(e) => setEventImageUrl(e.target.value)}
-        />
-        <input type="file" accept="image/*" onChange={handleFileChange} style={{ marginBottom: 12 }} />
-        <TextInput
-          label="URL imagen de fondo (opcional)"
-          value={backgroundImageUrl}
-          onChange={(e) => setBackgroundImageUrl(e.target.value)}
-        />
-        <input type="file" accept="image/*" onChange={handleBackgroundFileChange} style={{ marginBottom: 12 }} />
-        <TextInput
-          label="URL imagen de fondo mobile (opcional)"
-          value={backgroundMobileImageUrl}
-          onChange={(e) => setBackgroundMobileImageUrl(e.target.value)}
-        />
-        <input type="file" accept="image/*" onChange={handleBackgroundMobileFileChange} style={{ marginBottom: 12 }} />
+        <Tabs.Panel value="campos">
+          <Alert title="Configuración de Campos" color="blue" variant="light" mb="md" mt="md">
+            Aquí puedes personalizar los campos del formulario de registro y su presentación.
+          </Alert>
+          <ConfigureFieldsModal
+            opened={true}
+            onClose={onClose}
+            event={event}
+            refreshEvents={refreshEvents}
+            setGlobalMessage={setGlobalMessage}
+            inline={true}
+          />
+        </Tabs.Panel>
 
-        <TextInput
-          label="Logo del Dashboard (opcional)"
-          description="Imagen o logo que se muestra en el header del dashboard del evento"
-          value={dashboardLogoUrl}
-          onChange={(e) => setDashboardLogoUrl(e.target.value)}
-        />
-        <input type="file" accept="image/*" onChange={handleDashboardLogoFileChange} style={{ marginBottom: 12 }} />
-        {dashboardLogoUrl && (
-          <img src={dashboardLogoUrl} alt="Logo dashboard" style={{ height: 40, objectFit: "contain", marginBottom: 8 }} />
-        )}
+        <Tabs.Panel value="politicas">
+          <Alert title="Políticas del Evento" color="blue" variant="light" mb="md" mt="md">
+            Define cómo interactúan los usuarios y las restricciones aplicables.
+          </Alert>
+          <EventPoliciesModal
+            opened={true}
+            onClose={onClose}
+            event={event}
+            refreshEvents={refreshEvents}
+            setGlobalMessage={setGlobalMessage}
+            inline={true}
+          />
+        </Tabs.Panel>
 
-        <Divider label="Configuración de agendamiento" my="sm" />
-        <Text size="sm" c="dimmed" mb="sm">
-          Configuración global que aplica a todos los días del evento.
-        </Text>
-        <NumberInput
-          label="Cantidad máxima de personas"
-          value={maxPersons}
-          onChange={setMaxPersons}
-          min={1}
-        />
-        <NumberInput
-          label="Cantidad de mesas"
-          value={numTables}
-          onChange={setNumTables}
-          min={1}
-        />
-        <TextInput
-          label="Nombres de mesas (separados por coma)"
-          value={tableNamesInput}
-          placeholder="Ejemplo: Mesa 1, Mesa 2, VIP, ..."
-          onChange={(e) => setTableNamesInput(e.target.value)}
-        />
-        <NumberInput
-          label="Duración de cada cita (minutos)"
-          value={meetingDuration}
-          onChange={setMeetingDuration}
-          min={5}
-        />
-        <NumberInput
-          label="Tiempo entre citas (minutos)"
-          value={breakTime}
-          onChange={setBreakTime}
-          min={0}
-        />
-        <Divider my="xs" />
-        <NumberInput
-          label="Límite máximo de citas por usuario"
-          value={maxMeetingsPerUser}
-          onChange={setMaxMeetingsPerUser}
-          min={1}
-          description="Puedes dejarlo igual al número de bloques, o ajustarlo según la lógica del evento."
-        />
-        <Alert color="blue" variant="light" mt="md">
-          <Text><b>Resumen configuración agenda:</b></Text>
-          <Text size="sm">
-            • Días del evento: {configSummary.numDays}
-          </Text>
-          <Text size="sm">
-            • Bloques de reunión totales: {configSummary.totalBlocks}
-          </Text>
-          <Text size="sm">
-            • Bloques promedio por día: {configSummary.avgBlocksPerDay}
-          </Text>
-          <Text size="sm">
-            • Slots totales (bloques × mesas): {configSummary.totalSlots}
-          </Text>
-          <Text size="sm">
-            • Citas máximas por usuario (total): {configSummary.maxMeetingsPerUser}
-          </Text>
-          <Text size="sm">
-            • Límite máximo de citas por usuario (editable): {maxMeetingsPerUser}
-          </Text>
-          <Text size="sm">
-            • Bloques de descanso totales: {configSummary.breakBlocksCount}
-          </Text>
-          <Text size="sm">
-            • Tiempo total de descansos: {configSummary.totalBreakMinutes} minutos
-          </Text>
-        </Alert>
-        <Button onClick={saveConfig} mt="md">Guardar configuración</Button>
-      </Stack>
+        <Tabs.Panel value="encuesta">
+          <Alert title="Configuración de Encuestas" color="blue" variant="light" mb="md" mt="md">
+            Define las encuestas de satisfacción para compradores y vendedores.
+          </Alert>
+          <ConfigureSurveyModal
+            opened={true}
+            onClose={onClose}
+            event={event}
+            refreshEvents={refreshEvents}
+            setGlobalMessage={setGlobalMessage}
+            inline={true}
+          />
+        </Tabs.Panel>
+      </Tabs>
     </Modal>
   );
 };

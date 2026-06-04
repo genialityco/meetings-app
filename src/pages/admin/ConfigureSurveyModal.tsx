@@ -40,6 +40,7 @@ interface Props {
   event: any;
   refreshEvents: () => void;
   setGlobalMessage: (msg: string) => void;
+  inline?: boolean;
 }
 
 function FieldEditor({
@@ -126,7 +127,7 @@ function FieldEditor({
   );
 }
 
-export default function ConfigureSurveyModal({ opened, onClose, event, refreshEvents, setGlobalMessage }: Props) {
+export default function ConfigureSurveyModal({ opened, onClose, event, refreshEvents, setGlobalMessage, inline = false }: Props) {
   const [compradorFields, setCompradorFields] = useState<SurveyField[]>(DEFAULT_SURVEY_FIELDS);
   const [vendedorFields, setVendedorFields] = useState<SurveyField[]>(DEFAULT_SURVEY_FIELDS);
   const [saving, setSaving] = useState(false);
@@ -147,7 +148,7 @@ export default function ConfigureSurveyModal({ opened, onClose, event, refreshEv
       });
       setGlobalMessage("Configuración de encuesta guardada.");
       refreshEvents();
-      onClose();
+      if (!inline) onClose();
     } catch (e) {
       console.error(e);
       setGlobalMessage("Error al guardar encuesta.");
@@ -156,8 +157,7 @@ export default function ConfigureSurveyModal({ opened, onClose, event, refreshEv
     }
   };
 
-  return (
-    <Modal opened={opened} onClose={onClose} title="Configurar encuesta por rol" size="lg">
+  const content = (
       <Stack>
         <Text size="sm" c="dimmed">
           Define campos independientes para compradores y vendedores. Solo aplica cuando el modo de encuesta es "Personalizada" en las políticas.
@@ -176,9 +176,15 @@ export default function ConfigureSurveyModal({ opened, onClose, event, refreshEv
         </Tabs>
         <Group justify="flex-end" mt="md">
           <Button variant="default" onClick={onClose}>Cancelar</Button>
-          <Button loading={saving} onClick={handleSave}>Guardar</Button>
+          <Button loading={saving} onClick={handleSave}>Guardar encuesta</Button>
         </Group>
       </Stack>
+  );
+
+  if (inline) return content;
+  return (
+    <Modal opened={opened} onClose={onClose} title="Configurar encuesta por rol" size="lg">
+      {content}
     </Modal>
   );
 }

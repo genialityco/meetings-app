@@ -94,9 +94,8 @@ const CLIENT_ID = "genialitybussinesstest1";
 export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise<boolean> {
   const { apiVersion, phone, message, metadata = {} } = options;
 
-  // Limpiar número de teléfono
-  const cleanPhone = phone.replace(/[^\d]/g, "");
-  const fullPhone = `57${cleanPhone}`;
+  // Limpiar número de teléfono (ya viene con prefijo)
+  const fullPhone = phone.replace(/[^\d]/g, "");
 
   try {
     if (apiVersion === "v2") {
@@ -196,9 +195,8 @@ export async function sendMeetingConfirmation(options: {
 }): Promise<boolean> {
   const { phone, eventName, acceptedBy, meetingWith, company, schedule, table } = options;
 
-  // Limpiar número de teléfono
-  const cleanPhone = phone.replace(/[^\d]/g, "");
-  const fullPhone = `57${cleanPhone}`;
+  // Limpiar número de teléfono (ya viene con prefijo)
+  const fullPhone = phone.replace(/[^\d]/g, "");
 
   try {
     const payload: WhatsAppV2ConfirmationPayload = {
@@ -244,9 +242,8 @@ export async function sendMeetingCancellation(options: {
 }): Promise<boolean> {
   const { phone, eventName, meetingWith, company, day, schedule, table } = options;
 
-  // Limpiar número de teléfono
-  const cleanPhone = phone.replace(/[^\d]/g, "");
-  const fullPhone = `57${cleanPhone}`;
+  // Limpiar número de teléfono (ya viene con prefijo)
+  const fullPhone = phone.replace(/[^\d]/g, "");
 
   try {
     const payload: WhatsAppV2CancellationPayload = {
@@ -289,9 +286,8 @@ export async function sendMeetingRejection(options: {
 }): Promise<boolean> {
   const { phone, eventName, rejectedByName, rejectedByCompany } = options;
 
-  // Limpiar número de teléfono
-  const cleanPhone = phone.replace(/[^\d]/g, "");
-  const fullPhone = `57${cleanPhone}`;
+  // Limpiar número de teléfono (ya viene con prefijo)
+  const fullPhone = phone.replace(/[^\d]/g, "");
 
   try {
     const payload: WhatsAppV2RejectionPayload = {
@@ -334,12 +330,8 @@ export async function sendWelcomeNotification(options: {
 }): Promise<boolean> {
   const { phone, name, eventName, badgeUrl, headerImageUrl, date, time } = options;
 
-  // Limpiar número de teléfono
-  const digits = phone.replace(/[^\d]/g, "");
-  // Evitar duplicar el código de país si ya lo tiene (específicamente el 57 de Colombia)
-  const fullPhone = (digits.length === 10 || (digits.length > 10 && !digits.startsWith("57"))) 
-    ? `57${digits.slice(-10)}` // Asumiendo que los últimos 10 dígitos son el número local
-    : digits.startsWith("57") ? digits : `57${digits}`;
+  // Limpiar número de teléfono (ya viene con prefijo)
+  const fullPhone = phone.replace(/[^\d]/g, "");
 
   try {
     const payload = {

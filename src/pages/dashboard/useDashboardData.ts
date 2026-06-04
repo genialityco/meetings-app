@@ -370,6 +370,7 @@ export function useDashboardData(eventId?: string) {
     null,
   );
   const [showOnlyToday, setShowOnlyToday] = useState(false);
+  const [filterByRole, setFilterByRole] = useState(false);
   const [slotModalOpened, setSlotModalOpened] = useState(false);
   const [meetingToAccept, setMeetingToAccept] = useState<any>(null);
   const [meetingToEdit, setMeetingToEdit] = useState<any>(null);
@@ -2154,6 +2155,8 @@ export function useDashboardData(eventId?: string) {
     setSearchTerm,
     showOnlyToday,
     setShowOnlyToday,
+    filterByRole,
+    setFilterByRole,
     interestFilter,
     setInterestFilter,
     interestOptions,

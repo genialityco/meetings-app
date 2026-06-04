@@ -86,6 +86,8 @@ interface AttendeesViewProps {
   filteredAssistants: Assistant[];
   showOnlyToday: boolean;
   setShowOnlyToday: (v: any) => void;
+  filterByRole: boolean;
+  setFilterByRole: (v: any) => void;
   interestOptions: { value: string; label: string }[];
   interestFilter: string | null;
   setInterestFilter: (v: string | null) => void;
@@ -146,6 +148,8 @@ export default function AttendeesView({
   filteredAssistants,
   showOnlyToday,
   setShowOnlyToday,
+  filterByRole,
+  setFilterByRole,
   interestOptions,
   interestFilter,
   setInterestFilter,
@@ -171,6 +175,9 @@ export default function AttendeesView({
   const [vectorResults, setVectorResults] = useState<any[]>([]);
   const [isVectorSearching, setIsVectorSearching] = useState(false);
   const [hasSearchedVector, setHasSearchedVector] = useState(false);
+  
+  const eventTypeValue = (eventConfig?.eventType || "").toLowerCase();
+  const isRuedaNegocios = !eventTypeValue || eventTypeValue === "rueda_negocios";
 
   // Efecto para hacer scroll y resaltar la card cuando viene de notificación
   useEffect(() => {
@@ -223,7 +230,7 @@ export default function AttendeesView({
             category: "assistants",
             eventId: eventId,
             limit: 30,
-            threshold: 0.3,
+            threshold: 0.1,
           }),
         });
 
@@ -256,12 +263,31 @@ export default function AttendeesView({
     return String(n);
   }, [eventConfig]);
 
+  useEffect(() => {
+    console.log("Resultados de búsqueda vectorial (primeros 4):", vectorResults.slice(0, 4));
+  }, [vectorResults]);
+
+  useEffect(() => {
+    console.log("Resultados de búsqueda vectorial (primeros 4):", vectorResults.slice(0, 4));
+  }, [vectorResults]);
+
   const displayedAssistants = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     
     let baseAssistants = filteredAssistants;
     if (showOnlyToday) {
       baseAssistants = baseAssistants.filter((a) => a.connectedToday === true);
+    }
+    
+    if (filterByRole && isRuedaNegocios) {
+      console.log("Aplicando filtro por rol, miRole:", currentUser?.data?.tipoAsistente);
+      const myRole = (currentUser?.data?.tipoAsistente || "").toLowerCase().trim();
+      if (myRole === "comprador") {
+        baseAssistants = baseAssistants.filter((a) => (a.tipoAsistente || "").toLowerCase().trim() === "vendedor");
+      } else if (myRole === "vendedor") {
+        console.log("Filtrando para vendedor, miRole:", myRole);
+        baseAssistants = baseAssistants.filter((a) => (a.tipoAsistente || "").toLowerCase().trim() === "comprador");
+      }
     }
     
     if (!term) {
@@ -311,7 +337,7 @@ export default function AttendeesView({
     }
 
     return [...exactMatches, ...semanticMatches];
-  }, [filteredAssistants, searchTerm, formFields, showOnlyToday, sortBy, affinityScores, vectorResults]);
+  }, [filteredAssistants, searchTerm, formFields, showOnlyToday, sortBy, affinityScores, vectorResults, filterByRole, isRuedaNegocios, currentUser]);
 
   const handleOpenModal = (assistant: Assistant) => {
     setSelectedAssistant(assistant);
@@ -427,6 +453,17 @@ export default function AttendeesView({
                 >
                   {showOnlyToday ? "Solo conectados hoy" : "Todos"}
                 </Button>
+                {isRuedaNegocios && (
+                  <Button
+                    variant={filterByRole ? "filled" : "light"}
+                    color={theme.primaryColor}
+                    size="xs"
+                    leftSection={<IconUsers size={14} />}
+                    onClick={() => setFilterByRole((v: boolean) => !v)}
+                  >
+                    {filterByRole ? "Filtrando por contraparte" : "Filtrar por rol"}
+                  </Button>
+                )}
               </Group>
 
               <Group gap="xs">

@@ -23,6 +23,7 @@ interface Props {
   event: any;
   refreshEvents: () => void;
   setGlobalMessage: (msg: string) => void;
+  inline?: boolean;
 }
 
 export default function EventPoliciesModal({
@@ -31,6 +32,7 @@ export default function EventPoliciesModal({
   event,
   refreshEvents,
   setGlobalMessage,
+  inline = false,
 }: Props) {
   const [saving, setSaving] = useState(false);
   const [roleMode, setRoleMode] = useState<EventPolicies["roleMode"]>("open");
@@ -186,7 +188,7 @@ export default function EventPoliciesModal({
 
       setGlobalMessage("Políticas actualizadas correctamente.");
       refreshEvents();
-      onClose();
+      if (!inline) onClose();
     } catch (error) {
       console.error(error);
       setGlobalMessage("Error al actualizar políticas.");
@@ -195,13 +197,7 @@ export default function EventPoliciesModal({
     }
   };
 
-  return (
-    <Modal
-      opened={opened}
-      onClose={onClose}
-      title="Configurar políticas del evento"
-      size="lg"
-    >
+  const content = (
       <Stack>
         <Select
           label="Modo de roles"
@@ -466,6 +462,18 @@ export default function EventPoliciesModal({
           </Button>
         </Group>
       </Stack>
+  );
+
+  if (inline) return content;
+  
+  return (
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      title="Configurar políticas del evento"
+      size="lg"
+    >
+      {content}
     </Modal>
   );
 }

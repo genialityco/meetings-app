@@ -20,6 +20,18 @@ service cloud.firestore {
       return isSuperAdmin(uid) || isEventOwner(uid, eventId);
     }
 
+    // ─── Organizaciones ────────────────────────────────────────────────────────
+    match /organizations/{orgId} {
+      // Lectura libre
+      allow read: if true;
+
+      // Solo admins registrados pueden crear organizaciones
+      allow create: if request.auth != null && isAdmin(request.auth.uid);
+
+      // Solo owners o super-admin pueden modificar/eliminar
+      allow update, delete: if request.auth != null && (isSuperAdmin(request.auth.uid) || request.auth.uid in resource.data.owners);
+    }
+
     // ─── Eventos ────────────────────────────────────────────────────────────
     match /events/{eventId} {
       // Lectura libre (dashboard de asistentes la necesita)

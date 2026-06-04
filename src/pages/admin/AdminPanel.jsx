@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useContext } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import {
   Container,
   Title,
@@ -15,10 +16,11 @@ import {
   Badge,
   Modal,
   MultiSelect,
+  Switch,
 } from "@mantine/core";
-import { IconLogout, IconUsers, IconUserPlus, IconTrash } from "@tabler/icons-react";
+import { IconLogout, IconUsers, IconUserPlus, IconTrash, IconArrowLeft, IconCalendarEvent } from "@tabler/icons-react";
 import { useMediaQuery } from "@mantine/hooks";
-import { collection, getDocs, query, where, doc, updateDoc, deleteDoc } from "firebase/firestore";
+import { collection, getDocs, query, where, doc, updateDoc, deleteDoc, getDoc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import CreateEventModal from "./CreateEventModal";
 import AdminsManagementModal from "./AdminsManagementModal";
@@ -26,8 +28,11 @@ import { Link } from "react-router-dom";
 import { AdminAuthContext } from "../../context/AdminAuthContext";
 
 const AdminPanel = () => {
+  const { orgId } = useParams();
+  const navigate = useNavigate();
   const { adminUser, isSuperAdmin, adminProfile, logoutAdmin } = useContext(AdminAuthContext);
   const [events, setEvents] = useState([]);
+  const [organization, setOrganization] = useState(null);
   const [globalMessage, setGlobalMessage] = useState("");
   const [createModalOpened, setCreateModalOpened] = useState(false);
   const [adminsModalOpened, setAdminsModalOpened] = useState(false);
@@ -50,9 +55,24 @@ const AdminPanel = () => {
     try {
       setLoadingEvents(true);
 
-      const q = isSuperAdmin
-        ? query(collection(db, "events"))
-        : query(collection(db, "events"), where("owners", "array-contains", adminUser.uid));
+      // Si existe orgId, buscar la organización
+      if (orgId) {
+        const orgDoc = await getDoc(doc(db, "organizations", orgId));
+        if (orgDoc.exists()) {
+          setOrganization({ id: orgDoc.id, ...orgDoc.data() });
+        }
+      }
+
+      // Filtrar por orgId si existe
+      let conditions = [];
+      if (orgId) {
+        conditions.push(where("organizationId", "==", orgId));
+      }
+      if (!isSuperAdmin) {
+        conditions.push(where("owners", "array-contains", adminUser.uid));
+      }
+
+      const q = query(collection(db, "events"), ...conditions);
       const snap = await getDocs(q);
 
       const eventsList = snap.docs.map((docItem) => ({
@@ -67,7 +87,7 @@ const AdminPanel = () => {
     } finally {
       setLoadingEvents(false);
     }
-  }, [adminUser, isSuperAdmin]);
+  }, [adminUser, isSuperAdmin, orgId]);
 
   useEffect(() => {
     fetchEvents();
@@ -75,6 +95,14 @@ const AdminPanel = () => {
 
   const formatDate = (value) => {
     if (!value) return null;
+    
+    // Si es un string YYYY-MM-DD
+    if (typeof value === "string" && value.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const [year, month, day] = value.split("-").map(Number);
+      const months = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+      return `${day} de ${months[month - 1]} de ${year}`;
+    }
+    
     const d =
       typeof value.toDate === "function"
         ? value.toDate()
@@ -99,6 +127,23 @@ const AdminPanel = () => {
       setGlobalMessage("Error al eliminar el evento.");
     } finally {
       setDeleting(false);
+    }
+  };
+
+  // ── Cambiar estado del evento ─────────────────────────────────────────────
+  const toggleEventStatus = async (event) => {
+    try {
+      const currentEnabled = event.config?.registrationEnabled ?? true;
+      const newEnabled = !currentEnabled;
+      
+      await updateDoc(doc(db, "events", event.id), { 
+        status: newEnabled ? "abierto" : "cerrado",
+        "config.registrationEnabled": newEnabled 
+      });
+      fetchEvents();
+    } catch (err) {
+      console.error(err);
+      setGlobalMessage("Error al actualizar el estado del evento.");
     }
   };
 
@@ -138,7 +183,16 @@ const AdminPanel = () => {
   return (
     <Container fluid>
       <Group justify="space-between" align="center" mt={isMobile ? "sm" : "md"} wrap="wrap" gap="xs">
-        <Title order={isMobile ? 3 : 2}>Dashboard de Eventos</Title>
+        <Group align="center">
+          {orgId && (
+            <Button variant="subtle" onClick={() => navigate("/admin")} px={0} mr="sm">
+              <IconArrowLeft size={24} />
+            </Button>
+          )}
+          <Title order={isMobile ? 3 : 2}>
+            {orgId && organization ? `Eventos: ${organization.name}` : "Todos los Eventos"}
+          </Title>
+        </Group>
         <Group gap="xs" align="center">
           {adminProfile?.email && (
             <Text size="sm" c="dimmed">{adminProfile.email}</Text>
@@ -174,13 +228,15 @@ const AdminPanel = () => {
         </Center>
       ) : (
         <>
-          <Button
-            mt={isMobile ? "sm" : "md"}
-            fullWidth={isMobile}
-            onClick={() => setCreateModalOpened(true)}
-          >
-            Crear Evento
-          </Button>
+          {orgId && (
+            <Button
+              mt={isMobile ? "sm" : "md"}
+              fullWidth={isMobile}
+              onClick={() => setCreateModalOpened(true)}
+            >
+              Crear Evento en Organización
+            </Button>
+          )}
 
           {globalMessage && (
             <Alert
@@ -194,11 +250,16 @@ const AdminPanel = () => {
             </Alert>
           )}
 
-          <Stack mt={isMobile ? "sm" : "md"} spacing={isMobile ? "sm" : "md"}>
-            <Grid gutter={isMobile ? "sm" : "md"}>
-              {events.map((event) => (
-                <Grid.Col key={event.id} span={isMobile ? 12 : 6}>
-                  <Card shadow="sm" p={isMobile ? "md" : "lg"} withBorder>
+          {events.length === 0 ? (
+            <Text c="dimmed" ta="center" mt="xl">
+              No hay eventos disponibles.
+            </Text>
+          ) : (
+            <Stack mt={isMobile ? "sm" : "md"} spacing={isMobile ? "sm" : "md"}>
+              <Grid gutter={isMobile ? "sm" : "md"}>
+                {events.map((event) => (
+                  <Grid.Col key={event.id} span={isMobile ? 12 : 6}>
+                    <Card shadow="sm" p={isMobile ? "md" : "lg"} withBorder>
                     <Card.Section>
                       {event.eventImage ? (
                         <Image
@@ -223,15 +284,42 @@ const AdminPanel = () => {
                       wrap={isMobile ? "wrap" : "nowrap"}
                       align={isMobile ? "center" : "flex-start"}
                     >
-                      <div style={{ minWidth: 0 }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
                         <Title order={isMobile ? 5 : 4} lineClamp={1}>
                           {event.eventName || "Evento sin título"}
                         </Title>
+                        
+                        <Group mt="xs" mb="xs" gap="xs">
+                          <Badge color="blue" variant="light">
+                            {event.eventType || "Rueda de negocios"}
+                          </Badge>
+                          <Badge color={(event.config?.registrationEnabled ?? true) ? "green" : "red"} variant="dot">
+                            {(event.config?.registrationEnabled ?? true) ? "ABIERTO" : "CERRADO"}
+                          </Badge>
+                        </Group>
+
                         <Text size="sm" c="dimmed">
                           ID: {event.id}
                         </Text>
+                        
+                        {(event.config?.eventDates && event.config.eventDates.length > 0) ? (
+                          <Group gap="xs" mt={6}>
+                            <IconCalendarEvent size={18} style={{ color: "var(--mantine-color-blue-6)" }} />
+                            <Text size="sm" fw={700} c="dark">
+                              {event.config.eventDates.map(d => formatDate(d)).join(" y ")}
+                            </Text>
+                          </Group>
+                        ) : event.config?.eventDate ? (
+                          <Group gap="xs" mt={6}>
+                            <IconCalendarEvent size={18} style={{ color: "var(--mantine-color-blue-6)" }} />
+                            <Text size="sm" fw={700} c="dark">
+                              {formatDate(event.config.eventDate)}
+                            </Text>
+                          </Group>
+                        ) : null}
+
                         {formatDate(event.createdAt) && (
-                          <Text size="xs" c="dimmed">
+                          <Text size="xs" c="dimmed" mt={4}>
                             Creado: {formatDate(event.createdAt)}
                           </Text>
                         )}
@@ -240,6 +328,15 @@ const AdminPanel = () => {
                             {event.owners.length} admin(s) asignado(s)
                           </Text>
                         )}
+                        
+                        <Group mt="sm">
+                          <Switch
+                            label={(event.config?.registrationEnabled ?? true) ? "Abierto" : "Cerrado"}
+                            checked={(event.config?.registrationEnabled ?? true)}
+                            onChange={() => toggleEventStatus(event)}
+                            size="sm"
+                          />
+                        </Group>
                       </div>
 
                       <Stack gap="xs" align={isMobile ? "stretch" : "flex-end"}>
@@ -279,6 +376,7 @@ const AdminPanel = () => {
               ))}
             </Grid>
           </Stack>
+          )}
         </>
       )}
 
@@ -287,6 +385,7 @@ const AdminPanel = () => {
         onClose={() => setCreateModalOpened(false)}
         refreshEvents={fetchEvents}
         setGlobalMessage={setGlobalMessage}
+        orgId={orgId}
       />
 
       <AdminsManagementModal

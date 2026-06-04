@@ -45,9 +45,6 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { useContext } from "react";
 import { AdminAuthContext } from "../../context/AdminAuthContext";
 import * as XLSX from "xlsx";
-import ConfigureFieldsModal from "./ConfigureFieldsModal";
-import EventPoliciesModal from "./EventPoliciesModal";
-import ConfigureSurveyModal from "./ConfigureSurveyModal";
 import ExternalMeetingModal from "./ExternalMeetingModal";
 
 import SendWaRemindersModal from "./SendWaRemindersModal";
@@ -66,10 +63,6 @@ const EventAdmin = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [attendees, setAttendees] = useState([]);
   const [, setAttendeesLoading] = useState(false);
-  const [configureFieldsModalOpened, setConfigureFieldsModalOpened] =
-    useState(false);
-  const [policiesModalOpened, setPoliciesModalOpened] = useState(false);
-  const [configureSurveyModalOpened, setConfigureSurveyModalOpened] = useState(false);
 
   // Estado para reuniones huérfanas
   const [orphanedMeetingsModalOpened, setOrphanedMeetingsModalOpened] = useState(false);
@@ -563,13 +556,13 @@ const EventAdmin = () => {
     try {
       setActionLoading(true);
       const currentStatus = event.config?.registrationEnabled ?? true;
+      const newStatus = !currentStatus;
       await updateDoc(doc(db, "events", event.id), {
-        "config.registrationEnabled": !currentStatus,
+        status: newStatus ? "abierto" : "cerrado",
+        "config.registrationEnabled": newStatus,
       });
       setGlobalMessage(
-        `Registros ${
-          !currentStatus ? "habilitados" : "inhabilitados"
-        } correctamente.`,
+        `Evento ${newStatus ? "abierto (Registros ON)" : "cerrado (Registros OFF)"} correctamente.`,
       );
       fetchEvent();
     } catch (error) {
@@ -1290,11 +1283,11 @@ const EventAdmin = () => {
             </Badge>
             <Badge
               variant="filled"
-              color={event.config?.registrationEnabled ? "teal" : "red"}
+              color={(event.config?.registrationEnabled ?? true) ? "teal" : "red"}
             >
-              {event.config?.registrationEnabled
-                ? "Registros ON"
-                : "Registros OFF"}
+              {(event.config?.registrationEnabled ?? true)
+                ? "Evento Abierto"
+                : "Evento Cerrado"}
             </Badge>
           </Group>
 
@@ -1393,12 +1386,12 @@ const EventAdmin = () => {
               onClick={toggleRegistration}
               loading={actionLoading}
               disabled={actionLoading}
-              color={event.config?.registrationEnabled ? "red" : "teal"}
+              color={(event.config?.registrationEnabled ?? true) ? "red" : "teal"}
               variant="light"
             >
-              {event.config?.registrationEnabled
-                ? "Inhabilitar Registros"
-                : "Habilitar Registros"}
+              {(event.config?.registrationEnabled ?? true)
+                ? "Cerrar Evento"
+                : "Abrir Evento"}
             </Button>
           </Group>
         </Group>
@@ -1521,34 +1514,6 @@ const EventAdmin = () => {
               </Button>
 
               <Button
-                onClick={() => setConfigureFieldsModalOpened(true)}
-                loading={actionLoading}
-                disabled={actionLoading}
-                variant="default"
-              >
-                Configurar campos
-              </Button>
-
-              <Button
-                onClick={() => setConfigureSurveyModalOpened(true)}
-                loading={actionLoading}
-                disabled={actionLoading}
-                variant="default"
-              >
-                Configurar encuesta
-              </Button>
-
-              <Button
-                onClick={() => setPoliciesModalOpened(true)}
-                loading={actionLoading}
-                disabled={actionLoading}
-                color="grape"
-                variant="light"
-              >
-                Configurar políticas
-              </Button>
-
-              <Button
                 onClick={async () => {
                   if (!window.confirm("¿Regenerar vectores para todos los usuarios del evento? Esto puede tardar varios minutos.")) return;
                   setActionLoading(true);
@@ -1660,34 +1625,6 @@ const EventAdmin = () => {
                     disabled={actionLoading}
                   >
                     Editar Configuración
-                  </Button>
-
-                  <Button
-                    onClick={() => setConfigureFieldsModalOpened(true)}
-                    loading={actionLoading}
-                    disabled={actionLoading}
-                    variant="default"
-                  >
-                    Configurar campos
-                  </Button>
-
-                  <Button
-                    onClick={() => setConfigureSurveyModalOpened(true)}
-                    loading={actionLoading}
-                    disabled={actionLoading}
-                    variant="default"
-                  >
-                    Configurar encuesta
-                  </Button>
-
-                  <Button
-                    onClick={() => setPoliciesModalOpened(true)}
-                    loading={actionLoading}
-                    disabled={actionLoading}
-                    color="grape"
-                    variant="default"
-                  >
-                    Configurar políticas
                   </Button>
                 </Group>
               </div>
@@ -1853,27 +1790,6 @@ const EventAdmin = () => {
         opened={meetingsModalOpened}
         onClose={() => setMeetingsModalOpened(false)}
         event={event}
-        setGlobalMessage={setGlobalMessage}
-      />
-      <ConfigureFieldsModal
-        opened={configureFieldsModalOpened}
-        onClose={() => setConfigureFieldsModalOpened(false)}
-        event={event}
-        refreshEvents={fetchEvent}
-        setGlobalMessage={setGlobalMessage}
-      />
-      <ConfigureSurveyModal
-        opened={configureSurveyModalOpened}
-        onClose={() => setConfigureSurveyModalOpened(false)}
-        event={event}
-        refreshEvents={fetchEvent}
-        setGlobalMessage={setGlobalMessage}
-      />
-      <EventPoliciesModal
-        opened={policiesModalOpened}
-        onClose={() => setPoliciesModalOpened(false)}
-        event={event}
-        refreshEvents={fetchEvent}
         setGlobalMessage={setGlobalMessage}
       />
 

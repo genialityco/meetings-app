@@ -149,6 +149,8 @@ export default function TabsPanel({
           filteredAssistants={dashboard.filteredAssistants}
           showOnlyToday={dashboard.showOnlyToday}
           setShowOnlyToday={dashboard.setShowOnlyToday}
+          filterByRole={dashboard.filterByRole}
+          setFilterByRole={dashboard.setFilterByRole}
           interestOptions={dashboard.interestOptions}
           interestFilter={dashboard.interestFilter}
           setInterestFilter={dashboard.setInterestFilter}

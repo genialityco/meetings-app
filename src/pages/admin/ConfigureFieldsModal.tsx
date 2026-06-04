@@ -179,8 +179,8 @@ function isCustomField(field: any) {
   );
 }
 
-const getDefaultFields = (formFields: any[] | undefined) => {
-  return AVAILABLE_FIELDS.map((field) => ({
+const getDefaultFields = (formFields: any[] | undefined, eventType?: string) => {
+  return AVAILABLE_FIELDS.filter((f) => !(eventType === "Networking" && f.name === "tipoAsistente")).map((field) => ({
     ...field,
     required: true,
     ...(formFields?.find((f) => f.name === field.name) || {}),
@@ -391,15 +391,17 @@ export default function ConfigureFieldsModal({
   event,
   refreshEvents,
   setGlobalMessage,
+  inline = false,
 }: {
   opened: boolean;
   onClose: () => void;
   event: any;
   refreshEvents: () => void;
   setGlobalMessage: (msg: string) => void;
+  inline?: boolean;
 }) {
   const [fields, setFields] = useState<any[]>(
-    event?.config?.formFields || getDefaultFields([]),
+    event?.config?.formFields || getDefaultFields([], event?.eventType),
   );
   const [tratamientoText, setTratamientoText] = useState(
     event?.config?.tratamientoDatosText || CONSENTIMIENTO_FIELD.legalText,
@@ -428,7 +430,7 @@ export default function ConfigureFieldsModal({
   useEffect(() => {
     if (!opened) return;
 
-    setFields(event?.config?.formFields || getDefaultFields([]));
+    setFields(event?.config?.formFields || getDefaultFields([], event?.eventType));
     setTratamientoText(
       event?.config?.tratamientoDatosText || CONSENTIMIENTO_FIELD.legalText,
     );
@@ -728,22 +730,15 @@ export default function ConfigureFieldsModal({
         "Configuración del formulario actualizada correctamente.",
       );
       refreshEvents();
-      onClose();
+      if (!inline) onClose();
     } catch (error) {
       console.error("Error al guardar configuración:", error);
       setGlobalMessage("Error al guardar configuración.");
     }
   };
 
-  return (
-    <Modal
-      opened={opened}
-      onClose={onClose}
-      title="Configurar formulario"
-      size="xl"
-      centered
-      padding="lg"
-    >
+  const content = (
+    <>
       {/* -------- MODO FORMULARIO -------- */}
       <Paper shadow="xs" p="md" mb="md">
         <Text fw={600} mb="xs">
@@ -788,6 +783,9 @@ export default function ConfigureFieldsModal({
 
         <Stack gap={2}>
           {AVAILABLE_FIELDS.map((field) => {
+            if (event?.eventType === "Networking" && field.name === "tipoAsistente") {
+              return null;
+            }
             const isActive = fields.some((f) => f.name === field.name);
             return (
               <div
@@ -1041,19 +1039,23 @@ export default function ConfigureFieldsModal({
             strategy={verticalListSortingStrategy}
           >
             <Stack gap={4}>
-              {fields.map((field) => (
-                <SortableFieldItem
-                  key={field.name}
-                  field={field}
-                  allFields={fields}
-                  handleDeleteCustomField={handleDeleteCustomField}
-                  handleLabelChange={handleLabelChange}
-                  handlePlaceholderChange={handlePlaceholderChange}
-                  handleToggleRequired={handleToggleRequired}
-                  onUpdateShowWhen={handleUpdateShowWhen}
-                />
-              ))}
-
+                {fields.map((field) => {
+                  if (event?.eventType === "networking" && field.name === "tipoAsistente") {
+                    return null;
+                  }
+                  return (
+                  <SortableFieldItem
+                    key={field.name}
+                    field={field}
+                    allFields={fields}
+                    handleDeleteCustomField={handleDeleteCustomField}
+                    handleLabelChange={handleLabelChange}
+                    handlePlaceholderChange={handlePlaceholderChange}
+                    handleToggleRequired={handleToggleRequired}
+                    onUpdateShowWhen={handleUpdateShowWhen}
+                  />
+                  );
+                })}
               <Group
                 gap={4}
                 p={4}
@@ -1080,11 +1082,26 @@ export default function ConfigureFieldsModal({
       </Paper>
 
       <Group mt="md" justify="flex-end">
-        <Button onClick={handleSave}>Guardar</Button>
         <Button variant="default" onClick={onClose}>
           Cancelar
         </Button>
+        <Button onClick={handleSave}>Guardar campos</Button>
       </Group>
+    </>
+  );
+
+  if (inline) return content;
+
+  return (
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      title="Configurar formulario"
+      size="xl"
+      centered
+      padding="lg"
+    >
+      {content}
     </Modal>
   );
 }

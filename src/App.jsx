@@ -8,6 +8,7 @@ import ProtectedAdminRoute from "./components/ProtectedAdminRoute.tsx";
 import Landing from "./pages/Landing";
 
 // Lazy: todas las demás rutas
+const OrganizationsPanel = lazy(() => import("./pages/admin/OrganizationsPanel.tsx"));
 const AdminPanel = lazy(() => import("./pages/admin/AdminPanel"));
 const PhonesAdminPage = lazy(() => import("./pages/PhonesAdminPage.tsx"));
 const MeetingAutoResponse = lazy(() => import("./pages/MeetingAutoResponse"));
@@ -48,7 +49,9 @@ const App = () => {
         <Route path="/dashboard/:eventId/my-company" element={<MyCompanyPage />} />
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/admin/register" element={<AdminRegister />} />
-        <Route path="/admin" element={<ProtectedAdminRoute><AdminPanel /></ProtectedAdminRoute>} />
+        <Route path="/admin" element={<ProtectedAdminRoute><OrganizationsPanel /></ProtectedAdminRoute>} />
+        <Route path="/admin/events" element={<ProtectedAdminRoute><AdminPanel /></ProtectedAdminRoute>} />
+        <Route path="/admin/organization/:orgId" element={<ProtectedAdminRoute><AdminPanel /></ProtectedAdminRoute>} />
         <Route path="/matrix/:eventId" element={<MatrixPage />} />
         <Route path="/badge/:eventId/:userId" element={<BadgePage />} />
         <Route

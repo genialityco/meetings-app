@@ -1,12 +1,12 @@
 /* eslint-disable react/prop-types */
 import { useState, useContext } from "react";
-import { Modal, Stack, TextInput, Button, Select } from "@mantine/core";
+import { Modal, Stack, TextInput, Button, Select, Alert, Text } from "@mantine/core";
 import { collection, addDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../../firebase/firebaseConfig";
 import { AdminAuthContext } from "../../context/AdminAuthContext";
 
-const CreateEventModal = ({ opened, onClose, refreshEvents, setGlobalMessage }) => {
+const CreateEventModal = ({ opened, onClose, refreshEvents, setGlobalMessage, orgId }) => {
   const { adminUser } = useContext(AdminAuthContext);
   const [eventName, setEventName] = useState("");
   const [eventType, setEventType] = useState("Networking");
@@ -45,6 +45,8 @@ const CreateEventModal = ({ opened, onClose, refreshEvents, setGlobalMessage }) 
         createdBy: adminUser?.uid || null,
         owners: adminUser?.uid ? [adminUser.uid] : [],
         createdAt: new Date(),
+        organizationId: orgId || null,
+        status: "abierto",
         // Configuración por defecto del evento
         config: {
           maxPersons: 100,
@@ -54,6 +56,7 @@ const CreateEventModal = ({ opened, onClose, refreshEvents, setGlobalMessage }) 
           startTime: "09:00",
           endTime: "18:00",
           tableNames: [],
+          registrationEnabled: true,
         },
       };
       await addDoc(collection(db, "events"), newEvent);
@@ -88,6 +91,16 @@ const CreateEventModal = ({ opened, onClose, refreshEvents, setGlobalMessage }) 
           value={eventType}
           onChange={setEventType}
         />
+        
+        <Alert title="Información sobre el Tipo de Evento" color="blue" variant="light">
+          <Text size="sm">
+            <strong>Networking:</strong> Modalidad abierta sin roles predefinidos. Cualquier asistente puede conectar con otros por igual.
+          </Text>
+          <Text size="sm" mt="xs">
+            <strong>Rueda de negocios:</strong> Modalidad estructurada basada en roles (ej. Comprador y Vendedor). Permite definir quién se puede reunir con quién.
+          </Text>
+        </Alert>
+
         <TextInput
           label="URL de Imagen del Evento (opcional)"
           placeholder="https://..."
@@ -95,6 +108,10 @@ const CreateEventModal = ({ opened, onClose, refreshEvents, setGlobalMessage }) 
           onChange={(e) => setEventImageUrl(e.target.value)}
         />
         <input type="file" accept="image/*" onChange={handleFileChange} />
+        <Text size="xs" c="dimmed" mt="-xs">
+          Esta imagen es el identificador visual del evento. Se mostrará en la <strong>página de registro (Landing)</strong> y en la <strong>cabecera del panel de control (Dashboard)</strong> de los asistentes. <br />
+          <strong>Dimensiones recomendadas:</strong> Formato horizontal, aprox. 800x400 píxeles.
+        </Text>
         <Button onClick={createEvent}>Crear</Button>
       </Stack>
     </Modal>

@@ -2,7 +2,7 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onRequest } from "firebase-functions/v2/https";
 import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { initializeApp } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
 
 initializeApp();
@@ -324,7 +324,7 @@ export const regenerateVectorsForEvent = onRequest(
           if (embeddingResult) {
             // Actualizar el documento del usuario con el nuevo vector
             await db.collection("users").doc(user.id).update({
-              vector: embeddingResult.vector,
+              vector: FieldValue.vector(embeddingResult.vector),
               condensedText: embeddingResult.condensedText,
               vectorGeneratedAt: new Date(),
               vectorFields: VECTOR_FIELDS, // Guardar qué campos se usaron
@@ -392,7 +392,7 @@ export const regenerateVectorsForEvent = onRequest(
                   otherUserEmbedding = embeddingResult.vector;
                   // Actualizar el documento del usuario con el nuevo vector
                   await db.collection("users").doc(otherUser.id).update({
-                    vector: embeddingResult.vector,
+                    vector: FieldValue.vector(embeddingResult.vector),
                     condensedText: embeddingResult.condensedText,
                     vectorGeneratedAt: new Date(),
                   });
@@ -551,6 +551,58 @@ export const regenerateVectorsForEvent = onRequest(
         console.log(`✅ Affinity recalculation completed: ${affinityCount} scores, ${matchesCount} matches`);
       }
 
+      // PASO 4: Regenerar vectores para empresas y productos (si no se filtró por usuario)
+      let productsCount = 0;
+      let companiesCount = 0;
+
+      if (!userId) {
+        console.log("Starting vector regeneration for products and companies...");
+        
+        // Productos
+        const productsSnap = await db.collection("events").doc(eventId).collection("products").get();
+        for (const doc of productsSnap.docs) {
+          const data = doc.data();
+          const text = [data.title, data.description, data.category].filter(Boolean).join(". ").trim();
+          if (text) {
+            try {
+              const vector = await generateEmbedding(text);
+              if (vector) {
+                await doc.ref.update({ 
+                  vector: FieldValue.vector(vector),
+                  vectorGeneratedAt: new Date()
+                });
+                productsCount++;
+              }
+            } catch (err) {
+              console.error(`Error embedding product ${doc.id}:`, err);
+            }
+          }
+        }
+
+        // Empresas
+        const companiesSnap = await db.collection("events").doc(eventId).collection("companies").get();
+        for (const doc of companiesSnap.docs) {
+          const data = doc.data();
+          const text = [data.razonSocial, data.descripcion].filter(Boolean).join(". ").trim();
+          if (text) {
+            try {
+              const vector = await generateEmbedding(text);
+              if (vector) {
+                await doc.ref.update({ 
+                  vector: FieldValue.vector(vector),
+                  vectorGeneratedAt: new Date()
+                });
+                companiesCount++;
+              }
+            } catch (err) {
+              console.error(`Error embedding company ${doc.id}:`, err);
+            }
+          }
+        }
+        
+        console.log(`✅ Vector regeneration completed: ${productsCount} products, ${companiesCount} companies`);
+      }
+
       res.status(200).send({
         success: true,
         message: `Vector regeneration and affinity recalculation completed for event ${eventId}`,
@@ -560,6 +612,8 @@ export const regenerateVectorsForEvent = onRequest(
           vectorErrors: errorCount,
           affinityScores: affinityCount,
           matchesCreated: matchesCount,
+          productsUpdated: productsCount,
+          companiesUpdated: companiesCount,
         },
         fields: VECTOR_FIELDS,
         errors: errors.length > 0 ? errors : undefined,
@@ -720,7 +774,7 @@ Devuelve ÚNICAMENTE el texto de la descripción mejorada, sin explicaciones adi
 async function generateEmbedding(text) {
   try {
     // Usando la API de embeddings de Gemini
-    const model = "gemini-embedding-001"; // Modelo actualizado
+    const model = "gemini-embedding-2"; // Modelo actualizado
     const apiUrl = GEMINI_API_URL.value();
     const apiKey = GEMINI_API_KEY.value();
     
@@ -735,6 +789,7 @@ async function generateEmbedding(text) {
           content: {
             parts: [{ text }],
           },
+          outputDimensionality: 768
         }),
       }
     );
@@ -785,6 +840,33 @@ function cosineSimilarity(vecA, vecB) {
   return dotProduct / (normA * normB);
 }
 
+function computeCentroid(vectors) {
+  if (!vectors || !vectors.length) return null;
+  const dim = vectors[0].length;
+  const c = new Array(dim).fill(0);
+  for (const v of vectors) for (let i = 0; i < dim; i++) c[i] += v[i];
+  return c.map(x => x / vectors.length);
+}
+
+function subtractVector(v, c) { 
+  if (!v || !c) return v;
+  return v.map((x, i) => x - c[i]); 
+}
+
+/**
+ * Normaliza una similitud de cosine (típicamente entre 0.4 y 0.8 en modelos de Gemini)
+ * a una escala amigable del 0.0 al 1.0
+ */
+function normalizeSimilarity(cosineSim) {
+  const minExpected = 0.4;
+  const maxExpected = 0.8;
+  
+  if (cosineSim <= minExpected) return 0;
+  if (cosineSim >= maxExpected) return 1;
+  
+  return (cosineSim - minExpected) / (maxExpected - minExpected);
+}
+
 /**
  * NUEVA FUNCIÓN: Búsqueda por similitud de vectores
  * @param {Array} queryVector - Vector del query del usuario
@@ -792,24 +874,38 @@ function cosineSimilarity(vecA, vecB) {
  * @param {number} topK - Número de resultados a retornar
  * @param {number} threshold - Umbral mínimo de similitud (0-1)
  */
-function searchByVectorSimilarity(queryVector, documents, topK = 10, vectorField = 'vector') {
-const scored = documents
-    .filter(doc => Array.isArray(doc[vectorField]) && doc[vectorField].length === queryVector?.length)
-    .map(doc => ({ ...doc, similarity: cosineSimilarity(queryVector, doc[vectorField]) }))
-    .sort((a, b) => b.similarity - a.similarity);
+function searchByVectorSimilarity(queryVector, documents, topK = 10, vectorField = 'search_vector', minRaw = 0.0) {
+  // Extraer todos los vectores válidos
+  const validDocs = documents.map(doc => {
+    const vec = doc[vectorField];
+    const arr = vec && typeof vec.toArray === 'function' ? vec.toArray() : vec;
+    return { ...doc, _parsedVec: arr };
+  }).filter(doc => Array.isArray(doc._parsedVec) && doc._parsedVec.length === queryVector?.length);
 
-  if (scored.length === 0) return [];
+  // Calcular centroide para restar (mean centering)
+  const allVectors = validDocs.map(doc => doc._parsedVec);
+  const centroid = computeCentroid(allVectors);
+  const centeredQuery = centroid ? subtractVector(queryVector, centroid) : queryVector;
 
-  // Normalización min-max sobre el conjunto recuperado: expande la banda 0.40-0.59 a 0-1
-  const max = scored[0].similarity;
-  const min = scored[scored.length - 1].similarity;
-  const span = max - min || 1e-6;
+  const scored = validDocs
+    .map(doc => {
+      const centeredDoc = centroid ? subtractVector(doc._parsedVec, centroid) : doc._parsedVec;
+      const rawCosine = cosineSimilarity(centeredQuery, centeredDoc);
+      // Limpiar variable temporal
+      delete doc._parsedVec;
+      return { ...doc, rawSimilarity: rawCosine, normalizedSimilarity: normalizeSimilarity(rawCosine) };
+    })
+    .sort((a, b) => b.normalizedSimilarity - a.normalizedSimilarity);
 
-  return scored.slice(0, topK).map(doc => ({
-    ...doc,
-    rawSimilarity: doc.similarity,
-    similarity: (doc.similarity - min) / span, // score relativo legible
-  }));
+  // Log para calibrar tu umbral real
+  if (scored.length) {
+    console.log(`raw max: ${scored[0].rawSimilarity.toFixed(3)} (norm: ${scored[0].normalizedSimilarity.toFixed(3)}), min: ${scored[scored.length-1].rawSimilarity.toFixed(3)}`);
+  }
+
+  // Filtra por relevancia ABSOLUTA (ahora usando el threshold contra el valor normalizado)
+  const relevant = scored.filter(d => d.normalizedSimilarity >= minRaw);
+
+  return relevant.slice(0, topK).map(doc => ({ ...doc, similarity: doc.normalizedSimilarity }));
 }
 
 /**
@@ -817,8 +913,8 @@ const scored = documents
  * Útil para hacer búsquedas híbridas que aprovechan ambos métodos
  */
 function hybridSearch(queryVector, documents, keywords, topK = 10, vectorField = 'vector') {
-  // Primero obtener resultados por vector con threshold más alto
-  const vectorResults = searchByVectorSimilarity(queryVector, documents, topK * 2, vectorField);
+  // Con el cálculo del centroide, el threshold ideal baja significativamente (ej: > 0.1)
+  const vectorResults = searchByVectorSimilarity(queryVector, documents, topK * 2, vectorField, 0.05);
   
   console.log(`Hybrid search: ${vectorResults.length} vector results, keywords: ${keywords.join(', ')}`);
   
@@ -867,11 +963,11 @@ function hybridSearch(queryVector, documents, keywords, topK = 10, vectorField =
   // Filtrar resultados que tengan buena similitud O keywords
   // Esto asegura que solo devolvemos resultados relevantes
   const filteredResults = scoredResults.filter(doc => {
-    // Si tiene alta similitud de vector (>0.4), incluirlo
-    if (doc.similarity >= 0.4) return true;
+    // Si tiene alta similitud de vector con centroide (>0.15), incluirlo
+    if (doc.similarity >= 0.15) return true;
     
-    // Si tiene similitud media (>0.3) Y al menos una keyword, incluirlo
-    if (doc.similarity >= 0.3 && doc.keywordMatches > 0) return true;
+    // Si tiene similitud media (>0.05) Y al menos una keyword, incluirlo
+    if (doc.similarity >= 0.05 && doc.keywordMatches > 0) return true;
     
     // Si tiene múltiples keywords (>1), incluirlo aunque la similitud sea menor
     if (doc.keywordMatches > 1) return true;
@@ -1877,7 +1973,8 @@ async function getEmbedding(text, apiKey, apiUrl, model) {
       body: JSON.stringify({
         content: {
           parts: [{ text }]
-        }
+        },
+        outputDimensionality: 768
       })
     });
 
@@ -1904,7 +2001,7 @@ async function getEmbedding(text, apiKey, apiUrl, model) {
  * - userId: ID del usuario que hace la búsqueda (optional, para filtros)
  * - tipoAsistente: tipo del usuario que busca - "comprador" | "vendedor" (optional, para boost de roles complementarios)
  * - limit: número máximo de resultados (optional, default: 10)
- * - threshold: umbral mínimo de similitud 0-1 (optional, default: 0.35)
+ * - threshold: umbral mínimo de similitud 0-1 (optional, default: 0.1)
  */
 export const vectorSearch = onRequest(
   {
@@ -1942,7 +2039,18 @@ export const vectorSearch = onRequest(
       const userId = body.userId || null;
       const tipoAsistente = body.tipoAsistente?.toLowerCase() || null;
       const limit = body.limit || 10;
-      const threshold = body.threshold || 0.35;
+      // Usaremos un threshold normalizado de 0 a 1 que el frontend entiende bien.
+      const normalizedThreshold = body.threshold || 0.1;
+      
+      // Dado que el findNearest nativo en Firestore usa distancia pura (sin la interpolación
+      // en memoria), la formula inversa de interpolación para la distancia sería:
+      // Similitud Original = (normalizedThreshold * (max - min)) + min
+      // Distancia a mandar a Firestore = 1.0 - Similitud Original
+      const minExpected = 0.4;
+      const maxExpected = 0.8;
+      const targetRawSimilarity = (normalizedThreshold * (maxExpected - minExpected)) + minExpected;
+      const distanceThreshold = 1.0 - targetRawSimilarity;
+      
       const W_SEMANTIC = 0.7;
       const W_ROLE = 0.3;
 
@@ -1987,6 +2095,14 @@ export const vectorSearch = onRequest(
         try {
           const usersSnap = await db.collection("users")
             .where("eventId", "==", eventId)
+            .findNearest({
+              vectorField: "search_vector",
+              queryVector: FieldValue.vector(queryVector),
+              limit: limit + (userId ? 1 : 0),
+              distanceMeasure: 'COSINE',
+              distanceResultField: 'vector_distance',
+              distanceThreshold: distanceThreshold
+            })
             .get();
 
           const allUsers = usersSnap.docs
@@ -1995,7 +2111,21 @@ export const vectorSearch = onRequest(
 
           console.log(`Loaded ${allUsers.length} users for vector search`);
 
-          results = searchByVectorSimilarity(queryVector, allUsers, limit, 'search_vector');
+          results = allUsers.map(user => {
+            // Firestore devuelve DISTANCIA (0 es idéntico, 1 es distinto).
+            const rawSimilarity = 1.0 - (user.vector_distance !== undefined ? user.vector_distance : 1);
+            let normalizedSimilarity = normalizeSimilarity(rawSimilarity);
+            
+            // Si el match es menor a 60% (0.60), disminuir su valor en un 30%
+            if (normalizedSimilarity < 0.58) {
+              normalizedSimilarity *= 0.70;
+            }
+            
+            return {
+              ...user,
+              similarity: normalizedSimilarity
+            };
+          });
           
           // Aplicar boost de rol si tipoAsistente está disponible
           if (tipoAsistente && (tipoAsistente === "comprador" || tipoAsistente === "vendedor")) {
@@ -2060,6 +2190,14 @@ results = results.slice(0, limit);
           const productsSnap = await db.collection("events")
             .doc(eventId)
             .collection("products")
+            .findNearest({
+              vectorField: "vector",
+              queryVector: FieldValue.vector(queryVector),
+              limit: limit + (userId ? 1 : 0),
+              distanceMeasure: 'COSINE',
+              distanceResultField: 'vector_distance',
+              distanceThreshold: distanceThreshold
+            })
             .get();
 
           const allProducts = productsSnap.docs
@@ -2068,7 +2206,20 @@ results = results.slice(0, limit);
 
           console.log(`Loaded ${allProducts.length} products for vector search`);
 
-          results = searchByVectorSimilarity(queryVector, allProducts, limit);
+          results = allProducts.map(product => {
+            const rawSimilarity = 1.0 - (product.vector_distance !== undefined ? product.vector_distance : 1);
+            let normalizedSimilarity = normalizeSimilarity(rawSimilarity);
+            
+            // Si el match es menor a 60% (0.60), disminuir su valor en un 30%
+            if (normalizedSimilarity < 0.60) {
+              normalizedSimilarity *= 0.70;
+            }
+            
+            return {
+              ...product,
+              similarity: normalizedSimilarity
+            };
+          });
           
           // Formatear resultados
           results = results.map(product => ({
@@ -2093,6 +2244,14 @@ results = results.slice(0, limit);
           const companiesSnap = await db.collection("events")
             .doc(eventId)
             .collection("companies")
+            .findNearest({
+              vectorField: "vector",
+              queryVector: FieldValue.vector(queryVector),
+              limit: limit,
+              distanceMeasure: 'COSINE',
+              distanceResultField: 'vector_distance',
+              distanceThreshold: distanceThreshold
+            })
             .get();
 
           const allCompanies = companiesSnap.docs.map(d => ({ 
@@ -2102,7 +2261,20 @@ results = results.slice(0, limit);
 
           console.log(`Loaded ${allCompanies.length} companies for vector search`);
 
-          results = searchByVectorSimilarity(queryVector, allCompanies, limit);
+          results = allCompanies.map(company => {
+            const rawSimilarity = 1.0 - (company.vector_distance !== undefined ? company.vector_distance : 1);
+            let normalizedSimilarity = normalizeSimilarity(rawSimilarity);
+            
+            // Si el match es menor a 60% (0.60), disminuir su valor en un 30%
+            if (normalizedSimilarity < 0.60) {
+              normalizedSimilarity *= 0.70;
+            }
+            
+            return {
+              ...company,
+              similarity: normalizedSimilarity
+            };
+          });
           
           // Formatear resultados
           results = results.map(company => ({
@@ -2125,7 +2297,7 @@ results = results.slice(0, limit);
       res.status(200).send({
         category,
         query: text,
-        threshold,
+        threshold: normalizedThreshold,
         limit,
         count: results.length,
         results,
@@ -2156,7 +2328,7 @@ export const vectorizeDocuments = onRequest(
     const db = getFirestore();
     const apiKey = GEMINI_API_KEY.value();
     const apiUrl = GEMINI_API_URL.value();
-    const model = "gemini-embedding-001"; // Modelo de embeddings actualizado
+    const model = "gemini-embedding-2"; // Modelo de embeddings actualizado
 
     if (!apiKey || !apiUrl || !model) {
       console.log("Missing secrets");
@@ -2183,7 +2355,7 @@ export const vectorizeDocuments = onRequest(
 
         const vector = await getEmbedding(text, apiKey, apiUrl, model);
         if (vector) {
-          await doc.ref.update({ vector });
+          await doc.ref.update({ vector: FieldValue.vector(vector) });
           console.log(`Updated user ${doc.id} with vector`);
         }
       });
@@ -2199,7 +2371,7 @@ export const vectorizeDocuments = onRequest(
 
         const vector = await getEmbedding(text, apiKey, apiUrl, model);
         if (vector) {
-          await doc.ref.update({ vector });
+          await doc.ref.update({ vector: FieldValue.vector(vector) });
           console.log(`Updated product ${doc.id} with vector`);
         }
       });
@@ -2215,7 +2387,7 @@ export const vectorizeDocuments = onRequest(
 
         const vector = await getEmbedding(text, apiKey, apiUrl, model);
         if (vector) {
-          await doc.ref.update({ vector });
+          await doc.ref.update({ vector: FieldValue.vector(vector) });
           console.log(`Updated company ${doc.id} with vector`);
         }
       });
@@ -2253,7 +2425,7 @@ export const vectorizeDocuments = onRequest(
 
         const vector = await getEmbedding(text, apiKey, apiUrl, model);
         if (vector) {
-          await doc.ref.update({ vector });
+          await doc.ref.update({ vector: FieldValue.vector(vector) });
           console.log(`Updated meeting ${doc.id} with vector`);
         }
       });
@@ -2312,9 +2484,7 @@ export const generateAllSearchVectors = onRequest(
       const promises = usersSnap.docs.map(async (doc) => {
         const data = doc.data();
         const textParts = [
-         data.descripcion, 
-         data.descripcion, 
-         data.necesidad          
+         data.descripcion,       
        
         ].filter(Boolean);
 
@@ -2329,7 +2499,7 @@ export const generateAllSearchVectors = onRequest(
           const vector = await generateEmbedding(textToEmbed);
           if (vector) {
             await doc.ref.update({ 
-              search_vector: vector,
+              search_vector: FieldValue.vector(vector),
               search_vectorGeneratedAt: new Date(),
               search_vectorText: textToEmbed
             });
@@ -2514,73 +2684,17 @@ async function calculateAffinityWithEmbeddings(userA, userB, vectorA = null, vec
     }
     
     // Calcular similitud coseno base
-    const baseSimilarity = cosineSimilarity(embeddingA, embeddingB);
+    const rawBaseSimilarity = cosineSimilarity(embeddingA, embeddingB);
+    const baseSimilarity = normalizeSimilarity(rawBaseSimilarity);
     
-    // Aplicar boost por roles complementarios
-    const tipoA = (userA.tipoAsistente || "").toLowerCase();
-    const tipoB = (userB.tipoAsistente || "").toLowerCase();
-    
-    let roleBoost = 1;
-    let roleReason = null;
-    
-    if ((tipoA === "comprador" && tipoB === "vendedor") || 
-        (tipoA === "vendedor" && tipoB === "comprador")) {
-      roleBoost = 1; // Boost de 25% para roles complementarios
-      roleReason = "Roles complementarios (comprador-vendedor)";
-    } else if (tipoA === "asistente" && tipoB === "asistente") {
-      roleBoost = 1; // Sin penalización si ambos son Asistentes
-      roleReason = "Ambos son asistentes";
-    } else if (tipoA === tipoB && tipoA !== "") {
-      roleBoost = 0.7 // Boost menor para mismo rol
-      roleReason = `Mismo rol: ${tipoA}`;
-    }
-    
-    // Aplicar castigo por interés principal incompatible
-    // const interesA = (userA.interesPrincipal || "").toLowerCase().trim();
-    // const interesB = (userB.interesPrincipal || "").toLowerCase().trim();
-    
-    // let interestPenalty = 1;
-    // let interestReason = null;
-    
-    // // Normalizar variaciones de texto
-    // const normalizeInterest = (interest) => {
-    //   if (interest.includes("proveedor")) return "proveedores";
-    //   if (interest.includes("cliente")) return "clientes";
-    //   if (interest.includes("abierto")) return "abierto";
-    //   return interest;
-    // };
-    
-    // const normalizedA = normalizeInterest(interesA);
-    // const normalizedB = normalizeInterest(interesB);
-    
-    // // Castigar si ambos buscan lo mismo (proveedores con proveedores, clientes con clientes)
-    // if (normalizedA === normalizedB && normalizedA !== "" && normalizedA !== "abierto") {
-    //   interestPenalty = 0.8; // Castigo del 40%
-    //   interestReason = `Mismo interés: ambos buscan ${normalizedA}`;
-    // } else if (normalizedA !== normalizedB && normalizedA !== "abierto" && normalizedB !== "abierto") {
-    //   // Intereses complementarios (uno busca proveedores, otro clientes)
-    //   interestReason = "Intereses complementarios";
-    // }
-    
-    // Score final = similitud base * roleBoost * interestPenalty (máximo 1.0)
-    const finalScore = Math.min(1.0, baseSimilarity * roleBoost );
+    // Score final = similitud base (ya no se aplica castigo ni boost por rol)
+    const finalScore = Math.min(1.0, baseSimilarity);
     
     // Convertir a escala 0-100
     const score = Math.round(finalScore * 100);
     
     // Generar razones basadas en la similitud
     const reasons = [];
-    
-    if (roleReason) {
-      reasons.push(roleReason);
-    }
-    
- 
-    
-    // if (userA.interesPrincipal && userB.interesPrincipal && 
-    //     userA.interesPrincipal === userB.interesPrincipal) {
-    //   reasons.push("Mismo interés principal");
-    // }
     
     if (finalScore >= 0.8) {
       reasons.push("Alta compatibilidad de perfiles");
@@ -2607,7 +2721,7 @@ async function calculateAffinityWithEmbeddings(userA, userB, vectorA = null, vec
       reasons.push(`${matchingKeywords.length} palabras clave coinciden`);
     }
     
-    console.log(`Embedding Affinity: ${userA.nombre} <-> ${userB.nombre} = ${score}% (base: ${(baseSimilarity * 100).toFixed(1)}%, role: ${(roleBoost * 100).toFixed(1)}%)`);
+    console.log(`Embedding Affinity: ${userA.nombre} <-> ${userB.nombre} = ${score}% (base: ${(baseSimilarity * 100).toFixed(1)}%)`);
     
     return {
       score,
@@ -2615,7 +2729,7 @@ async function calculateAffinityWithEmbeddings(userA, userB, vectorA = null, vec
       aiGenerated: true,
       embeddingBased: true,
       baseSimilarity: Math.round(baseSimilarity * 100),
-      roleBoost: Math.round(roleBoost * 100),
+      roleBoost: 100, // deprecated, pero se deja para no romper compatibilidad
     };
     
   } catch (error) {
@@ -2843,7 +2957,7 @@ export const calculateAffinityOnUserCreate = onDocumentCreated(
       if (embeddingResult) {
         // Guardar el embedding y el texto condensado en el documento del usuario
         await db.collection("users").doc(newUserId).update({
-          vector: embeddingResult.vector,
+          vector: FieldValue.vector(embeddingResult.vector),
           condensedText: embeddingResult.condensedText,
           vectorGeneratedAt: new Date(),
         });
@@ -2886,7 +3000,7 @@ export const calculateAffinityOnUserCreate = onDocumentCreated(
             otherUserEmbedding = embeddingResult.vector;
             // Guardar el embedding y texto condensado en el documento del usuario
             await db.collection("users").doc(otherUser.id).update({
-              vector: embeddingResult.vector,
+              vector: FieldValue.vector(embeddingResult.vector),
               condensedText: embeddingResult.condensedText,
               vectorGeneratedAt: new Date(),
             });
@@ -3152,10 +3266,10 @@ export const calculateAffinityOnUserUpdate = onDocumentUpdated(
 
         // 3. Guardar vectores en Firestore
         await db.collection("users").doc(userId).update({
-          vector: vectorToSave,
+          vector: FieldValue.vector(vectorToSave),
           condensedText: condensedTextToSave,
           vectorGeneratedAt: new Date(),
-          search_vector: searchVectorToSave || vectorToSave,
+          search_vector: searchVectorToSave ? FieldValue.vector(searchVectorToSave) : FieldValue.vector(vectorToSave),
           search_vectorText: searchVectorTextToSave,
         });
         console.log(`Vectors successfully updated for user ${userId}`);
@@ -3302,7 +3416,7 @@ export const recalculateEventAffinity = onRequest(
           
           if (embeddingResult) {
             await db.collection("users").doc(user.id).update({
-              vector: embeddingResult.vector,
+              vector: FieldValue.vector(embeddingResult.vector),
               condensedText: embeddingResult.condensedText,
               vectorGeneratedAt: new Date(),
             });
@@ -3543,7 +3657,7 @@ export const generateOptimalMatches = onRequest(
         
         if (embeddingResult) {
           await db.collection("users").doc(user.id).update({
-            vector: embeddingResult.vector,
+            vector: FieldValue.vector(embeddingResult.vector),
             condensedText: embeddingResult.condensedText,
             vectorGeneratedAt: new Date(),
           });
