@@ -15,6 +15,8 @@ import {
   ActionIcon,
   Tooltip,
   Divider,
+  TextInput,
+  PasswordInput,
 } from "@mantine/core";
 import {
   IconCheck,
@@ -23,6 +25,7 @@ import {
   IconAlertCircle,
   IconUsers,
   IconUserCheck,
+  IconUserPlus,
 } from "@tabler/icons-react";
 import {
   collection,
@@ -35,7 +38,9 @@ import {
   query,
   where,
 } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getAuth, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { db, firebaseConfig } from "../../firebase/firebaseConfig";
 
 interface AdminRequest {
   uid: string;
@@ -64,6 +69,11 @@ const AdminsManagementModal = ({ opened, onClose }: Props) => {
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; color: string } | null>(null);
+
+  const [newAdminName, setNewAdminName] = useState("");
+  const [newAdminEmail, setNewAdminEmail] = useState("");
+  const [newAdminPassword, setNewAdminPassword] = useState("");
+  const [creatingAdmin, setCreatingAdmin] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -150,6 +160,49 @@ const AdminsManagementModal = ({ opened, onClose }: Props) => {
     }
   };
 
+  const createAdmin = async () => {
+    if (!newAdminName.trim() || !newAdminEmail.trim() || newAdminPassword.length < 6) {
+      setMessage({ text: "Por favor, completa todos los campos (la contraseña debe tener al menos 6 caracteres).", color: "red" });
+      return;
+    }
+
+    setCreatingAdmin(true);
+    setMessage(null);
+
+    try {
+      // Create secondary app to register user without signing out the current admin
+      const secondaryApp = getApps().find(app => app.name === "SecondaryApp") || initializeApp(firebaseConfig, "SecondaryApp");
+      const secondaryAuth = getAuth(secondaryApp);
+
+      const cred = await createUserWithEmailAndPassword(secondaryAuth, newAdminEmail.trim(), newAdminPassword);
+      await updateProfile(cred.user, { displayName: newAdminName.trim() });
+
+      // Create admin document
+      await setDoc(doc(db, "admins", cred.user.uid), {
+        email: newAdminEmail.trim().toLowerCase(),
+        displayName: newAdminName.trim(),
+        isSuperAdmin: false,
+        createdAt: serverTimestamp(),
+      });
+
+      setMessage({ text: `Admin "${newAdminName}" creado correctamente.`, color: "green" });
+      setNewAdminName("");
+      setNewAdminEmail("");
+      setNewAdminPassword("");
+      await fetchData();
+    } catch (err: any) {
+      console.error("Error creating admin:", err);
+      const code = err?.code || "";
+      if (code === "auth/email-already-in-use") {
+        setMessage({ text: "El email ya está registrado.", color: "red" });
+      } else {
+        setMessage({ text: "Error al crear el administrador.", color: "red" });
+      }
+    } finally {
+      setCreatingAdmin(false);
+    }
+  };
+
   const formatDate = (val: any) => {
     if (!val) return "—";
     const d = typeof val.toDate === "function" ? val.toDate() : new Date(val);
@@ -198,6 +251,9 @@ const AdminsManagementModal = ({ opened, onClose }: Props) => {
             </Tabs.Tab>
             <Tabs.Tab value="admins" leftSection={<IconUsers size={16} />}>
               Administradores ({admins.length})
+            </Tabs.Tab>
+            <Tabs.Tab value="create" leftSection={<IconUserPlus size={16} />}>
+              Crear Admin
             </Tabs.Tab>
           </Tabs.List>
 
@@ -307,11 +363,50 @@ const AdminsManagementModal = ({ opened, onClose }: Props) => {
                 </Table.Tbody>
               </Table>
             )}
-            <Divider my="md" />
             <Text size="xs" c="dimmed">
-              Para crear un admin directamente usa el script{" "}
-              <code>node scripts/seed-admin.js</code> con <code>IS_SUPER_ADMIN: false</code>.
+              Los super-admins no se pueden eliminar desde aquí.
             </Text>
+          </Tabs.Panel>
+
+          {/* ── Crear Administrador ── */}
+          <Tabs.Panel value="create" pt="md">
+            <Stack>
+              <Text size="sm">Crea un nuevo administrador directamente sin necesidad de que envíe una solicitud.</Text>
+              
+              <TextInput
+                label="Nombre completo"
+                placeholder="Nombre del administrador"
+                value={newAdminName}
+                onChange={(e) => setNewAdminName(e.target.value)}
+                required
+              />
+              
+              <TextInput
+                label="Email"
+                placeholder="correo@empresa.com"
+                value={newAdminEmail}
+                onChange={(e) => setNewAdminEmail(e.target.value)}
+                required
+              />
+              
+              <PasswordInput
+                label="Contraseña"
+                placeholder="Mínimo 6 caracteres"
+                value={newAdminPassword}
+                onChange={(e) => setNewAdminPassword(e.target.value)}
+                required
+              />
+
+              <Group justify="flex-end" mt="sm">
+                <Button 
+                  onClick={createAdmin} 
+                  loading={creatingAdmin}
+                  leftSection={<IconUserPlus size={16} />}
+                >
+                  Crear Administrador
+                </Button>
+              </Group>
+            </Stack>
           </Tabs.Panel>
         </Tabs>
       )}

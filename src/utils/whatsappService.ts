@@ -20,6 +20,9 @@ interface WhatsAppV2Payload {
   message: string;
   acceptUrl?: string;
   cancelUrl?: string;
+  fallbackEmail?: string;
+  fallbackSubject?: string;
+  fallbackHtml?: string;
 }
 
 interface WhatsAppV2ConfirmationPayload {
@@ -31,6 +34,9 @@ interface WhatsAppV2ConfirmationPayload {
   company: string;
   schedule: string;
   table: string;
+  fallbackEmail?: string;
+  fallbackSubject?: string;
+  fallbackHtml?: string;
 }
 
 interface WhatsAppV2CancellationPayload {
@@ -42,6 +48,9 @@ interface WhatsAppV2CancellationPayload {
   day: string;
   schedule: string;
   table: string;
+  fallbackEmail?: string;
+  fallbackSubject?: string;
+  fallbackHtml?: string;
 }
 
 interface WhatsAppV2RejectionPayload {
@@ -50,6 +59,9 @@ interface WhatsAppV2RejectionPayload {
   eventName: string;
   rejectedByName: string;
   rejectedByCompany: string;
+  fallbackEmail?: string;
+  fallbackSubject?: string;
+  fallbackHtml?: string;
 }
 
 interface WhatsAppV2NotificationPayload {
@@ -70,6 +82,11 @@ interface SendWhatsAppOptions {
   apiVersion: "v1" | "v2";
   phone: string;
   message: string;
+  fallbackInfo?: {
+    enabled: boolean;
+    email: string;
+    subject: string;
+  };
   metadata?: {
     eventName?: string;
     requesterName?: string;
@@ -97,27 +114,25 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
   // Limpiar número de teléfono (ya viene con prefijo)
   const fullPhone = phone.replace(/[^\d]/g, "");
 
-  try {
-    if (apiVersion === "v2") {
-      // Limpiar las URLs quitando el primer slash
-      const cleanAcceptUrl = metadata.acceptUrl 
-        ? metadata.acceptUrl.replace(/^\//, '') 
-        : "dashboard";
-      const cleanCancelUrl = metadata.cancelUrl 
-        ? metadata.cancelUrl.replace(/^\//, '') 
-        : "dashboard";
+  // Variables for fallback content
+  const cleanAcceptUrl = metadata.acceptUrl 
+    ? metadata.acceptUrl.replace(/^\//, '') 
+    : "dashboard";
+  const cleanCancelUrl = metadata.cancelUrl 
+    ? metadata.cancelUrl.replace(/^\//, '') 
+    : "dashboard";
+  const requesterName = metadata.requesterName?.trim() || "Asistente";
+  const requesterCompany = metadata.requesterCompany?.trim() || "Compañia";
 
+  try {
+    let isSuccess = false;
+
+    if (apiVersion === "v2") {
       // Limpiar el mensaje para evitar errores con newlines/tabs en la plantilla V2
       const cleanMessage = (message || "Sin mensaje adicional")
         .replace(/[\r\n\t]+/g, " ")
         .replace(/\s{2,}/g, " ")
         .trim();
-
-      // API V2: Meeting Request
-      const requesterName =
-        metadata.requesterName?.trim() || "Asistente";
-      const requesterCompany =
-        metadata.requesterCompany?.trim() || "Compañia";
 
       const payload: WhatsAppV2Payload = {
         accountId: ACCOUNT_ID,
@@ -133,13 +148,48 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
         cancelUrl: cleanCancelUrl,
       };
 
+      if (options.fallbackInfo?.enabled && options.fallbackInfo.email) {
+        const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+        const emailAcceptUrl = `${baseUrl}/${cleanAcceptUrl}`;
+        const emailCancelUrl = `${baseUrl}/${cleanCancelUrl}`;
+        const btnStyle = "display: inline-block; padding: 12px 24px; margin: 10px; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; text-align: center; font-size: 14px;";
+
+        const contentHtml = `
+          <p>Hola,</p>
+          <p>Te informamos que recibiste una solicitud de reunión por WhatsApp, pero no pudimos entregarla a tu número registrado.</p>
+          
+          <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <p style="margin-top: 0; margin-bottom: 10px;"><strong>De:</strong> ${requesterName} (${requesterCompany})</p>
+            <p style="margin: 0; font-style: italic;">"${message.replace(/\n/g, '<br>')}"</p>
+          </div>
+          
+          <p style="text-align: center; margin-top: 25px;"><strong>¿Qué deseas hacer con esta solicitud?</strong></p>
+          <div style="text-align: center; margin-bottom: 20px;">
+            <a href="${emailAcceptUrl}" style="${btnStyle} background-color: #10b981;">Aceptar reunión</a>
+            <a href="${emailCancelUrl}" style="${btnStyle} background-color: #ef4444;">Rechazar reunión</a>
+          </div>
+        `;
+
+        payload.fallbackEmail = options.fallbackInfo.email;
+        payload.fallbackSubject = options.fallbackInfo.subject;
+        payload.fallbackHtml = buildEmailHtml(options.fallbackInfo.subject, contentHtml, options.fallbackInfo.logoUrl);
+      }
+
       const response = await fetch(`${API_V2_URL}/api/send-meeting-request`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      return response.ok;
+      isSuccess = response.ok;
+      try {
+        const responseData = await response.clone().json();
+        if (responseData && (responseData.success === false || responseData.error)) {
+          isSuccess = false;
+        }
+      } catch (e) {
+        // Ignorar error de parsing
+      }
     } else {
       // API V1: Simple (default)
       const payload: WhatsAppV1Payload = {
@@ -154,8 +204,22 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
         body: JSON.stringify(payload),
       });
 
-      return response.ok;
+      isSuccess = response.ok;
+      try {
+        const responseData = await response.clone().json();
+        if (responseData && (responseData.success === false || responseData.error)) {
+          isSuccess = false;
+        }
+      } catch (e) {
+        // Ignorar
+      }
     }
+
+    if (!isSuccess) {
+      console.error("Error sending WhatsApp message, fallback handled by backend if V2");
+    }
+
+    return isSuccess;
   } catch (error) {
     console.error("Error sending WhatsApp message:", error);
     return false;
@@ -192,8 +256,14 @@ export async function sendMeetingConfirmation(options: {
   company: string;
   schedule: string;
   table: string;
+  fallbackInfo?: {
+    enabled: boolean;
+    email: string;
+    subject: string;
+    logoUrl?: string;
+  };
 }): Promise<boolean> {
-  const { phone, eventName, acceptedBy, meetingWith, company, schedule, table } = options;
+  const { phone, eventName, acceptedBy, meetingWith, company, schedule, table, fallbackInfo } = options;
 
   // Limpiar número de teléfono (ya viene con prefijo)
   const fullPhone = phone.replace(/[^\d]/g, "");
@@ -210,14 +280,45 @@ export async function sendMeetingConfirmation(options: {
       table,
     };
 
+    if (fallbackInfo?.enabled && fallbackInfo.email) {
+      const contentHtml = `
+        <p>Hola,</p>
+        <p>Se intentó enviar una confirmación de reunión por WhatsApp pero el número no existe o no está registrado.</p>
+        
+        <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+          <h3 style="margin-top: 0; color: #111827; font-size: 16px;">Detalles de tu reunión:</h3>
+          <ul style="margin-bottom: 0; padding-left: 20px;">
+            <li style="margin-bottom: 8px;"><strong>Reunión aceptada por:</strong> ${acceptedBy}</li>
+            <li style="margin-bottom: 8px;"><strong>Empresa:</strong> ${company}</li>
+            <li style="margin-bottom: 8px;"><strong>Horario:</strong> ${schedule}</li>
+            <li><strong>Mesa:</strong> ${table}</li>
+          </ul>
+        </div>
+      `;
+
+      payload.fallbackEmail = fallbackInfo.email;
+      payload.fallbackSubject = fallbackInfo.subject;
+      payload.fallbackHtml = buildEmailHtml(fallbackInfo.subject, contentHtml, fallbackInfo.logoUrl);
+    }
+
     const response = await fetch(`${API_V2_URL}/api/send-meeting-confirmation`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
 
-    if (!response.ok) {
-      console.error("Error sending meeting confirmation:", await response.text());
+    let isSuccess = response.ok;
+    try {
+      const responseData = await response.clone().json();
+      if (responseData && (responseData.success === false || responseData.error)) {
+        isSuccess = false;
+      }
+    } catch (e) {
+      // Ignorar
+    }
+
+    if (!isSuccess) {
+      console.error("Error sending meeting confirmation");
       return false;
     }
 
@@ -239,8 +340,14 @@ export async function sendMeetingCancellation(options: {
   day: string;
   schedule: string;
   table: string;
+  fallbackInfo?: {
+    enabled: boolean;
+    email: string;
+    subject: string;
+    logoUrl?: string;
+  };
 }): Promise<boolean> {
-  const { phone, eventName, meetingWith, company, day, schedule, table } = options;
+  const { phone, eventName, meetingWith, company, day, schedule, table, fallbackInfo } = options;
 
   // Limpiar número de teléfono (ya viene con prefijo)
   const fullPhone = phone.replace(/[^\d]/g, "");
@@ -257,14 +364,46 @@ export async function sendMeetingCancellation(options: {
       table,
     };
 
+    if (fallbackInfo?.enabled && fallbackInfo.email) {
+      const contentHtml = `
+        <p>Hola,</p>
+        <p>Se intentó enviar una cancelación de reunión por WhatsApp pero el número no existe o no está registrado.</p>
+        
+        <div style="background-color: #fef2f2; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #fee2e2;">
+          <h3 style="margin-top: 0; color: #b91c1c; font-size: 16px;">Detalles de la reunión cancelada:</h3>
+          <ul style="margin-bottom: 0; padding-left: 20px; color: #991b1b;">
+            <li style="margin-bottom: 8px;"><strong>Reunión cancelada con:</strong> ${meetingWith}</li>
+            <li style="margin-bottom: 8px;"><strong>Empresa:</strong> ${company}</li>
+            <li style="margin-bottom: 8px;"><strong>Día:</strong> ${day}</li>
+            <li style="margin-bottom: 8px;"><strong>Horario:</strong> ${schedule}</li>
+            <li><strong>Mesa:</strong> ${table}</li>
+          </ul>
+        </div>
+      `;
+
+      payload.fallbackEmail = fallbackInfo.email;
+      payload.fallbackSubject = fallbackInfo.subject;
+      payload.fallbackHtml = buildEmailHtml(fallbackInfo.subject, contentHtml, fallbackInfo.logoUrl);
+    }
+
     const response = await fetch(`${API_V2_URL}/api/send-meeting-cancelled`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
 
-    if (!response.ok) {
-      console.error("Error sending meeting cancellation:", await response.text());
+    let isSuccess = response.ok;
+    try {
+      const responseData = await response.clone().json();
+      if (responseData && (responseData.success === false || responseData.error)) {
+        isSuccess = false;
+      }
+    } catch (e) {
+      // Ignorar
+    }
+
+    if (!isSuccess) {
+      console.error("Error sending meeting cancellation");
       return false;
     }
 
@@ -283,8 +422,14 @@ export async function sendMeetingRejection(options: {
   eventName: string;
   rejectedByName: string;
   rejectedByCompany: string;
+  fallbackInfo?: {
+    enabled: boolean;
+    email: string;
+    subject: string;
+    logoUrl?: string;
+  };
 }): Promise<boolean> {
-  const { phone, eventName, rejectedByName, rejectedByCompany } = options;
+  const { phone, eventName, rejectedByName, rejectedByCompany, fallbackInfo } = options;
 
   // Limpiar número de teléfono (ya viene con prefijo)
   const fullPhone = phone.replace(/[^\d]/g, "");
@@ -298,14 +443,43 @@ export async function sendMeetingRejection(options: {
       rejectedByCompany,
     };
 
+    if (fallbackInfo?.enabled && fallbackInfo.email) {
+      const contentHtml = `
+        <p>Hola,</p>
+        <p>Se intentó enviar un rechazo de reunión por WhatsApp pero el número no existe o no está registrado.</p>
+        
+        <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+          <h3 style="margin-top: 0; color: #111827; font-size: 16px;">Detalles:</h3>
+          <ul style="margin-bottom: 0; padding-left: 20px;">
+            <li style="margin-bottom: 8px;"><strong>Rechazada por:</strong> ${rejectedByName}</li>
+            <li><strong>Empresa:</strong> ${rejectedByCompany}</li>
+          </ul>
+        </div>
+      `;
+
+      payload.fallbackEmail = fallbackInfo.email;
+      payload.fallbackSubject = fallbackInfo.subject;
+      payload.fallbackHtml = buildEmailHtml(fallbackInfo.subject, contentHtml, fallbackInfo.logoUrl);
+    }
+
     const response = await fetch(`${API_V2_URL}/api/send-meeting-rejection`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
 
-    if (!response.ok) {
-      console.error("Error sending meeting rejection:", await response.text());
+    let isSuccess = response.ok;
+    try {
+      const responseData = await response.clone().json();
+      if (responseData && (responseData.success === false || responseData.error)) {
+        isSuccess = false;
+      }
+    } catch (e) {
+      // Ignorar
+    }
+
+    if (!isSuccess) {
+      console.error("Error sending meeting rejection");
       return false;
     }
 
@@ -327,14 +501,20 @@ export async function sendWelcomeNotification(options: {
   headerImageUrl?: string;
   date?: string;
   time?: string;
+  fallbackInfo?: {
+    enabled: boolean;
+    email: string;
+    subject: string;
+    logoUrl?: string;
+  };
 }): Promise<boolean> {
-  const { phone, name, eventName, badgeUrl, headerImageUrl, date, time } = options;
+  const { phone, name, eventName, badgeUrl, headerImageUrl, date, time, fallbackInfo } = options;
 
   // Limpiar número de teléfono (ya viene con prefijo)
   const fullPhone = phone.replace(/[^\d]/g, "");
 
   try {
-    const payload = {
+    const payload: any = {
       accountId: ACCOUNT_ID,
       to: fullPhone,
       userName: name,
@@ -345,14 +525,53 @@ export async function sendWelcomeNotification(options: {
       time: time || "Por definir",
     };
 
+    if (fallbackInfo?.enabled && fallbackInfo.email) {
+      const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+      const btnStyle = "display: inline-block; padding: 12px 24px; margin: 15px 0; color: white; background-color: #3b82f6; text-decoration: none; border-radius: 6px; font-weight: bold; text-align: center; font-size: 14px;";
+      
+      const contentHtml = `
+        <p>Hola <strong>${name}</strong>,</p>
+        <p>¡Bienvenido/a al evento <strong>${eventName}</strong>!</p>
+        <p>Tu número de WhatsApp no pudo recibir nuestro mensaje de bienvenida porque no existe o no está registrado.</p>
+        
+        <div style="background-color: #eff6ff; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #bfdbfe;">
+          <h3 style="margin-top: 0; color: #1e3a8a; font-size: 16px;">Detalles del evento:</h3>
+          <ul style="margin-bottom: 0; padding-left: 20px; color: #1e40af;">
+            <li style="margin-bottom: 8px;"><strong>Fecha:</strong> ${date || "Por definir"}</li>
+            <li><strong>Hora:</strong> ${time || "Por definir"}</li>
+          </ul>
+        </div>
+
+        <p>Puedes acceder al dashboard para ver tu acreditación y más detalles.</p>
+        
+        <div style="text-align: center; margin-top: 25px;">
+          <a href="${baseUrl}/dashboard" style="${btnStyle}">Ir al Dashboard del Evento</a>
+        </div>
+      `;
+
+      payload.fallbackEmail = fallbackInfo.email;
+      payload.fallbackSubject = fallbackInfo.subject;
+      payload.fallbackHtml = buildEmailHtml(fallbackInfo.subject, contentHtml, fallbackInfo.logoUrl);
+    }
+
     const response = await fetch(`${API_V2_URL}/api/send-welcome`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
 
-    if (!response.ok) {
-      console.error("Error sending welcome notification:", await response.text());
+    let isSuccess = response.ok;
+    try {
+      const responseData = await response.clone().json();
+      if (responseData && (responseData.success === false || responseData.error)) {
+        isSuccess = false;
+      }
+    } catch (e) {
+      // Ignorar
+    }
+
+    if (!isSuccess) {
+      console.error("Error sending welcome notification");
       return false;
     }
 

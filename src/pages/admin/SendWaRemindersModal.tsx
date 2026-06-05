@@ -193,6 +193,11 @@ export default function SendWaRemindersModal({
           apiVersion: whatsappApiVersion,
           phone: user.telefono,
           message: "Tienes una solicitud de reunión pendiente por revisar en el evento. Por favor ingresa para gestionarla.", // Mensaje vacío / fallback
+          fallbackInfo: {
+            enabled: event.config?.policies?.fallbackEmailOnWaFailure ?? false,
+            email: user.correo || "",
+            subject: `Recordatorio de reunión pendiente - ${event.eventName}`,
+          },
           metadata: {
             eventName: event.eventName || "Evento",
             requesterName: reqName,

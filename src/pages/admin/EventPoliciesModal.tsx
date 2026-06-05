@@ -55,6 +55,7 @@ export default function EventPoliciesModal({
   const [standbyCheckInRequired, setStandbyCheckInRequired] = useState(false);
   const [attendeeIdEnabled, setAttendeeIdEnabled] = useState(false);
   const [whatsappNotificationsEnabled, setWhatsappNotificationsEnabled] = useState(true);
+  const [fallbackEmailOnWaFailure, setFallbackEmailOnWaFailure] = useState(false);
   const [dashboardNotificationsEnabled, setDashboardNotificationsEnabled] = useState(true);
   const [welcomeMessageEnabled, setWelcomeMessageEnabled] = useState(false);
   const [groupByRazonSocial, setGroupByRazonSocial] = useState(false);
@@ -87,6 +88,7 @@ export default function EventPoliciesModal({
     setStandbyCheckInRequired(p.standbyCheckInRequired ?? false);
     setAttendeeIdEnabled(p.attendeeIdEnabled ?? false);
     setWhatsappNotificationsEnabled(p.whatsappNotificationsEnabled ?? true);
+    setFallbackEmailOnWaFailure(p.fallbackEmailOnWaFailure ?? false);
     setDashboardNotificationsEnabled(p.dashboardNotificationsEnabled ?? true);
     setWelcomeMessageEnabled(p.welcomeMessageEnabled ?? false);
     setGroupByRazonSocial(p.groupByRazonSocial ?? false);
@@ -166,6 +168,7 @@ export default function EventPoliciesModal({
               standbyCheckInRequired,
               attendeeIdEnabled,
               whatsappNotificationsEnabled,
+              fallbackEmailOnWaFailure,
               dashboardNotificationsEnabled,
               welcomeMessageEnabled,
               groupByRazonSocial,
@@ -339,6 +342,16 @@ export default function EventPoliciesModal({
           checked={whatsappNotificationsEnabled}
           onChange={(e) => setWhatsappNotificationsEnabled(e.currentTarget.checked)}
         />
+
+        {whatsappNotificationsEnabled && (
+          <Switch
+            label="Email alternativo (Fallback)"
+            description="Envía un correo electrónico si falla el envío del mensaje por WhatsApp"
+            checked={fallbackEmailOnWaFailure}
+            onChange={(e) => setFallbackEmailOnWaFailure(e.currentTarget.checked)}
+            ml="xl"
+          />
+        )}
 
         <Switch
           label="Notificaciones en el dashboard"

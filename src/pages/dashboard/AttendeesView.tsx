@@ -280,12 +280,10 @@ export default function AttendeesView({
     }
     
     if (filterByRole && isRuedaNegocios) {
-      console.log("Aplicando filtro por rol, miRole:", currentUser?.data?.tipoAsistente);
       const myRole = (currentUser?.data?.tipoAsistente || "").toLowerCase().trim();
       if (myRole === "comprador") {
         baseAssistants = baseAssistants.filter((a) => (a.tipoAsistente || "").toLowerCase().trim() === "vendedor");
       } else if (myRole === "vendedor") {
-        console.log("Filtrando para vendedor, miRole:", myRole);
         baseAssistants = baseAssistants.filter((a) => (a.tipoAsistente || "").toLowerCase().trim() === "comprador");
       }
     }

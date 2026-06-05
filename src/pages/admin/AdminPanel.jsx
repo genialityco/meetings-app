@@ -293,7 +293,7 @@ const AdminPanel = () => {
                         >
                           Eliminar evento
                         </Button>
-                      </Stack>>
+                      </Stack>
                     </Group>
                   </Card>
                 </Grid.Col>

@@ -121,6 +121,8 @@ export interface EventPolicies {
   attendeeIdEnabled?: boolean;
   /** Habilitar envío de notificaciones por WhatsApp */
   whatsappNotificationsEnabled?: boolean;
+  /** Enviar correo si falla el envío de la notificación de WhatsApp */
+  fallbackEmailOnWaFailure?: boolean;
   /** Habilitar notificaciones internas en el dashboard */
   dashboardNotificationsEnabled?: boolean;
   /** Habilitar el popup y mensaje de bienvenida de WhatsApp (por defecto falso) */
@@ -182,6 +184,7 @@ export const DEFAULT_POLICIES: EventPolicies = {
   standbyCheckInRequired: false,
   attendeeIdEnabled: false,
   whatsappNotificationsEnabled: true,
+  fallbackEmailOnWaFailure: false,
   dashboardNotificationsEnabled: true,
   welcomeMessageEnabled: false,
   groupByRazonSocial: false,

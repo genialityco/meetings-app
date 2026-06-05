@@ -307,6 +307,9 @@ const Landing = () => {
   const validateForm = useCallback(() => {
     const errors = {};
     (event?.config?.formFields || []).forEach((field) => {
+      // Ignorar validación de tipoAsistente si el evento es de Networking
+      if (event?.eventType === "Networking" && field.name === "tipoAsistente") return;
+
       if (!isFieldVisible(field)) return;
 
       let value = getValueForField(field.name);
@@ -331,14 +334,20 @@ const Landing = () => {
         "Debes aceptar el tratamiento de datos para continuar.";
     }
 
+    console.log("ERRORES DE VALIDACION:", errors);
+    console.log("VALORES DEL FORMULARIO:", formValues);
+
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
-  }, [event?.config?.formFields, formValues, getValueForField, isFieldVisible, pdfFiles]);
+  }, [event?.config?.formFields, event?.eventType, formValues, getValueForField, isFieldVisible, pdfFiles]);
 
   const validateStep = useCallback(
     (fieldNames = []) => {
       const errors = {};
       fieldNames.forEach((name) => {
+        // Ignorar validación de tipoAsistente si el evento es de Networking
+        if (event?.eventType === "Networking" && name === "tipoAsistente") return;
+
         const def = fieldsByName.get(name);
         if (!def) return;
         if (!isFieldVisible(def)) return;
@@ -401,6 +410,13 @@ const Landing = () => {
           const isEventOpen = eventData.status === "abierto" || (eventData.config?.registrationEnabled ?? true);
       setRegistrationEnabled(isEventOpen);
           setActiveStep(0);
+
+          if (eventData.eventType === "Networking") {
+            setFormValues((prev) => ({
+              ...prev,
+              tipoAsistente: "Asistente",
+            }));
+          }
         }
       },
       (error) => console.error("Error in real-time listener:", error),
@@ -428,12 +444,13 @@ const Landing = () => {
       setFormValues((prev) => ({
         ...prev,
         ...currentUser.data,
+        ...(event?.eventType === "Networking" ? { tipoAsistente: "Asistente" } : {})
       }));
       if (currentUser.data.photoURL) {
         setProfilePicPreview(currentUser.data.photoURL);
       }
     }
-  }, [currentUser]);
+  }, [currentUser, event?.eventType]);
 
   useEffect(() => {
     if (currentUser?.data?.photoURL) {
@@ -584,7 +601,12 @@ const Landing = () => {
   }, [formValues, editor]);
 
   const handleSubmit = useCallback(async () => {
-    if (!validateForm()) return;
+    console.log("Iniciando handleSubmit...");
+    if (!validateForm()) {
+      console.warn("Validación falló. Abortando submit.");
+      return;
+    }
+    console.log("Validación exitosa. Guardando...");
 
     setPhotoUploadError("");
     if (!formValues._photoFile && formValues.photoURL)
@@ -805,7 +827,12 @@ const Landing = () => {
               badgeUrl,
               headerImageUrl: event?.eventImage || event?.config?.landingTitleImage,
               date: formattedDate,
-              time: formattedTime
+              time: formattedTime,
+              fallbackInfo: {
+                enabled: event?.config?.policies?.fallbackEmailOnWaFailure ?? false,
+                email: dataToUpdate.correo || "",
+                subject: `Bienvenido a ${eventName}`,
+              }
             });
           } catch (err) {
             console.error("No se pudo enviar la notificación de bienvenida:", err);

@@ -107,6 +107,7 @@ async function sendMeetingAcceptedWhatsapp(
   acceptedByName?: string,
   whatsappApiVersion: "v1" | "v2" = "v1",
   requesterData?: any,
+  fallbackInfo?: { enabled: boolean; email: string; subject: string; logoUrl?: string }
 ) {
   if (!toPhone) return;
   const phone = toPhone.replace(/[^\d]/g, "");
@@ -139,6 +140,7 @@ async function sendMeetingAcceptedWhatsapp(
       company: otherParticipant?.empresa || "Empresa",
       schedule,
       table: meetingInfo.tableAssigned || "N/A",
+      fallbackInfo,
     });
     
     return;
@@ -178,6 +180,7 @@ async function sendMeetingAcceptedWhatsapp(
     apiVersion: whatsappApiVersion,
     phone,
     message,
+    fallbackInfo,
     metadata: {
       eventName: eventName || "Evento",
       requesterName: requesterData?.nombre || otherParticipant?.nombre || "",
@@ -196,6 +199,7 @@ async function sendMeetingCancelledWhatsapp(
   eventName?: string,
   cancelledByName?: string,
   whatsappApiVersion: "v1" | "v2" = "v1",
+  fallbackInfo?: { enabled: boolean; email: string; subject: string; logoUrl?: string }
 ) {
   if (!toPhone) return;
   const phone = (toPhone || "").toString().replace(/[^\d]/g, "");
@@ -224,6 +228,7 @@ async function sendMeetingCancelledWhatsapp(
       day: dateStr || "Fecha no especificada",
       schedule: meetingInfo.timeSlot || "Horario no especificado",
       table: meetingInfo.tableAssigned || "N/A",
+      fallbackInfo,
     });
     
     return;
@@ -262,6 +267,7 @@ async function sendMeetingCancelledWhatsapp(
     apiVersion: whatsappApiVersion,
     phone,
     message,
+    fallbackInfo,
     metadata: {
       eventName: eventName || "Evento",
       requesterName: otherParticipant?.nombre || "",
@@ -275,6 +281,7 @@ async function sendMeetingRejectedWhatsapp(
   rejectedByParticipant: Assistant,
   eventName?: string,
   whatsappApiVersion: "v1" | "v2" = "v1",
+  fallbackInfo?: { enabled: boolean; email: string; subject: string }
 ) {
   if (!toPhone) return;
   const phone = (toPhone || "").toString().replace(/[^\d]/g, "");
@@ -288,6 +295,7 @@ async function sendMeetingRejectedWhatsapp(
       eventName: eventName || "Evento",
       rejectedByName: rejectedByParticipant?.nombre || "Un participante",
       rejectedByCompany: rejectedByParticipant?.empresa || "Empresa",
+      fallbackInfo,
     });
     
     return;
@@ -307,6 +315,7 @@ async function sendMeetingRejectedWhatsapp(
     apiVersion: whatsappApiVersion,
     phone,
     message,
+    fallbackInfo,
     metadata: {
       eventName: eventName || "Evento",
       requesterName: rejectedByParticipant?.nombre || "",
@@ -915,11 +924,18 @@ export function useDashboardData(eventId?: string) {
 
       // WhatsApp backend - usar API configurada en políticas
       const whatsappApiVersion = policies.whatsappApiVersion || "v1";
+      const fallbackEnabled = policies.fallbackEmailOnWaFailure ?? false;
       if (policies.whatsappNotificationsEnabled !== false) {
         await sendWhatsAppAPI({
           apiVersion: whatsappApiVersion,
           phone: assistantPhone.replace(/[^\d]/g, ""),
           message: whatsappApiVersion === "v2" ? (context?.contextNote || "Sin mensaje adicional") : message,
+          fallbackInfo: {
+            enabled: fallbackEnabled,
+            email: receiverSnap.data()?.correo || receiverSnap.data()?.contacto?.correo || "",
+            subject: `Nueva solicitud de reunión - ${eventName}`,
+            logoUrl: eventConfig.dashboardLogo || "",
+          },
           metadata: {
             eventName: eventName || "Evento",
             requesterName,
@@ -1005,20 +1021,32 @@ export function useDashboardData(eventId?: string) {
 
       // 7. Notifica a ambos por WhatsApp
       const whatsappApiVersion = policies.whatsappApiVersion || "v1";
+      const fallbackEnabled = policies.fallbackEmailOnWaFailure ?? false;
+
       if (policies.whatsappNotificationsEnabled !== false) {
         if (requester?.telefono) {
           await sendMeetingCancelledWhatsapp(requester.telefono, receiver, {
             timeSlot: meeting.timeSlot,
             tableAssigned: meeting.tableAssigned,
             meetingDate: meeting.meetingDate,
-          }, eventName, cancellerName, whatsappApiVersion);
+          }, eventName, cancellerName, whatsappApiVersion, {
+            enabled: fallbackEnabled,
+            email: requester.correo || "",
+            subject: `Cancelación de reunión - ${eventName}`,
+            logoUrl: eventConfig.dashboardLogo || "",
+          });
         }
         if (receiver?.telefono) {
           await sendMeetingCancelledWhatsapp(receiver.telefono, requester, {
             timeSlot: meeting.timeSlot,
             tableAssigned: meeting.tableAssigned,
             meetingDate: meeting.meetingDate,
-          }, eventName, cancellerName, whatsappApiVersion);
+          }, eventName, cancellerName, whatsappApiVersion, {
+            enabled: fallbackEnabled,
+            email: receiver.correo || "",
+            subject: `Cancelación de reunión - ${eventName}`,
+            logoUrl: eventConfig.dashboardLogo || "",
+          });
         }
       }
 
@@ -1212,6 +1240,8 @@ export function useDashboardData(eventId?: string) {
         // Enviar WhatsApp a ambos participantes
         const whatsappApiVersion = policies.whatsappApiVersion || "v1";
         const accepterName = receiver?.nombre || "";
+        const fallbackEnabled = policies.fallbackEmailOnWaFailure ?? false;
+        
         if (policies.whatsappNotificationsEnabled !== false && requester && receiver) {
           await sendMeetingAcceptedWhatsapp(
             requester.telefono || "",
@@ -1225,6 +1255,7 @@ export function useDashboardData(eventId?: string) {
             accepterName,
             whatsappApiVersion,
             requester,
+            { enabled: fallbackEnabled, email: requester.correo || "", subject: `Confirmación de reunión - ${eventName}`, logoUrl: eventConfig.dashboardLogo || "" }
           );
           await sendMeetingAcceptedWhatsapp(
             receiver.telefono || "",
@@ -1238,6 +1269,7 @@ export function useDashboardData(eventId?: string) {
             accepterName,
             whatsappApiVersion,
             receiver,
+            { enabled: fallbackEnabled, email: receiver.correo || "", subject: `Confirmación de reunión - ${eventName}`, logoUrl: eventConfig.dashboardLogo || "" }
           );
         }
         
@@ -1270,12 +1302,14 @@ export function useDashboardData(eventId?: string) {
 
         // Enviar WhatsApp al solicitante informando del rechazo
         const whatsappApiVersion = policies.whatsappApiVersion || "v1";
+        const fallbackEnabled = policies.fallbackEmailOnWaFailure ?? false;
         if (policies.whatsappNotificationsEnabled !== false && requester?.telefono && receiver) {
           await sendMeetingRejectedWhatsapp(
             requester.telefono,
             receiver,
             eventName,
             whatsappApiVersion,
+            { enabled: fallbackEnabled, email: requester.correo || "", subject: `Reunión rechazada - ${eventName}` }
           );
         }
         
@@ -1901,6 +1935,7 @@ export function useDashboardData(eventId?: string) {
 
       // El receptor (uid actual) es quien acepta
       const accepterName = receiver?.nombre || requester?.nombre || "";
+      const fallbackEnabled = policies.fallbackEmailOnWaFailure ?? false;
 
       if (policies.whatsappNotificationsEnabled !== false) {
         if (requester?.telefono) await sendSms(smsMsg, requester.telefono, whatsappApiVersion);
@@ -1911,14 +1946,16 @@ export function useDashboardData(eventId?: string) {
             timeSlot: `${slot.startTime} - ${slot.endTime}`,
             tableAssigned: slot.tableNumber,
             meetingDate: eventDateISO,
-          }, eventName, accepterName, whatsappApiVersion, requester);
+          }, eventName, accepterName, whatsappApiVersion, requester,
+          { enabled: fallbackEnabled, email: requester.correo || "", subject: `Confirmación de reunión - ${eventName}` });
         }
         if (receiver?.telefono) {
           await sendMeetingAcceptedWhatsapp(receiver.telefono, requester!, {
             timeSlot: `${slot.startTime} - ${slot.endTime}`,
             tableAssigned: slot.tableNumber,
             meetingDate: eventDateISO,
-          }, eventName, accepterName, whatsappApiVersion, receiver);
+          }, eventName, accepterName, whatsappApiVersion, receiver,
+          { enabled: fallbackEnabled, email: receiver?.correo || "", subject: `Confirmación de reunión - ${eventName}` });
         }
       }
 
