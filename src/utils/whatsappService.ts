@@ -105,6 +105,7 @@ const API_V2_URL = import.meta.env.VITE_WHATSAPP_API_V2 as string || "https://ap
 const ACCOUNT_ID = import.meta.env.VITE_WHATSAPP_ACCOUNT_ID as string || "geniality";
 const CLIENT_ID = "genialitybussinesstest1";
 
+
 /**
  * Envía un mensaje de WhatsApp usando la API configurada
  */
@@ -159,8 +160,16 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
           <p>Te informamos que recibiste una solicitud de reunión por WhatsApp, pero no pudimos entregarla a tu número registrado.</p>
           
           <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
-            <p style="margin-top: 0; margin-bottom: 10px;"><strong>De:</strong> ${requesterName} (${requesterCompany})</p>
-            <p style="margin: 0; font-style: italic;">"${message.replace(/\n/g, '<br>')}"</p>
+            <h3 style="margin-top: 0; color: #111827; font-size: 16px;">Detalles de la solicitud:</h3>
+            <ul style="margin-bottom: 15px; padding-left: 20px;">
+              <li style="margin-bottom: 8px;"><strong>Evento:</strong> ${metadata.eventName || "Evento"}</li>
+              <li style="margin-bottom: 8px;"><strong>De:</strong> ${requesterName}</li>
+              <li style="margin-bottom: 8px;"><strong>Empresa:</strong> ${requesterCompany}</li>
+              <li style="margin-bottom: 8px;"><strong>Cargo:</strong> ${metadata.requesterPosition || "Cargo"}</li>
+              <li style="margin-bottom: 8px;"><strong>Email:</strong> ${metadata.requesterEmail || "Email"}</li>
+              <li style="margin-bottom: 8px;"><strong>Teléfono:</strong> ${metadata.requesterPhone || "Telefono"}</li>
+            </ul>
+            <p style="margin: 0; font-style: italic; background-color: #e5e7eb; padding: 10px; border-radius: 4px;">"${message.replace(/\n/g, '<br>')}"</p>
           </div>
           
           <p style="text-align: center; margin-top: 25px;"><strong>¿Qué deseas hacer con esta solicitud?</strong></p>
@@ -288,6 +297,8 @@ export async function sendMeetingConfirmation(options: {
         <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
           <h3 style="margin-top: 0; color: #111827; font-size: 16px;">Detalles de tu reunión:</h3>
           <ul style="margin-bottom: 0; padding-left: 20px;">
+            <li style="margin-bottom: 8px;"><strong>Evento:</strong> ${eventName}</li>
+            <li style="margin-bottom: 8px;"><strong>Con:</strong> ${meetingWith}</li>
             <li style="margin-bottom: 8px;"><strong>Reunión aceptada por:</strong> ${acceptedBy}</li>
             <li style="margin-bottom: 8px;"><strong>Empresa:</strong> ${company}</li>
             <li style="margin-bottom: 8px;"><strong>Horario:</strong> ${schedule}</li>
@@ -372,6 +383,7 @@ export async function sendMeetingCancellation(options: {
         <div style="background-color: #fef2f2; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #fee2e2;">
           <h3 style="margin-top: 0; color: #b91c1c; font-size: 16px;">Detalles de la reunión cancelada:</h3>
           <ul style="margin-bottom: 0; padding-left: 20px; color: #991b1b;">
+            <li style="margin-bottom: 8px;"><strong>Evento:</strong> ${eventName}</li>
             <li style="margin-bottom: 8px;"><strong>Reunión cancelada con:</strong> ${meetingWith}</li>
             <li style="margin-bottom: 8px;"><strong>Empresa:</strong> ${company}</li>
             <li style="margin-bottom: 8px;"><strong>Día:</strong> ${day}</li>
@@ -451,6 +463,7 @@ export async function sendMeetingRejection(options: {
         <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
           <h3 style="margin-top: 0; color: #111827; font-size: 16px;">Detalles:</h3>
           <ul style="margin-bottom: 0; padding-left: 20px;">
+            <li style="margin-bottom: 8px;"><strong>Evento:</strong> ${eventName}</li>
             <li style="margin-bottom: 8px;"><strong>Rechazada por:</strong> ${rejectedByName}</li>
             <li><strong>Empresa:</strong> ${rejectedByCompany}</li>
           </ul>
@@ -580,4 +593,34 @@ export async function sendWelcomeNotification(options: {
     console.error("Error sending welcome notification:", error);
     return false;
   }
+}
+
+/**
+ * Construye el HTML base para los correos de fallback
+ */
+function buildEmailHtml(subject: string, contentHtml: string, logoUrl?: string): string {
+  const logoHtml = logoUrl 
+    ? `<div style="text-align: center; margin-bottom: 20px;"><img src="${logoUrl}" alt="Logo" style="max-width: 200px; max-height: 80px;" /></div>` 
+    : '';
+
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>${subject}</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; background-color: #f9fafb; color: #374151; margin: 0; padding: 20px;">
+      <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+        <div style="padding: 30px;">
+          ${logoHtml}
+          ${contentHtml}
+        </div>
+        <div style="background-color: #f3f4f6; padding: 15px; text-align: center; font-size: 12px; color: #6b7280; border-top: 1px solid #e5e7eb;">
+          <p style="margin: 0;">Este es un mensaje automático de la plataforma de agendamiento.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
 }
