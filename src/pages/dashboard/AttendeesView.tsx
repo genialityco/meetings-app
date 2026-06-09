@@ -177,10 +177,11 @@ export default function AttendeesView({
   const [hasSearchedVector, setHasSearchedVector] = useState(false);
   
   const eventTypeValue = (eventConfig?.eventType || "").toLowerCase();
-  const isRuedaNegocios = !eventTypeValue || eventTypeValue === "rueda_negocios";
+  const isRuedaNegocios = !eventTypeValue || eventTypeValue === "Rueda de negocios";
 
   // Efecto para hacer scroll y resaltar la card cuando viene de notificación
   useEffect(() => {
+    console.log("eventtype", eventTypeValue, "isRuedaNegocios", isRuedaNegocios);
     if (highlightEntityId) {
       setHighlightedId(highlightEntityId);
       
@@ -626,11 +627,22 @@ export default function AttendeesView({
                     </Avatar>
 
                     <Box style={{ minWidth: 0, flex: 1 }}>
-                      <Title order={6} lineClamp={1}>
-                        <Highlight highlight={searchTerm} component="span">
-                          {assistant.nombre || "Sin nombre"}
-                        </Highlight>
-                      </Title>
+                      <Group gap="xs" wrap="nowrap" align="center">
+                        <Title order={6} lineClamp={1}>
+                          <Highlight highlight={searchTerm} component="span">
+                            {assistant.nombre || "Sin nombre"}
+                          </Highlight>
+                        </Title>
+                        {isRuedaNegocios && assistant.tipoAsistente && (
+                          <Badge 
+                            size="xs" 
+                            variant="light" 
+                            color={String(assistant.tipoAsistente).toLowerCase().trim() === 'comprador' ? 'blue' : 'orange'}
+                          >
+                            {assistant.tipoAsistente}
+                          </Badge>
+                        )}
+                      </Group>
                       <Text size="sm" c="dimmed" lineClamp={1} component="div">
                         <Highlight highlight={searchTerm} component="span" size="sm">
                           {assistant.cargo || "Asistente"}

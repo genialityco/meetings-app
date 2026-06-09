@@ -330,15 +330,42 @@ const EditEventConfigModal = ({
   // ---------- UI ----------
   return (
     <Modal opened={opened} onClose={onClose} title="Configuración del evento" size="xl">
-      <Tabs defaultValue="general" variant="outline">
-        <Tabs.List mb="md">
-          <Tabs.Tab value="general" leftSection={<IconSettings size={14} />}>General</Tabs.Tab>
-          <Tabs.Tab value="horarios" leftSection={<IconCalendarTime size={14} />}>Fechas y Horarios</Tabs.Tab>
-          <Tabs.Tab value="apariencia" leftSection={<IconPalette size={14} />}>Apariencia</Tabs.Tab>
-          <Tabs.Tab value="agendamiento" leftSection={<IconCalendarEvent size={14} />}>Agendamiento</Tabs.Tab>
-          <Tabs.Tab value="campos" leftSection={<IconUsers size={14} />}>Campos</Tabs.Tab>
-          <Tabs.Tab value="politicas" leftSection={<IconSettings size={14} />}>Políticas</Tabs.Tab>
-          <Tabs.Tab value="encuesta" leftSection={<IconChecklist size={14} />}>Encuesta</Tabs.Tab>
+      <Tabs 
+        defaultValue="general" 
+        variant="pills"
+        radius="xl"
+        color="blue"
+        styles={{
+          list: {
+            gap: '8px',
+            marginBottom: '24px',
+            backgroundColor: 'var(--mantine-color-gray-0)',
+            padding: '6px',
+            borderRadius: '100px',
+            flexWrap: 'wrap',
+            justifyContent: 'center'
+          },
+          tab: {
+            fontWeight: 600,
+            transition: 'all 0.2s ease',
+            border: '1px solid transparent',
+            '&[data-active]': {
+              boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+            },
+            '&:hover:not([data-active])': {
+              backgroundColor: 'var(--mantine-color-gray-2)',
+            }
+          }
+        }}
+      >
+        <Tabs.List>
+          <Tabs.Tab value="general" leftSection={<IconSettings size={16} />}>General</Tabs.Tab>
+          <Tabs.Tab value="horarios" leftSection={<IconCalendarTime size={16} />}>Horarios</Tabs.Tab>
+          <Tabs.Tab value="apariencia" leftSection={<IconPalette size={16} />}>Apariencia</Tabs.Tab>
+          <Tabs.Tab value="agendamiento" leftSection={<IconCalendarEvent size={16} />}>Agendamiento</Tabs.Tab>
+          <Tabs.Tab value="campos" leftSection={<IconUsers size={16} />}>Campos</Tabs.Tab>
+          <Tabs.Tab value="politicas" leftSection={<IconSettings size={16} />}>Políticas</Tabs.Tab>
+          <Tabs.Tab value="encuesta" leftSection={<IconChecklist size={16} />}>Encuesta</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="general">
