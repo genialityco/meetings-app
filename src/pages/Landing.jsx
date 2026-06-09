@@ -125,9 +125,16 @@ function formatDate(dateString) {
 }
 
 const validateField = (field, value) => {
-  const { validation = {}, required = true } = field;
+  const { validation = {} } = field;
+  const required = field.required ?? true;
 
   const isPhone = isPhoneField(field);
+
+  let checkValue = value;
+  if (isPhone && value) {
+    const m = String(value).trim().match(/^(\+\d{1,4})\s?(.*)$/);
+    checkValue = m ? m[2].trim() : String(value).replace(/\D/g, "");
+  }
 
   if (required) {
     if (typeof value === "boolean") {
@@ -136,11 +143,6 @@ const validateField = (field, value) => {
           validation?.errorMessage || `El campo ${field.label} es obligatorio`
         );
     } else {
-      let checkValue = value;
-      if (isPhone && value) {
-        const m = String(value).trim().match(/^(\+\d{1,4})\s?(.*)$/);
-        checkValue = m ? m[2].trim() : String(value).replace(/\D/g, "");
-      }
       if (!checkValue || String(checkValue).trim() === "") {
         return (
           validation?.errorMessage || `El campo ${field.label} es obligatorio`
@@ -149,16 +151,26 @@ const validateField = (field, value) => {
     }
   }
 
-  if (isPhone) return null;
+  // Si no es requerido y está vacío, es válido
+  if (
+    value === null ||
+    value === undefined ||
+    String(checkValue).trim() === "" ||
+    (typeof value === "boolean" && !value)
+  ) {
+    return null;
+  }
 
-  if (validation?.minLength && value?.length < validation.minLength) {
+  const valueToValidate = isPhone ? String(checkValue).trim() : String(value).trim();
+
+  if (validation?.minLength && valueToValidate.length < validation.minLength) {
     return (
       validation.errorMessage ||
       `Debe tener al menos ${validation.minLength} caracteres`
     );
   }
 
-  if (validation?.maxLength && value?.length > validation.maxLength) {
+  if (validation?.maxLength && valueToValidate.length > validation.maxLength) {
     return (
       validation.errorMessage ||
       `No puede exceder ${validation.maxLength} caracteres`
@@ -172,7 +184,7 @@ const validateField = (field, value) => {
         patternString = patternString.slice(1, -1);
       }
       const regex = new RegExp(patternString);
-      if (!regex.test(value)) {
+      if (!regex.test(valueToValidate)) {
         return validation.errorMessage || `El formato no es válido`;
       }
     } catch (err) {
@@ -1656,6 +1668,20 @@ const Landing = () => {
                                           }
                                         </Text>
                                       ) : null}
+                                      {Object.keys(formErrors).some(k => formErrors[k] && k !== CONSENTIMIENTO_FIELD_NAME && !(steps[activeStep]?.fields || []).includes(k)) && (
+                                        <Alert color="red" variant="light" title="Faltan datos en pasos anteriores" mt="md" radius="md">
+                                          <ul style={{ margin: 0, paddingLeft: 20 }}>
+                                            {Object.entries(formErrors)
+                                              .filter(([k, msg]) => msg && k !== CONSENTIMIENTO_FIELD_NAME && !(steps[activeStep]?.fields || []).includes(k))
+                                              .map(([key, msg], idx) => {
+                                                const label = fieldsByName.get(key)?.label || key;
+                                                return (
+                                                  <li key={idx}><Text size="sm"><strong>{label}:</strong> {msg}</Text></li>
+                                                );
+                                              })}
+                                          </ul>
+                                        </Alert>
+                                      )}
                                     </>
                                   )}
                                 </Stack>
@@ -2089,6 +2115,20 @@ const Landing = () => {
                                               }
                                             </Text>
                                           ) : null}
+                                          {Object.keys(formErrors).some(k => formErrors[k] && k !== CONSENTIMIENTO_FIELD_NAME && !(steps[activeStep]?.fields || []).includes(k)) && (
+                                            <Alert color="red" variant="light" title="Faltan datos en pasos anteriores" mt="md" radius="md">
+                                              <ul style={{ margin: 0, paddingLeft: 20 }}>
+                                                {Object.entries(formErrors)
+                                                  .filter(([k, msg]) => msg && k !== CONSENTIMIENTO_FIELD_NAME && !(steps[activeStep]?.fields || []).includes(k))
+                                                  .map(([key, msg], idx) => {
+                                                    const label = fieldsByName.get(key)?.label || key;
+                                                    return (
+                                                      <li key={idx}><Text size="sm"><strong>{label}:</strong> {msg}</Text></li>
+                                                    );
+                                                  })}
+                                              </ul>
+                                            </Alert>
+                                          )}
                                         </>
                                       )}
                                     </Stack>

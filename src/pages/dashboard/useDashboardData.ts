@@ -408,7 +408,7 @@ export function useDashboardData(eventId?: string) {
       if (snap.exists()) {
         const data = snap.data();
         const config = data.config || {};
-        setEventConfig(config);
+        setEventConfig({ ...config, eventType: data.eventType });
         setEventImage(data.eventImage || "");
         setDashboardLogo(data.dashboardLogo || "");
         setEventName(data.eventName || "");
@@ -934,7 +934,7 @@ export function useDashboardData(eventId?: string) {
             enabled: fallbackEnabled,
             email: receiverSnap.data()?.correo || receiverSnap.data()?.contacto?.correo || "",
             subject: `Nueva solicitud de reunión - ${eventName}`,
-            logoUrl: eventConfig.dashboardLogo || "",
+            logoUrl: dashboardLogo || "",
           },
           metadata: {
             eventName: eventName || "Evento",
@@ -1033,7 +1033,7 @@ export function useDashboardData(eventId?: string) {
             enabled: fallbackEnabled,
             email: requester.correo || "",
             subject: `Cancelación de reunión - ${eventName}`,
-            logoUrl: eventConfig.dashboardLogo || "",
+            logoUrl: dashboardLogo || "",
           });
         }
         if (receiver?.telefono) {
@@ -1045,7 +1045,7 @@ export function useDashboardData(eventId?: string) {
             enabled: fallbackEnabled,
             email: receiver.correo || "",
             subject: `Cancelación de reunión - ${eventName}`,
-            logoUrl: eventConfig.dashboardLogo || "",
+            logoUrl: dashboardLogo || "",
           });
         }
       }
@@ -1255,7 +1255,7 @@ export function useDashboardData(eventId?: string) {
             accepterName,
             whatsappApiVersion,
             requester,
-            { enabled: fallbackEnabled, email: requester.correo || "", subject: `Confirmación de reunión - ${eventName}`, logoUrl: eventConfig.dashboardLogo || "" }
+            { enabled: fallbackEnabled, email: requester.correo || "", subject: `Confirmación de reunión - ${eventName}`, logoUrl: dashboardLogo || "" }
           );
           await sendMeetingAcceptedWhatsapp(
             receiver.telefono || "",
@@ -1269,7 +1269,7 @@ export function useDashboardData(eventId?: string) {
             accepterName,
             whatsappApiVersion,
             receiver,
-            { enabled: fallbackEnabled, email: receiver.correo || "", subject: `Confirmación de reunión - ${eventName}`, logoUrl: eventConfig.dashboardLogo || "" }
+            { enabled: fallbackEnabled, email: receiver.correo || "", subject: `Confirmación de reunión - ${eventName}`, logoUrl: dashboardLogo || "" }
           );
         }
         
