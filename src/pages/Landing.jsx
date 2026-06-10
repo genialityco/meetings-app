@@ -1516,22 +1516,6 @@ const Landing = () => {
                         </>
                       ) : null}
 
-                      {/* Horarios globales (si no hay dailyConfig) */}
-                      {!event?.config?.dailyConfig && (
-                        <Group justify="center" gap="xs">
-                          {event?.config?.eventStartTime ? (
-                            <Badge variant="light" radius="md">
-                              Inicio: {formatTime(event?.config?.eventStartTime)}
-                            </Badge>
-                          ) : null}
-                          {event?.config?.eventEndTime ? (
-                            <Badge variant="light" radius="md">
-                              Fin: {formatTime(event?.config?.eventEndTime)}
-                            </Badge>
-                          ) : null}
-                        </Group>
-                      )}
-
                       {event?.config?.eventLocation ? (
                         <Text size="sm" c="dimmed">
                           <Text span fw={700} c="dark">
