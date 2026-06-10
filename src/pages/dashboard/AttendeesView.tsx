@@ -591,6 +591,24 @@ export default function AttendeesView({
                     </Badge>
                   )}
 
+                  {/* Badge de Rol (Comprador/Vendedor) */}
+                  {isRuedaNegocios && assistant.tipoAsistente && (
+                    <Badge 
+                      size="sm" 
+                      variant="light" 
+                      radius="md"
+                      color={String(assistant.tipoAsistente).toLowerCase().trim() === 'comprador' ? 'blue' : 'orange'}
+                      style={{
+                        position: "absolute",
+                        top: 10,
+                        left: 10,
+                        zIndex: 1,
+                      }}
+                    >
+                      {assistant.tipoAsistente}
+                    </Badge>
+                  )}
+
                   {/* Badge NUEVO cuando está resaltado */}
                   {isHighlighted && (
                     <Badge
@@ -600,7 +618,7 @@ export default function AttendeesView({
                       radius="md"
                       style={{
                         position: "absolute",
-                        top: 10,
+                        top: (isRuedaNegocios && assistant.tipoAsistente) ? 35 : 10,
                         left: 10,
                         zIndex: 2,
                         fontWeight: 700,
@@ -633,15 +651,6 @@ export default function AttendeesView({
                             {assistant.nombre || "Sin nombre"}
                           </Highlight>
                         </Title>
-                        {isRuedaNegocios && assistant.tipoAsistente && (
-                          <Badge 
-                            size="xs" 
-                            variant="light" 
-                            color={String(assistant.tipoAsistente).toLowerCase().trim() === 'comprador' ? 'blue' : 'orange'}
-                          >
-                            {assistant.tipoAsistente}
-                          </Badge>
-                        )}
                       </Group>
                       <Text size="sm" c="dimmed" lineClamp={1} component="div">
                         <Highlight highlight={searchTerm} component="span" size="sm">
