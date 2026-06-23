@@ -39,6 +39,7 @@ interface ProductsViewProps {
   currentUser: any;
   affinityScores: Record<string, number>;
   highlightEntityId?: string;
+  policies?: any;
 }
 
 const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
@@ -51,6 +52,7 @@ export default function ProductsView({
   currentUser,
   affinityScores,
   highlightEntityId,
+  policies,
 }: ProductsViewProps) {
   const navigate = useNavigate();
   const { eventId } = useParams();
@@ -67,6 +69,8 @@ export default function ProductsView({
   const [hasSearchedVector, setHasSearchedVector] = useState(false);
 
   const myUid = currentUser?.uid;
+
+  const allowImageUpload = policies?.allowProductImageUpload !== false;
 
   // Efecto para hacer scroll y resaltar la card cuando viene de notificación
   useEffect(() => {
@@ -356,129 +360,192 @@ export default function ProductsView({
             </Badge>
           )}
 
-          {/* Imagen */}
-          <Card.Section>
-            {p.imageUrl ? (
-              <Box style={{ position: "relative" }}>
-                <Image
-                  src={p.imageUrl}
-                  alt={p.title}
-                  height={140}
-                  fit="cover"
-                />
-                {/* Overlay sutil para que se vea más “card premium” */}
-                <Box
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    background:
-                      "linear-gradient(180deg, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.35) 100%)",
-                    pointerEvents: "none",
-                  }}
-                />
-                {/* Badge de categoría arriba */}
-                {p.category && (
-                  <Badge
-                    variant="filled"
-                    radius="md"
-                    size="sm"
+          {allowImageUpload && p.imageUrl ? (
+            <>
+              <Card.Section>
+                <Box style={{ position: "relative" }}>
+                  <Image
+                    src={p.imageUrl}
+                    alt={p.title}
+                    height={140}
+                    fit="cover"
+                  />
+                  {/* Overlay sutil para que se vea más “card premium” */}
+                  <Box
                     style={{
                       position: "absolute",
-                      top: 10,
-                      left: 10,
-                      background: "rgba(0,0,0,0.55)",
-                      border: "1px solid rgba(255,255,255,0.18)",
+                      inset: 0,
+                      background:
+                        "linear-gradient(180deg, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.35) 100%)",
+                      pointerEvents: "none",
                     }}
+                  />
+                  {/* Badge de categoría arriba */}
+                  {p.category && (
+                    <Badge
+                      variant="filled"
+                      radius="md"
+                      size="sm"
+                      style={{
+                        position: "absolute",
+                        top: 10,
+                        left: 10,
+                        background: "rgba(0,0,0,0.55)",
+                        border: "1px solid rgba(255,255,255,0.18)",
+                      }}
+                    >
+                      {p.category}
+                    </Badge>
+                  )}
+                </Box>
+              </Card.Section>
+
+              <Stack gap={8} mt="sm" style={{ height: "calc(100% - 140px)" }}>
+                {/* Título */}
+                <Title order={6} lineClamp={2} style={{ minWidth: 0 }}>
+                  {p.title || "Producto"}
+                </Title>
+
+                {/* Empresa */}
+                <Group
+                  gap={8}
+                  wrap="nowrap"
+                  style={{ cursor: p.companyId ? "pointer" : undefined }}
+                  onClick={
+                    p.companyId && eventId
+                      ? () => navigate(`/dashboard/${eventId}/company/${p.companyId}`)
+                      : undefined
+                  }
+                >
+                  {companyDoc?.logoUrl ? (
+                    <Image
+                      src={companyDoc.logoUrl}
+                      alt={p.ownerCompany || ""}
+                      w={22}
+                      h={22}
+                      radius="sm"
+                      fit="contain"
+                    />
+                  ) : (
+                    <ThemeIcon variant="light" radius="md" size={22}>
+                      <IconBuildingStore size={14} />
+                    </ThemeIcon>
+                  )}
+                  <Text
+                    size="xs"
+                    fw={600}
+                    lineClamp={1}
+                    style={{ minWidth: 0 }}
+                    td={p.companyId ? "underline" : undefined}
                   >
-                    {p.category}
-                  </Badge>
-                )}
-              </Box>
-            ) : (
-              <Box
-                style={{
-                  height: 140,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center"}}
-              >
-                <Avatar size={64} radius="md" color="gray">
-                  {(p.title || "P")[0]?.toUpperCase()}
-                </Avatar>
-              </Box>
-            )}
-          </Card.Section>
+                    {p.ownerCompany || "Sin empresa"}
+                  </Text>
+                </Group>
 
-          <Stack gap={8} mt="sm" style={{ height: "calc(100% - 140px)" }}>
-            {/* Título */}
-            <Title order={6} lineClamp={2} style={{ minWidth: 0 }}>
-              {p.title || "Producto"}
-            </Title>
+                {/* Descripción */}
+                <Text
+                  size="xs"
+                  c="dimmed"
+                  lineClamp={3}
+                  style={{ whiteSpace: "pre-wrap" }}
+                >
+                  {p.description || "Sin descripción."}
+                </Text>
 
-            {/* Empresa */}
-            <Group
-              gap={8}
-              wrap="nowrap"
-              style={{ cursor: p.companyId ? "pointer" : undefined }}
-              onClick={
-                p.companyId && eventId
-                  ? () => navigate(`/dashboard/${eventId}/company/${p.companyId}`)
-                  : undefined
-              }
-            >
-              {companyDoc?.logoUrl ? (
-                <Image
-                  src={companyDoc.logoUrl}
-                  alt={p.ownerCompany || ""}
-                  w={22}
-                  h={22}
-                  radius="sm"
-                  fit="contain"
-                />
-              ) : (
-                <ThemeIcon variant="light" radius="md" size={22}>
-                  <IconBuildingStore size={14} />
-                </ThemeIcon>
+                <Divider my={2} mt="auto" />
+
+                {/* CTA */}
+                <Button
+                  size="compact-sm"
+                  radius="md"
+                  fullWidth
+                  variant={isDisabled ? "light" : "filled"}
+                  onClick={() =>
+                    handleOpenModal(p.ownerUserId, p.ownerPhone || "", p)
+                  }
+                  disabled={isDisabled}
+                  loading={loadingId === `${p.id}-${p.ownerUserId}`}
+                >
+                  {ctaLabel}
+                </Button>
+              </Stack>
+            </>
+          ) : (
+            <Stack gap={8} style={{ height: "100%" }}>
+              {p.category && (
+                <Badge variant="light" size="xs" color="blue" radius="sm">
+                  {p.category}
+                </Badge>
               )}
-              <Text
-                size="xs"
-                fw={600}
-                lineClamp={1}
-                style={{ minWidth: 0 }}
-                td={p.companyId ? "underline" : undefined}
+              {/* Título */}
+              <Title order={5} lineClamp={2} style={{ minWidth: 0, lineHeight: 1.2 }}>
+                {p.title || "Producto"}
+              </Title>
+
+              {/* Empresa */}
+              <Group
+                gap={8}
+                wrap="nowrap"
+                style={{ cursor: p.companyId ? "pointer" : undefined }}
+                onClick={
+                  p.companyId && eventId
+                    ? () => navigate(`/dashboard/${eventId}/company/${p.companyId}`)
+                    : undefined
+                }
               >
-                {p.ownerCompany || "Sin empresa"}
+                {companyDoc?.logoUrl ? (
+                  <Image
+                    src={companyDoc.logoUrl}
+                    alt={p.ownerCompany || ""}
+                    w={22}
+                    h={22}
+                    radius="sm"
+                    fit="contain"
+                  />
+                ) : (
+                  <ThemeIcon variant="light" radius="md" size={22}>
+                    <IconBuildingStore size={14} />
+                  </ThemeIcon>
+                )}
+                <Text
+                  size="xs"
+                  fw={600}
+                  lineClamp={1}
+                  style={{ minWidth: 0 }}
+                  td={p.companyId ? "underline" : undefined}
+                >
+                  {p.ownerCompany || "Sin empresa"}
+                </Text>
+              </Group>
+
+              {/* Descripción */}
+              <Text
+                size="sm"
+                c="dimmed"
+                lineClamp={4}
+                style={{ whiteSpace: "pre-wrap", flex: 1 }}
+              >
+                {p.description || "Sin descripción."}
               </Text>
-            </Group>
 
-            {/* Descripción */}
-            <Text
-              size="xs"
-              c="dimmed"
-              lineClamp={3}
-              style={{ whiteSpace: "pre-wrap" }}
-            >
-              {p.description || "Sin descripción."}
-            </Text>
+              <Divider my={2} mt="auto" />
 
-            <Divider my={2} />
-
-            {/* CTA */}
-            <Button
-              mt="auto"
-              size="compact-sm"
-              radius="md"
-              fullWidth
-              variant={isDisabled ? "light" : "filled"}
-              onClick={() =>
-                handleOpenModal(p.ownerUserId, p.ownerPhone || "", p)
-              }
-              disabled={isDisabled}
-              loading={loadingId === `${p.id}-${p.ownerUserId}`}
-            >
-              {ctaLabel}
-            </Button>
-          </Stack>
+              {/* CTA */}
+              <Button
+                size="compact-sm"
+                radius="md"
+                fullWidth
+                variant={isDisabled ? "light" : "filled"}
+                onClick={() =>
+                  handleOpenModal(p.ownerUserId, p.ownerPhone || "", p)
+                }
+                disabled={isDisabled}
+                loading={loadingId === `${p.id}-${p.ownerUserId}`}
+              >
+                {ctaLabel}
+              </Button>
+            </Stack>
+          )}
         </Card>
       </Grid.Col>
     );

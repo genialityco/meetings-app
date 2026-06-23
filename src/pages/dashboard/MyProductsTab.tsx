@@ -18,9 +18,12 @@ export default function MyProductsTab({
   createProduct,
   updateProduct,
   deleteProduct,
+  policies,
 }: any) {
   const theme = useMantineTheme();
   const uid = currentUser?.uid;
+
+  const allowImageUpload = policies?.allowProductImageUpload !== false;
 
   const myProducts = useMemo(
     () => (products || []).filter((p: any) => p.ownerUserId === uid),
@@ -107,73 +110,58 @@ export default function MyProductsTab({
               shadow="sm"
               style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}
             >
-              <Card.Section>
-                {p.imageUrl ? (
-                  <Box style={{ position: "relative" }}>
-                    <Image
-                      src={p.imageUrl}
-                      height={140}
-                      fit="cover"
-                      alt={p.title}
-                    />
-                    {p.category && (
-                      <Badge
-                        variant="filled"
-                        radius="md"
-                        size="sm"
-                        style={{
-                          position: "absolute",
-                          top: 10,
-                          left: 10,
-                          background: "rgba(0,0,0,0.55)",
-                          border: "1px solid rgba(255,255,255,0.18)",
-                        }}
-                      >
-                        {p.category}
-                      </Badge>
-                    )}
-                  </Box>
-                ) : (
-                  <Box
-                    style={{
-                      height: 140,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      background: "var(--mantine-color-gray-1)",
-                    }}
-                  >
-                    <Avatar size={64} radius="md" color="gray">
-                      <IconPhoto size={32} />
-                    </Avatar>
-                    {p.category && (
-                      <Badge
-                        variant="filled"
-                        radius="md"
-                        size="sm"
-                        style={{
-                          position: "absolute",
-                          top: 10,
-                          left: 10,
-                          background: "rgba(0,0,0,0.55)",
-                          border: "1px solid rgba(255,255,255,0.18)",
-                        }}
-                      >
-                        {p.category}
-                      </Badge>
-                    )}
-                  </Box>
-                )}
-              </Card.Section>
-
-              <Stack gap={8} mt="sm" style={{ flex: 1 }}>
-                <Title order={6} lineClamp={2}>
-                  {p.title}
-                </Title>
-                <Text size="xs" c="dimmed" lineClamp={3} style={{ whiteSpace: "pre-wrap" }}>
-                  {p.description}
-                </Text>
-              </Stack>
+              {allowImageUpload && p.imageUrl ? (
+                <>
+                  <Card.Section>
+                    <Box style={{ position: "relative" }}>
+                      <Image
+                        src={p.imageUrl}
+                        height={140}
+                        fit="cover"
+                        alt={p.title}
+                      />
+                      {p.category && (
+                        <Badge
+                          variant="filled"
+                          radius="md"
+                          size="sm"
+                          style={{
+                            position: "absolute",
+                            top: 10,
+                            left: 10,
+                            background: "rgba(0,0,0,0.55)",
+                            border: "1px solid rgba(255,255,255,0.18)",
+                          }}
+                        >
+                          {p.category}
+                        </Badge>
+                      )}
+                    </Box>
+                  </Card.Section>
+                  <Stack gap={8} mt="sm" style={{ flex: 1 }}>
+                    <Title order={6} lineClamp={2}>
+                      {p.title}
+                    </Title>
+                    <Text size="xs" c="dimmed" lineClamp={3} style={{ whiteSpace: "pre-wrap" }}>
+                      {p.description}
+                    </Text>
+                  </Stack>
+                </>
+              ) : (
+                <Stack gap={6} style={{ flex: 1 }}>
+                  {p.category && (
+                    <Badge variant="light" size="xs" color="blue" radius="sm">
+                      {p.category}
+                    </Badge>
+                  )}
+                  <Title order={5} lineClamp={2} style={{ lineHeight: 1.2 }}>
+                    {p.title}
+                  </Title>
+                  <Text size="sm" c="dimmed" lineClamp={4} style={{ whiteSpace: "pre-wrap", flex: 1 }}>
+                    {p.description}
+                  </Text>
+                </Stack>
+              )}
 
               <Divider my="xs" />
 
@@ -223,13 +211,15 @@ export default function MyProductsTab({
           <TextInput label="Título" value={title} onChange={(e) => setTitle(e.currentTarget.value)} required radius="md" />
           <TextInput label="Categoría" placeholder="Ej: Tecnología, Alimentos, Servicios..." value={category} onChange={(e) => setCategory(e.currentTarget.value)} radius="md" />
           <Textarea label="Descripción" value={description} onChange={(e) => setDescription(e.currentTarget.value)} minRows={4} required radius="md" />
-          <FileInput
-            label="Imagen (opcional)"
-            value={imageFile}
-            onChange={setImageFile}
-            accept="image/png,image/jpeg,image/webp"
-            radius="md"
-          />
+          {allowImageUpload && (
+            <FileInput
+              label="Imagen (opcional)"
+              value={imageFile}
+              onChange={setImageFile}
+              accept="image/png,image/jpeg,image/webp"
+              radius="md"
+            />
+          )}
           <Group grow mt="sm">
             <Button variant="default" radius="md" onClick={() => setOpen(false)}>Cancelar</Button>
             <Button loading={saving} radius="md" onClick={onSave}>{editing ? "Guardar" : "Crear"}</Button>

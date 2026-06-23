@@ -808,8 +808,8 @@ const Landing = () => {
           },
         });
 
-        // Enviar mensaje de WhatsApp de bienvenida al registrarse por primera vez (solo si la política lo permite)
-        if (dataToUpdate.telefono && event?.config?.policies?.welcomeMessageEnabled === true) {
+        // Enviar mensaje de WhatsApp y Correo de bienvenida al registrarse por primera vez (solo si la política lo permite)
+        if (event?.config?.policies?.welcomeMessageEnabled === true) {
           try {
             const eventName = event?.eventName || "el evento";
 
@@ -832,20 +832,37 @@ const Landing = () => {
               }
             }
             
-            await sendWelcomeNotification({
-              phone: dataToUpdate.telefono,
-              name: dataToUpdate.nombre || "Asistente",
-              eventName: eventName,
-              badgeUrl,
-              headerImageUrl: event?.eventImage || event?.config?.landingTitleImage,
-              date: formattedDate,
-              time: formattedTime,
-              fallbackInfo: {
-                enabled: event?.config?.policies?.fallbackEmailOnWaFailure ?? false,
-                email: dataToUpdate.correo || "",
-                subject: `Bienvenido a ${eventName}`,
-              }
-            });
+            // 1. Enviar a WhatsApp
+            if (dataToUpdate.telefono) {
+              await sendWelcomeNotification({
+                phone: dataToUpdate.telefono,
+                name: dataToUpdate.nombre || "Asistente",
+                eventName: eventName,
+                badgeUrl,
+                headerImageUrl: event?.eventImage || event?.config?.landingTitleImage,
+                date: formattedDate,
+                time: formattedTime,
+                fallbackInfo: { enabled: false, email: "", subject: "" } // Evitar doble correo
+              });
+            }
+
+            // 2. Forzar envío de Correo
+            if (dataToUpdate.correo) {
+              await sendWelcomeNotification({
+                phone: "+570000000000", // Teléfono falso para forzar fallback al correo
+                name: dataToUpdate.nombre || "Asistente",
+                eventName: eventName,
+                badgeUrl,
+                headerImageUrl: event?.eventImage || event?.config?.landingTitleImage,
+                date: formattedDate,
+                time: formattedTime,
+                fallbackInfo: {
+                  enabled: true,
+                  email: dataToUpdate.correo,
+                  subject: `Bienvenido a ${eventName}`,
+                }
+              });
+            }
           } catch (err) {
             console.error("No se pudo enviar la notificación de bienvenida:", err);
           }

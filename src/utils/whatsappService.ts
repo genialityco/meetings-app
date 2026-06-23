@@ -514,6 +514,7 @@ export async function sendWelcomeNotification(options: {
   headerImageUrl?: string;
   date?: string;
   time?: string;
+  sendEmail?: boolean;
   fallbackInfo?: {
     enabled: boolean;
     email: string;
@@ -533,6 +534,7 @@ export async function sendWelcomeNotification(options: {
       userName: name,
       eventName: eventName,
       badgeUrl: badgeUrl,
+      sendEmail: true,
       headerImageUrl: headerImageUrl,
       date: date || "Por definir",
       time: time || "Por definir",

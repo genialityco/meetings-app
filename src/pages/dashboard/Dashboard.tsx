@@ -14,7 +14,7 @@ import { useCallback, useContext, useMemo, useState, useEffect } from "react";
 import { UserContext } from "../../context/UserContext";
 import DashboardHeader from "../../components/DashboardHeader";
 import type { Notification, NotificationType } from "./types";
-import { Modal, Text, Button, TextInput } from "@mantine/core";
+import { Modal, Text, Button, TextInput, Stack, Group, Loader } from "@mantine/core";
 
 const NOTIF_NAV_MAP: Record<string, { view: string; tab?: string }> = {
   meeting_request: { view: "activity", tab: "solicitudes" },
@@ -25,6 +25,26 @@ const NOTIF_NAV_MAP: Record<string, { view: string; tab?: string }> = {
   high_affinity: { view: "matches" }, // Navega a vista de matches
 };
 
+function formatTime(timeString?: string) {
+  if (!timeString) return "";
+  const [hourStr, minuteStr] = timeString.split(":");
+  let hour = parseInt(hourStr, 10);
+  const minute = parseInt(minuteStr, 10);
+  const suffix = hour >= 12 ? "p. m." : "a. m.";
+  hour = hour % 12 || 12;
+  return `${hour}:${minute.toString().padStart(2, "0")} ${suffix}`;
+}
+
+function formatDate(dateString?: string) {
+  if (!dateString) return "";
+  const [year, month, day] = dateString.split("-").map(Number);
+  const months = [
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
+  ];
+  return `${day} de ${months[month - 1]} de ${year}`;
+}
+
 export default function Dashboard() {
   const { eventId } = useParams();
   const dashboard = useDashboardData(eventId);
@@ -32,7 +52,10 @@ export default function Dashboard() {
 
   const [welcomeModalOpened, setWelcomeModalOpened] = useState(false);
   const [welcomePhone, setWelcomePhone] = useState("");
+  const [welcomeEmail, setWelcomeEmail] = useState("");
   const [phoneError, setPhoneError] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [isSendingWelcome, setIsSendingWelcome] = useState(false);
 
   useEffect(() => {
     // Si el usuario acaba de registrarse, no ha visto el popup, y la política está habilitada
@@ -42,6 +65,7 @@ export default function Dashboard() {
       dashboard.policies?.welcomeMessageEnabled === true
     ) {
       setWelcomePhone(currentUser.data.telefono || currentUser.data.contacto?.telefono || "");
+      setWelcomeEmail(currentUser.data.correo || "");
       setWelcomeModalOpened(true);
     }
   }, [currentUser?.data, dashboard.policies?.welcomeMessageEnabled]);
@@ -52,17 +76,29 @@ export default function Dashboard() {
       setPhoneError("Por favor ingresa un número de teléfono válido (mínimo 10 dígitos).");
       return;
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(welcomeEmail.trim())) {
+      setEmailError("Por favor ingresa un correo electrónico válido.");
+      return;
+    }
 
-    setWelcomeModalOpened(false);
-    if (currentUser?.uid) {
-      try {
+    setIsSendingWelcome(true);
+
+    try {
+      if (currentUser?.uid) {
         await updateUser(currentUser.uid, { 
           welcomePopupSeen: true,
-          telefono: welcomePhone
+          telefono: welcomePhone,
+          correo: welcomeEmail
         });
-      } catch (err) {
-        console.error("Error updating welcomePopupSeen:", err);
       }
+      
+      setWelcomeModalOpened(false);
+    } catch (err) {
+      console.error("Error updating welcomePopupSeen or sending message:", err);
+      // Cerrar de todos modos para no bloquear al usuario
+      setWelcomeModalOpened(false);
+    } finally {
+      setIsSendingWelcome(false);
     }
   };
 
@@ -194,26 +230,37 @@ export default function Dashboard() {
         radius="md"
         overlayProps={{ blur: 3 }}
       >
-        <Text size="sm" mb="sm">
-          ¡Hola <b>{currentUser?.data?.nombre}</b>! Nos alegra tenerte aquí.
-        </Text>
-        <Text size="sm" mb="md">
-          Recuerda que todas tus <b>reuniones</b> y <b>confirmaciones</b> serán notificadas a tu <b>WhatsApp</b> para que no te pierdas de nada. Por favor confirma tu número:
-        </Text>
-        <TextInput
-          label="Número de WhatsApp"
-          placeholder="Ej: +573001234567"
-          value={welcomePhone}
-          onChange={(e) => {
-            setWelcomePhone(e.currentTarget.value);
-            setPhoneError("");
-          }}
-          error={phoneError}
-          mb="md"
-        />
-        <Button fullWidth onClick={handleCloseWelcomeModal} color={dashboard.eventConfig?.primaryColor || "blue"}>
-          Confirmar y Entrar
-        </Button>
+        <Stack gap="md">
+          <Text size="sm">
+            ¡Hola <b>{currentUser?.data?.nombre}</b>! Nos alegra tenerte aquí.
+          </Text>
+          <Text size="sm">
+            Revisa tu WhatsApp y correo electrónico para verificar si te llegó el mensaje de bienvenida. Si no lo has recibido, por favor <b>corrige tu teléfono o tu correo</b> a continuación. Así garantizamos que recibirás todas tus notificaciones de reuniones.
+          </Text>
+          <TextInput
+            label="Número de WhatsApp"
+            placeholder="Ej: +573001234567"
+            value={welcomePhone}
+            onChange={(e) => {
+              setWelcomePhone(e.currentTarget.value);
+              setPhoneError("");
+            }}
+            error={phoneError}
+          />
+          <TextInput
+            label="Correo electrónico"
+            placeholder="tu@empresa.com"
+            value={welcomeEmail}
+            onChange={(e) => {
+              setWelcomeEmail(e.currentTarget.value);
+              setEmailError("");
+            }}
+            error={emailError}
+          />
+          <Button fullWidth onClick={handleCloseWelcomeModal} color={dashboard.eventConfig?.primaryColor || "blue"} loading={isSendingWelcome}>
+            Confirmar y Entrar
+          </Button>
+        </Stack>
       </Modal>
     </Container>
     </MantineProvider>

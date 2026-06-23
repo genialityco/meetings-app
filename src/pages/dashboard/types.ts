@@ -129,6 +129,8 @@ export interface EventPolicies {
   welcomeMessageEnabled?: boolean;
   /** Agrupar empresas por nombre (company_razonSocial) en lugar de por NIT */
   groupByRazonSocial?: boolean;
+  /** Permitir subir imagenes en los productos */
+  allowProductImageUpload?: boolean;
 }
 
 /** Empresa (events/{eventId}/companies/{nitNorm}) */
@@ -188,4 +190,5 @@ export const DEFAULT_POLICIES: EventPolicies = {
   dashboardNotificationsEnabled: true,
   welcomeMessageEnabled: false,
   groupByRazonSocial: false,
+  allowProductImageUpload: true,
 };

@@ -59,6 +59,7 @@ export default function EventPoliciesModal({
   const [dashboardNotificationsEnabled, setDashboardNotificationsEnabled] = useState(true);
   const [welcomeMessageEnabled, setWelcomeMessageEnabled] = useState(false);
   const [groupByRazonSocial, setGroupByRazonSocial] = useState(false);
+  const [allowProductImageUpload, setAllowProductImageUpload] = useState(true);
 
   // Empresas y asignación de mesas fijas
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -92,6 +93,7 @@ export default function EventPoliciesModal({
     setDashboardNotificationsEnabled(p.dashboardNotificationsEnabled ?? true);
     setWelcomeMessageEnabled(p.welcomeMessageEnabled ?? false);
     setGroupByRazonSocial(p.groupByRazonSocial ?? false);
+    setAllowProductImageUpload(p.allowProductImageUpload ?? true);
   }, [event]);
 
   // Cargar empresas cuando se abre el modal y tableMode es "fixed"
@@ -172,6 +174,7 @@ export default function EventPoliciesModal({
               dashboardNotificationsEnabled,
               welcomeMessageEnabled,
               groupByRazonSocial,
+              allowProductImageUpload,
             },
           },
         },
@@ -396,6 +399,13 @@ export default function EventPoliciesModal({
           description="Agrupa asistentes en la vista de empresas por 'company_razonSocial' en lugar de por su NIT"
           checked={groupByRazonSocial}
           onChange={(e) => setGroupByRazonSocial(e.currentTarget.checked)}
+        />
+
+        <Switch
+          label="Permitir imágenes en productos"
+          description="Permite a los usuarios subir imágenes al crear o editar productos"
+          checked={allowProductImageUpload}
+          onChange={(e) => setAllowProductImageUpload(e.currentTarget.checked)}
         />
 
         <Divider label="Vistas habilitadas en el dashboard" labelPosition="left" />
