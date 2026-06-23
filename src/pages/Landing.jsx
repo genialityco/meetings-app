@@ -1212,7 +1212,8 @@ const Landing = () => {
                     const dc = getDialCodeForIso2(newIso2);
                     const combined = phoneNumber ? `${dc} ${phoneNumber}` : dc;
                     handleDynamicChange(field.name, combined);
-                    setFormErrors((prev) => ({ ...prev, [field.name]: null }));
+                    const err = validateField(field, combined);
+                    setFormErrors((prev) => ({ ...prev, [field.name]: err }));
                   }}
                   style={{ width: 104 }}
                   searchable
@@ -1227,11 +1228,7 @@ const Landing = () => {
                     const num = e.target.value.replace(/\D/g, "");
                     const combined = `${dialCode} ${num}`.trim(); // dialCode viene del parsePhoneValue
                     handleDynamicChange(field.name, combined);
-                    const err =
-                      field.required && !num
-                        ? field.validation?.errorMessage ||
-                          `El campo ${field.label} es obligatorio`
-                        : null;
+                    const err = validateField(field, combined);
                     setFormErrors((prev) => ({
                       ...prev,
                       [field.name]: err,
