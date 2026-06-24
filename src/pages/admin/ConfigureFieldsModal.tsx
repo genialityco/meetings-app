@@ -763,44 +763,46 @@ export default function ConfigureFieldsModal({
       <Paper shadow="xs" p="md" mb="md">
         <Text mb={6}>Selecciona los campos a mostrar y su configuración:</Text>
 
-        {/* Encabezados de columnas */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(160px, 1.2fr) 100px minmax(140px, 1fr) minmax(140px, 1fr)",
-            gap: 8,
-            alignItems: "center",
-            padding: "4px 8px",
-            marginBottom: 4,
-            borderBottom: "2px solid #e2e8f0",
-          }}
-        >
-          <Text size="xs" fw={700} c="dimmed">Campo</Text>
-          <Text size="xs" fw={700} c="dimmed" ta="center">Obligatorio</Text>
-          <Text size="xs" fw={700} c="dimmed">Etiqueta</Text>
-          <Text size="xs" fw={700} c="dimmed">Placeholder</Text>
-        </div>
+        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+          <div style={{ minWidth: 600 }}>
+            {/* Encabezados de columnas */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(160px, 1.2fr) 100px minmax(140px, 1fr) minmax(140px, 1fr)",
+                gap: 8,
+                alignItems: "center",
+                padding: "4px 8px",
+                marginBottom: 4,
+                borderBottom: "2px solid #e2e8f0",
+              }}
+            >
+              <Text size="xs" fw={700} c="dimmed">Campo</Text>
+              <Text size="xs" fw={700} c="dimmed" ta="center">Obligatorio</Text>
+              <Text size="xs" fw={700} c="dimmed">Etiqueta</Text>
+              <Text size="xs" fw={700} c="dimmed">Placeholder</Text>
+            </div>
 
-        <Stack gap={2}>
-          {AVAILABLE_FIELDS.map((field) => {
-            if (event?.eventType === "Networking" && field.name === "tipoAsistente") {
-              return null;
-            }
-            const isActive = fields.some((f) => f.name === field.name);
-            return (
-              <div
-                key={field.name}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "minmax(160px, 1.2fr) 100px minmax(140px, 1fr) minmax(140px, 1fr)",
-                  gap: 8,
-                  alignItems: "center",
-                  padding: "6px 8px",
-                  borderRadius: 6,
-                  background: isActive ? "rgba(34,139,230,0.04)" : "transparent",
-                  borderBottom: "1px solid #f1f3f5",
-                }}
-              >
+            <Stack gap={2}>
+              {AVAILABLE_FIELDS.map((field) => {
+                if (event?.eventType === "Networking" && field.name === "tipoAsistente") {
+                  return null;
+                }
+                const isActive = fields.some((f) => f.name === field.name);
+                return (
+                  <div
+                    key={field.name}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "minmax(160px, 1.2fr) 100px minmax(140px, 1fr) minmax(140px, 1fr)",
+                      gap: 8,
+                      alignItems: "center",
+                      padding: "6px 8px",
+                      borderRadius: 6,
+                      background: isActive ? "rgba(34,139,230,0.04)" : "transparent",
+                      borderBottom: "1px solid #f1f3f5",
+                    }}
+                  >
                 <Checkbox
                   label={field.label}
                   checked={isActive}
@@ -843,10 +845,12 @@ export default function ConfigureFieldsModal({
                   size="xs"
                   placeholder="Placeholder"
                 />
-              </div>
-            );
-          })}
-        </Stack>
+                  </div>
+                );
+              })}
+            </Stack>
+          </div>
+        </div>
       </Paper>
 
       {/* -------- CONFIG STEPPER (MVP) -------- */}
