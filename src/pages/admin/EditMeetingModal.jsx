@@ -208,6 +208,7 @@ const EditMeetingModal = ({
               onChange={(val) => {
                 setSelectedTime(val);
                 setDuplicateError("");
+                if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
               }}
               required
               searchable
@@ -216,7 +217,10 @@ const EditMeetingModal = ({
               label="Selecciona la mesa"
               data={slotOptions}
               value={selectedSlotId}
-              onChange={setSelectedSlotId}
+              onChange={(val) => {
+                setSelectedSlotId(val);
+                if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+              }}
               required
               searchable
               disabled={!selectedTime}
@@ -233,7 +237,10 @@ const EditMeetingModal = ({
             label="Participante 1"
             data={assistantOptions}
             value={user1}
-            onChange={setUser1}
+            onChange={(val) => {
+              setUser1(val);
+              if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+            }}
             required
             searchable
             mb="sm"
@@ -243,7 +250,10 @@ const EditMeetingModal = ({
             label="Participante 2"
             data={assistant2Options}
             value={user2}
-            onChange={setUser2}
+            onChange={(val) => {
+              setUser2(val);
+              if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+            }}
             required
             searchable
             mb="sm"
@@ -300,7 +310,10 @@ const EditMeetingModal = ({
             label="Reunión para intercambiar"
             data={swapOptions}
             value={swapMeetingId}
-            onChange={setSwapMeetingId}
+            onChange={(val) => {
+              setSwapMeetingId(val);
+              if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+            }}
             searchable
             mb="sm"
           />

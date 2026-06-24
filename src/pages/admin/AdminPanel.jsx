@@ -276,8 +276,7 @@ const AdminPanel = () => {
 
                       <Stack gap="xs" align={isMobile ? "stretch" : "flex-end"}>
                         <Button
-                          component={Link}
-                          to={`/admin/event/${event.id}`}
+                          onClick={() => navigate(`/admin/event/${event.id}`)}
                           size={isMobile ? "xs" : "md"}
                           fullWidth={isMobile}
                         >

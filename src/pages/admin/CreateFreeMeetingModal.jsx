@@ -122,7 +122,11 @@ const CreateFreeMeetingModal = ({
             placeholder="Buscar asistente..."
             data={assistantOptions}
             value={user1}
-            onChange={(v) => { setUser1(v || ""); setDuplicateError(""); }}
+            onChange={(v) => { 
+              setUser1(v || ""); 
+              setDuplicateError(""); 
+              if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+            }}
             searchable
             clearable
             required
@@ -134,7 +138,11 @@ const CreateFreeMeetingModal = ({
           placeholder="Buscar asistente..."
           data={assistant2Options}
           value={user2}
-          onChange={(v) => { setUser2(v || ""); setDuplicateError(""); }}
+          onChange={(v) => { 
+            setUser2(v || ""); 
+            setDuplicateError(""); 
+            if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+          }}
           searchable
           clearable
           required

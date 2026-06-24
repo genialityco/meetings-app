@@ -18,13 +18,14 @@ import {
 import { IconBuildingCommunity, IconPlus, IconTrash, IconUserPlus, IconLogout, IconUsers } from "@tabler/icons-react";
 import { collection, getDocs, query, where, doc, deleteDoc, addDoc, updateDoc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { AdminAuthContext } from "../../context/AdminAuthContext";
 import CreateOrganizationModal from "./CreateOrganizationModal";
 import AdminsManagementModal from "./AdminsManagementModal";
 import { useMediaQuery } from "@mantine/hooks";
 
 const OrganizationsPanel = () => {
+  const navigate = useNavigate();
   const { adminUser, isSuperAdmin, adminProfile, logoutAdmin } = useContext(AdminAuthContext);
   const [organizations, setOrganizations] = useState([]);
   const [globalMessage, setGlobalMessage] = useState("");
@@ -169,7 +170,7 @@ const OrganizationsPanel = () => {
       </Group>
 
       <Group mb="xl">
-        <Button variant="light" component={Link} to="/admin/events" mr="sm">
+        <Button variant="light" onClick={() => navigate("/admin/events")} mr="sm">
           Ver Todos los Eventos (Heredados)
         </Button>
         <Button leftSection={<IconPlus size={16} />} onClick={() => setCreateModalOpened(true)}>
@@ -208,7 +209,7 @@ const OrganizationsPanel = () => {
                 </Text>
 
                 <Group grow>
-                  <Button component={Link} to={`/admin/organization/${org.id}`} variant="light">
+                  <Button onClick={() => navigate(`/admin/organization/${org.id}`)} variant="light">
                     Ver Eventos
                   </Button>
                   {isSuperAdmin && (

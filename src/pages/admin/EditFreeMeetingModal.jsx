@@ -88,7 +88,10 @@ const EditFreeMeetingModal = ({
           label="Participante 1"
           data={assistantOptions}
           value={user1}
-          onChange={(v) => setUser1(v || "")}
+          onChange={(v) => {
+            setUser1(v || "");
+            if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+          }}
           searchable
           required
         />
@@ -96,7 +99,10 @@ const EditFreeMeetingModal = ({
           label="Participante 2"
           data={assistant2Options}
           value={user2}
-          onChange={(v) => setUser2(v || "")}
+          onChange={(v) => {
+            setUser2(v || "");
+            if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+          }}
           searchable
           required
           disabled={!user1}

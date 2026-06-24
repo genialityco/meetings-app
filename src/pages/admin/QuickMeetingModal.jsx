@@ -120,6 +120,7 @@ const QuickMeetingModal = ({
             onChange={(val) => {
               setSelectedTime(val || "");
               setSelectedSlotId("");
+              if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
             }}
             required
             searchable
@@ -129,7 +130,10 @@ const QuickMeetingModal = ({
             label="Mesa"
             data={slotOptions}
             value={selectedSlotId}
-            onChange={(val) => setSelectedSlotId(val || "")}
+            onChange={(val) => {
+              setSelectedSlotId(val || "");
+              if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+            }}
             required
             searchable
             placeholder="Elige una mesa"
@@ -153,7 +157,10 @@ const QuickMeetingModal = ({
             label="Participante 1"
             data={assistantOptions}
             value={user1}
-            onChange={(v) => setUser1(v || "")}
+            onChange={(v) => {
+              setUser1(v || "");
+              if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+            }}
             required
             searchable
             clearable
@@ -165,7 +172,10 @@ const QuickMeetingModal = ({
           label={fixedAttendeeInfo ? "Segundo participante" : "Participante 2"}
           data={assistantOptions.filter((a) => a.value !== user1)}
           value={user2}
-          onChange={(v) => setUser2(v || "")}
+          onChange={(v) => {
+            setUser2(v || "");
+            if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+          }}
           required
           searchable
           clearable
