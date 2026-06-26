@@ -26,6 +26,7 @@ const CheckInPage = lazy(() => import("./pages/admin/CheckInPage.jsx"));
 const AdminLogin = lazy(() => import("./pages/admin/AdminLogin.tsx"));
 const AdminRegister = lazy(() => import("./pages/admin/AdminRegister.tsx"));
 const OptimizeAgendaPage = lazy(() => import("./pages/admin/OptimizeAgendaPage.tsx"));
+const EventSurveyResultsPage = lazy(() => import("./pages/admin/EventSurveyResultsPage.tsx"));
 const BadgePage = lazy(() => import("./pages/dashboard/BadgePage.tsx"));
 const QuickCheckInPage = lazy(() => import("./pages/admin/QuickCheckInPage.tsx"));
 
@@ -89,6 +90,10 @@ const App = () => {
         <Route
           path="/admin/event/:eventId/optimize-agenda"
           element={<ProtectedAdminRoute><OptimizeAgendaPage /></ProtectedAdminRoute>}
+        />
+        <Route
+          path="/admin/event/:eventId/event-survey"
+          element={<ProtectedAdminRoute><EventSurveyResultsPage /></ProtectedAdminRoute>}
         />
       </Routes>
     </Suspense>

@@ -105,6 +105,12 @@ export interface EventPolicies {
     companies: boolean;
     products: boolean;
   };
+  /**
+   * Orden de las pestañas principales del dashboard del asistente.
+   * Claves válidas: "chatbot" | "matches" | "attendees" | "companies" | "products" | "activity" | "survey".
+   * Las vistas habilitadas que no aparezcan aquí se muestran al final.
+   */
+  viewsOrder?: string[];
   /** Versión de la API de WhatsApp a usar */
   whatsappApiVersion?: "v1" | "v2";
   /** Reasignar automáticamente el slot cuando se cancela una reunión */
@@ -131,6 +137,25 @@ export interface EventPolicies {
   groupByRazonSocial?: boolean;
   /** Permitir subir imagenes en los productos */
   allowProductImageUpload?: boolean;
+}
+
+/** Campo de un formulario de encuesta (reutiliza el modelo de ConfigureSurveyModal) */
+export interface EventSurveyField {
+  name: string;
+  label: string;
+  type: "text" | "textarea" | "number" | "select" | "rating";
+  required: boolean;
+  options?: string[];
+  isDefault?: boolean;
+}
+
+/** Encuesta de satisfacción global del evento (event.config.eventSurvey) */
+export interface EventSurveyConfig {
+  /** Mostrar u ocultar la sección de encuesta en el dashboard del asistente */
+  enabled: boolean;
+  title?: string;
+  description?: string;
+  fields: EventSurveyField[];
 }
 
 /** Empresa (events/{eventId}/companies/{nitNorm}) */
@@ -171,13 +196,14 @@ export const DEFAULT_POLICIES: EventPolicies = {
     attendeeCard: ["empresa", "cargo", "correo", "descripcion", "interesPrincipal", "necesidad"],
     companyCard: ["cargo", "correo", "interesPrincipal", "necesidad"],
   },
-  uiViewsEnabled: { 
-    chatbot: false, 
-    matches: true, 
-    attendees: true, 
-    companies: true, 
-    products: true 
+  uiViewsEnabled: {
+    chatbot: false,
+    matches: true,
+    attendees: true,
+    companies: true,
+    products: true
   },
+  viewsOrder: ["chatbot", "matches", "attendees", "companies", "products", "activity", "survey"],
   whatsappApiVersion: "v1",
   autoReassignOnCancel: false,
   surveyBlockedFor: "none",

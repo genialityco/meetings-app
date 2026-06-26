@@ -14,6 +14,7 @@ import MeetingsTab from "./MeetingsTab";
 import RequestsTab from "./RequestsTab";
 import CalendarTab from "./CalendarTab";
 import MatchesTab from "./MatchesTab";
+import EventSurveyTab from "./EventSurveyTab";
 import { DEFAULT_POLICIES } from "./types";
 import { useMediaQuery } from "@mantine/hooks";
 import { trackTabChange } from "../../utils/analytics";
@@ -54,6 +55,17 @@ export default function TabsPanel({
   if (uiViews.companies) viewOptions.push({ value: "companies", label: "Empresas" });
   if (uiViews.products) viewOptions.push({ value: "products", label: "Productos" });
   viewOptions.push({ value: "activity", label: "Mis reuniones" });
+  const eventSurveyEnabled = !!dashboard.eventConfig?.eventSurvey?.enabled;
+  if (eventSurveyEnabled) viewOptions.push({ value: "survey", label: "Encuesta" });
+
+  // Reordenar según la configuración del admin (viewsOrder). Las vistas
+  // habilitadas que no estén en el orden configurado se muestran al final.
+  const viewsOrder: string[] = policies.viewsOrder || DEFAULT_POLICIES.viewsOrder || [];
+  viewOptions.sort((a, b) => {
+    const ia = viewsOrder.indexOf(a.value);
+    const ib = viewsOrder.indexOf(b.value);
+    return (ia === -1 ? Number.MAX_SAFE_INTEGER : ia) - (ib === -1 ? Number.MAX_SAFE_INTEGER : ib);
+  });
 
   const [topView, setTopView] = useState(viewOptions[0]?.value || "companies");
 
@@ -223,6 +235,15 @@ export default function TabsPanel({
           currentUser={dashboard.currentUser}
           affinityScores={dashboard.affinityScores}
           highlightEntityId={topView === "products" && persistentHighlight.entityType === "product" ? persistentHighlight.entityId : undefined}
+        />
+      )}
+
+      {topView === "survey" && (
+        <EventSurveyTab
+          eventId={eventId || ""}
+          uid={dashboard.uid}
+          currentUser={dashboard.currentUser}
+          eventConfig={dashboard.eventConfig}
         />
       )}
 

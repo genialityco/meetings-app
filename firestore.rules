@@ -96,6 +96,11 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
 
+    // ─── Encuesta de satisfacción del evento ─────────────────────────────────
+    match /eventSurveys/{doc} {
+      allow read, write: if request.auth != null;
+    }
+
     // ─── Chats de IA ─────────────────────────────────────────────────────────
     match /aiChats/{doc} {
       allow read, write: if request.auth != null;

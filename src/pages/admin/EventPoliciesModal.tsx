@@ -11,11 +11,25 @@ import {
   Text,
   Paper,
   Loader,
+  ActionIcon,
 } from "@mantine/core";
+import { IconArrowUp, IconArrowDown } from "@tabler/icons-react";
 import { doc, setDoc, collection, getDocs } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { DEFAULT_POLICIES } from "../dashboard/types";
 import type { EventPolicies, Company } from "../dashboard/types";
+
+/** Etiquetas legibles de cada vista del dashboard (para configurar su orden) */
+const VIEW_LABELS: Record<string, string> = {
+  chatbot: "Chatbot",
+  matches: "Matches",
+  attendees: "Asistentes",
+  companies: "Empresas",
+  products: "Productos",
+  activity: "Mis reuniones",
+  survey: "Encuesta",
+};
+const ALL_VIEW_KEYS = ["chatbot", "matches", "attendees", "companies", "products", "activity", "survey"];
 
 interface Props {
   opened: boolean;
@@ -41,6 +55,7 @@ export default function EventPoliciesModal({
   const [schedulingMode, setSchedulingMode] = useState<EventPolicies["schedulingMode"]>("manual");
   const [sellerRedirectToProducts, setSellerRedirectToProducts] = useState(false);
   const [uiViews, setUiViews] = useState(DEFAULT_POLICIES.uiViewsEnabled);
+  const [viewsOrder, setViewsOrder] = useState<string[]>(DEFAULT_POLICIES.viewsOrder ?? ALL_VIEW_KEYS);
   const [attendeeCardFields, setAttendeeCardFields] = useState<string[]>(
     DEFAULT_POLICIES.cardFieldsConfig!.attendeeCard
   );
@@ -75,6 +90,13 @@ export default function EventPoliciesModal({
     setSchedulingMode(p.schedulingMode ?? "manual");
     setSellerRedirectToProducts(p.sellerRedirectToProducts ?? false);
     setUiViews(p.uiViewsEnabled ?? DEFAULT_POLICIES.uiViewsEnabled);
+    // Normalizar: respetar el orden guardado y anexar vistas nuevas al final
+    const savedOrder: string[] = p.viewsOrder ?? DEFAULT_POLICIES.viewsOrder ?? ALL_VIEW_KEYS;
+    const normalized = [
+      ...savedOrder.filter((k) => ALL_VIEW_KEYS.includes(k)),
+      ...ALL_VIEW_KEYS.filter((k) => !savedOrder.includes(k)),
+    ];
+    setViewsOrder(normalized);
     setAttendeeCardFields(
       p.cardFieldsConfig?.attendeeCard ?? DEFAULT_POLICIES.cardFieldsConfig!.attendeeCard
     );
@@ -142,6 +164,16 @@ export default function EventPoliciesModal({
     return opts;
   })();
 
+  const moveView = (idx: number, dir: -1 | 1) => {
+    setViewsOrder((prev) => {
+      const next = [...prev];
+      const target = idx + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
+  };
+
   const handleSave = async () => {
     if (!event?.id) return;
     setSaving(true);
@@ -162,6 +194,7 @@ export default function EventPoliciesModal({
                 companyCard: companyCardFields,
               },
               uiViewsEnabled: uiViews,
+              viewsOrder,
               whatsappApiVersion,
               autoReassignOnCancel,
               surveyBlockedFor,
@@ -448,6 +481,51 @@ export default function EventPoliciesModal({
             setUiViews((prev) => ({ ...prev, products: e.currentTarget.checked }))
           }
         />
+
+        <Divider label="Orden de las pestañas" labelPosition="left" />
+        <Text size="sm" c="dimmed">
+          Define el orden en que aparecen las pestañas en el dashboard del asistente.
+          Solo se muestran las que estén habilitadas; la primera será la vista inicial.
+        </Text>
+        <Paper withBorder p="xs" radius="md">
+          <Stack gap={4}>
+            {viewsOrder.map((key, idx) => (
+              <Group
+                key={key}
+                justify="space-between"
+                wrap="nowrap"
+                px="xs"
+                py={6}
+                style={{ borderBottom: idx < viewsOrder.length - 1 ? "1px solid #f1f3f5" : undefined }}
+              >
+                <Text size="sm">
+                  <Text span fw={600} c="dimmed" mr={6}>{idx + 1}.</Text>
+                  {VIEW_LABELS[key] || key}
+                </Text>
+                <Group gap={2} wrap="nowrap">
+                  <ActionIcon
+                    size="sm"
+                    variant="subtle"
+                    onClick={() => moveView(idx, -1)}
+                    disabled={idx === 0}
+                    aria-label="Subir"
+                  >
+                    <IconArrowUp size={16} />
+                  </ActionIcon>
+                  <ActionIcon
+                    size="sm"
+                    variant="subtle"
+                    onClick={() => moveView(idx, 1)}
+                    disabled={idx === viewsOrder.length - 1}
+                    aria-label="Bajar"
+                  >
+                    <IconArrowDown size={16} />
+                  </ActionIcon>
+                </Group>
+              </Group>
+            ))}
+          </Stack>
+        </Paper>
 
         <Divider label="Campos en tarjetas" labelPosition="left" />
         <Text size="sm" c="dimmed">

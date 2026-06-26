@@ -43,7 +43,7 @@ interface Props {
   inline?: boolean;
 }
 
-function FieldEditor({
+export function FieldEditor({
   fields,
   setFields,
 }: {

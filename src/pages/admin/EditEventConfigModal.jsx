@@ -19,7 +19,7 @@ import {
   Title,
   Grid
 } from "@mantine/core";
-import { IconSettings, IconCalendarTime, IconPalette, IconCalendarEvent, IconUsers, IconChecklist } from "@tabler/icons-react";
+import { IconSettings, IconCalendarTime, IconPalette, IconCalendarEvent, IconUsers, IconChecklist, IconStar } from "@tabler/icons-react";
 import { doc, setDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../../firebase/firebaseConfig";
@@ -27,6 +27,7 @@ import QRCode from "qrcode";
 import ConfigureFieldsModal from "./ConfigureFieldsModal";
 import EventPoliciesModal from "./EventPoliciesModal";
 import ConfigureSurveyModal from "./ConfigureSurveyModal";
+import ConfigureEventSurveyModal from "./ConfigureEventSurveyModal";
 
 // Aux: "HH:mm" a minutos
 function timeToMinutes(timeStr) {
@@ -366,6 +367,7 @@ const EditEventConfigModal = ({
           <Tabs.Tab value="campos" leftSection={<IconUsers size={16} />}>Campos</Tabs.Tab>
           <Tabs.Tab value="politicas" leftSection={<IconSettings size={16} />}>Políticas</Tabs.Tab>
           <Tabs.Tab value="encuesta" leftSection={<IconChecklist size={16} />}>Encuesta</Tabs.Tab>
+          <Tabs.Tab value="encuesta-evento" leftSection={<IconStar size={16} />}>Encuesta evento</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="general">
@@ -790,6 +792,20 @@ const EditEventConfigModal = ({
             Define las encuestas de satisfacción para compradores y vendedores.
           </Alert>
           <ConfigureSurveyModal
+            opened={true}
+            onClose={onClose}
+            event={event}
+            refreshEvents={refreshEvents}
+            setGlobalMessage={setGlobalMessage}
+            inline={true}
+          />
+        </Tabs.Panel>
+
+        <Tabs.Panel value="encuesta-evento">
+          <Alert title="Encuesta de satisfacción del evento" color="blue" variant="light" mb="md" mt="md">
+            Encuesta global del evento (no por reunión). Actívala para mostrarla en el dashboard del asistente y define sus campos.
+          </Alert>
+          <ConfigureEventSurveyModal
             opened={true}
             onClose={onClose}
             event={event}

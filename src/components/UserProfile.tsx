@@ -97,8 +97,8 @@ const UserProfile = () => {
 
       // 1) Foto (si hay archivo nuevo)
       if (dataToUpdate._photoFile) {
+        setPhotoUploadStatus("uploading");
         try {
-          setPhotoUploadStatus("uploading");
           const photoURL = await uploadProfilePicture(dataToUpdate._photoFile, uid);
           dataToUpdate.photoURL = photoURL;
           delete dataToUpdate._photoFile;
@@ -107,8 +107,7 @@ const UserProfile = () => {
           console.error("Error subiendo imagen:", e);
           setPhotoUploadStatus("error");
           setPhotoUploadError("No se pudo subir la foto. Intenta de nuevo.");
-          // si falla, no bloqueamos guardar el resto:
-          delete dataToUpdate._photoFile;
+          throw e;
         }
       }
 

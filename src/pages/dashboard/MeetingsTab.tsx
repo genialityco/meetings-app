@@ -50,6 +50,7 @@ import {
   getDocs,
   query,
   setDoc,
+  updateDoc,
   where,
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
@@ -57,6 +58,7 @@ import { UserContext } from "../../context/UserContext";
 import { showNotification } from "@mantine/notifications";
 import { trackEvent } from "../../utils/analytics";
 import { DEFAULT_SURVEY_FIELDS } from "../../pages/admin/ConfigureSurveyModal";
+import OptimisticCheckbox from "../../components/OptimisticCheckbox";
 import { Meeting, ParticipantInfo, EventPolicies } from "./types";
 
 interface SurveyField {
@@ -263,6 +265,23 @@ export default function MeetingsTab({
     }
     return null;
   }
+
+  const toggleMeetingCompleted = async (meeting: Meeting, newValue: boolean) => {
+    try {
+      await updateDoc(
+        doc(db, "events", meeting.eventId, "meetings", meeting.id),
+        { completed: newValue }
+      );
+    } catch (err) {
+      console.error("Error marcando reunión como realizada:", err);
+      showNotification({
+        title: "Error",
+        message: "No se pudo actualizar el estado de la reunión.",
+        color: "red",
+      });
+      throw err;
+    }
+  };
 
   const handleCancelMeeting = async (meeting: Meeting) => {
     if (!window.confirm("¿Seguro que deseas cancelar esta reunión?")) return;
@@ -523,6 +542,18 @@ export default function MeetingsTab({
                         </Button>
 
                         <Divider />
+
+                        {!isStandby && (
+                          <OptimisticCheckbox
+                            size="sm"
+                            color="green"
+                            label="Reunión realizada"
+                            checked={!!meeting.completed}
+                            onChange={(_e, newValue) =>
+                              toggleMeetingCompleted(meeting, newValue)
+                            }
+                          />
+                        )}
 
                         <Group grow gap="xs">
                           <Button

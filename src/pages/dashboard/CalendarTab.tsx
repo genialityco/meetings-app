@@ -39,6 +39,7 @@ import { doc, updateDoc, collection, query, where, getDocs, addDoc, deleteDoc, o
 import { db } from "../../firebase/firebaseConfig";
 import { showNotification } from "@mantine/notifications";
 import { DEFAULT_SURVEY_FIELDS } from "../admin/ConfigureSurveyModal";
+import OptimisticCheckbox from "../../components/OptimisticCheckbox";
 
 interface CalendarTabProps {
   acceptedMeetings: any[];
@@ -274,6 +275,22 @@ export default function CalendarTab({
   };
 
   const surveyExists = (meetingId: string) => !!userSurveys[meetingId];
+
+  const toggleMeetingCompleted = async (meeting: any, newValue: boolean) => {
+    try {
+      await updateDoc(doc(db, "events", eventId, "meetings", meeting.id), {
+        completed: newValue,
+      });
+    } catch (err) {
+      console.error("Error marcando reunión como realizada:", err);
+      showNotification({
+        title: "Error",
+        message: "No se pudo actualizar el estado de la reunión.",
+        color: "red",
+      });
+      throw err;
+    }
+  };
 
   // Bloquear slot
   const handleBlockSlot = async (time: string) => {
@@ -705,6 +722,16 @@ export default function CalendarTab({
                                           📋 {surveyExists(meeting.id) ? "Ver/editar encuesta" : "Llenar encuesta"}
                                         </Button>
                                       </Tooltip>
+                                      <OptimisticCheckbox
+                                        size="xs"
+                                        color="green"
+                                        label="Realizada"
+                                        checked={!!meeting.completed}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onChange={(_e, newValue) =>
+                                          toggleMeetingCompleted(meeting, newValue)
+                                        }
+                                      />
                                     </>
                                   )}
                                 </Group>
@@ -903,6 +930,15 @@ export default function CalendarTab({
               {selectedMeeting.type === "accepted" && participant && (
                 <>
                   <Divider />
+                  <OptimisticCheckbox
+                    size="sm"
+                    color="green"
+                    label="Reunión realizada"
+                    checked={!!selectedMeeting.completed}
+                    onChange={(_e, newValue) =>
+                      toggleMeetingCompleted(selectedMeeting, newValue)
+                    }
+                  />
                   <Group grow gap="xs">
                     {downloadVCard && (
                       <Button

@@ -165,17 +165,16 @@ const DashboardHeader = ({
 
       // Photo upload
       if (dataToUpdate._photoFile) {
+        setPhotoUploadStatus("uploading");
         try {
-          setPhotoUploadStatus("uploading");
           const photoURL = await uploadProfilePicture(dataToUpdate._photoFile, uid);
           dataToUpdate.photoURL = photoURL;
           delete dataToUpdate._photoFile;
           setPhotoUploadStatus("done");
         } catch (e) {
-          console.error("Error subiendo imagen:", e);
           setPhotoUploadStatus("error");
           setPhotoUploadError("No se pudo subir la foto. Intenta de nuevo.");
-          delete dataToUpdate._photoFile;
+          throw e;
         }
       }
 

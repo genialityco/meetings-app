@@ -17,7 +17,12 @@
       "Bash(npx eslint *)",
       "Bash(dir src *)",
       "Bash(findstr /E \"\\(types\\\\.ts|EventPoliciesModal\\\\.tsx|whatsappService\\\\.ts\\)\")",
-      "Bash(node -e \"const d = require\\('country-telephone-data'\\); console.log\\(JSON.stringify\\(d.allCountries.slice\\(0,3\\)\\)\\)\")"
+      "Bash(node -e \"const d = require\\('country-telephone-data'\\); console.log\\(JSON.stringify\\(d.allCountries.slice\\(0,3\\)\\)\\)\")",
+      "PowerShell(Get-ChildItem \"d:\\\\gen.iality\\\\Proyectos\\\\my-meetings-app\\\\\" -Name | Where-Object { $_ -match \"firebase|storage|firestore\" })",
+      "Bash(sed -i 's/admin.cert\\(sa\\)/admin.credential.cert\\(sa\\)/' _read-event-tipo.js)",
+      "Bash(node _read-event-tipo.js)",
+      "Bash(firebase --version)",
+      "Bash(firebase deploy *)"
     ],
     "additionalDirectories": [
       "d:\\gen.iality\\Proyectos\\agenda-optimizer-api\\app",
