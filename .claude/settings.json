@@ -22,7 +22,14 @@
       "Bash(sed -i 's/admin.cert\\(sa\\)/admin.credential.cert\\(sa\\)/' _read-event-tipo.js)",
       "Bash(node _read-event-tipo.js)",
       "Bash(firebase --version)",
-      "Bash(firebase deploy *)"
+      "Bash(firebase deploy *)",
+      "Bash(ls firestore.rules firebase.json)",
+      "Bash(cat firebase.json)",
+      "Bash(node \"C:/Users/pipe0/AppData/Local/Temp/claude/d--gen-iality-Proyectos-my-meetings-app/b47c0ba9-2a75-492a-bfd2-31f78d8f3ee5/scratchpad/diag-meetings.js\")",
+      "Bash(ls node_modules/firebase-admin)",
+      "Bash(ls scripts/node_modules/firebase-admin)",
+      "Bash(node diag-meetings.js)",
+      "Bash(rm -f scripts/diag-meetings.js)"
     ],
     "additionalDirectories": [
       "d:\\gen.iality\\Proyectos\\agenda-optimizer-api\\app",

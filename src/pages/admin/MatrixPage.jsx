@@ -1063,6 +1063,17 @@ const MatrixPage = () => {
   }, [agenda, editModal.meeting, editModal.slot]);
   //------------------------------------------------------------
 
+  // Configuración de notificaciones WhatsApp alineada con las políticas del evento.
+  // Sin esto, la matriz enviaba siempre por API v1 e ignoraba el toggle de notificaciones.
+  const getWaConfig = () => {
+    const pol = dashboard.policies || config?.config?.policies || {};
+    return {
+      version: pol.whatsappApiVersion || "v1",
+      enabled: pol.whatsappNotificationsEnabled !== false,
+      eventName: config?.eventName || dashboard.eventName || "Evento",
+    };
+  };
+
   // ------------ FUNCIONES DE CREACION, EDICIÓN, CANCELACIÓN, INTERCAMBIO ------------
   const handleQuickCreateMeeting = async ({
     user1,
@@ -1120,27 +1131,36 @@ const MatrixPage = () => {
       const slotStr = `${slot.startTime} - ${slot.endTime}`;
       const mesa = slot.tableNumber;
 
-      if (receiver && requester) {
-        // WhatsApp
-        dashboard.sendMeetingAcceptedWhatsapp(receiver.telefono, requester, {
-          timeSlot: slotStr,
-          tableAssigned: mesa,
-          meetingDate: meetingDate,
-        });
-        dashboard.sendMeetingAcceptedWhatsapp(requester.telefono, receiver, {
-          timeSlot: slotStr,
-          tableAssigned: mesa,
-          meetingDate: meetingDate,
-        });
-        // SMS
-        dashboard.sendSms(
-          `¡Tu reunión ha sido aceptada!\nCon: ${requester.nombre}\nEmpresa: ${requester.empresa}\nHorario: ${slotStr}\nMesa: ${mesa}`,
+      const wa = getWaConfig();
+      if (wa.enabled && receiver && requester) {
+        // WhatsApp (respeta la versión de API configurada en las políticas)
+        dashboard.sendMeetingAcceptedWhatsapp(
           receiver.telefono,
+          requester,
+          { timeSlot: slotStr, tableAssigned: mesa, meetingDate: meetingDate },
+          wa.eventName,
+          requester.nombre,
+          wa.version,
         );
-        dashboard.sendSms(
-          `¡Tu reunión ha sido aceptada!\nCon: ${receiver.nombre}\nEmpresa: ${receiver.empresa}\nHorario: ${slotStr}\nMesa: ${mesa}`,
+        dashboard.sendMeetingAcceptedWhatsapp(
           requester.telefono,
+          receiver,
+          { timeSlot: slotStr, tableAssigned: mesa, meetingDate: meetingDate },
+          wa.eventName,
+          receiver.nombre,
+          wa.version,
         );
+        // SMS solo en v1 (en v2 el envío dedicado de confirmación ya cubre el aviso)
+        if (wa.version === "v1") {
+          dashboard.sendSms(
+            `¡Tu reunión ha sido aceptada!\nCon: ${requester.nombre}\nEmpresa: ${requester.empresa}\nHorario: ${slotStr}\nMesa: ${mesa}`,
+            receiver.telefono,
+          );
+          dashboard.sendSms(
+            `¡Tu reunión ha sido aceptada!\nCon: ${receiver.nombre}\nEmpresa: ${receiver.empresa}\nHorario: ${slotStr}\nMesa: ${mesa}`,
+            requester.telefono,
+          );
+        }
       }
 
       setGlobalMessage("¡Reunión creada correctamente!");
@@ -1288,25 +1308,34 @@ const MatrixPage = () => {
       const mesa = slot.tableNumber;
       const meetingDate = slot.date || selectedDate;
 
-      if (receiver && requester) {
-        dashboard.sendMeetingAcceptedWhatsapp(receiver.telefono, requester, {
-          timeSlot: nuevoSlotStr,
-          tableAssigned: mesa,
-          meetingDate: meetingDate,
-        });
-        dashboard.sendMeetingAcceptedWhatsapp(requester.telefono, receiver, {
-          timeSlot: nuevoSlotStr,
-          tableAssigned: mesa,
-          meetingDate: meetingDate,
-        });
-        dashboard.sendSms(
-          `¡Tu reunión ha sido actualizada!\nCon: ${requester.nombre}\nEmpresa: ${requester.empresa}\nHorario: ${nuevoSlotStr}\nMesa: ${mesa}`,
+      const wa = getWaConfig();
+      if (wa.enabled && receiver && requester) {
+        dashboard.sendMeetingAcceptedWhatsapp(
           receiver.telefono,
+          requester,
+          { timeSlot: nuevoSlotStr, tableAssigned: mesa, meetingDate: meetingDate },
+          wa.eventName,
+          requester.nombre,
+          wa.version,
         );
-        dashboard.sendSms(
-          `¡Tu reunión ha sido actualizada!\nCon: ${receiver.nombre}\nEmpresa: ${receiver.empresa}\nHorario: ${nuevoSlotStr}\nMesa: ${mesa}`,
+        dashboard.sendMeetingAcceptedWhatsapp(
           requester.telefono,
+          receiver,
+          { timeSlot: nuevoSlotStr, tableAssigned: mesa, meetingDate: meetingDate },
+          wa.eventName,
+          receiver.nombre,
+          wa.version,
         );
+        if (wa.version === "v1") {
+          dashboard.sendSms(
+            `¡Tu reunión ha sido actualizada!\nCon: ${requester.nombre}\nEmpresa: ${requester.empresa}\nHorario: ${nuevoSlotStr}\nMesa: ${mesa}`,
+            receiver.telefono,
+          );
+          dashboard.sendSms(
+            `¡Tu reunión ha sido actualizada!\nCon: ${receiver.nombre}\nEmpresa: ${receiver.empresa}\nHorario: ${nuevoSlotStr}\nMesa: ${mesa}`,
+            requester.telefono,
+          );
+        }
       }
 
       setGlobalMessage("¡Reunión actualizada correctamente!");
@@ -1341,8 +1370,9 @@ const MatrixPage = () => {
         cancelledMeeting,
       );
 
-      // Notifica por WhatsApp y SMS a todos los participantes
-      for (const participantId of cancelledMeeting.participants) {
+      // Notifica por WhatsApp a todos los participantes
+      const waCancel = getWaConfig();
+      for (const participantId of waCancel.enabled ? cancelledMeeting.participants : []) {
         const participant = asistentes.find((a) => a.id === participantId);
         const otherId = cancelledMeeting.participants.find(
           (id) => id !== participantId,
@@ -1354,7 +1384,7 @@ const MatrixPage = () => {
               `[handleCancelMeeting] Notificando a participante (${participantId}):`,
               participant,
             );
-            // WhatsApp
+            // WhatsApp (respeta la versión de API configurada en las políticas)
             dashboard.sendMeetingCancelledWhatsapp(
               participant.telefono,
               other,
@@ -1363,6 +1393,9 @@ const MatrixPage = () => {
                 tableAssigned: cancelledMeeting.tableAssigned,
                 meetingDate: cancelledMeeting.meetingDate || selectedDate,
               },
+              waCancel.eventName,
+              undefined,
+              waCancel.version,
             );
             // // SMS
             // dashboard.sendSms(
@@ -1456,11 +1489,12 @@ const MatrixPage = () => {
             const requester = asistentes.find((a) => a.id === requesterId);
             const meetingDate = slotLiberado.date || selectedDate;
 
-            if (receiver && requester) {
+            const waReassign = getWaConfig();
+            if (waReassign.enabled && receiver && requester) {
               console.log(
-                `[handleCancelMeeting] Notificando a ambas partes por WhatsApp/SMS...`,
+                `[handleCancelMeeting] Notificando a ambas partes por WhatsApp...`,
               );
-              // WhatsApp
+              // WhatsApp (respeta la versión de API configurada en las políticas)
               dashboard.sendMeetingAcceptedWhatsapp(
                 receiver.telefono,
                 requester,
@@ -1469,6 +1503,9 @@ const MatrixPage = () => {
                   tableAssigned: slotLiberado.tableNumber,
                   meetingDate: meetingDate,
                 },
+                waReassign.eventName,
+                requester.nombre,
+                waReassign.version,
               );
               dashboard.sendMeetingAcceptedWhatsapp(
                 requester.telefono,
@@ -1478,16 +1515,20 @@ const MatrixPage = () => {
                   tableAssigned: slotLiberado.tableNumber,
                   meetingDate: meetingDate,
                 },
+                waReassign.eventName,
+                receiver.nombre,
+                waReassign.version,
               );
-              // SMS
-              dashboard.sendSms(
-                `¡Tu reunión ha sido aceptada!\nCon: ${requester.nombre}\nEmpresa: ${requester.empresa}\nHorario: ${slotStr}\nMesa: ${slotLiberado.tableNumber}`,
-                receiver.telefono,
-              );
-              dashboard.sendSms(
-                `¡Tu reunión ha sido aceptada!\nCon: ${receiver.nombre}\nEmpresa: ${receiver.empresa}\nHorario: ${slotStr}\nMesa: ${slotLiberado.tableNumber}`,
-                requester.telefono,
-              );
+              if (waReassign.version === "v1") {
+                dashboard.sendSms(
+                  `¡Tu reunión ha sido aceptada!\nCon: ${requester.nombre}\nEmpresa: ${requester.empresa}\nHorario: ${slotStr}\nMesa: ${slotLiberado.tableNumber}`,
+                  receiver.telefono,
+                );
+                dashboard.sendSms(
+                  `¡Tu reunión ha sido aceptada!\nCon: ${receiver.nombre}\nEmpresa: ${receiver.empresa}\nHorario: ${slotStr}\nMesa: ${slotLiberado.tableNumber}`,
+                  requester.telefono,
+                );
+              }
             }
 
             setGlobalMessage(

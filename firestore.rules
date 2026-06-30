@@ -43,7 +43,26 @@ service cloud.firestore {
       // Solo owners o super-admin pueden modificar/eliminar
       allow update, delete: if request.auth != null && canManageEvent(request.auth.uid, eventId);
 
-      // Sub-colecciones del evento (meetings, agenda, companies, products, etc.)
+      // Sub-colecciones que gestionan los asistentes autenticados
+      // (enviar/aceptar reuniones, reservar agenda, sus productos y su empresa)
+      match /meetings/{meetingId} {
+        allow read: if true;
+        allow write: if request.auth != null;
+      }
+      match /agenda/{slotId} {
+        allow read: if true;
+        allow write: if request.auth != null;
+      }
+      match /products/{productId} {
+        allow read: if true;
+        allow write: if request.auth != null;
+      }
+      match /companies/{companyId=**} {
+        allow read: if true;
+        allow write: if request.auth != null;
+      }
+
+      // Resto de subcolecciones del evento: solo owners o super-admin
       match /{subcollection}/{document=**} {
         allow read: if true;
         allow write: if request.auth != null && canManageEvent(request.auth.uid, eventId);
@@ -79,6 +98,12 @@ service cloud.firestore {
       allow read: if true;
       // Usuarios autenticados (anónimos o manual) pueden escribir
       allow write: if request.auth != null;
+
+      // Subcolecciones del usuario (blockedSlots, matches, affinityScores)
+      match /{document=**} {
+        allow read: if true;
+        allow write: if request.auth != null;
+      }
     }
 
     // ─── Locks (reservas de agenda) ──────────────────────────────────────────
