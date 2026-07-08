@@ -638,16 +638,13 @@ const MatrixPage = () => {
     });
   }, [config, eventId]);
 
-  // Carga asistentes
+  // Suscripción a asistentes (real-time, para reflejar usuarios nuevos al instante)
   useEffect(() => {
     if (!eventId) return;
-    (async () => {
-      const snap = await getDocs(
-        query(collection(db, "users"), where("eventId", "==", eventId)),
-      );
-      const loaded = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setAsistentes(loaded);
-    })();
+    const q = query(collection(db, "users"), where("eventId", "==", eventId));
+    return onSnapshot(q, (snap) => {
+      setAsistentes(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
   }, [eventId]);
 
   // Map para info rápida
