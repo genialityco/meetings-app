@@ -26,6 +26,7 @@ import {
   ActionIcon,
   Loader,
   Group,
+  Switch,
 } from "@mantine/core";
 import { useDebouncedValue, useMediaQuery } from "@mantine/hooks";
 import { Virtuoso } from "react-virtuoso";
@@ -531,6 +532,8 @@ const MatrixPage = () => {
   const [asistentes, setAsistentes] = useState([]);
   const [typeFilter, setTypeFilter] = useState("");
   const [selectedTableFilter, setSelectedTableFilter] = useState("");
+  const [showCurrentTimeOnly, setShowCurrentTimeOnly] = useState(false);
+  const [now, setNow] = useState(() => new Date());
   const [quickModal, setQuickModal] = useState({
     opened: false,
     slotsDisponibles: [],
@@ -608,6 +611,12 @@ const MatrixPage = () => {
       }
     })();
   }, [eventId]);
+
+  // Reloj que se actualiza cada 30s, usado para el filtro "solo hora actual"
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(id);
+  }, []);
 
   // Suscripción a agenda
   useEffect(() => {
@@ -821,6 +830,34 @@ const MatrixPage = () => {
     }
     return rows;
   }, [config, selectedDate, timeSlots]);
+
+  // Mapa startTime -> endTime, tomado de los slots reales de la agenda del día
+  const timeSlotEndMap = useMemo(() => {
+    const map = {};
+    agenda
+      .filter((s) => !s.date || s.date === selectedDate)
+      .forEach((s) => {
+        if (s.startTime && s.endTime && !map[s.startTime]) {
+          map[s.startTime] = s.endTime;
+        }
+      });
+    return map;
+  }, [agenda, selectedDate]);
+
+  const nowHHMM = useMemo(() => {
+    return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  }, [now]);
+
+  // Filas visibles en "Por Mesas": todas, o solo la del horario actual si el switch está activo
+  const visibleSlotsWithBreaks = useMemo(() => {
+    if (!showCurrentTimeOnly) return slotsWithBreaks;
+    return slotsWithBreaks.filter((row) => {
+      if (row.type !== "slot") return false;
+      const end = timeSlotEndMap[row.time];
+      if (!end) return false;
+      return nowHHMM >= row.time && nowHHMM < end;
+    });
+  }, [slotsWithBreaks, showCurrentTimeOnly, timeSlotEndMap, nowHHMM]);
 
   // Memoize matriz por mesas - filtrar por fecha seleccionada
   // Mapa name -> label de todos los campos de surveyConfig
@@ -1948,6 +1985,13 @@ const MatrixPage = () => {
               style={{ maxWidth: 200 }}
               clearable
             />
+            <Switch
+              label="Solo hora actual"
+              checked={showCurrentTimeOnly}
+              onChange={(e) =>
+                setShowCurrentTimeOnly(e.currentTarget.checked)
+              }
+            />
           </Flex>
           <div style={{ height: "calc(100vh - 280px)" }}>
             <Virtuoso
@@ -2015,7 +2059,7 @@ const MatrixPage = () => {
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
-                      {slotsWithBreaks.map((row, ri) => {
+                      {visibleSlotsWithBreaks.map((row, ri) => {
                         if (row.type === "break") {
                           return (
                             <Table.Tr
