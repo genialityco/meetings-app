@@ -194,7 +194,7 @@ export default function Dashboard() {
         currentRequesterName={dashboard.currentRequesterName}
         chosenSlot={dashboard.chosenSlot}
         onCancel={() => dashboard.setConfirmModalOpened(false)}
-        onAccept={() => {
+        onAccept={async () => {
           dashboard.setConfirmModalOpened(false);
           dashboard.setSlotModalOpened(false);
 
@@ -206,7 +206,14 @@ export default function Dashboard() {
             return;
           }
 
-          dashboard.confirmAcceptWithSlot(idToUse, dashboard.chosenSlot);
+          const success = await dashboard.confirmAcceptWithSlot(
+            idToUse,
+            dashboard.chosenSlot,
+          );
+
+          if (success) {
+            setViewRequest({ view: "activity", tab: "agenda", _k: Date.now() });
+          }
         }}
       />
 

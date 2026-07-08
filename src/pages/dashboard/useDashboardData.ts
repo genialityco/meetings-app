@@ -17,7 +17,7 @@ import {
 import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
 import { AgendaSlot, Assistant, Meeting, Notification, Company, EventPolicies, DEFAULT_POLICIES, MeetingContext } from "./types";
-import { showNotification } from "@mantine/notifications";
+import { showNotification, notifications as mantineNotifications } from "@mantine/notifications";
 import { serverTimestamp } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { storage } from "../../firebase/firebaseConfig";
@@ -1635,7 +1635,7 @@ export function useDashboardData(eventId?: string) {
   }
 
   // Confirmar la selección de slot para la reunión
-  const confirmAcceptWithSlot = async (meetingId: string, slot: any) => {
+  const confirmAcceptWithSlot = async (meetingId: string, slot: any): Promise<boolean> => {
     // Helpers locales (evitas duplicados en el archivo)
     const hmToMinutes = (hm: string) => {
       const [h, m] = hm.split(":").map(Number);
@@ -1654,11 +1654,29 @@ export function useDashboardData(eventId?: string) {
 
     setConfirmLoading(true);
     const isEdit = meetingToEdit === meetingId;
+    const notifId = `accept-meeting-${meetingId}`;
+
+    mantineNotifications.show({
+      id: notifId,
+      title: isEdit ? "Actualizando reunión" : "Agendando reunión",
+      message: "Estamos confirmando el horario y la mesa, espera un momento...",
+      loading: true,
+      autoClose: false,
+      withCloseButton: false,
+    });
 
     try {
       if (!eventId || !meetingId || !slot?.id) {
-        alert("No se seleccionó correctamente el horario. Intenta de nuevo.");
-        return;
+        mantineNotifications.update({
+          id: notifId,
+          title: "Error",
+          message: "No se seleccionó correctamente el horario. Intenta de nuevo.",
+          color: "red",
+          loading: false,
+          autoClose: 5000,
+          withCloseButton: true,
+        });
+        return false;
       }
 
       // 0) Determinar la fecha del evento para normalizar
@@ -1964,6 +1982,20 @@ export function useDashboardData(eventId?: string) {
       setConfirmModalOpened(false);
       setMeetingToEdit(null);
       setMeetingToAccept(null);
+
+      mantineNotifications.update({
+        id: notifId,
+        title: isEdit ? "Reunión actualizada" : "Reunión agendada",
+        message: isEdit
+          ? "La reunión fue movida al nuevo horario y mesa correctamente."
+          : "La reunión fue aceptada y agendada correctamente.",
+        color: "teal",
+        loading: false,
+        autoClose: 4000,
+        withCloseButton: true,
+      });
+
+      return true;
     } catch (e: any) {
       console.error("❌ confirmAcceptWithSlot:", e?.message || e);
       // Mensaje amigable para colisión por locks/slot
@@ -1971,9 +2003,18 @@ export function useDashboardData(eventId?: string) {
         String(e?.message),
       )
         ? "El horario escogido ya no está disponible o la persona ya tiene reunión en esa franja."
-        : "No se pudo confirmar la reunión. Intenta de nuevo.";
-      // Opcional: showNotification({ title: "Error", message: msg, color: "red" });
-      alert(msg);
+        : "No se pudo confirmar la reunión. Verifica tu conexión e intenta de nuevo.";
+      mantineNotifications.update({
+        id: notifId,
+        title: "Error al agendar la reunión",
+        message: msg,
+        color: "red",
+        loading: false,
+        autoClose: 6000,
+        withCloseButton: true,
+      });
+
+      return false;
     } finally {
       setConfirmLoading(false);
     }
