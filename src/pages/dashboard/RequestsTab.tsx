@@ -50,9 +50,11 @@ interface RequestsTabProps {
   sendWhatsAppMessage: (participant: Assistant) => void;
   cancelSentMeeting: (meetingId: string, action: string) => void;
   prepareSlotSelection: (meetingId: string) => void;
+  prepareSlotSelectionLoading?: boolean;
 }
 
 import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 
 function InfoRow({
   icon,
@@ -221,9 +223,18 @@ export default function RequestsTab({
   sendWhatsAppMessage,
   cancelSentMeeting,
   prepareSlotSelection,
+  prepareSlotSelectionLoading = false,
 }: RequestsTabProps) {
   const theme = useMantineTheme();
   const findUser = (id: string) => assistants.find((u) => u.id === id);
+
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!prepareSlotSelectionLoading) {
+      setAcceptingId(null);
+    }
+  }, [prepareSlotSelectionLoading]);
 
   return (
     <Accordion defaultValue="pendientes" variant="separated" radius="md">
@@ -254,6 +265,8 @@ export default function RequestsTab({
                             size="compact-sm"
                             radius="md"
                             leftSection={<IconCheck size={14} />}
+                            loading={prepareSlotSelectionLoading && acceptingId === request.id}
+                            disabled={prepareSlotSelectionLoading && acceptingId !== request.id}
                             onClick={() => {
                               trackEvent({
                                 name: "meeting_accepted",
@@ -261,6 +274,7 @@ export default function RequestsTab({
                                   meeting_id: request.id,
                                 },
                               });
+                              setAcceptingId(request.id);
                               prepareSlotSelection(request.id);
                             }}
                           >
@@ -272,6 +286,7 @@ export default function RequestsTab({
                             size="compact-sm"
                             radius="md"
                             leftSection={<IconX size={14} />}
+                            disabled={prepareSlotSelectionLoading}
                             onClick={() => {
                               trackEvent({
                                 name: "meeting_rejected",
@@ -290,6 +305,7 @@ export default function RequestsTab({
                             size="compact-sm"
                             radius="md"
                             leftSection={<IconBrandWhatsapp size={14} />}
+                            disabled={prepareSlotSelectionLoading}
                             onClick={() => {
                               trackEvent({
                                 name: "whatsapp_sent",
