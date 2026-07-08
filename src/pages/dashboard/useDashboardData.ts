@@ -96,7 +96,7 @@ function sendWhatsAppMessage(participant: Assistant) {
   const message = encodeURIComponent(
     "Hola, me gustaría contactarte sobre la reunión.",
   );
-  window.open(`https://wa.me/57${phone}?text=${message}`, "_blank");
+  window.open(`https://wa.me/${phone}?text=${message}`, "_blank");
 }
 
 async function sendMeetingAcceptedWhatsapp(

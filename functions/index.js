@@ -13,8 +13,10 @@ const WHATSAPP_API_V1 = defineSecret("WHATSAPP_API_V1");
 const WHATSAPP_API_V2 = defineSecret("WHATSAPP_API_V2");
 const WHATSAPP_ACCOUNT_ID = defineSecret("WHATSAPP_ACCOUNT_ID");
 
-// Configuración: Campos a utilizar para generar el vector de embeddings
+// Configuración: Campos a utilizar para generar el vector de afinidad (vector)
 const VECTOR_FIELDS = ['descripcion'];
+// Configuración: Campos a utilizar para generar el vector de búsqueda (search_vector)
+const VECTOR_SEARCH_FIELDS = ['descripcion'];
 
 export const notifyMeetingsScheduled = onSchedule(
   {
@@ -317,27 +319,38 @@ export const regenerateVectorsForEvent = onRequest(
       for (const user of usersToProcess) {
         try {
           console.log(`Generating embedding for user ${user.id} (${user.nombre || "unknown"})`);
-          
-          // Generar nuevo embedding
+
+          // Generar nuevo embedding (afinidad) y embedding de búsqueda
           const embeddingResult = await generateUserEmbedding(user);
-          
+          const searchEmbeddingResult = await generateUserEmbedding(user, VECTOR_SEARCH_FIELDS);
+
           if (embeddingResult) {
             // Actualizar el documento del usuario con el nuevo vector
-            await db.collection("users").doc(user.id).update({
+            const updateData = {
               vector: FieldValue.vector(embeddingResult.vector),
               condensedText: embeddingResult.condensedText,
               vectorGeneratedAt: new Date(),
               vectorFields: VECTOR_FIELDS, // Guardar qué campos se usaron
-            });
-            
+            };
+
+            if (searchEmbeddingResult) {
+              updateData.search_vector = FieldValue.vector(searchEmbeddingResult.vector);
+              updateData.search_vectorText = searchEmbeddingResult.condensedText;
+              updateData.search_vectorGeneratedAt = new Date();
+            } else {
+              console.warn(`⚠️ Failed to generate search_vector for user ${user.id}`);
+            }
+
+            await db.collection("users").doc(user.id).update(updateData);
+
             // Guardar usuario actualizado con su nuevo vector
             updatedUsersWithVectors.push({
               ...user,
               vector: embeddingResult.vector,
               condensedText: embeddingResult.condensedText,
             });
-            
-            console.log(`✅ Vector updated for user ${user.id}`);
+
+            console.log(`✅ Vector${searchEmbeddingResult ? " and search_vector" : ""} updated for user ${user.id}`);
             successCount++;
           } else {
             console.warn(`⚠️ Failed to generate embedding for user ${user.id}`);
@@ -797,11 +810,11 @@ async function generateEmbedding(text) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error("Embedding API error:", errorText);
-      throw new Error(`Embedding API failed: ${response.status}`);
+      throw new Error(`Embedding API failed: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
-    
+
     if (!data.embedding || !data.embedding.values) {
       console.error("Invalid embedding response:", data);
       throw new Error("No embedding returned from API");
@@ -2613,42 +2626,40 @@ export const generateAllSearchVectors = onRequest(
  * Función helper para generar embedding de un usuario
  * USA los campos configurados en VECTOR_FIELDS, omite los que no existen
  */
-async function generateUserEmbedding(userData) {
-  try {
-    // Usar solo VECTOR_FIELDS; si el campo no existe en el usuario, omitirlo
-    const textParts = VECTOR_FIELDS
-      .map(fieldName => {
-        const val = userData[fieldName];
-        if (val === undefined || val === null || val === "") return null;
-        if (Array.isArray(val)) {
-          const items = val.filter(v => v && v !== "__otro__");
-          // Si hay campo _otro, incluirlo
-          const otroVal = userData[`${fieldName}_otro`];
-          if (val.includes("__otro__") && otroVal && typeof otroVal === "string" && otroVal.trim()) {
-            items.push(otroVal.trim());
-          }
-          return items.length > 0 ? items.join(", ") : null;
+async function generateUserEmbedding(userData, fields = VECTOR_FIELDS) {
+  // Usar solo los campos configurados; si el campo no existe en el usuario, omitirlo
+  const textParts = fields
+    .map(fieldName => {
+      const val = userData[fieldName];
+      if (val === undefined || val === null || val === "") return null;
+      if (Array.isArray(val)) {
+        const items = val.filter(v => v && v !== "__otro__");
+        // Si hay campo _otro, incluirlo
+        const otroVal = userData[`${fieldName}_otro`];
+        if (val.includes("__otro__") && otroVal && typeof otroVal === "string" && otroVal.trim()) {
+          items.push(otroVal.trim());
         }
-        if (typeof val === "string") return val.trim() || null;
-        return String(val);
-      })
-      .filter(Boolean);
+        return items.length > 0 ? items.join(", ") : null;
+      }
+      if (typeof val === "string") return val.trim() || null;
+      return String(val);
+    })
+    .filter(Boolean);
 
-    const textToEmbed = textParts.join(". ").trim();
+  const textToEmbed = textParts.join(". ").trim();
 
-    if (!textToEmbed) {
-      console.warn(`User ${userData.nombre || "unknown"} has no information to embed from fields: ${VECTOR_FIELDS.join(", ")}`);
-      return null;
-    }
-
-    console.log(`Generating embedding from VECTOR_FIELDS [${VECTOR_FIELDS.join(", ")}] for user ${userData.nombre || "unknown"}`);
-
-    const embedding = await generateEmbedding(textToEmbed);
-    return { vector: embedding, condensedText: textToEmbed };
-  } catch (error) {
-    console.error("Error generating user embedding:", error);
+  if (!textToEmbed) {
+    console.warn(`User ${userData.nombre || "unknown"} has no information to embed from fields: ${fields.join(", ")}`);
     return null;
   }
+
+  console.log(`Generating embedding from fields [${fields.join(", ")}] for user ${userData.nombre || "unknown"}`);
+
+  // No atrapar errores de la API de embeddings aquí: si se hace, el caller no puede
+  // distinguir "sin datos configurados" de un fallo real de la API (auth, red, cuota),
+  // y ambos casos terminaban reportándose como "No data in configured fields".
+  const embedding = await generateEmbedding(textToEmbed);
+  return { vector: embedding, condensedText: textToEmbed };
 }
 
 /**
@@ -2950,18 +2961,39 @@ export const calculateAffinityOnUserCreate = onDocumentCreated(
     const db = getFirestore();
 
     try {
-      // Generar embedding del nuevo usuario
+      // Generar embedding del nuevo usuario (afinidad y búsqueda)
       console.log(`Generating embedding for new user ${newUserId}`);
-      const embeddingResult = await generateUserEmbedding(newUserData);
-      
+      let embeddingResult = null;
+      let searchEmbeddingResult = null;
+      try {
+        embeddingResult = await generateUserEmbedding(newUserData);
+      } catch (err) {
+        console.error(`Failed to generate embedding for new user ${newUserId}:`, err);
+      }
+      try {
+        searchEmbeddingResult = await generateUserEmbedding(newUserData, VECTOR_SEARCH_FIELDS);
+      } catch (err) {
+        console.error(`Failed to generate search_vector for new user ${newUserId}:`, err);
+      }
+
       if (embeddingResult) {
         // Guardar el embedding y el texto condensado en el documento del usuario
-        await db.collection("users").doc(newUserId).update({
+        const updateData = {
           vector: FieldValue.vector(embeddingResult.vector),
           condensedText: embeddingResult.condensedText,
           vectorGeneratedAt: new Date(),
-        });
-        console.log(`Embedding and condensed text saved for user ${newUserId}`);
+        };
+
+        if (searchEmbeddingResult) {
+          updateData.search_vector = FieldValue.vector(searchEmbeddingResult.vector);
+          updateData.search_vectorText = searchEmbeddingResult.condensedText;
+          updateData.search_vectorGeneratedAt = new Date();
+        } else {
+          console.warn(`Failed to generate search_vector for new user ${newUserId}`);
+        }
+
+        await db.collection("users").doc(newUserId).update(updateData);
+        console.log(`Embedding${searchEmbeddingResult ? " and search_vector" : ""} saved for user ${newUserId}`);
       } else {
         console.warn(`Failed to generate embedding for user ${newUserId}`);
       }
@@ -2994,8 +3026,13 @@ export const calculateAffinityOnUserCreate = onDocumentCreated(
         
         if (!otherUserEmbedding) {
           console.log(`Generating embedding for existing user ${otherUser.id}`);
-          const embeddingResult = await generateUserEmbedding(otherUser);
-          
+          let embeddingResult = null;
+          try {
+            embeddingResult = await generateUserEmbedding(otherUser);
+          } catch (err) {
+            console.error(`Failed to generate embedding for existing user ${otherUser.id}:`, err);
+          }
+
           if (embeddingResult) {
             otherUserEmbedding = embeddingResult.vector;
             // Guardar el embedding y texto condensado en el documento del usuario
@@ -3236,8 +3273,13 @@ export const calculateAffinityOnUserUpdate = onDocumentUpdated(
 
     try {
       // 1. Regenerar embedding base (afinidad)
-      const embeddingResult = await generateUserEmbedding(afterData);
-      
+      let embeddingResult = null;
+      try {
+        embeddingResult = await generateUserEmbedding(afterData);
+      } catch (err) {
+        console.error(`Failed to generate embedding for updated user ${userId}:`, err);
+      }
+
       let vectorToSave = null;
       let condensedTextToSave = null;
       let searchVectorToSave = null;
