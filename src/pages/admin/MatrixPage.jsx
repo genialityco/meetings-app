@@ -51,6 +51,7 @@ import EditMeetingModal from "./EditMeetingModal";
 import EditFreeMeetingModal from "./EditFreeMeetingModal";
 import CreateFreeMeetingModal from "./CreateFreeMeetingModal";
 import { useDashboardData } from "../dashboard/useDashboardData";
+import { formatPhoneForWhatsApp } from "../../utils/whatsappService";
 import {
   IconClipboard,
   IconClipboardCheck,
@@ -60,6 +61,7 @@ import {
   IconPlus,
   IconInfoCircle,
   IconCopy,
+  IconBrandWhatsapp,
 } from "@tabler/icons-react";
 
 // ----------- UTILIDADES -----------
@@ -432,6 +434,11 @@ function FreeMeetingsList({
                         <Tooltip label="Copiar número" withArrow>
                           <ActionIcon size="xs" variant="subtle" color="gray" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(info.telefono); }}>
                             <IconCopy size={11} />
+                          </ActionIcon>
+                        </Tooltip>
+                        <Tooltip label="Enviar WhatsApp" withArrow>
+                          <ActionIcon size="xs" variant="subtle" color="green" onClick={(e) => { e.stopPropagation(); window.open(`https://wa.me/${formatPhoneForWhatsApp(info.telefono)}`, "_blank"); }}>
+                            <IconBrandWhatsapp size={11} />
                           </ActionIcon>
                         </Tooltip>
                       </>
@@ -2467,6 +2474,11 @@ const MatrixPage = () => {
                                                             <IconCopy size={11} />
                                                           </ActionIcon>
                                                         </Tooltip>
+                                                        <Tooltip label="Enviar WhatsApp" withArrow>
+                                                          <ActionIcon size="xs" variant="subtle" color="green" onClick={(e) => { e.stopPropagation(); window.open(`https://wa.me/${formatPhoneForWhatsApp(info.telefono)}`, "_blank"); }}>
+                                                            <IconBrandWhatsapp size={11} />
+                                                          </ActionIcon>
+                                                        </Tooltip>
                                                       </>
                                                     ) : (
                                                       <Tooltip label="Sin teléfono" withArrow>
@@ -3325,6 +3337,11 @@ const MatrixPage = () => {
                                                       <Tooltip label="Copiar número" withArrow>
                                                         <ActionIcon size="xs" variant="subtle" color="gray" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(info.telefono); }}>
                                                           <IconCopy size={11} />
+                                                        </ActionIcon>
+                                                      </Tooltip>
+                                                      <Tooltip label="Enviar WhatsApp" withArrow>
+                                                        <ActionIcon size="xs" variant="subtle" color="green" onClick={(e) => { e.stopPropagation(); window.open(`https://wa.me/${formatPhoneForWhatsApp(info.telefono)}`, "_blank"); }}>
+                                                          <IconBrandWhatsapp size={11} />
                                                         </ActionIcon>
                                                       </Tooltip>
                                                     </>
