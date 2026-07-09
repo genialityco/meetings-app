@@ -54,7 +54,7 @@ const slotOverlapsBreakBlock = (
 export default function MeetingAutoResponse() {
   const { eventId, meetingId, action } = useParams();
   const navigate = useNavigate();
-  const { currentUser } = useContext(UserContext);
+  const { currentUser, userLoading } = useContext(UserContext);
 
   const [status, setStatus] = useState(
     action === "accept" ? "Cargando horarios..." : "Procesando..."
@@ -171,6 +171,10 @@ export default function MeetingAutoResponse() {
   }
 
   useEffect(() => {
+    // Esperar a que UserContext resuelva la sesión (anónima o persistida) antes
+    // de validar — si se valida antes de tiempo, auth.currentUser aún puede
+    // estar en null y se rechaza una sesión que en realidad sí es válida.
+    if (userLoading) return;
     // Validar sesión y propiedad antes de procesar
     validateUserAndMeeting().then((isValid) => {
       if (isValid) {
@@ -184,7 +188,7 @@ export default function MeetingAutoResponse() {
       }
     });
     // eslint-disable-next-line
-  }, []);
+  }, [userLoading]);
 
   // --------------------------------------------------------
   // cargar y filtrar slots como antes...
@@ -441,9 +445,9 @@ export default function MeetingAutoResponse() {
       const requester = requesterSnap.exists() ? requesterSnap.data() : {};
       const receiver = receiverSnap.exists() ? receiverSnap.data() : {};
 
-      // Reutilizar eventSnap que ya fue declarado arriba
-      const evName = eventSnap.exists() ? eventSnap.data().eventName || "" : "";
-      const eventConfig = eventSnap.exists() ? eventSnap.data().config || {} : {};
+      // Reutilizar eventDocSnap que ya fue declarado arriba
+      const evName = eventDocSnap.exists() ? eventDocSnap.data().eventName || "" : "";
+      const eventConfig = eventDocSnap.exists() ? eventDocSnap.data().config || {} : {};
       const evPolicies = eventConfig.policies || {};
 
       // Notificación in-app
