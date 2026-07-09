@@ -129,6 +129,17 @@ export const UserProvider = ({ children }) => {
     }
   }, []);
 
+  // Inicia sesión como un usuario ya conocido (p.ej. el destinatario de un
+  // enlace de WhatsApp), sin pasar por el flujo de cédula/correo.
+  const loginAsUser = (uid, data) => {
+    const newUser = { uid, data };
+    setCurrentUser(newUser);
+    localStorage.setItem("currentUser", JSON.stringify(newUser));
+    localStorage.setItem("manualLogin", "true");
+    setManualLogin(true);
+    subscribeToUserDoc(uid);
+  };
+
   const updateUser = async (uid, data) => {
     // Filtrar campos undefined para evitar que Firestore los elimine con merge:true
     const cleanData = Object.fromEntries(
@@ -277,7 +288,8 @@ export const UserProvider = ({ children }) => {
         updateUser,
         logout,
         loginByCedula,
-        loginByEmail
+        loginByEmail,
+        loginAsUser
       }}
     >
       {children}

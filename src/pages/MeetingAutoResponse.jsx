@@ -54,7 +54,7 @@ const slotOverlapsBreakBlock = (
 export default function MeetingAutoResponse() {
   const { eventId, meetingId, action } = useParams();
   const navigate = useNavigate();
-  const { currentUser, userLoading } = useContext(UserContext);
+  const { currentUser, userLoading, loginAsUser } = useContext(UserContext);
 
   const [status, setStatus] = useState(
     action === "accept" ? "Cargando horarios..." : "Procesando..."
@@ -151,6 +151,17 @@ export default function MeetingAutoResponse() {
         );
         setTimeout(() => navigate(`/event/${eventId}`), 3000);
         return false;
+      }
+
+      // 4. El destinatario del enlace es siempre receiverId (a su WhatsApp
+      // llegó la solicitud). Si la sesión activa no es ya la suya (p.ej.
+      // quedó anónima al abrir el link), la reemplazamos por su sesión real
+      // para que el redirect final al dashboard lo reconozca ya logueado.
+      if (receiverId && currentUser?.uid !== receiverId) {
+        const receiverSnap = await getDoc(doc(db, "users", receiverId));
+        if (receiverSnap.exists()) {
+          loginAsUser(receiverId, receiverSnap.data());
+        }
       }
 
       // 5. Cargar el nombre del solicitante
