@@ -166,8 +166,8 @@ export default function MeetingsTab({
     return false;
   })();
 
-  // Multi-day event dates
-  const eventDates = eventConfig?.eventDates || (eventConfig?.eventDate ? [eventConfig.eventDate] : []);
+  // Multi-day event dates (dedupe defensivo por si la config tiene fechas repetidas)
+  const eventDates = [...new Set(eventConfig?.eventDates || (eventConfig?.eventDate ? [eventConfig.eventDate] : []))];
   const isMultiDay = eventDates.length > 1;
 
   // Format date for display - parse ISO date without timezone conversion

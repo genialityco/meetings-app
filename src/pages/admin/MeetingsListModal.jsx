@@ -149,8 +149,8 @@ const MeetingsListModal = ({ opened, onClose, event, setGlobalMessage }) => {
     setDeleting(null);
   };
 
-  // Obtener fechas del evento
-  const eventDates = event?.config?.eventDates || (event?.config?.eventDate ? [event.config.eventDate] : []);
+  // Obtener fechas del evento (dedupe defensivo por si la config tiene fechas repetidas)
+  const eventDates = [...new Set(event?.config?.eventDates || (event?.config?.eventDate ? [event.config.eventDate] : []))];
   const isMultiDay = eventDates.length > 1;
 
   // Opciones de estado: siempre los estándar + cualquier otro que aparezca en los datos.

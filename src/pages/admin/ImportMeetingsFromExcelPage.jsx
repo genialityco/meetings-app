@@ -475,8 +475,8 @@ const ImportMeetingsFromExcelPage = () => {
 
   // ─── COMPUTED ──────────────────────────────────────────────────────────────
 
-  // Fechas del evento
-  const eventDates = event?.config?.eventDates || (event?.config?.eventDate ? [event.config.eventDate] : []);
+  // Fechas del evento (dedupe defensivo por si la config tiene fechas repetidas)
+  const eventDates = [...new Set(event?.config?.eventDates || (event?.config?.eventDate ? [event.config.eventDate] : []))];
   const isMultiDay = eventDates.length > 1;
 
   const formatDate = (dateStr) => {

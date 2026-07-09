@@ -185,7 +185,7 @@ export default function Dashboard() {
         chosenSlot={dashboard.chosenSlot}
         setConfirmModalOpened={dashboard.setConfirmModalOpened}
         onClose={() => dashboard.setSlotModalOpened(false)}
-        eventDates={dashboard.eventConfig?.eventDates || (dashboard.eventConfig?.eventDate ? [dashboard.eventConfig.eventDate] : [])}
+        eventDates={[...new Set(dashboard.eventConfig?.eventDates || (dashboard.eventConfig?.eventDate ? [dashboard.eventConfig.eventDate] : []))]}
         selectedDate={dashboard.selectedDate}
         onDateChange={dashboard.handleDateChange}
       />

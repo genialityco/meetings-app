@@ -140,8 +140,8 @@ export default function CalendarTab({
   const [showPending, setShowPending] = useState(true);
   const [showCancelled, setShowCancelled] = useState(false);
 
-  // Obtener fechas del evento
-  const eventDates = eventConfig?.eventDates || (eventConfig?.eventDate ? [eventConfig.eventDate] : []);
+  // Obtener fechas del evento (dedupe defensivo por si la config tiene fechas repetidas)
+  const eventDates = [...new Set(eventConfig?.eventDates || (eventConfig?.eventDate ? [eventConfig.eventDate] : []))];
   const isMultiDay = eventDates.length > 1;
 
   // Usar la fecha seleccionada o la primera fecha disponible

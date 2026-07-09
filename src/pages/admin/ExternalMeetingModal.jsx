@@ -14,8 +14,8 @@ export default function ExternalMeetingModal({ opened, onClose, event, setGlobal
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState("");
 
-  // Multi-day support
-  const eventDates = event?.config?.eventDates || (event?.config?.eventDate ? [event.config.eventDate] : []);
+  // Multi-day support (dedupe defensivo por si la config tiene fechas repetidas)
+  const eventDates = [...new Set(event?.config?.eventDates || (event?.config?.eventDate ? [event.config.eventDate] : []))];
   const isMultiDay = eventDates.length > 1;
   const [selectedDate, setSelectedDate] = useState(eventDates[0] || "");
 

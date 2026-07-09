@@ -1926,10 +1926,13 @@ const MatrixPage = () => {
     return affinityScores[key] || null;
   };
 
-  // Obtener fechas del evento
-  const eventDates =
-    config?.config?.eventDates ||
-    (config?.config?.eventDate ? [config.config.eventDate] : []);
+  // Obtener fechas del evento (dedupe defensivo por si la config tiene fechas repetidas)
+  const eventDates = [
+    ...new Set(
+      config?.config?.eventDates ||
+        (config?.config?.eventDate ? [config.config.eventDate] : []),
+    ),
+  ];
   const isMultiDay = eventDates.length > 1;
 
   return (

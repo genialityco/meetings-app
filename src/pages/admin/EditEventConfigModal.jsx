@@ -269,9 +269,9 @@ const EditEventConfigModal = ({
 
     // Ordenar fechas cronológicamente
     const sortedDays = [...eventDays].sort((a, b) => a.date.localeCompare(b.date));
-    const eventDates = sortedDays.map(d => d.date);
-    
-    // Crear dailyConfig con la configuración de cada día
+
+    // Crear dailyConfig con la configuración de cada día (las claves del objeto
+    // deduplican automáticamente si dos "días" quedaron con la misma fecha)
     const dailyConfig = {};
     sortedDays.forEach((day) => {
       if (day.date) {
@@ -284,7 +284,9 @@ const EditEventConfigModal = ({
         };
       }
     });
-    
+    // eventDates se deriva de dailyConfig para garantizar que nunca tenga fechas repetidas
+    const eventDates = Object.keys(dailyConfig).sort();
+
     const newConfig = {
       maxPersons,
       numTables,
