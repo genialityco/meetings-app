@@ -36,6 +36,12 @@ interface ProductsViewProps {
     groupId?: string | null,
     context?: MeetingContext,
   ) => Promise<void>;
+  requestMeetingWithSlotPicker?: (
+    id: string,
+    phone: string,
+    groupId?: string | null,
+    context?: MeetingContext,
+  ) => Promise<{ deferred: boolean } | void>;
   currentUser: any;
   affinityScores: Record<string, number>;
   highlightEntityId?: string;
@@ -49,6 +55,7 @@ export default function ProductsView({
   companies,
   solicitarReunionHabilitado,
   sendMeetingRequest,
+  requestMeetingWithSlotPicker,
   currentUser,
   affinityScores,
   highlightEntityId,
@@ -230,18 +237,21 @@ export default function ProductsView({
     setLoadingId(`${product.id}-${assistantId}`);
     
     try {
-      await sendMeetingRequest(assistantId, assistantPhone, null, {
+      const send = requestMeetingWithSlotPicker || sendMeetingRequest;
+      const result = await send(assistantId, assistantPhone, null, {
         productId: product.id,
         companyId: product.companyId || null,
         contextNote: message || `Interesado en: ${product.title}`,
       });
 
-      showNotification({
-        title: "Solicitud enviada",
-        message: `Solicitud enviada por el producto "${product.title}"${message ? ' con tu mensaje personalizado' : ''}.`,
-        color: "teal",
-      });
-      
+      if (!(result && (result as any).deferred)) {
+        showNotification({
+          title: "Solicitud enviada",
+          message: `Solicitud enviada por el producto "${product.title}"${message ? ' con tu mensaje personalizado' : ''}.`,
+          color: "teal",
+        });
+      }
+
       setModalOpened(false);
       setSelectedProduct(null);
     } catch {

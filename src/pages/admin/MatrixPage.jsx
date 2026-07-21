@@ -53,6 +53,7 @@ import EditFreeMeetingModal from "./EditFreeMeetingModal";
 import CreateFreeMeetingModal from "./CreateFreeMeetingModal";
 import { useDashboardData } from "../dashboard/useDashboardData";
 import { formatPhoneForWhatsApp } from "../../utils/whatsappService";
+import { getTableLabel } from "../dashboard/meetingSlotEngine";
 import {
   IconClipboard,
   IconClipboardCheck,
@@ -1170,7 +1171,7 @@ const MatrixPage = () => {
       const receiver = asistentes.find((a) => a.id === user2);
       const requester = asistentes.find((a) => a.id === user1);
       const slotStr = `${slot.startTime} - ${slot.endTime}`;
-      const mesa = slot.tableNumber;
+      const mesa = getTableLabel(slot.tableNumber, config?.config?.tableNames);
 
       const wa = getWaConfig();
       if (wa.enabled && receiver && requester) {
@@ -1346,7 +1347,7 @@ const MatrixPage = () => {
       // Opcional: notificar a ambos participantes (como haces en creación)
       const receiver = asistentes.find((a) => a.id === user2);
       const requester = asistentes.find((a) => a.id === user1);
-      const mesa = slot.tableNumber;
+      const mesa = getTableLabel(slot.tableNumber, config?.config?.tableNames);
       const meetingDate = slot.date || selectedDate;
 
       const wa = getWaConfig();
@@ -1541,7 +1542,7 @@ const MatrixPage = () => {
                 requester,
                 {
                   timeSlot: slotStr,
-                  tableAssigned: slotLiberado.tableNumber,
+                  tableAssigned: getTableLabel(slotLiberado.tableNumber, config?.config?.tableNames),
                   meetingDate: meetingDate,
                 },
                 waReassign.eventName,
@@ -1553,7 +1554,7 @@ const MatrixPage = () => {
                 receiver,
                 {
                   timeSlot: slotStr,
-                  tableAssigned: slotLiberado.tableNumber,
+                  tableAssigned: getTableLabel(slotLiberado.tableNumber, config?.config?.tableNames),
                   meetingDate: meetingDate,
                 },
                 waReassign.eventName,

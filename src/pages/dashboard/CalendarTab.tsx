@@ -40,6 +40,7 @@ import { db } from "../../firebase/firebaseConfig";
 import { showNotification } from "@mantine/notifications";
 import { DEFAULT_SURVEY_FIELDS } from "../admin/ConfigureSurveyModal";
 import OptimisticCheckbox from "../../components/OptimisticCheckbox";
+import RaffleQrModal from "./RaffleQrModal";
 
 interface CalendarTabProps {
   acceptedMeetings: any[];
@@ -964,6 +965,18 @@ export default function CalendarTab({
                       </Button>
                     )}
                   </Group>
+                  {policies?.raffleEnabled &&
+                    selectedMeeting.checkInStatus !== "standby" &&
+                    myRole === "vendedor" &&
+                    eventId && (
+                      <Group grow gap="xs">
+                        <RaffleQrModal
+                          eventId={eventId}
+                          meetingId={selectedMeeting.id}
+                          claimed={!!selectedMeeting.raffleClaimed}
+                        />
+                      </Group>
+                    )}
                   {cancelMeeting && !policies?.cancelMeetingDisabled && (
                     <Button
                       size="compact-sm"

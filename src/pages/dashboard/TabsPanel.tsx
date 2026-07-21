@@ -169,6 +169,7 @@ export default function TabsPanel({
           eventConfig={dashboard.eventConfig}
           solicitarReunionHabilitado={dashboard.solicitarReunionHabilitado}
           sendMeetingRequest={dashboard.sendMeetingRequest}
+          requestMeetingWithSlotPicker={dashboard.requestMeetingWithSlotPicker}
           setAvatarModalOpened={dashboard.setAvatarModalOpened}
           setSelectedImage={dashboard.setSelectedImage}
           currentUser={dashboard.currentUser}
@@ -184,8 +185,10 @@ export default function TabsPanel({
           filteredAssistants={dashboard.filteredAssistants}
           companies={dashboard.companies}
           policies={policies}
+          eventConfig={dashboard.eventConfig}
           solicitarReunionHabilitado={dashboard.solicitarReunionHabilitado}
           sendMeetingRequest={dashboard.sendMeetingRequest}
+          requestMeetingWithSlotPicker={dashboard.requestMeetingWithSlotPicker}
           setAvatarModalOpened={dashboard.setAvatarModalOpened}
           setSelectedImage={dashboard.setSelectedImage}
           currentUser={dashboard.currentUser}
@@ -209,6 +212,7 @@ export default function TabsPanel({
         <MatchesTab
           currentUser={dashboard.currentUser}
           sendMeetingRequest={dashboard.sendMeetingRequest}
+          requestMeetingWithSlotPicker={dashboard.requestMeetingWithSlotPicker}
           solicitarReunionHabilitado={dashboard.solicitarReunionHabilitado}
           eventId={eventId}
           highlightEntityId={(() => {
@@ -232,6 +236,7 @@ export default function TabsPanel({
           filteredAssistants={dashboard.filteredAssistants}
           solicitarReunionHabilitado={dashboard.solicitarReunionHabilitado}
           sendMeetingRequest={dashboard.sendMeetingRequest}
+          requestMeetingWithSlotPicker={dashboard.requestMeetingWithSlotPicker}
           currentUser={dashboard.currentUser}
           affinityScores={dashboard.affinityScores}
           highlightEntityId={topView === "products" && persistentHighlight.entityType === "product" ? persistentHighlight.entityId : undefined}

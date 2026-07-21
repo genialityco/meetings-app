@@ -25,10 +25,11 @@ import {
   IconPhone,
 } from "@tabler/icons-react";
 import { useCompanyData } from "./useCompanyData";
+import { getTableLabel } from "./meetingSlotEngine";
 import type { Product } from "./types";
 import type { CompanyRepresentative } from "./useCompanyData";
 
-export default function MyCompanyTab({ currentUser }: any) {
+export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker, sendMeetingRequest: dashboardSendMeetingRequest, eventConfig }: any) {
   const { eventId } = useParams();
   const companyNit = currentUser?.data?.companyId || currentUser?.data?.company_nit;
 
@@ -37,7 +38,7 @@ export default function MyCompanyTab({ currentUser }: any) {
     products,
     representatives,
     loading,
-    sendMeetingRequest,
+    sendMeetingRequest: companySendMeetingRequest,
   } = useCompanyData(eventId, companyNit);
 
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -52,15 +53,24 @@ export default function MyCompanyTab({ currentUser }: any) {
       : `rep-${rep.id}`;
     setLoadingId(key);
     try {
-      await sendMeetingRequest(rep.id, rep.telefono || "", {
-        companyId: companyNit || null,
-        ...context,
-      });
-      showNotification({
-        title: "Solicitud enviada",
-        message: `Solicitud enviada a ${rep.nombre}.`,
-        color: "teal",
-      });
+      // Usa el motor del dashboard (useDashboardData, ya cargado en MyCompanyPage) para
+      // soportar el flujo "el solicitante elige horario"; si no está disponible, cae al
+      // envío simple de useCompanyData.
+      const send = requestMeetingWithSlotPicker || dashboardSendMeetingRequest;
+      const result = send
+        ? await send(rep.id, rep.telefono || "", null, { companyId: companyNit || null, ...context })
+        : await companySendMeetingRequest(rep.id, rep.telefono || "", {
+            companyId: companyNit || null,
+            ...context,
+          });
+
+      if (!(result && (result as any).deferred)) {
+        showNotification({
+          title: "Solicitud enviada",
+          message: `Solicitud enviada a ${rep.nombre}.`,
+          color: "teal",
+        });
+      }
     } catch {
       showNotification({
         title: "Error",
@@ -152,7 +162,7 @@ export default function MyCompanyTab({ currentUser }: any) {
               </Badge>
               {company.fixedTable && (
                 <Badge variant="light" size="sm" color="orange">
-                  Mesa: {company.fixedTable}
+                  {getTableLabel(company.fixedTable, eventConfig?.tableNames)}
                 </Badge>
               )}
             </Group>

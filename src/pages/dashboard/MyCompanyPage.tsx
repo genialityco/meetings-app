@@ -7,6 +7,8 @@ import { useDashboardData } from "./useDashboardData";
 import { UserContext } from "../../context/UserContext";
 import DashboardHeader from "../../components/DashboardHeader";
 import MyCompanyTab from "./MyCompanyTab";
+import SlotModal from "./SlotModal";
+import ConfirmModal from "./ConfirmModal";
 import type { Notification } from "./types";
 
 export default function MyCompanyPage() {
@@ -54,6 +56,54 @@ export default function MyCompanyPage() {
           <MyCompanyTab {...dashboard} />
         </Container>
       </Container>
+
+      <SlotModal
+        opened={dashboard.slotModalOpened}
+        availableSlots={dashboard.availableSlots}
+        confirmLoading={dashboard.confirmLoading}
+        groupedSlots={dashboard.groupedSlots}
+        selectedRange={dashboard.selectedRange}
+        setSelectedRange={dashboard.setSelectedRange}
+        tableOptions={dashboard.tableOptions}
+        selectedSlotId={dashboard.selectedSlotId}
+        setSelectedSlotId={dashboard.setSelectedSlotId}
+        chosenSlot={dashboard.chosenSlot}
+        onConfirmClick={async () => {
+          // Si el solicitante está eligiendo horario, se confirma directo,
+          // sin el paso extra de ConfirmModal.
+          if (dashboard.pendingMeetingRequest) {
+            dashboard.setSlotModalOpened(false);
+            await dashboard.confirmSendMeetingRequestWithSlot(dashboard.chosenSlot);
+            return;
+          }
+          dashboard.setConfirmModalOpened(true);
+        }}
+        onClose={() => {
+          dashboard.setSlotModalOpened(false);
+          dashboard.setPendingMeetingRequest(null);
+        }}
+        eventDates={[...new Set(dashboard.eventConfig?.eventDates || (dashboard.eventConfig?.eventDate ? [dashboard.eventConfig.eventDate] : []))]}
+        selectedDate={dashboard.selectedDate}
+        onDateChange={dashboard.handleDateChange}
+      />
+      <ConfirmModal
+        opened={dashboard.confirmModalOpened}
+        currentRequesterName={dashboard.currentRequesterName}
+        chosenSlot={dashboard.chosenSlot}
+        tableLabel={dashboard.chosenSlotTableLabel}
+        onCancel={() => {
+          dashboard.setConfirmModalOpened(false);
+          dashboard.setPendingMeetingRequest(null);
+        }}
+        onAccept={async () => {
+          dashboard.setConfirmModalOpened(false);
+          dashboard.setSlotModalOpened(false);
+
+          const idToUse = dashboard.meetingToEdit ?? dashboard.meetingToAccept?.id;
+          if (!idToUse || !dashboard.chosenSlot) return;
+          await dashboard.confirmAcceptWithSlot(idToUse, dashboard.chosenSlot);
+        }}
+      />
     </MantineProvider>
   );
 }

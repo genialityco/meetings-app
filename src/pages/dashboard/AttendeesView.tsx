@@ -99,6 +99,12 @@ interface AttendeesViewProps {
     groupId?: string | null,
     context?: MeetingContext,
   ) => Promise<void>;
+  requestMeetingWithSlotPicker?: (
+    id: string,
+    phone: string,
+    groupId?: string | null,
+    context?: MeetingContext,
+  ) => Promise<{ deferred: boolean } | void>;
   setAvatarModalOpened: (v: boolean) => void;
   setSelectedImage: (v: string | null) => void;
   currentUser: any;
@@ -156,6 +162,7 @@ export default function AttendeesView({
   eventConfig,
   solicitarReunionHabilitado,
   sendMeetingRequest,
+  requestMeetingWithSlotPicker,
   setAvatarModalOpened,
   setSelectedImage,
   currentUser,
@@ -348,16 +355,19 @@ export default function AttendeesView({
     
     setLoadingId(selectedAssistant.id);
     try {
-      await sendMeetingRequest(selectedAssistant.id, selectedAssistant.telefono || "", null, {
+      const send = requestMeetingWithSlotPicker || sendMeetingRequest;
+      const result = await send(selectedAssistant.id, selectedAssistant.telefono || "", null, {
         contextNote: message || undefined,
       });
-      
-      showNotification({
-        title: "Solicitud enviada",
-        message: `Solicitud enviada a ${selectedAssistant.nombre}${message ? ' con tu mensaje personalizado' : ''}.`,
-        color: "teal",
-      });
-      
+
+      if (!(result && (result as any).deferred)) {
+        showNotification({
+          title: "Solicitud enviada",
+          message: `Solicitud enviada a ${selectedAssistant.nombre}${message ? ' con tu mensaje personalizado' : ''}.`,
+          color: "teal",
+        });
+      }
+
       setModalOpened(false);
       setSelectedAssistant(null);
     } catch {

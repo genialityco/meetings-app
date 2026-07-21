@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useCallback } from "react";
+import { useState, useEffect, useMemo, useContext, useCallback } from "react";
 import {
   doc,
   getDoc,
@@ -10,9 +10,16 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
-import { Company, Product, EventPolicies, DEFAULT_POLICIES } from "./types";
+import { Company, Product, EventPolicies, DEFAULT_POLICIES, MeetingContext } from "./types";
 import { showNotification } from "@mantine/notifications";
 import { sendWhatsAppMessage as sendWhatsAppAPI } from "../../utils/whatsappService";
+import {
+  computeAvailableSlots,
+  createConfirmedMeeting,
+  notifyMeetingConfirmed,
+  getTableLabel,
+  countMeetingsWithContact,
+} from "./meetingSlotEngine";
 
 export interface CompanyRepresentative {
   id: string;
@@ -41,6 +48,21 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
   const [policies, setPolicies] = useState<EventPolicies>(DEFAULT_POLICIES);
   const [loading, setLoading] = useState(true);
   const [userMeetings, setUserMeetings] = useState<any[]>([]);
+
+  // Estado del selector de horario/mesa (flujo "el solicitante elige horario")
+  const [slotModalOpened, setSlotModalOpened] = useState(false);
+  const [availableSlots, setAvailableSlots] = useState<any[]>([]);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedRange, setSelectedRange] = useState<string | null>(null);
+  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
+  const [confirmModalOpened, setConfirmModalOpened] = useState(false);
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [prepareSlotSelectionLoading, setPrepareSlotSelectionLoading] = useState(false);
+  const [pendingMeetingRequest, setPendingMeetingRequest] = useState<{
+    receiverId: string;
+    receiverPhone: string;
+    context?: MeetingContext;
+  } | null>(null);
 
   // 1. Event config (for theme + event info)
   useEffect(() => {
@@ -128,6 +150,34 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
     };
   }, [eventId, companyNit, currentUser?.uid]);
 
+  // Valida la política "maxMeetingsPerContact": si ya se alcanzó el máximo de
+  // reuniones con esta persona (o cualquier representante de su misma empresa),
+  // muestra el error y lanza para que el llamador aborte.
+  const checkContactMeetingLimit = useCallback(
+    async (receiverId: string, receiverData: any) => {
+      const limit = policies.maxMeetingsPerContact;
+      if (!limit || !uid || !eventId) return;
+
+      const receiverCompanyId = receiverData?.companyId || receiverData?.company_nit || null;
+      const count = await countMeetingsWithContact({
+        eventId,
+        userId: uid,
+        contactId: receiverId,
+        contactCompanyId: receiverCompanyId,
+      });
+
+      if (count >= limit) {
+        showNotification({
+          title: "Límite de reuniones alcanzado",
+          message: `Ya tienes ${count} reunión(es) con esta persona o empresa. El máximo permitido es ${limit}.`,
+          color: "red",
+        });
+        throw new Error("Meeting limit reached");
+      }
+    },
+    [policies.maxMeetingsPerContact, uid, eventId],
+  );
+
   // Send meeting request (simplified version)
   const sendMeetingRequest = useCallback(
     async (
@@ -168,6 +218,8 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
         });
         throw new Error("Receiver not found");
       }
+
+      await checkContactMeetingLimit(receiverId, receiverSnap.data());
 
       const data: any = {
         eventId,
@@ -249,8 +301,142 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
         });
       }
     },
-    [uid, eventId, currentUser, eventName, policies],
+    [uid, eventId, currentUser, eventName, policies, checkContactMeetingLimit],
   );
+
+  // Selector de horario para que el solicitante elija slot/mesa. El receptor
+  // es siempre un representante de `company` (la página desde la que se
+  // pide); la mesa fija puede venir del propio representante o, si no la
+  // tiene, de la empresa.
+  const prepareSlotSelectionForRequest = useCallback(
+    async (receiverId: string, dateOverride?: string) => {
+      if (!eventId || !uid) return;
+      setPrepareSlotSelectionLoading(true);
+      try {
+        const receiver = representatives.find((r) => r.id === receiverId);
+        const receiverFixedTable = receiver?.fixedTable || company?.fixedTable || null;
+        const { slots, eventDayISO } = await computeAvailableSlots({
+          eventId,
+          eventConfig,
+          policies,
+          requesterId: uid,
+          receiverId,
+          selectedDate: dateOverride,
+          receiverFixedTable,
+        });
+        if (!dateOverride) setSelectedDate(eventDayISO);
+        setAvailableSlots(slots);
+        setSlotModalOpened(true);
+      } finally {
+        setPrepareSlotSelectionLoading(false);
+      }
+    },
+    [eventId, uid, eventConfig, policies, company, representatives],
+  );
+
+  const requestMeetingWithSlotPicker = useCallback(
+    async (
+      receiverId: string,
+      receiverPhone: string,
+      context?: { productId?: string; companyId?: string | null; contextNote?: string },
+    ): Promise<{ deferred: boolean } | void> => {
+      if (policies.schedulingMode !== "requester_picks") {
+        return sendMeetingRequest(receiverId, receiverPhone, context);
+      }
+
+      const receiverSnap = await getDoc(doc(db, "users", receiverId));
+      if (!receiverSnap.exists()) {
+        showNotification({
+          title: "Error",
+          message: "El asistente al que intentas enviar la solicitud ya no existe.",
+          color: "red",
+        });
+        throw new Error("Receiver not found");
+      }
+      await checkContactMeetingLimit(receiverId, receiverSnap.data());
+
+      setPendingMeetingRequest({ receiverId, receiverPhone, context });
+      await prepareSlotSelectionForRequest(receiverId);
+      return { deferred: true };
+    },
+    [policies.schedulingMode, sendMeetingRequest, prepareSlotSelectionForRequest, checkContactMeetingLimit],
+  );
+
+  const confirmSendMeetingRequestWithSlot = useCallback(
+    async (slot: any): Promise<boolean> => {
+      if (!pendingMeetingRequest || !eventId || !uid || !slot?.id) return false;
+      const { receiverId, context } = pendingMeetingRequest;
+
+      setConfirmLoading(true);
+      try {
+        const { eventDateISO } = await createConfirmedMeeting({
+          eventId,
+          eventConfig,
+          requesterId: uid,
+          receiverId,
+          slot,
+          context,
+        });
+
+        await notifyMeetingConfirmed({
+          requesterId: uid,
+          receiverId,
+          slot,
+          eventDateISO,
+          isEdit: false,
+          policies,
+          eventName,
+          acceptedByName: null,
+          tableNames: eventConfig?.tableNames,
+        });
+
+        setSlotModalOpened(false);
+        setConfirmModalOpened(false);
+        setPendingMeetingRequest(null);
+        showNotification({
+          title: "Reunión confirmada",
+          message: "La reunión fue agendada y confirmada correctamente.",
+          color: "teal",
+        });
+        return true;
+      } catch (e) {
+        const msg = /already exists|Slot already taken|ya está ocupado/i.test(String((e as any)?.message))
+          ? "El horario escogido ya no está disponible o la persona ya tiene reunión en esa franja."
+          : "No se pudo confirmar la reunión. Verifica tu conexión e intenta de nuevo.";
+        showNotification({ title: "Error al agendar la reunión", message: msg, color: "red" });
+        return false;
+      } finally {
+        setConfirmLoading(false);
+      }
+    },
+    [pendingMeetingRequest, eventId, uid, eventConfig, policies, eventName],
+  );
+
+  const groupedSlots = useMemo(() => {
+    const map: any = {};
+    for (const slot of availableSlots) {
+      const range = `${slot.startTime}–${slot.endTime}`;
+      if (!map[range]) {
+        map[range] = { startTime: slot.startTime, endTime: slot.endTime, slots: [] };
+      }
+      map[range].slots.push(slot);
+    }
+    return Object.entries(map).map(([range, grp]: any) => ({ id: range, range, ...grp }));
+  }, [availableSlots]);
+
+  const tableOptions = selectedRange
+    ? (groupedSlots.find((g) => g.id === selectedRange)?.slots || []).map((s: any) => ({
+        value: s.id,
+        label: getTableLabel(s.tableNumber, eventConfig?.tableNames),
+      }))
+    : [];
+
+  const chosenSlot =
+    selectedRange && selectedSlotId
+      ? groupedSlots.find((g) => g.id === selectedRange)?.slots.find((s: any) => s.id === selectedSlotId) || null
+      : null;
+
+  const chosenSlotTableLabel = getTableLabel(chosenSlot?.tableNumber, eventConfig?.tableNames);
 
   return {
     company,
@@ -264,5 +450,26 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
     currentUser,
     userMeetings,
     sendMeetingRequest,
+    requestMeetingWithSlotPicker,
+    prepareSlotSelectionForRequest,
+    confirmSendMeetingRequestWithSlot,
+    pendingMeetingRequest,
+    setPendingMeetingRequest,
+    slotModalOpened,
+    setSlotModalOpened,
+    availableSlots,
+    selectedDate,
+    selectedRange,
+    setSelectedRange,
+    selectedSlotId,
+    setSelectedSlotId,
+    confirmModalOpened,
+    setConfirmModalOpened,
+    confirmLoading,
+    prepareSlotSelectionLoading,
+    groupedSlots,
+    tableOptions,
+    chosenSlot,
+    chosenSlotTableLabel,
   };
 }

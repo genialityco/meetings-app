@@ -40,6 +40,7 @@ import {
 } from "@tabler/icons-react";
 import type { Assistant, Company, EventPolicies, MeetingContext } from "./types";
 import MeetingRequestModal from "./MeetingRequestModal";
+import { getTableLabel } from "./meetingSlotEngine";
 
 const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
 
@@ -74,6 +75,7 @@ interface CompaniesViewProps {
   filteredAssistants: Assistant[];
   companies: Company[];
   policies: EventPolicies;
+  eventConfig?: any;
   solicitarReunionHabilitado: boolean;
   sendMeetingRequest: (
     id: string,
@@ -81,6 +83,12 @@ interface CompaniesViewProps {
     groupId?: string | null,
     context?: MeetingContext,
   ) => Promise<void>;
+  requestMeetingWithSlotPicker?: (
+    id: string,
+    phone: string,
+    groupId?: string | null,
+    context?: MeetingContext,
+  ) => Promise<{ deferred: boolean } | void>;
   setAvatarModalOpened: (v: boolean) => void;
   setSelectedImage: (v: string | null) => void;
   currentUser: any;
@@ -94,8 +102,10 @@ export default function CompaniesView({
   filteredAssistants,
   companies,
   policies,
+  eventConfig,
   solicitarReunionHabilitado,
   sendMeetingRequest,
+  requestMeetingWithSlotPicker,
   setAvatarModalOpened,
   setSelectedImage,
   currentUser,
@@ -317,17 +327,20 @@ export default function CompaniesView({
     setLoadingId(assistant.id);
     
     try {
-      await sendMeetingRequest(assistant.id, assistant.telefono || "", null, {
+      const send = requestMeetingWithSlotPicker || sendMeetingRequest;
+      const result = await send(assistant.id, assistant.telefono || "", null, {
         companyId: companyNit,
         contextNote: message || `Reunión desde vista de empresa: ${assistant.empresa || ""}`,
       });
-      
-      showNotification({
-        title: "Solicitud enviada",
-        message: `Solicitud enviada a ${assistant.nombre}${message ? ' con tu mensaje personalizado' : ''}.`,
-        color: "teal",
-      });
-      
+
+      if (!(result && (result as any).deferred)) {
+        showNotification({
+          title: "Solicitud enviada",
+          message: `Solicitud enviada a ${assistant.nombre}${message ? ' con tu mensaje personalizado' : ''}.`,
+          color: "teal",
+        });
+      }
+
       setModalOpened(false);
       setSelectedMeeting(null);
     } catch {
@@ -590,9 +603,9 @@ export default function CompaniesView({
                         </Group>
                       </Badge>
 
-                      {policies?.tableMode === "fixed" && fixedTable && (
+                      {fixedTable && (
                         <Badge variant="light" color="green" radius="xl">
-                          Mesa: {fixedTable}
+                          {getTableLabel(fixedTable, eventConfig?.tableNames)}
                         </Badge>
                       )}
                     </Stack>

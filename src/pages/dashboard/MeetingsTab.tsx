@@ -59,6 +59,7 @@ import { showNotification } from "@mantine/notifications";
 import { trackEvent } from "../../utils/analytics";
 import { DEFAULT_SURVEY_FIELDS } from "../../pages/admin/ConfigureSurveyModal";
 import OptimisticCheckbox from "../../components/OptimisticCheckbox";
+import RaffleQrModal from "./RaffleQrModal";
 import { Meeting, ParticipantInfo, EventPolicies } from "./types";
 
 interface SurveyField {
@@ -79,6 +80,7 @@ interface EventConfig {
 }
 
 interface MeetingsTabProps {
+  eventId?: string;
   acceptedMeetings: Meeting[];
   cancelledMeetings?: Meeting[];
   standbyMeetings?: Meeting[];
@@ -122,6 +124,7 @@ function InfoRow({
 }
 
 export default function MeetingsTab({
+  eventId,
   acceptedMeetings,
   cancelledMeetings = [],
   standbyMeetings = [],
@@ -344,6 +347,13 @@ export default function MeetingsTab({
 
   return (
     <>
+      {policies?.raffleEnabled && policies?.raffleShowPointsToAttendee && myRole === "comprador" && (
+        <Group justify="center" mb="md">
+          <Badge size="lg" variant="light" color="grape" leftSection="🎟️">
+            {currentUser?.data?.raffleTickets || 0} punto{(currentUser?.data?.raffleTickets || 0) === 1 ? "" : "s"} para el sorteo
+          </Badge>
+        </Group>
+      )}
       {/* Selector de día para eventos multi-día */}
       {isMultiDay && (
         <Group mb="md">
@@ -576,6 +586,19 @@ export default function MeetingsTab({
                             WhatsApp
                           </Button>
                         </Group>
+
+                        {policies?.raffleEnabled &&
+                          !isStandby &&
+                          myRole === "vendedor" &&
+                          eventId && (
+                            <Group grow gap="xs">
+                              <RaffleQrModal
+                                eventId={eventId}
+                                meetingId={meeting.id}
+                                claimed={!!meeting.raffleClaimed}
+                              />
+                            </Group>
+                          )}
 
                         <Group grow gap="xs">
                           <Button

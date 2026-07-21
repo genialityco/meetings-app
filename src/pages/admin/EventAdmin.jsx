@@ -1335,6 +1335,11 @@ const EventAdmin = () => {
           <Button component={Link} to={`/admin/event/${event.id}/optimize-agenda`} variant="filled" color="orange">
             Optimizar Agenda
           </Button>
+          {event?.config?.policies?.raffleEnabled && (
+            <Button component={Link} to={`/admin/event/${event.id}/raffle`} variant="filled" color="grape">
+              Sorteo
+            </Button>
+          )}
         </Group>
       </Group>
 

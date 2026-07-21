@@ -12,9 +12,10 @@ import {
   Paper,
   Loader,
   ActionIcon,
+  NumberInput,
 } from "@mantine/core";
 import { IconArrowUp, IconArrowDown } from "@tabler/icons-react";
-import { doc, setDoc, collection, getDocs } from "firebase/firestore";
+import { doc, setDoc, collection, getDocs, query, where, writeBatch } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { DEFAULT_POLICIES } from "../dashboard/types";
 import type { EventPolicies, Company } from "../dashboard/types";
@@ -75,11 +76,17 @@ export default function EventPoliciesModal({
   const [welcomeMessageEnabled, setWelcomeMessageEnabled] = useState(false);
   const [groupByRazonSocial, setGroupByRazonSocial] = useState(false);
   const [allowProductImageUpload, setAllowProductImageUpload] = useState(true);
+  const [maxMeetingsPerContact, setMaxMeetingsPerContact] = useState<number | "">("");
+  const [raffleEnabled, setRaffleEnabled] = useState(false);
+  const [raffleShowPointsToAttendee, setRaffleShowPointsToAttendee] = useState(false);
 
   // Empresas y asignación de mesas fijas
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companiesLoading, setCompaniesLoading] = useState(false);
   const [tableAssignments, setTableAssignments] = useState<Record<string, string | null>>({});
+  const [companyRoles, setCompanyRoles] = useState<Record<string, Set<string>>>({});
+  const [tableRoleFilter, setTableRoleFilter] = useState<"all" | "vendedor" | "comprador">("all");
+  const [usersByCompany, setUsersByCompany] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     if (!event?.config?.policies) return;
@@ -116,6 +123,9 @@ export default function EventPoliciesModal({
     setWelcomeMessageEnabled(p.welcomeMessageEnabled ?? false);
     setGroupByRazonSocial(p.groupByRazonSocial ?? false);
     setAllowProductImageUpload(p.allowProductImageUpload ?? true);
+    setMaxMeetingsPerContact(p.maxMeetingsPerContact ? p.maxMeetingsPerContact : "");
+    setRaffleEnabled(p.raffleEnabled ?? false);
+    setRaffleShowPointsToAttendee(p.raffleShowPointsToAttendee ?? false);
   }, [event]);
 
   // Cargar empresas cuando se abre el modal y tableMode es "fixed"
@@ -135,6 +145,26 @@ export default function EventPoliciesModal({
           assignments[c.nitNorm] = c.fixedTable || null;
         });
         setTableAssignments(assignments);
+
+        // Cargar asistentes del evento para poder filtrar empresas por rol (vendedor/comprador)
+        const usersSnap = await getDocs(
+          query(collection(db, "users"), where("eventId", "==", event.id))
+        );
+        const roles: Record<string, Set<string>> = {};
+        const usersByNit: Record<string, string[]> = {};
+        usersSnap.docs.forEach((d) => {
+          const u = d.data() as any;
+          const nit = u.companyId || u.company_nit;
+          if (!nit) return;
+          if (!usersByNit[nit]) usersByNit[nit] = [];
+          usersByNit[nit].push(d.id);
+          const tipo = (u.tipoAsistente || "").toLowerCase().trim();
+          if (!tipo) return;
+          if (!roles[nit]) roles[nit] = new Set();
+          roles[nit].add(tipo);
+        });
+        setCompanyRoles(roles);
+        setUsersByCompany(usersByNit);
       } catch (e) {
         console.error(e);
       } finally {
@@ -208,6 +238,9 @@ export default function EventPoliciesModal({
               welcomeMessageEnabled,
               groupByRazonSocial,
               allowProductImageUpload,
+              maxMeetingsPerContact: maxMeetingsPerContact === "" ? null : maxMeetingsPerContact,
+              raffleEnabled,
+              raffleShowPointsToAttendee,
             },
           },
         },
@@ -215,13 +248,35 @@ export default function EventPoliciesModal({
       );
 
       // Si tableMode es "fixed", guardar asignaciones de mesa en cada empresa
+      // y también en cada asistente de esa empresa (para que quede disponible
+      // sin tener que resolverlo a través de la empresa en cada lugar que lo usa)
       if (tableMode === "fixed") {
+        let batch = writeBatch(db);
+        let batchCount = 0;
+        const commitIfNeeded = async () => {
+          if (batchCount >= 450) {
+            await batch.commit();
+            batch = writeBatch(db);
+            batchCount = 0;
+          }
+        };
+
         for (const [nitNorm, fixedTable] of Object.entries(tableAssignments)) {
-          await setDoc(
-            doc(db, "events", event.id, "companies", nitNorm),
-            { fixedTable: fixedTable || null },
-            { merge: true }
-          );
+          const companyRef = doc(db, "events", event.id, "companies", nitNorm);
+          batch.set(companyRef, { fixedTable: fixedTable || null }, { merge: true });
+          batchCount++;
+          await commitIfNeeded();
+
+          for (const uid of usersByCompany[nitNorm] || []) {
+            const userRef = doc(db, "users", uid);
+            batch.set(userRef, { fixedTable: fixedTable || null }, { merge: true });
+            batchCount++;
+            await commitIfNeeded();
+          }
+        }
+
+        if (batchCount > 0) {
+          await batch.commit();
         }
       }
 
@@ -272,34 +327,51 @@ export default function EventPoliciesModal({
         {/* Asignación de mesas fijas por empresa */}
         {tableMode === "fixed" && (
           <Paper p="md" withBorder>
-            <Text fw={600} mb="sm">
-              Asignación de mesas fijas por empresa
-            </Text>
+            <Group justify="space-between" mb="sm">
+              <Text fw={600}>Asignación de mesas fijas por empresa</Text>
+              <Select
+                data={[
+                  { value: "all", label: "Todas las empresas" },
+                  { value: "vendedor", label: "Solo vendedores" },
+                  { value: "comprador", label: "Solo compradores" },
+                ]}
+                value={tableRoleFilter}
+                onChange={(v) => setTableRoleFilter((v as typeof tableRoleFilter) ?? "all")}
+                size="xs"
+                style={{ minWidth: 180 }}
+              />
+            </Group>
             {companiesLoading ? (
               <Loader size="sm" />
             ) : companies.length > 0 ? (
               <Stack gap="xs">
-                {companies.map((company) => (
-                  <Group key={company.nitNorm} justify="space-between">
-                    <Text size="sm" style={{ minWidth: 180 }}>
-                      {company.razonSocial || company.nitNorm}
-                    </Text>
-                    <Select
-                      data={tableOptions}
-                      value={tableAssignments[company.nitNorm] || null}
-                      onChange={(val) =>
-                        setTableAssignments((prev) => ({
-                          ...prev,
-                          [company.nitNorm]: val,
-                        }))
-                      }
-                      placeholder="Sin mesa asignada"
-                      clearable
-                      size="xs"
-                      style={{ minWidth: 150 }}
-                    />
-                  </Group>
-                ))}
+                {companies
+                  .filter(
+                    (c) =>
+                      tableRoleFilter === "all" ||
+                      companyRoles[c.nitNorm]?.has(tableRoleFilter)
+                  )
+                  .map((company) => (
+                    <Group key={company.nitNorm} justify="space-between">
+                      <Text size="sm" style={{ minWidth: 180 }}>
+                        {company.razonSocial || company.nitNorm}
+                      </Text>
+                      <Select
+                        data={tableOptions}
+                        value={tableAssignments[company.nitNorm] || null}
+                        onChange={(val) =>
+                          setTableAssignments((prev) => ({
+                            ...prev,
+                            [company.nitNorm]: val,
+                          }))
+                        }
+                        placeholder="Sin mesa asignada"
+                        clearable
+                        size="xs"
+                        style={{ minWidth: 150 }}
+                      />
+                    </Group>
+                  ))}
               </Stack>
             ) : (
               <Text size="sm" c="dimmed">
@@ -324,11 +396,24 @@ export default function EventPoliciesModal({
           label="Modo de agendamiento"
           description="Cómo se asignan los horarios"
           data={[
-            { value: "manual", label: "Manual (selección de slot al aceptar)" },
-            { value: "auto", label: "Automático (primer slot libre)" },
+            { value: "manual", label: "Manual (el receptor elige horario al aceptar)" },
+            { value: "requester_picks", label: "El solicitante elige horario y mesa (confirmación instantánea, sin paso de aceptar)" },
           ]}
           value={schedulingMode}
           onChange={(v) => setSchedulingMode((v as EventPolicies["schedulingMode"]) ?? "manual")}
+        />
+
+        <NumberInput
+          label="Límite de reuniones por contacto"
+          description="Máximo de veces que un mismo asistente puede reunirse con la misma persona o empresa (contando solicitudes pendientes y aceptadas). Déjalo vacío para no aplicar límite."
+          placeholder="Sin límite"
+          min={1}
+          step={1}
+          allowDecimal={false}
+          allowNegative={false}
+          clampBehavior="strict"
+          value={maxMeetingsPerContact}
+          onChange={(v) => setMaxMeetingsPerContact(v === "" ? "" : Number(v))}
         />
 
         <Select
@@ -355,6 +440,22 @@ export default function EventPoliciesModal({
           checked={cancelMeetingDisabled}
           onChange={(e) => setCancelMeetingDisabled(e.currentTarget.checked)}
         />
+
+        <Switch
+          label="Habilitar sorteo por reuniones"
+          description="El vendedor muestra un código QR único por cada reunión aceptada; al escanearlo, el comprador gana un punto para el sorteo"
+          checked={raffleEnabled}
+          onChange={(e) => setRaffleEnabled(e.currentTarget.checked)}
+        />
+
+        {raffleEnabled && (
+          <Switch
+            label="Mostrar puntos al comprador"
+            description="El comprador ve su propio conteo de puntos acumulados para el sorteo"
+            checked={raffleShowPointsToAttendee}
+            onChange={(e) => setRaffleShowPointsToAttendee(e.currentTarget.checked)}
+          />
+        )}
 
         <Switch
           label="Reuniones en standby hasta check-in"

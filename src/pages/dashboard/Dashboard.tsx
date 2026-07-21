@@ -183,8 +183,26 @@ export default function Dashboard() {
         selectedSlotId={dashboard.selectedSlotId}
         setSelectedSlotId={dashboard.setSelectedSlotId}
         chosenSlot={dashboard.chosenSlot}
-        setConfirmModalOpened={dashboard.setConfirmModalOpened}
-        onClose={() => dashboard.setSlotModalOpened(false)}
+        onConfirmClick={async () => {
+          // Si el solicitante está eligiendo horario, se confirma directo
+          // (sin el paso extra de ConfirmModal): la reunión queda agendada
+          // en el acto, sin necesidad de una segunda pantalla de revisión.
+          if (dashboard.pendingMeetingRequest) {
+            dashboard.setSlotModalOpened(false);
+            const success = await dashboard.confirmSendMeetingRequestWithSlot(
+              dashboard.chosenSlot,
+            );
+            if (success) {
+              setViewRequest({ view: "activity", tab: "agenda", _k: Date.now() });
+            }
+            return;
+          }
+          dashboard.setConfirmModalOpened(true);
+        }}
+        onClose={() => {
+          dashboard.setSlotModalOpened(false);
+          dashboard.setPendingMeetingRequest(null);
+        }}
         eventDates={[...new Set(dashboard.eventConfig?.eventDates || (dashboard.eventConfig?.eventDate ? [dashboard.eventConfig.eventDate] : []))]}
         selectedDate={dashboard.selectedDate}
         onDateChange={dashboard.handleDateChange}
@@ -193,10 +211,28 @@ export default function Dashboard() {
         opened={dashboard.confirmModalOpened}
         currentRequesterName={dashboard.currentRequesterName}
         chosenSlot={dashboard.chosenSlot}
-        onCancel={() => dashboard.setConfirmModalOpened(false)}
+        tableLabel={dashboard.chosenSlotTableLabel}
+        onCancel={() => {
+          dashboard.setConfirmModalOpened(false);
+          dashboard.setPendingMeetingRequest(null);
+        }}
         onAccept={async () => {
           dashboard.setConfirmModalOpened(false);
           dashboard.setSlotModalOpened(false);
+
+          if (dashboard.pendingMeetingRequest) {
+            if (!dashboard.chosenSlot) {
+              alert("No se pudo determinar el horario.");
+              return;
+            }
+            const success = await dashboard.confirmSendMeetingRequestWithSlot(
+              dashboard.chosenSlot,
+            );
+            if (success) {
+              setViewRequest({ view: "activity", tab: "agenda", _k: Date.now() });
+            }
+            return;
+          }
 
           const idToUse =
             dashboard.meetingToEdit ?? dashboard.meetingToAccept?.id;

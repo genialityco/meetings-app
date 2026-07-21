@@ -16,13 +16,24 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
-import { AgendaSlot, Assistant, Meeting, Notification, Company, EventPolicies, DEFAULT_POLICIES, MeetingContext } from "./types";
+import { Assistant, Meeting, Notification, Company, EventPolicies, DEFAULT_POLICIES, MeetingContext } from "./types";
 import { showNotification, notifications as mantineNotifications } from "@mantine/notifications";
 import { serverTimestamp } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { storage } from "../../firebase/firebaseConfig";
 import { sendWhatsAppMessage as sendWhatsAppAPI } from "../../utils/whatsappService";
 import { meetingAnalytics, profileAnalytics, trackError, trackEvent } from "../../utils/analytics";
+import {
+  parseISODate,
+  slotOverlapsBreakBlock,
+  sendSms,
+  sendMeetingAcceptedWhatsapp,
+  computeAvailableSlots,
+  createConfirmedMeeting,
+  notifyMeetingConfirmed,
+  getTableLabel,
+  countMeetingsWithContact,
+} from "./meetingSlotEngine";
 
 type Product = {
   id: string;
@@ -38,37 +49,6 @@ type Product = {
   createdAt?: any;
   updatedAt?: any;
 };
-
-// Helpers (puedes moverlos a helpers.ts si prefieres)
-function slotOverlapsBreakBlock(
-  slotStart: string,
-  meetingDuration: number,
-  breakBlocks: { start: string; end: string }[] = [],
-) {
-  const [h, m] = slotStart.split(":").map(Number);
-  const slotStartMin = h * 60 + m;
-  const slotEndMin = slotStartMin + meetingDuration;
-
-  return breakBlocks.some((block) => {
-    const [sh, sm] = block.start.split(":").map(Number);
-    const [eh, em] = block.end.split(":").map(Number);
-    const blockStartMin = sh * 60 + sm;
-    const blockEndMin = eh * 60 + em;
-    return (
-      (slotStartMin >= blockStartMin && slotStartMin < blockEndMin) ||
-      (slotEndMin > blockStartMin && slotEndMin <= blockEndMin) ||
-      (slotStartMin <= blockStartMin && slotEndMin >= blockEndMin)
-    );
-  });
-}
-
-async function sendSms(text: string, phone: string, apiVersion: "v1" | "v2" = "v1") {
-  await sendWhatsAppAPI({
-    apiVersion,
-    phone,
-    message: text,
-  });
-}
 
 function downloadVCard(participant: Assistant) {
   const vCard = `BEGIN:VCARD
@@ -97,99 +77,6 @@ function sendWhatsAppMessage(participant: Assistant) {
     "Hola, me gustaría contactarte sobre la reunión.",
   );
   window.open(`https://wa.me/${phone}?text=${message}`, "_blank");
-}
-
-async function sendMeetingAcceptedWhatsapp(
-  toPhone: string,
-  otherParticipant: Assistant,
-  meetingInfo: { timeSlot?: string; tableAssigned?: string; meetingDate?: string },
-  eventName?: string,
-  acceptedByName?: string,
-  whatsappApiVersion: "v1" | "v2" = "v1",
-  requesterData?: any,
-  fallbackInfo?: { enabled: boolean; email: string; subject: string; logoUrl?: string }
-) {
-  if (!toPhone) return;
-  const phone = toPhone.replace(/[^\d]/g, "");
-  
-  // Si es API v2, usar el endpoint de confirmación
-  if (whatsappApiVersion === "v2") {
-    const { sendMeetingConfirmation } = await import("../../utils/whatsappService");
-    
-    // Formatear fecha si existe
-    let dateStr = "";
-    if (meetingInfo.meetingDate) {
-      const [year, month, day] = meetingInfo.meetingDate.split("-").map(Number);
-      const date = new Date(year, month - 1, day);
-      dateStr = date.toLocaleDateString("es-ES", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-      });
-    }
-    
-    const schedule = dateStr 
-      ? `${dateStr} - ${meetingInfo.timeSlot || ""}`
-      : meetingInfo.timeSlot || "";
-    
-    await sendMeetingConfirmation({
-      phone,
-      eventName: eventName || "Evento",
-      acceptedBy: acceptedByName || "El participante",
-      meetingWith: otherParticipant?.nombre || "Participante",
-      company: otherParticipant?.empresa || "Empresa",
-      schedule,
-      table: meetingInfo.tableAssigned || "N/A",
-      fallbackInfo,
-    });
-    
-    return;
-  }
-  
-  // API v1: usar el método anterior
-  // Formatear fecha si existe
-  let dateStr = "";
-  if (meetingInfo.meetingDate) {
-    const [year, month, day] = meetingInfo.meetingDate.split("-").map(Number);
-    const date = new Date(year, month - 1, day);
-    dateStr = date.toLocaleDateString("es-ES", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-    });
-  }
-  
-  const eventLine = eventName ? `📌 *Evento:* ${eventName}\n` : "";
-  const acceptedLine = acceptedByName
-    ? `✅ *${acceptedByName}* ha aceptado la reunión.\n\n`
-    : "";
-  const dateLine = dateStr ? `📅 *Día:* ${dateStr}\n` : "";
-  
-  const message =
-    `🤝 *¡Reunión confirmada!*\n\n` +
-    eventLine +
-    acceptedLine +
-    `👤 *Con:* ${otherParticipant?.nombre || ""}\n` +
-    `🏢 *Empresa:* ${otherParticipant?.empresa || ""}\n` +
-    dateLine +
-    `🕐 *Horario:* ${meetingInfo.timeSlot || ""}\n` +
-    `🪑 *Mesa:* ${meetingInfo.tableAssigned || ""}\n\n` +
-    `¡Te esperamos!`;
-
-  await sendWhatsAppAPI({
-    apiVersion: whatsappApiVersion,
-    phone,
-    message,
-    fallbackInfo,
-    metadata: {
-      eventName: eventName || "Evento",
-      requesterName: requesterData?.nombre || otherParticipant?.nombre || "",
-      requesterCompany: requesterData?.empresa || otherParticipant?.empresa || "",
-      requesterPosition: requesterData?.cargo || "",
-      requesterEmail: requesterData?.correo || "",
-      requesterPhone: requesterData?.telefono || "",
-    },
-  });
 }
 
 async function sendMeetingCancelledWhatsapp(
@@ -390,6 +277,12 @@ export function useDashboardData(eventId?: string) {
   const [selectedRange, setSelectedRange] = useState<string | null>(null);
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [confirmModalOpened, setConfirmModalOpened] = useState(false);
+  const [pendingMeetingRequest, setPendingMeetingRequest] = useState<{
+    assistantId: string;
+    assistantPhone: string;
+    groupId: string | null;
+    context?: MeetingContext;
+  } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [interestFilter, setInterestFilter] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
@@ -818,6 +711,32 @@ export function useDashboardData(eventId?: string) {
     }
   };
 
+  // Valida la política "maxMeetingsPerContact": si ya se alcanzó el máximo de
+  // reuniones con esta persona (o cualquier representante de su misma empresa),
+  // muestra el error y devuelve false para que el llamador aborte.
+  const checkContactMeetingLimit = async (receiverId: string, receiverData: any): Promise<boolean> => {
+    const limit = policies.maxMeetingsPerContact;
+    if (!limit || !uid || !eventId) return true;
+
+    const receiverCompanyId = receiverData?.companyId || receiverData?.company_nit || null;
+    const count = await countMeetingsWithContact({
+      eventId,
+      userId: uid,
+      contactId: receiverId,
+      contactCompanyId: receiverCompanyId,
+    });
+
+    if (count >= limit) {
+      showNotification({
+        title: "Límite de reuniones alcanzado",
+        message: `Ya tienes ${count} reunión(es) con esta persona o empresa. El máximo permitido es ${limit}.`,
+        color: "red",
+      });
+      return false;
+    }
+    return true;
+  };
+
   const sendMeetingRequest = async (
     assistantId: string,
     assistantPhone: string,
@@ -857,6 +776,10 @@ export function useDashboardData(eventId?: string) {
           color: "red",
         });
         return Promise.reject(new Error("Receiver not found"));
+      }
+
+      if (!(await checkContactMeetingLimit(assistantId, receiverSnap.data()))) {
+        return Promise.reject(new Error("Meeting limit reached"));
       }
 
       const data: any = {
@@ -973,6 +896,115 @@ export function useDashboardData(eventId?: string) {
       // console.error(e);
       trackError(e instanceof Error ? e.message : String(e), 'useDashboardData.sendMeetingRequest');
       return Promise.reject(e);
+    }
+  };
+
+  // Punto de entrada único para solicitudes de reunión 1:1: si la política
+  // schedulingMode es "requester_picks", abre el selector de horario para que
+  // el solicitante elija el slot y la reunión quede confirmada de inmediato.
+  // Si no (o si es un envío grupal con groupId), delega en el flujo clásico.
+  const requestMeetingWithSlotPicker = async (
+    assistantId: string,
+    assistantPhone: string,
+    groupId: string | null = null,
+    context?: MeetingContext,
+  ): Promise<{ deferred: boolean } | void> => {
+    if (policies.schedulingMode !== "requester_picks" || groupId) {
+      return sendMeetingRequest(assistantId, assistantPhone, groupId, context);
+    }
+
+    const receiverSnap = await getDoc(doc(db, "users", assistantId));
+    if (!receiverSnap.exists()) {
+      showNotification({
+        title: "Error",
+        message: "El asistente al que intentas enviar la solicitud ya no existe.",
+        color: "red",
+      });
+      return Promise.reject(new Error("Receiver not found"));
+    }
+
+    if (!(await checkContactMeetingLimit(assistantId, receiverSnap.data()))) {
+      return Promise.reject(new Error("Meeting limit reached"));
+    }
+
+    setPendingMeetingRequest({ assistantId, assistantPhone, groupId, context });
+    await prepareSlotSelectionForRequest(assistantId);
+    return { deferred: true };
+  };
+
+  // Crea la reunión ya "accepted" con el slot elegido por el solicitante y notifica a ambos.
+  const confirmSendMeetingRequestWithSlot = async (slot: any): Promise<boolean> => {
+    if (!pendingMeetingRequest || !eventId || !uid || !slot?.id) return false;
+    const { assistantId, context } = pendingMeetingRequest;
+
+    setConfirmLoading(true);
+    const notifId = `request-meeting-${assistantId}-${Date.now()}`;
+    mantineNotifications.show({
+      id: notifId,
+      title: "Agendando reunión",
+      message: "Estamos confirmando el horario y la mesa, espera un momento...",
+      loading: true,
+      autoClose: false,
+      withCloseButton: false,
+    });
+
+    try {
+      const { meetingId, eventDateISO } = await createConfirmedMeeting({
+        eventId,
+        eventConfig,
+        requesterId: uid,
+        receiverId: assistantId,
+        slot,
+        context,
+      });
+
+      await notifyMeetingConfirmed({
+        requesterId: uid,
+        receiverId: assistantId,
+        slot,
+        eventDateISO,
+        isEdit: false,
+        policies,
+        eventName,
+        acceptedByName: null,
+        tableNames: eventConfig?.tableNames,
+      });
+
+      meetingAnalytics.requestSent(assistantId, !!context?.contextNote);
+      meetingAnalytics.accepted(meetingId);
+
+      setSlotModalOpened(false);
+      setConfirmModalOpened(false);
+      setPendingMeetingRequest(null);
+
+      mantineNotifications.update({
+        id: notifId,
+        title: "Reunión confirmada",
+        message: "La reunión fue agendada y confirmada correctamente.",
+        color: "teal",
+        loading: false,
+        autoClose: 4000,
+        withCloseButton: true,
+      });
+
+      return true;
+    } catch (e: any) {
+      console.error("❌ confirmSendMeetingRequestWithSlot:", e?.message || e);
+      const msg = /already exists|Slot already taken|ya está ocupado/i.test(String(e?.message))
+        ? "El horario escogido ya no está disponible o la persona ya tiene reunión en esa franja."
+        : "No se pudo confirmar la reunión. Verifica tu conexión e intenta de nuevo.";
+      mantineNotifications.update({
+        id: notifId,
+        title: "Error al agendar la reunión",
+        message: msg,
+        color: "red",
+        loading: false,
+        autoClose: 6000,
+        withCloseButton: true,
+      });
+      return false;
+    } finally {
+      setConfirmLoading(false);
     }
   };
 
@@ -1404,6 +1436,14 @@ export function useDashboardData(eventId?: string) {
     }
   };
 
+  // Resuelve la mesa fija (si existe) de la empresa del receptor, para el filtro de tableMode "fixed"
+  const resolveFixedTableForReceiver = (receiverId: string): string | null => {
+    const receiver = assistants.find((a: Assistant) => a.id === receiverId);
+    const receiverCompanyId = receiver?.companyId || receiver?.company_nit;
+    const receiverCompany = companies.find((c: Company) => c.nitNorm === receiverCompanyId);
+    return receiverCompany?.fixedTable || null;
+  };
+
   // Seleccionar slots disponibles para aceptar/reagendar reuniones
   const prepareSlotSelection = async (meetingId: string, isEdit = false, selectedDate?: string) => {
     setPrepareSlotSelectionLoading(true);
@@ -1425,214 +1465,58 @@ export function useDashboardData(eventId?: string) {
         setMeetingToAccept({ id: meetingId, requesterId, receiverId });
       }
 
-      // Soporte multi-día: usar eventDates si existe, sino eventDate
-      const eventDates = eventConfig.eventDates || [eventConfig.eventDate];
-      const eventDayISO = selectedDate || eventDates[0]; // Usar fecha seleccionada o primera fecha
-      
-      // Establecer la fecha seleccionada en el estado si no está definida
+      if (!eventId) throw new Error("Event ID is required");
+
+      const receiverFixedTable = resolveFixedTableForReceiver(receiverId);
+      const { slots, eventDayISO } = await computeAvailableSlots({
+        eventId,
+        eventConfig,
+        policies,
+        requesterId,
+        receiverId,
+        selectedDate,
+        receiverFixedTable,
+      });
+
       if (!selectedDate) {
         setSelectedDate(eventDayISO);
       }
-      
-      const eventDate = parseISODate(eventDayISO);
-
-      // Obtener configuración específica del día (si existe)
-      const dayConfig = eventConfig.dailyConfig?.[eventDayISO] || {
-        startTime: eventConfig.startTime,
-        endTime: eventConfig.endTime,
-        breakBlocks: eventConfig.breakBlocks || [],
-      };
-
-      // Para saber si el evento es hoy y así bloquear horas pasadas solo en ese caso
-      const today = new Date();
-      const todayMid = new Date(today);
-      todayMid.setHours(0, 0, 0, 0);
-      const eventMid = new Date(eventDate);
-      eventMid.setHours(0, 0, 0, 0);
-      const isEventToday = todayMid.getTime() === eventMid.getTime();
-      const now = new Date();
-
-      // Reuniones aceptadas (mismo día del evento)
-      // meetingDate: "YYYY-MM-DD"
-      let accSn;
-      try {
-        accSn = await getDocs(
-          query(
-            collection(db, "events", eventId!, "meetings"),
-            where("status", "==", "accepted"),
-            where("participants", "array-contains-any", [
-              requesterId,
-              receiverId,
-            ]),
-            where("meetingDate", "==", eventDayISO),
-          ),
-        );
-      } catch {
-        accSn = await getDocs(
-          query(
-            collection(db, "events", eventId!, "meetings"),
-            where("status", "==", "accepted"),
-            where("participants", "array-contains-any", [
-              requesterId,
-              receiverId,
-            ]),
-          ),
-        );
-      }
-
-      const occupiedRanges = accSn.docs
-        .map((d) => d.data().timeSlot as string | undefined)
-        .filter(Boolean)
-        .map((ts) => {
-          const [s, e] = ts!.split(" - ");
-          const [sh, sm] = s.split(":").map(Number);
-          const [eh, em] = e.split(":").map(Number);
-          return { start: sh * 60 + sm, end: eh * 60 + em };
-        });
-
-      // Agenda de slots disponibles - FILTRAR POR FECHA
-      if (!eventId) throw new Error("Event ID is required");
-      
-      let agendaQuery = query(
-        collection(db, "events", eventId, "agenda"),
-        where("available", "==", true),
-        orderBy("startTime"),
-      );
-      
-      // Agregar filtro por fecha si el campo existe
-      try {
-        agendaQuery = query(
-          collection(db, "events", eventId, "agenda"),
-          where("available", "==", true),
-          where("date", "==", eventDayISO),
-          orderBy("startTime"),
-        );
-      } catch (e) {
-        // Si falla (índice no existe o campo no existe), usar query sin filtro de fecha
-        console.warn("Usando query sin filtro de fecha:", e);
-      }
-      
-      const agSn = await getDocs(agendaQuery);
-
-      // Cargar slots bloqueados del usuario actual (requesterId o receiverId)
-      const blockedSlotsRequester = await getDocs(
-        query(
-          collection(db, "users", requesterId, "blockedSlots"),
-          where("eventId", "==", eventId),
-          where("date", "==", eventDayISO)
-        )
-      );
-      
-      const blockedSlotsReceiver = await getDocs(
-        query(
-          collection(db, "users", receiverId, "blockedSlots"),
-          where("eventId", "==", eventId),
-          where("date", "==", eventDayISO)
-        )
-      );
-
-      // Crear set de slots bloqueados (por startTime)
-      const blockedTimes = new Set<string>();
-      blockedSlotsRequester.docs.forEach((d) => {
-        const data = d.data();
-        blockedTimes.add(data.startTime);
-      });
-      blockedSlotsReceiver.docs.forEach((d) => {
-        const data = d.data();
-        blockedTimes.add(data.startTime);
-      });
-
-      const filtered = agSn.docs
-        .map((d) => ({ id: d.id, ...(d.data() as Omit<AgendaSlot, "id">) }))
-        .filter((slot) => {
-          // Filtrar por fecha si el slot tiene el campo date
-          if (slot.date && slot.date !== eventDayISO) return false;
-          
-          // Filtrar slots bloqueados por cualquiera de los participantes
-          if (blockedTimes.has(slot.startTime)) return false;
-          
-          const [h, m] = slot.startTime.split(":").map(Number);
-
-          // la fecha/hora del slot con la FECHA DEL EVENTO (y no con hoy)
-          const slotDateTime = new Date(eventDate);
-          slotDateTime.setHours(h, m, 0, 0);
-
-          // Regla: solo bloquear slots pasados si el evento es hoy
-          // Si el evento es futuro, muestra todos los slots del evento
-          if (isEventToday && slotDateTime <= now) return false;
-
-          // Respeta bloques de descanso del día específico
-          if (
-            slotOverlapsBreakBlock(
-              slot.startTime,
-              eventConfig.meetingDuration,
-              dayConfig.breakBlocks, // Usar breakBlocks del día específico
-            )
-          )
-            return false;
-
-          // verificación de solape con aceptadas del mismo día (ocupadas en minutos)
-          const slotStart = h * 60 + m;
-          const slotEnd = slotStart + eventConfig.meetingDuration;
-          if (
-            occupiedRanges.some((r) => slotStart < r.end && slotEnd > r.start)
-          )
-            return false;
-
-          return true;
-        });
-
-      // Filtro adicional: si tableMode es "fixed", solo mostrar slots de la mesa fija del receiver
-      let finalSlots = filtered;
-      if (policies?.tableMode === "fixed") {
-        const receiver = assistants.find((a: Assistant) => a.id === receiverId);
-        const receiverCompanyId = receiver?.companyId || receiver?.company_nit;
-        const receiverCompany = companies.find((c: Company) => c.nitNorm === receiverCompanyId);
-        const fixedTable = receiverCompany?.fixedTable;
-
-        if (fixedTable) {
-          finalSlots = filtered.filter(
-            (slot) => String(slot.tableNumber) === fixedTable,
-          );
-        }
-      }
-
-      setAvailableSlots(finalSlots);
-
-      // If no free slots and standby policy is active, include slots occupied by standby meetings
-      if (finalSlots.length === 0 && eventConfig?.policies?.standbyCheckInRequired) {
-        const standbySnap = await getDocs(
-          query(
-            collection(db, "events", eventId, "meetings"),
-            where("status", "==", "accepted"),
-            where("checkInStatus", "==", "standby")
-          )
-        );
-        const standbySlotIds = new Set(standbySnap.docs.map((d) => d.data().slotId).filter(Boolean));
-        // Fetch all slots (including unavailable) to find standby ones
-        const allAgendaSnap = await getDocs(
-          query(
-            collection(db, "events", eventId, "agenda"),
-            where("date", "==", eventDayISO),
-            orderBy("startTime")
-          )
-        );
-        const standbySlots = allAgendaSnap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .filter((s: any) => standbySlotIds.has(s.id));
-        setAvailableSlots(standbySlots.map((s: any) => ({ ...s, isStandbySlot: true })));
-      }
-
+      setAvailableSlots(slots);
       setSlotModalOpened(true);
     } finally {
       setPrepareSlotSelectionLoading(false);
     }
   };
 
-  function parseISODate(dateStr: string): Date {
-    const [y, m, d] = dateStr.split("-").map(Number);
-    return new Date(y, m - 1, d);
-  }
+  // Igual que prepareSlotSelection pero para una solicitud nueva (aún no existe
+  // el documento de la reunión): el requester es el usuario actual.
+  const prepareSlotSelectionForRequest = async (receiverId: string, selectedDate?: string) => {
+    setPrepareSlotSelectionLoading(true);
+    try {
+      if (!eventId || !uid) throw new Error("Event ID / usuario requerido");
+      setMeetingToAccept(null);
+      setMeetingToEdit(null);
+
+      const receiverFixedTable = resolveFixedTableForReceiver(receiverId);
+      const { slots, eventDayISO } = await computeAvailableSlots({
+        eventId,
+        eventConfig,
+        policies,
+        requesterId: uid,
+        receiverId,
+        selectedDate,
+        receiverFixedTable,
+      });
+
+      if (!selectedDate) {
+        setSelectedDate(eventDayISO);
+      }
+      setAvailableSlots(slots);
+      setSlotModalOpened(true);
+    } finally {
+      setPrepareSlotSelectionLoading(false);
+    }
+  };
 
   // Confirmar la selección de slot para la reunión
   const confirmAcceptWithSlot = async (meetingId: string, slot: any): Promise<boolean> => {
@@ -1868,114 +1752,17 @@ export function useDashboardData(eventId?: string) {
         await batch.commit();
       }
 
-      // 3) Notificaciones/SMS/WhatsApp (igual que tu versión)
-      const [reqSnap, recvSnap] = await Promise.all([
-        requesterId
-          ? getDoc(doc(db, "users", requesterId))
-          : Promise.resolve(null as any),
-        receiverId
-          ? getDoc(doc(db, "users", receiverId))
-          : Promise.resolve(null as any),
-      ]);
-      const requester = reqSnap?.exists()
-        ? (reqSnap.data() as Assistant)
-        : null;
-      const receiver = recvSnap?.exists()
-        ? (recvSnap.data() as Assistant)
-        : null;
-
-      // Formatear fecha para notificaciones
-      let dateStr = "";
-      if (eventDateISO) {
-        const [year, month, day] = eventDateISO.split("-").map(Number);
-        const date = new Date(year, month - 1, day);
-        dateStr = date.toLocaleDateString("es-ES", {
-          weekday: "long",
-          day: "numeric",
-          month: "long",
-        });
-      }
-
-      const notificationsBatch = isEdit
-        ? [
-            {
-              userId: requesterId!,
-              title: "Reunión modificada",
-              message: `Tu reunión con ${receiver?.nombre || ""} fue movida a ${dateStr ? `${dateStr}, ` : ""}${
-                slot.startTime
-              } (Mesa ${slot.tableNumber}).`,
-              type: "meeting_modified" as const,
-            },
-            {
-              userId: receiverId!,
-              title: "Reunión modificada",
-              message: `Has cambiado la reunión con ${
-                requester?.nombre || ""
-              } a ${dateStr ? `${dateStr}, ` : ""}${slot.startTime} (Mesa ${slot.tableNumber}).`,
-              type: "meeting_modified" as const,
-            },
-          ]
-        : [
-            {
-              userId: requesterId!,
-              title: "Reunión aceptada",
-              message: `Tu reunión con ${
-                receiver?.nombre || ""
-              } fue aceptada para ${dateStr ? `${dateStr}, ` : ""}${slot.startTime} en Mesa ${
-                slot.tableNumber
-              }.`,
-              type: "meeting_accepted" as const,
-            },
-            {
-              userId: receiverId!,
-              title: "Reunión confirmada",
-              message: `Has aceptado la reunión con ${
-                requester?.nombre || ""
-              } para ${dateStr ? `${dateStr}, ` : ""}${slot.startTime} en Mesa ${slot.tableNumber}.`,
-              type: "meeting_accepted" as const,
-            },
-          ];
-
-      if (policies.dashboardNotificationsEnabled !== false) {
-        for (const notif of notificationsBatch) {
-          await addDoc(collection(db, "notifications"), {
-            ...notif,
-            timestamp: new Date(),
-            read: false,
-          });
-        }
-      }
-
-      const whatsappApiVersion = policies.whatsappApiVersion || "v1";
-      const smsMsg = isEdit
-        ? `Tu reunión fue movida a ${slot.startTime} en Mesa ${slot.tableNumber}.`
-        : `Tu reunión fue aceptada para ${slot.startTime} en Mesa ${slot.tableNumber}.`;
-
-      // El receptor (uid actual) es quien acepta
-      const accepterName = receiver?.nombre || requester?.nombre || "";
-      const fallbackEnabled = policies.fallbackEmailOnWaFailure ?? false;
-
-      if (policies.whatsappNotificationsEnabled !== false) {
-        if (requester?.telefono) await sendSms(smsMsg, requester.telefono, whatsappApiVersion);
-        if (receiver?.telefono) await sendSms(smsMsg, receiver.telefono, whatsappApiVersion);
-
-        if (requester?.telefono) {
-          await sendMeetingAcceptedWhatsapp(requester.telefono, receiver!, {
-            timeSlot: `${slot.startTime} - ${slot.endTime}`,
-            tableAssigned: slot.tableNumber,
-            meetingDate: eventDateISO,
-          }, eventName, accepterName, whatsappApiVersion, requester,
-          { enabled: fallbackEnabled, email: requester.correo || "", subject: `Confirmación de reunión - ${eventName}` });
-        }
-        if (receiver?.telefono) {
-          await sendMeetingAcceptedWhatsapp(receiver.telefono, requester!, {
-            timeSlot: `${slot.startTime} - ${slot.endTime}`,
-            tableAssigned: slot.tableNumber,
-            meetingDate: eventDateISO,
-          }, eventName, accepterName, whatsappApiVersion, receiver,
-          { enabled: fallbackEnabled, email: receiver?.correo || "", subject: `Confirmación de reunión - ${eventName}` });
-        }
-      }
+      // 3) Notificaciones/SMS/WhatsApp
+      await notifyMeetingConfirmed({
+        requesterId: requesterId!,
+        receiverId: receiverId!,
+        slot,
+        eventDateISO,
+        isEdit,
+        policies,
+        eventName,
+        tableNames: eventConfig?.tableNames,
+      });
 
       // 4) Cierra los modales y limpia estado
       setSlotModalOpened(false);
@@ -2045,7 +1832,7 @@ export function useDashboardData(eventId?: string) {
     ? (groupedSlots.find((g) => g.id === selectedRange)?.slots || []).map(
         (s: any) => ({
           value: s.id,
-          label: `Mesa ${s.tableNumber}`,
+          label: getTableLabel(s.tableNumber, eventConfig?.tableNames),
         }),
       )
     : [];
@@ -2069,7 +1856,9 @@ export function useDashboardData(eventId?: string) {
               : meeting.requesterId;
           return assistants.find((a) => a.id === otherId)?.nombre || "";
         })()
-      : "";
+      : pendingMeetingRequest
+        ? assistants.find((a) => a.id === pendingMeetingRequest.assistantId)?.nombre || ""
+        : "";
 
   const interestOptions = Array.from(
     new Set(assistants.map((a) => a.interesPrincipal).filter(Boolean)),
@@ -2162,6 +1951,8 @@ export function useDashboardData(eventId?: string) {
       const meetingId = meetingToEdit || meetingToAccept?.id;
       const isEdit = !!meetingToEdit;
       prepareSlotSelection(meetingId, isEdit, date);
+    } else if (pendingMeetingRequest) {
+      prepareSlotSelectionForRequest(pendingMeetingRequest.assistantId, date);
     }
   };
 
@@ -2204,6 +1995,7 @@ export function useDashboardData(eventId?: string) {
   // ---------------------- RETORNO ----------------------
 
   return {
+    eventId,
     uid,
     currentUser,
     assistants,
@@ -2240,8 +2032,13 @@ export function useDashboardData(eventId?: string) {
     interestOptions,
 
     sendMeetingRequest,
+    requestMeetingWithSlotPicker,
+    confirmSendMeetingRequestWithSlot,
+    pendingMeetingRequest,
+    setPendingMeetingRequest,
     updateMeetingStatus,
     prepareSlotSelection,
+    prepareSlotSelectionForRequest,
     downloadVCard,
     sendSms,
     sendWhatsAppMessage,

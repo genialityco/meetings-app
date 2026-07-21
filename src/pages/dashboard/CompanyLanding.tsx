@@ -38,6 +38,8 @@ import { useCompanyData } from "./useCompanyData";
 import { DEFAULT_POLICIES } from "./types";
 import type { Product } from "./types";
 import type { CompanyRepresentative } from "./useCompanyData";
+import SlotModal from "./SlotModal";
+import { getTableLabel } from "./meetingSlotEngine";
 
 const FIELD_ICONS: Record<string, any> = {
   empresa: IconBuildingStore,
@@ -78,7 +80,23 @@ export default function CompanyLanding() {
     loading,
     currentUser,
     userMeetings,
-    sendMeetingRequest,
+    requestMeetingWithSlotPicker,
+    prepareSlotSelectionForRequest,
+    confirmSendMeetingRequestWithSlot,
+    pendingMeetingRequest,
+    setPendingMeetingRequest,
+    slotModalOpened,
+    setSlotModalOpened,
+    availableSlots,
+    selectedDate,
+    selectedRange,
+    setSelectedRange,
+    selectedSlotId,
+    setSelectedSlotId,
+    confirmLoading,
+    groupedSlots,
+    tableOptions,
+    chosenSlot,
   } = useCompanyData(eventId, companyNit);
 
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -111,15 +129,17 @@ export default function CompanyLanding() {
       : `rep-${rep.id}`;
     setLoadingId(key);
     try {
-      await sendMeetingRequest(rep.id, rep.telefono || "", {
+      const result = await requestMeetingWithSlotPicker(rep.id, rep.telefono || "", {
         companyId: companyNit || null,
         ...context,
       });
-      showNotification({
-        title: "Solicitud enviada",
-        message: `Solicitud enviada a ${rep.nombre}.`,
-        color: "teal",
-      });
+      if (!(result && (result as any).deferred)) {
+        showNotification({
+          title: "Solicitud enviada",
+          message: `Solicitud enviada a ${rep.nombre}.`,
+          color: "teal",
+        });
+      }
     } catch {
       showNotification({
         title: "Error",
@@ -225,7 +245,7 @@ export default function CompanyLanding() {
                   </Badge>
                   {company.fixedTable && (
                     <Badge variant="light" size="sm" color="orange">
-                      Mesa: {company.fixedTable}
+                      {getTableLabel(company.fixedTable, eventConfig?.tableNames)}
                     </Badge>
                   )}
                 </Group>
@@ -565,6 +585,36 @@ export default function CompanyLanding() {
           )}
         </Stack>
       </Container>
+
+      <SlotModal
+        opened={slotModalOpened}
+        availableSlots={availableSlots}
+        confirmLoading={confirmLoading}
+        groupedSlots={groupedSlots}
+        selectedRange={selectedRange}
+        setSelectedRange={setSelectedRange}
+        tableOptions={tableOptions}
+        selectedSlotId={selectedSlotId}
+        setSelectedSlotId={setSelectedSlotId}
+        chosenSlot={chosenSlot}
+        onConfirmClick={async () => {
+          // El solicitante siempre elige el horario en esta página: se confirma
+          // directo, sin un segundo modal de revisión.
+          setSlotModalOpened(false);
+          await confirmSendMeetingRequestWithSlot(chosenSlot);
+        }}
+        onClose={() => {
+          setSlotModalOpened(false);
+          setPendingMeetingRequest(null);
+        }}
+        eventDates={[...new Set(eventConfig?.eventDates || (eventConfig?.eventDate ? [eventConfig.eventDate] : []))]}
+        selectedDate={selectedDate}
+        onDateChange={(date: string) => {
+          if (pendingMeetingRequest) {
+            prepareSlotSelectionForRequest(pendingMeetingRequest.receiverId, date);
+          }
+        }}
+      />
     </MantineProvider>
   );
 }

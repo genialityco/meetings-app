@@ -52,6 +52,12 @@ interface MatchesTabProps {
     groupId?: string | null,
     context?: MeetingContext,
   ) => Promise<void>;
+  requestMeetingWithSlotPicker?: (
+    id: string,
+    phone: string,
+    groupId?: string | null,
+    context?: MeetingContext,
+  ) => Promise<{ deferred: boolean } | void>;
   solicitarReunionHabilitado: boolean;
   eventId?: string;
   highlightEntityId?: string;
@@ -60,6 +66,7 @@ interface MatchesTabProps {
 export default function MatchesTab({
   currentUser,
   sendMeetingRequest,
+  requestMeetingWithSlotPicker,
   solicitarReunionHabilitado,
   eventId,
   highlightEntityId,
@@ -178,7 +185,8 @@ export default function MatchesTab({
       const userData = userDocSnap.data();
       const phone = userData?.telefono || "";
 
-      await sendMeetingRequest(selectedMatch.userId, phone, null, {
+      const send = requestMeetingWithSlotPicker || sendMeetingRequest;
+      const result = await send(selectedMatch.userId, phone, null, {
         contextNote: message || `Match de ${selectedMatch.affinityScore}% de afinidad`,
       });
 
@@ -187,11 +195,13 @@ export default function MatchesTab({
         status: "meeting_requested",
       });
 
-      showNotification({
-        title: "Solicitud enviada",
-        message: `Solicitud enviada a ${selectedMatch.userName}${message ? " con tu mensaje personalizado" : ""}.`,
-        color: "teal",
-      });
+      if (!(result && (result as any).deferred)) {
+        showNotification({
+          title: "Solicitud enviada",
+          message: `Solicitud enviada a ${selectedMatch.userName}${message ? " con tu mensaje personalizado" : ""}.`,
+          color: "teal",
+        });
+      }
 
       setModalOpened(false);
       setSelectedMatch(null);

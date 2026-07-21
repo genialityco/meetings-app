@@ -14,6 +14,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../firebase/firebaseConfig";
 import { UserContext } from "../context/UserContext";
+import { getTableLabel } from "./dashboard/meetingSlotEngine";
 import {
   Loader,
   Container,
@@ -460,13 +461,14 @@ export default function MeetingAutoResponse() {
       const evName = eventDocSnap.exists() ? eventDocSnap.data().eventName || "" : "";
       const eventConfig = eventDocSnap.exists() ? eventDocSnap.data().config || {} : {};
       const evPolicies = eventConfig.policies || {};
+      const tableLabel = getTableLabel(slot.tableNumber, eventConfig.tableNames);
 
       // Notificación in-app
       if (evPolicies.dashboardNotificationsEnabled !== false) {
         await addDoc(collection(db, "notifications"), {
           userId: mtgData.requesterId,
           title: "Reunión aceptada",
-          message: `${receiver?.nombre || "Un participante"} ha aceptado tu reunión para ${slot.startTime} en mesa ${slot.tableNumber}.`,
+          message: `${receiver?.nombre || "Un participante"} ha aceptado tu reunión para ${slot.startTime} en ${tableLabel}.`,
           timestamp: new Date(),
           read: false,
           type: "meeting_accepted",
@@ -478,7 +480,7 @@ export default function MeetingAutoResponse() {
       const accepterName = receiver?.nombre || "";
       const meetingInfo = {
         timeSlot: `${slot.startTime} - ${slot.endTime}`,
-        tableAssigned: String(slot.tableNumber),
+        tableAssigned: tableLabel,
       };
 
       if (evPolicies.whatsappNotificationsEnabled !== false) {

@@ -29,6 +29,8 @@ const OptimizeAgendaPage = lazy(() => import("./pages/admin/OptimizeAgendaPage.t
 const EventSurveyResultsPage = lazy(() => import("./pages/admin/EventSurveyResultsPage.tsx"));
 const BadgePage = lazy(() => import("./pages/dashboard/BadgePage.tsx"));
 const QuickCheckInPage = lazy(() => import("./pages/admin/QuickCheckInPage.tsx"));
+const RaffleScanPage = lazy(() => import("./pages/RaffleScanPage.tsx"));
+const RafflePage = lazy(() => import("./pages/admin/RafflePage.tsx"));
 
 const App = () => {
   // Trackear automáticamente todas las vistas de página
@@ -86,6 +88,11 @@ const App = () => {
         <Route
           path="/admin/event/:eventId/checkin/:userId"
           element={<ProtectedAdminRoute><QuickCheckInPage /></ProtectedAdminRoute>}
+        />
+        <Route path="/raffle-scan/:eventId/:meetingId" element={<RaffleScanPage />} />
+        <Route
+          path="/admin/event/:eventId/raffle"
+          element={<ProtectedAdminRoute><RafflePage /></ProtectedAdminRoute>}
         />
         <Route
           path="/admin/event/:eventId/optimize-agenda"

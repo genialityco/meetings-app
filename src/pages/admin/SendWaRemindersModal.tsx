@@ -13,7 +13,7 @@ import {
 } from "@mantine/core";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
-import { sendWhatsAppMessage } from "../../utils/whatsappService";
+//import { sendWhatsAppMessage } from "../../utils/whatsappService";
 
 interface SendWaRemindersModalProps {
   opened: boolean;
@@ -189,29 +189,29 @@ export default function SendWaRemindersModal({
         const reqEmail = counterpart?.correo || "-";
         const reqPhone = counterpart?.telefono || "-";
 
-        const success = await sendWhatsAppMessage({
-          apiVersion: whatsappApiVersion,
-          phone: user.telefono,
-          message: "Tienes una solicitud de reunión pendiente por revisar en el evento. Por favor ingresa para gestionarla.", // Mensaje vacío / fallback
-          fallbackInfo: {
-            enabled: event.config?.policies?.fallbackEmailOnWaFailure ?? false,
-            email: user.correo || "",
-            subject: `Recordatorio de reunión pendiente - ${event.eventName}`,
-          },
-          metadata: {
-            eventName: event.eventName || "Evento",
-            requesterName: reqName,
-            requesterCompany: reqCompany,
-            requesterPosition: reqPosition,
-            requesterEmail: reqEmail,
-            requesterPhone: reqPhone,
-            acceptUrl: acceptUrl,
-            cancelUrl: cancelUrl,
-            contextNote: "Tienes una solicitud de reunión pendiente por revisar en el evento.", // Para V2
-          }
-        });
+        // const success = await sendWhatsAppMessage({
+        //   apiVersion: whatsappApiVersion,
+        //   phone: user.telefono,
+        //   message: "Tienes una solicitud de reunión pendiente por revisar en el evento. Por favor ingresa para gestionarla.", // Mensaje vacío / fallback
+        //   fallbackInfo: {
+        //     enabled: event.config?.policies?.fallbackEmailOnWaFailure ?? false,
+        //     email: user.correo || "",
+        //     subject: `Recordatorio de reunión pendiente - ${event.eventName}`,
+        //   },
+        //   metadata: {
+        //     eventName: event.eventName || "Evento",
+        //     requesterName: reqName,
+        //     requesterCompany: reqCompany,
+        //     requesterPosition: reqPosition,
+        //     requesterEmail: reqEmail,
+        //     requesterPhone: reqPhone,
+        //     acceptUrl: acceptUrl,
+        //     cancelUrl: cancelUrl,
+        //     contextNote: "Tienes una solicitud de reunión pendiente por revisar en el evento.", // Para V2
+        //   }
+        // });
         
-        if (success) successCount++;
+        // if (success) successCount++;
         
         // Pequeña pausa para no saturar la API
         await new Promise(r => setTimeout(r, 200));

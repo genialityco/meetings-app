@@ -1,6 +1,6 @@
 import { Modal, LoadingOverlay, Stack, Select, Button, Text, Tabs, Badge, Group } from "@mantine/core";
 import { IconCalendar } from "@tabler/icons-react";
-import { useMemo } from "react";
+import { useMemo, useEffect } from "react";
 
 interface SlotModalProps {
   opened: boolean;
@@ -13,7 +13,7 @@ interface SlotModalProps {
   selectedSlotId: string | null;
   setSelectedSlotId: (value: string | null) => void;
   chosenSlot: any;
-  setConfirmModalOpened: (value: boolean) => void;
+  onConfirmClick: () => void;
   onClose: () => void;
   eventDates?: string[]; // Array de fechas del evento
   selectedDate?: string | null;
@@ -31,7 +31,7 @@ export default function SlotModal({
   selectedSlotId,
   setSelectedSlotId,
   chosenSlot,
-  setConfirmModalOpened,
+  onConfirmClick,
   onClose,
   eventDates = [],
   selectedDate,
@@ -58,6 +58,24 @@ export default function SlotModal({
   }, [availableSlots, eventDates]);
 
   const hasMultipleDays = eventDates.length > 1;
+
+  // Si para el horario elegido solo hay una mesa posible (mesa fija de la
+  // empresa/asistente, o único cupo libre), se asigna automáticamente y no
+  // se le pide al usuario que escoja mesa. Se agrupa por label (no por
+  // cantidad de slots) porque puede haber más de un slot para la misma mesa
+  // a la misma hora (p. ej. agenda regenerada) sin que eso implique que hay
+  // varias mesas entre las que elegir.
+  const singleTableOption = useMemo(() => {
+    if (tableOptions.length === 0) return null;
+    const uniqueLabels = new Set(tableOptions.map((o: any) => o.label));
+    return uniqueLabels.size === 1 ? tableOptions[0] : null;
+  }, [tableOptions]);
+
+  useEffect(() => {
+    if (singleTableOption && selectedSlotId !== singleTableOption.value) {
+      setSelectedSlotId(singleTableOption.value);
+    }
+  }, [singleTableOption?.value]);
 
   return (
     <Modal
@@ -108,20 +126,31 @@ export default function SlotModal({
             disabled={confirmLoading}
             required
           />
-          <Select
-            label="Mesa"
-            data={tableOptions}
-            value={selectedSlotId}
-            onChange={setSelectedSlotId}
-            disabled={!selectedRange || confirmLoading}
-            required
-          />
+          {singleTableOption ? (
+            selectedRange && (
+              <Text size="sm">
+                <Text span fw={600}>
+                  Mesa asignada:
+                </Text>{" "}
+                {singleTableOption.label}
+              </Text>
+            )
+          ) : (
+            <Select
+              label="Mesa"
+              data={tableOptions}
+              value={selectedSlotId}
+              onChange={setSelectedSlotId}
+              disabled={!selectedRange || confirmLoading}
+              required
+            />
+          )}
           <Button
             fullWidth
             mt="md"
             disabled={!chosenSlot}
             loading={confirmLoading}
-            onClick={() => setConfirmModalOpened(true)}
+            onClick={onConfirmClick}
           >
             Confirmar datos
           </Button>

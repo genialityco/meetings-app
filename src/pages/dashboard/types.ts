@@ -26,6 +26,10 @@ export interface Assistant {
   company_nit?: string;
   company_razonSocial?: string;
   tipoAsistente?: string;
+  /** Mesa fija asignada directamente al asistente (o heredada de su empresa) */
+  fixedTable?: string | null;
+  /** Puntos/tickets acumulados para el sorteo del evento (política raffleEnabled) */
+  raffleTickets?: number;
   [key: string]: any;
 }
 
@@ -90,7 +94,7 @@ export interface EventPolicies {
   roleMode: "buyer_seller" | "open";
   tableMode: "pool" | "fixed";
   discoveryMode: "all" | "by_role";
-  schedulingMode: "manual" | "auto";
+  schedulingMode: "manual" | "requester_picks";
   /** Redirige vendedores a "Mis productos" en su primer ingreso y oculta ese tab a compradores */
   sellerRedirectToProducts?: boolean;
   /** Campos visibles en las tarjetas del dashboard (configuración independiente por vista) */
@@ -137,6 +141,12 @@ export interface EventPolicies {
   groupByRazonSocial?: boolean;
   /** Permitir subir imagenes en los productos */
   allowProductImageUpload?: boolean;
+  /** Máximo de reuniones (pendientes o aceptadas) que un mismo par persona/empresa puede tener entre sí. null/0 = sin límite */
+  maxMeetingsPerContact?: number | null;
+  /** Habilita el sorteo por reuniones: el vendedor muestra un QR por reunión, el comprador lo escanea y gana un punto */
+  raffleEnabled?: boolean;
+  /** Si el comprador ve su propio conteo de puntos para el sorteo (solo aplica si raffleEnabled) */
+  raffleShowPointsToAttendee?: boolean;
 }
 
 /** Campo de un formulario de encuesta (reutiliza el modelo de ConfigureSurveyModal) */
@@ -217,4 +227,7 @@ export const DEFAULT_POLICIES: EventPolicies = {
   welcomeMessageEnabled: false,
   groupByRazonSocial: false,
   allowProductImageUpload: true,
+  maxMeetingsPerContact: null,
+  raffleEnabled: false,
+  raffleShowPointsToAttendee: false,
 };
