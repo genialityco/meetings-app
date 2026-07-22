@@ -23,9 +23,11 @@ import {
   IconBuildingStore,
   IconMail,
   IconPhone,
+  IconUsers,
 } from "@tabler/icons-react";
 import { useCompanyData } from "./useCompanyData";
 import { getTableLabel } from "./meetingSlotEngine";
+import StandVisitQrModal from "./StandVisitQrModal";
 import type { Product } from "./types";
 import type { CompanyRepresentative } from "./useCompanyData";
 
@@ -37,9 +39,10 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
     company,
     products,
     representatives,
+    visits,
     loading,
     sendMeetingRequest: companySendMeetingRequest,
-  } = useCompanyData(eventId, companyNit);
+  } = useCompanyData(eventId, companyNit, { subscribeToVisits: true });
 
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const myUid = currentUser?.uid;
@@ -169,6 +172,54 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
           </Stack>
         </Group>
       </Paper>
+
+      {/* Stand visits section */}
+      {eventConfig?.policies?.standVisitsEnabled && (
+        <>
+          <Divider
+            label={
+              <Group gap={6}>
+                <IconUsers size={16} />
+                <Text fw={600}>Visitantes de mi stand ({visits.length})</Text>
+              </Group>
+            }
+          />
+          <Paper withBorder radius="lg" p="lg">
+            <Stack gap="sm">
+              <Group justify="flex-end">
+                <StandVisitQrModal eventId={eventId as string} companyNit={companyNit} />
+              </Group>
+              {visits.length === 0 ? (
+                <Text c="dimmed" ta="center" size="sm">
+                  Aún no tienes visitantes registrados.
+                </Text>
+              ) : (
+                <Stack gap="xs">
+                  {visits.map((v) => (
+                    <Group key={v.id} justify="space-between" wrap="nowrap">
+                      <Stack gap={0} style={{ minWidth: 0 }}>
+                        <Text size="sm" fw={500} lineClamp={1}>
+                          {v.attendeeName || "Asistente"}
+                        </Text>
+                        {v.attendeeEmpresa && (
+                          <Text size="xs" c="dimmed" lineClamp={1}>
+                            {v.attendeeEmpresa}
+                          </Text>
+                        )}
+                      </Stack>
+                      <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
+                        {v.visitedAt?.toDate
+                          ? v.visitedAt.toDate().toLocaleString("es-CO", { timeZone: "America/Bogota" })
+                          : ""}
+                      </Text>
+                    </Group>
+                  ))}
+                </Stack>
+              )}
+            </Stack>
+          </Paper>
+        </>
+      )}
 
       {/* Representatives section */}
       {representatives.length > 0 && (

@@ -5,12 +5,13 @@ import {
   collection,
   query,
   where,
+  orderBy,
   onSnapshot,
   addDoc,
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
-import { Company, Product, EventPolicies, DEFAULT_POLICIES, MeetingContext } from "./types";
+import { Company, Product, EventPolicies, DEFAULT_POLICIES, MeetingContext, StandVisit } from "./types";
 import { showNotification } from "@mantine/notifications";
 import { sendWhatsAppMessage as sendWhatsAppAPI } from "../../utils/whatsappService";
 import {
@@ -34,13 +35,19 @@ export interface CompanyRepresentative {
   [key: string]: any;
 }
 
-export function useCompanyData(eventId?: string, companyNit?: string) {
+export function useCompanyData(
+  eventId?: string,
+  companyNit?: string,
+  options?: { subscribeToVisits?: boolean },
+) {
   const { currentUser } = useContext(UserContext);
   const uid = currentUser?.uid;
+  const subscribeToVisits = options?.subscribeToVisits ?? false;
 
   const [company, setCompany] = useState<Company | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [representatives, setRepresentatives] = useState<CompanyRepresentative[]>([]);
+  const [visits, setVisits] = useState<StandVisit[]>([]);
   const [eventConfig, setEventConfig] = useState<any>(null);
   const [eventName, setEventName] = useState("");
   const [eventImage, setEventImage] = useState<string | null>(null);
@@ -129,6 +136,21 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
       setRepresentatives(list);
     });
   }, [eventId, companyNit]);
+
+  // 5. Visitas al stand (real-time). Solo se suscribe cuando el llamador lo pide
+  // explícitamente (p. ej. MyCompanyTab.tsx, la vista del propio representante) —
+  // CompanyLanding.tsx no debe pedir esto, ya que la lista de visitantes no es pública.
+  useEffect(() => {
+    if (!eventId || !companyNit || !subscribeToVisits) return;
+    const q = query(
+      collection(db, "events", eventId, "companies", companyNit, "visits"),
+      orderBy("visitedAt", "desc"),
+    );
+    return onSnapshot(q, (snap) => {
+      const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }) as StandVisit);
+      setVisits(list);
+    });
+  }, [eventId, companyNit, subscribeToVisits]);
 
   // Cargar reuniones del usuario actual para ver si hay solicitudes pendientes
   useEffect(() => {
@@ -442,6 +464,7 @@ export function useCompanyData(eventId?: string, companyNit?: string) {
     company,
     products,
     representatives,
+    visits,
     eventConfig,
     eventName,
     eventImage,

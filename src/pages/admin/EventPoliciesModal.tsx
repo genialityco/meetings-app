@@ -79,6 +79,7 @@ export default function EventPoliciesModal({
   const [maxMeetingsPerContact, setMaxMeetingsPerContact] = useState<number | "">("");
   const [raffleEnabled, setRaffleEnabled] = useState(false);
   const [raffleShowPointsToAttendee, setRaffleShowPointsToAttendee] = useState(false);
+  const [standVisitsEnabled, setStandVisitsEnabled] = useState(false);
 
   // Empresas y asignación de mesas fijas
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -126,6 +127,7 @@ export default function EventPoliciesModal({
     setMaxMeetingsPerContact(p.maxMeetingsPerContact ? p.maxMeetingsPerContact : "");
     setRaffleEnabled(p.raffleEnabled ?? false);
     setRaffleShowPointsToAttendee(p.raffleShowPointsToAttendee ?? false);
+    setStandVisitsEnabled(p.standVisitsEnabled ?? false);
   }, [event]);
 
   // Cargar empresas cuando se abre el modal y tableMode es "fixed"
@@ -241,6 +243,7 @@ export default function EventPoliciesModal({
               maxMeetingsPerContact: maxMeetingsPerContact === "" ? null : maxMeetingsPerContact,
               raffleEnabled,
               raffleShowPointsToAttendee,
+              standVisitsEnabled,
             },
           },
         },
@@ -456,6 +459,13 @@ export default function EventPoliciesModal({
             onChange={(e) => setRaffleShowPointsToAttendee(e.currentTarget.checked)}
           />
         )}
+
+        <Switch
+          label="Habilitar registro de visitas a stands"
+          description="Cada stand (empresa) muestra un código QR fijo; los asistentes que ya hicieron check-in lo escanean y quedan registrados como visitantes"
+          checked={standVisitsEnabled}
+          onChange={(e) => setStandVisitsEnabled(e.currentTarget.checked)}
+        />
 
         <Switch
           label="Reuniones en standby hasta check-in"

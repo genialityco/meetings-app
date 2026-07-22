@@ -17,32 +17,41 @@ This is a React 19 + Vite 6 meetings/networking app for events, using **Firebase
 
 ### Core Entities (Firestore Collections)
 
-- **events/{eventId}**: Event config (scheduling, formFields, registrationForm, policies)
+- **organizations/{orgId}**: Tenant grouping of events (name, owners: admin uids). Superadmins see all; regular admins only orgs where they're listed in `owners`.
+- **events/{eventId}**: Event config (scheduling, formFields, registrationForm, policies, eventSurvey). Has its own `owners: uid[]` (independent of the parent org's owners) and an `organizationId` linking it to `organizations/{orgId}`.
 - **events/{eventId}/companies/{nitNorm}**: Companies (razonSocial, logoUrl, fixedTable)
-- **events/{eventId}/meetings**: Meeting requests (requesterId, receiverId, status, productId?, companyId?, contextNote?)
+- **events/{eventId}/meetings**: Meeting requests (requesterId, receiverId, status, productId?, companyId?, contextNote?). `status` includes `standby` (accepted but blocked on check-in) and external/completed meetings (`isExternal`, `completed`).
 - **events/{eventId}/products**: Products (ownerUserId, companyId, title, description, imageUrl)
-- **events/{eventId}/agenda**: Slots with tableNumber, startTime, endTime, available, meetingId
-- **users**: Global collection, filtered by `eventId`. Attendees with companyId, tipoAsistente, etc.
+- **events/{eventId}/agenda**: Slots with tableNumber, startTime, endTime, available, meetingId, date, isBreak
+- **users**: Global collection, filtered by `eventId`. Attendees with companyId, tipoAsistente, raffleTickets, etc.
 - **locks**: Prevents double-booking: lockId = `{eventId}_{userId}_{date}_{start}-{end}`
 - **aiChats**: Chatbot conversation history (userId, eventId, message, intent, aiMessage, results)
-- **notifications**, **meetingSurveys**, **config/generalSettings**
+- **admins/{uid}**, **adminRequests/{uid}**: Admin accounts and pending admin-signup approval requests (superadmin-gated)
+- **notifications**, **meetingSurveys**, **eventSurveys** (event-wide satisfaction survey, distinct from per-meeting `meetingSurveys`), **config/generalSettings**
+
+Firestore rules (`firestore.rules`) key pattern: most collections are world-readable; writes generally require `request.auth != null`; event/org mutation (not the meetings/agenda/products/companies subcollections attendees write to) requires `canManageEvent` — the caller must be listed in the event's `owners` or be a superadmin (`admins/{uid}.isSuperAdmin`). See [[firestore-rules-attendee-writes]] memory — over-tightening these rules previously broke attendee meeting flows.
 
 ### Event Policies (event.config.policies)
 
-Configurable per event via admin panel (`EventPoliciesModal.tsx`):
+Configurable per event via admin panel (`EventPoliciesModal.tsx`). Interface + defaults live in `EventPolicies` / `DEFAULT_POLICIES` in `src/pages/dashboard/types.ts` — that file is the source of truth; the list below is a summary:
 - `roleMode`: "open" | "buyer_seller" — who can meet whom
 - `tableMode`: "pool" | "fixed" — table assignment (pool=auto, fixed=company-assigned)
 - `discoveryMode`: "all" | "by_role" — directory visibility
-- `schedulingMode`: "manual" | "auto"
-- `sellerRedirectToProducts`: boolean — redirects sellers to "Mis productos" on first login, hides that tab for buyers
-- `cardFieldsConfig`: { attendeeCard: string[], companyCard: string[] } — fields visible on dashboard cards per view
-- `uiViewsEnabled`: { chatbot, matches, attendees, companies, products } — which dashboard views are shown
-- `whatsappApiVersion`: "v1" | "v2" — WhatsApp notification API version
-- `autoReassignOnCancel`: boolean — auto-reassign slot when a meeting is cancelled
-- `surveyBlockedFor`: "none" | "compradores" | "vendedores" | "ambos" — lock survey for certain roles
-- `surveyMode`: "default" | "custom" — "custom" uses per-role surveyConfig
+- `schedulingMode`: "manual" | "requester_picks"
+- `sellerRedirectToProducts`, `cardFieldsConfig`, `uiViewsEnabled` — as before
+- `viewsOrder`: string[] — order of dashboard tabs (`chatbot`, `matches`, `attendees`, `companies`, `products`, `activity`, `survey`); enabled views missing from the array render last
+- `whatsappApiVersion`: "v1" | "v2", `whatsappNotificationsEnabled`, `fallbackEmailOnWaFailure` — WhatsApp notification behavior
+- `autoReassignOnCancel` — auto-reassign slot when a meeting is cancelled
+- `surveyBlockedFor` / `surveyMode` — per-meeting survey gating (see `EventPolicies.surveyMode`/`surveyBlockedFor`, distinct from the event-wide `eventSurvey`)
+- `meetingConfirmationEnabled` — forces post-meeting confirmation via `MeetingConfirmationGuard`
+- `standbyCheckInRequired` — accepted meetings sit in `standby` until both participants check in
+- `attendeeIdEnabled` — assigns a display ID on registration (e.g. `1C`, `2V`) via the `generateAttendeeId` Cloud Function
+- `dashboardNotificationsEnabled`, `welcomeMessageEnabled` — in-app notifications / WhatsApp welcome popup
+- `groupByRazonSocial` — group companies by name instead of NIT
+- `allowProductImageUpload`, `maxMeetingsPerContact` — product/meeting limits
+- `raffleEnabled`, `raffleShowPointsToAttendee` — enables the meeting-raffle feature (see below)
 
-Defaults defined in `DEFAULT_POLICIES` in `src/pages/dashboard/types.ts`.
+Some newer per-event toggles (e.g. `cancelMeetingDisabled`, read in `CalendarTab.tsx`/`EventPoliciesModal.tsx`) are set directly on the policies object without yet being formalized in the `EventPolicies` interface — check `EventPoliciesModal.tsx` for the full current set of admin-configurable toggles rather than relying solely on the type.
 
 ### Key Directories
 
@@ -53,9 +62,10 @@ Defaults defined in `DEFAULT_POLICIES` in `src/pages/dashboard/types.ts`.
 - `src/utils/analytics.ts` — Centralized GA4 event tracking (typed `AnalyticsEvent` union, used via `TrackedButton` and direct `trackEvent()` calls)
 - `src/utils/whatsappService.ts` — Client-side WhatsApp notification sender (supports v1/v2 API controlled by `whatsappApiVersion` policy)
 - `src/hooks/usePageTracking.ts` — GA4 page view tracking on route changes
-- `src/pages/admin/` — Admin panel: event management, attendees, meetings, policies config. `AdminLogin.tsx` / `AdminRegister.tsx` for admin auth. `AdminsManagementModal.tsx` for superadmin to approve/reject admin requests.
+- `src/pages/admin/` — Admin panel: organizations, event management, attendees, meetings, policies config. `AdminLogin.tsx` / `AdminRegister.tsx` for admin auth. `AdminsManagementModal.tsx` for superadmin to approve/reject admin requests. `MatrixPage.jsx` and `EventAdmin.jsx` are the largest files (~3900 and ~2260 lines).
 - `src/pages/dashboard/` — Attendee dashboard with discovery views + activity tabs. `AssistantsTab.tsx` for AI assistant view.
-- `src/components/` — Shared components (UserProfile, DashboardHeader, NotificationMenu, TrackedButton, ProtectedAdminRoute)
+- `src/components/` — Shared components (UserProfile, DashboardHeader, TrackedButton, ProtectedAdminRoute, OptimisticCheckbox). Note: `components/NotificationMenu.jsx` is an empty, unreferenced file — the real one is `pages/dashboard/NotificationsMenu.tsx`.
+- `src/pages/Dashboard_old.jsx` — legacy pre-rewrite dashboard, unused/dead code; the live dashboard is `src/pages/dashboard/Dashboard.tsx`.
 
 ### Dashboard Architecture
 
@@ -69,12 +79,28 @@ Defaults defined in `DEFAULT_POLICIES` in `src/pages/dashboard/types.ts`.
 5. **Productos** (`ProductsView.tsx`) — Product catalog with company/text filters, meeting CTA with context
 6. **Mi actividad** — Tabs for: Agenda (`CalendarTab`), Reuniones (`MeetingsTab`), Solicitudes (`RequestsTab`), Mis productos (`MyProductsTab`), Mi empresa (`MyCompanyTab`)
 
-Meeting requests from CompaniesView/ProductsView pass context (productId, companyId, contextNote).
+Meeting requests from CompaniesView/ProductsView pass context (productId, companyId, contextNote). `EventSurveyTab.tsx` renders the event-wide satisfaction survey (`event.config.eventSurvey`) when enabled, separate from the per-meeting survey flow.
 
 ### Key Hooks
 
-- **`useDashboardData.ts`** — Centralizes ALL dashboard state and Firestore operations (real-time via onSnapshot). ~1600 lines.
+- **`useDashboardData.ts`** — Centralizes ALL dashboard state and Firestore operations (real-time via onSnapshot). ~2100 lines; also owns standby/check-in promotion, meeting confirmation, and raffle-ticket logic.
 - **`useCompanyData.ts`** — Used by `CompanyLanding` and `MyCompanyTab` for company data, products, representatives, and meeting requests.
+
+### Organizations & Admin Hierarchy
+
+Admins are grouped by **organizations** (a multi-tenant layer above events):
+- `/admin` → `OrganizationsPanel.tsx` — lists orgs the admin owns (or all orgs for superadmins); create org, assign owners, or drill into one.
+- `/admin/organization/:orgId` and `/admin/events` → `AdminPanel.jsx` — event list, filtered by `organizationId` when reached via an org (unfiltered/legacy view via "Ver Todos los Eventos" from `/admin/events`).
+- An admin can manage an event either via org-level `owners` (on `organizations/{orgId}`) or by being listed directly in that event's own `owners` array — both are checked by `canManageEvent` in `firestore.rules`.
+
+### Meeting Lifecycle Extras
+
+Beyond the base request/accept/cancel flow (see `EventPoliciesModal.tsx`, `CalendarTab.tsx`, `MeetingsTab.tsx`, `EventAdmin.jsx` "Operación" tab):
+- **Standby check-in** (`standbyCheckInRequired`): accepted meetings sit in `standby` status until both participants check in; un-checking in reverts them. Standby slots are usable as a scheduling fallback.
+- **Meeting confirmation** (`meetingConfirmationEnabled`): `MeetingConfirmationGuard.tsx` blocks the UI and polls until a participant confirms a past meeting actually happened.
+- **External meetings**: `ExternalMeetingModal.jsx` (attendee-admin driven) registers meetings that happened outside the system — no agenda slot consumed, stored with `isExternal: true, completed: true`.
+- **Raffle** (`raffleEnabled`): sellers show a per-meeting QR (`RaffleQrModal.tsx`); buyers scan it via `/raffle-scan/:eventId/:meetingId` (`RaffleScanPage.tsx`) to award themselves a ticket (`users/{uid}.raffleTickets`, incremented, one claim per meeting). `raffleShowPointsToAttendee` controls whether buyers see their own count. Admin draws winners (ticket-weighted random) at `/admin/event/:eventId/raffle` (`RafflePage.tsx`).
+- **Check-in / badges**: `CheckInTab.jsx` (inside `AttendeesList.jsx`) lists real-time check-in status; `BadgePage.tsx` (`/badge/:eventId/:userId`) renders a printable badge with a QR pointing at `QuickCheckInPage.tsx` (`/admin/event/:eventId/checkin/:userId`) for one-tap admin check-in.
 
 ### Data Flow
 
@@ -98,7 +124,7 @@ Admin routes are protected by `ProtectedAdminRoute`, which uses `useAdminAuth()`
 
 ### Routing (App.jsx)
 
-All admin routes (except `/admin/login` and `/admin/register`) are wrapped in `ProtectedAdminRoute`. Landing page loads eagerly; all other routes use `React.lazy`.
+All `/admin/...` routes (except `/admin/login` and `/admin/register`) are wrapped in `ProtectedAdminRoute`. Landing page loads eagerly; all other routes use `React.lazy`. `/matrix/:eventId` and `/badge/:eventId/:userId` are notably NOT admin-protected.
 
 | Route | Component | Purpose |
 |-------|-----------|---------|
@@ -111,15 +137,22 @@ All admin routes (except `/admin/login` and `/admin/register`) are wrapped in `P
 | `/dashboard/:eventId/my-company` | MyCompanyPage | User's company page |
 | `/admin/login` | AdminLogin | Admin login (unprotected) |
 | `/admin/register` | AdminRegister | Admin registration request (unprotected) |
-| `/admin` | AdminPanel | List all events (protected) |
+| `/admin` | OrganizationsPanel | List organizations (protected) |
+| `/admin/organization/:orgId` | AdminPanel | Events within an organization (protected) |
+| `/admin/events` | AdminPanel | All events, legacy/unfiltered view (protected) |
 | `/admin/event/:eventId` | EventAdmin | Event management (protected) |
 | `/admin/event/:eventId/agenda` | AgendaAdminPanel | Schedule management (protected) |
 | `/admin/event/:eventId/match` | EventMatchPage | Event matching (protected) |
 | `/admin/event/:eventId/import-meetings` | ImportMeetingsFromExcelPage | Bulk meeting import (protected) |
-| `/admin/surveys` | MeetingSurveys | Survey responses (protected) |
+| `/admin/surveys` | MeetingSurveys | Per-meeting survey responses (protected) |
+| `/admin/event/:eventId/event-survey` | EventSurveyResultsPage | Event-wide survey results (protected) |
 | `/admin/event/:eventId/checkin` | CheckInPage | QR code attendee check-in (protected) |
+| `/admin/event/:eventId/checkin/:userId` | QuickCheckInPage | One-tap check-in from a badge QR (protected) |
+| `/admin/event/:eventId/raffle` | RafflePage | Raffle ticket list + weighted draw (protected) |
 | `/admin/event/:eventId/optimize-agenda` | OptimizeAgendaPage | AI-powered agenda optimizer (protected) |
-| `/matrix/:eventId` | MatrixPage | Matrix view |
+| `/matrix/:eventId` | MatrixPage | Matrix view (not admin-protected) |
+| `/badge/:eventId/:userId` | BadgePage | Printable attendee badge with check-in QR (not admin-protected) |
+| `/raffle-scan/:eventId/:meetingId` | RaffleScanPage | Buyer scans seller's QR to claim a raffle ticket |
 | `/phonesadmin` | PhonesAdminPage | Phone management |
 | `/meeting-response/:eventId/:meetingId/:action` | MeetingAutoResponse | Auto-response handler |
 
@@ -143,10 +176,14 @@ Node.js scripts using Firebase Admin SDK. Require `scripts/serviceAccountKey.jso
 - `cleanup-old-agenda.js` — removes deprecated agenda fields
 - `seed-admin.js` — creates initial superadmin account
 
-### Cloud Functions (`functions/`)
+### Cloud Functions (`functions/index.js`, ~4300 lines)
 
-- `notifyMeetingsScheduled`: Runs every 5 minutes (America/Bogota timezone). **Currently hardcoded to a single `eventId`** — check `functions/index.js` before deploying to a new event. Requires secrets: `WHATSAPP_API_V1`, `WHATSAPP_API_V2`, `WHATSAPP_ACCOUNT_ID`.
+- `notifyMeetingsScheduled`: `onSchedule`, every 5 minutes (America/Bogota timezone). **Currently hardcoded to a single `eventId`** — check before deploying to a new event. Requires secrets: `WHATSAPP_API_V1`, `WHATSAPP_API_V2`, `WHATSAPP_ACCOUNT_ID`.
 - `aiProxy`: HTTP function for chatbot backend. Uses Google Gemini API for intent classification (greeting, search_query, general_question, meeting_related) and context-aware search across attendees, products, companies. Requires secrets: `GEMINI_API_KEY`, `GEMINI_API_URL`, `DEFAULT_AI_MODEL`.
+- Affinity/matching pipeline: `calculateAffinityOnUserCreate` / `calculateAffinityOnUserUpdate` (Firestore triggers, recompute a user's affinity scores on write), `recalculateEventAffinity` and `generateOptimalMatches` (HTTP, bulk recompute / suggest matches for `MatchesTab.tsx` and `EventMatchPage.jsx`).
+- Vector search (embeddings-based, backs `ChatbotTab`/`aiProxy` search): `vectorizeDocuments`, `regenerateVectorsForEvent`, `generateAllSearchVectors` build embeddings from `VECTOR_FIELDS`/`VECTOR_SEARCH_FIELDS`; `vectorSearch` queries them. See `functions/VECTOR_SEARCH_API.md`.
+- Misc HTTP functions: `checkEmailAvailability` (registration duplicate-email check), `improveUserDescription` (AI-assisted profile text), `cancelAndReassign` (backs `autoReassignOnCancel` policy), `generateAttendeeId` (backs `attendeeIdEnabled` policy).
+- Secrets are documented in `functions/SECRETS_CONFIG.md`; set via `firebase functions:secrets:set <NAME>`.
 - Deploy: `firebase deploy --only functions` (Node 22)
 
 ### External API Integrations

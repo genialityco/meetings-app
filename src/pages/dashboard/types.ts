@@ -147,6 +147,8 @@ export interface EventPolicies {
   raffleEnabled?: boolean;
   /** Si el comprador ve su propio conteo de puntos para el sorteo (solo aplica si raffleEnabled) */
   raffleShowPointsToAttendee?: boolean;
+  /** Habilita el registro de visitas a stands: el stand muestra un QR fijo, el asistente lo escanea y queda como visitante */
+  standVisitsEnabled?: boolean;
 }
 
 /** Campo de un formulario de encuesta (reutiliza el modelo de ConfigureSurveyModal) */
@@ -177,6 +179,15 @@ export interface Company {
   fixedTable?: string | null;
   createdAt?: any;
   updatedAt?: any;
+}
+
+/** Visita a un stand (events/{eventId}/companies/{nitNorm}/visits/{attendeeUid}) */
+export interface StandVisit {
+  id: string; // == attendeeId (el uid del asistente visitante es el ID del doc)
+  attendeeId: string;
+  attendeeName?: string;
+  attendeeEmpresa?: string;
+  visitedAt?: any;
 }
 
 /** Producto (events/{eventId}/products/{productId}) */
@@ -230,4 +241,5 @@ export const DEFAULT_POLICIES: EventPolicies = {
   maxMeetingsPerContact: null,
   raffleEnabled: false,
   raffleShowPointsToAttendee: false,
+  standVisitsEnabled: false,
 };
