@@ -25,7 +25,7 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
-import { IconEdit, IconLogout, IconChevronDown, IconPackage, IconBuilding, IconCheck, IconUserCheck } from "@tabler/icons-react";
+import { IconEdit, IconLogout, IconChevronDown, IconPackage, IconBuilding, IconCheck, IconUserCheck, IconQrcode } from "@tabler/icons-react";
 import { UserContext } from "../context/UserContext";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { doc, setDoc, getDoc } from "firebase/firestore";
@@ -552,6 +552,14 @@ const DashboardHeader = ({
                   onClick={() => navigate(`/dashboard/${eventId}/my-company`)}
                 >
                   Mi empresa
+                </Menu.Item>
+              )}
+              {eventId && currentUser?.uid && (
+                <Menu.Item
+                  leftSection={<IconQrcode size={16} />}
+                  onClick={() => window.open(`/badge/${eventId}/${currentUser.uid}`, "_blank")}
+                >
+                  Ver mi código QR
                 </Menu.Item>
               )}
               <Menu.Divider />

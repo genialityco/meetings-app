@@ -8,11 +8,15 @@ import {
 import {
   IconSearch, IconX, IconCheck, IconUserCheck,
   IconChevronDown, IconChevronUp, IconEdit, IconDeviceFloppy, IconDownload,
+  IconQrcode, IconId,
 } from "@tabler/icons-react";
 import { collection, query, where, onSnapshot, doc, updateDoc, getDocs, getDoc, addDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { showNotification } from "@mantine/notifications";
 import { db, storage } from "../../firebase/firebaseConfig";
 import * as XLSX from "xlsx";
+import QrScannerModal from "../../components/QrScannerModal";
+import { parseAttendeeQrUrl } from "../../utils/qrScan";
 
 // Campos básicos siempre visibles
 const BASIC_FIELDS = [
@@ -125,6 +129,16 @@ function AttendeeRow({ a, event, updating, onToggle }) {
         </Box>
 
         <Group gap="xs" wrap="nowrap" onClick={(e) => e.stopPropagation()}>
+          <ActionIcon
+            size="lg"
+            radius="xl"
+            variant="light"
+            color="gray"
+            onClick={() => window.open(`/badge/${event?.id}/${a.id}`, "_blank")}
+            title="Ver / imprimir credencial"
+          >
+            <IconId size={18} />
+          </ActionIcon>
           {a.checkedIn ? (
             <Badge color="green" variant="light" size="sm" leftSection={<IconUserCheck size={12} />}>
               Presente
@@ -210,6 +224,7 @@ export default function CheckInTab({ event }) {
   const [search, setSearch] = useState("");
   const [updating, setUpdating] = useState(null);
   const [createUserOpened, setCreateUserOpened] = useState(false);
+  const [scannerOpened, setScannerOpened] = useState(false);
   const [creatingUser, setCreatingUser] = useState(false);
   const [newUserValues, setNewUserValues] = useState({});
   const [newUserErrors, setNewUserErrors] = useState({});
@@ -517,6 +532,37 @@ export default function CheckInTab({ event }) {
     }
   };
 
+  const handleScanDecode = async (decodedText) => {
+    const parsed = parseAttendeeQrUrl(decodedText);
+    if (!parsed) {
+      showNotification({ title: "Código no reconocido", message: "Este QR no es una credencial válida.", color: "red" });
+      return;
+    }
+    if (event?.id && parsed.eventId !== event.id) {
+      showNotification({ title: "Evento distinto", message: "Esta credencial pertenece a otro evento.", color: "red" });
+      return;
+    }
+    const attendee = attendees.find((a) => a.id === parsed.userId);
+    if (!attendee) {
+      showNotification({ title: "No encontrado", message: "Este asistente no pertenece a este evento.", color: "red" });
+      return;
+    }
+    if (attendee.checkedIn) {
+      showNotification({
+        title: "Ya tiene check-in",
+        message: `${attendee.nombre || "El asistente"} ya está registrado como presente.`,
+        color: "yellow",
+      });
+      return;
+    }
+    await handleToggle(attendee);
+    showNotification({
+      title: "Check-in exitoso",
+      message: `${attendee.nombre || "Asistente"} quedó registrado como presente.`,
+      color: "teal",
+    });
+  };
+
   const exportToExcel = () => {
     const wsData = [
       ["ID_USUARIO", "CHECKIN", "NOMBRE", "CORREO", "EMPRESA", "TELEFONO", "TIPO_ASISTENTE"]
@@ -560,6 +606,9 @@ export default function CheckInTab({ event }) {
           <Badge color="green" variant="light">{checkedIn.length} presentes</Badge>
           <Badge color="gray" variant="light">{notCheckedIn.length} pendientes</Badge>
           <Badge color="blue" variant="light">{filtered.length} total</Badge>
+          <Button size="xs" variant="outline" leftSection={<IconQrcode size={14} />} onClick={() => setScannerOpened(true)}>
+            Escanear QR
+          </Button>
           <Button size="xs" variant="outline" leftSection={<IconDownload size={14} />} onClick={exportToExcel} color="green">
             Exportar a Excel
           </Button>
@@ -615,6 +664,14 @@ export default function CheckInTab({ event }) {
           )}
         </Box>
       )}
+
+      <QrScannerModal
+        opened={scannerOpened}
+        onClose={() => setScannerOpened(false)}
+        onDecode={handleScanDecode}
+        title="Escanear credencial"
+        hint="Apunta la cámara al código QR de la credencial del asistente para hacer check-in."
+      />
     </Stack>
   );
 }

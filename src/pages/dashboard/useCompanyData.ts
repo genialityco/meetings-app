@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useContext, useCallback } from "react";
 import {
   doc,
   getDoc,
+  setDoc,
   collection,
   query,
   where,
@@ -21,6 +22,11 @@ import {
   getTableLabel,
   countMeetingsWithContact,
 } from "./meetingSlotEngine";
+
+export type VisitScanResult =
+  | { kind: "success"; attendeeName: string }
+  | { kind: "already-visited"; attendeeName: string }
+  | { kind: "error"; message: string };
 
 export interface CompanyRepresentative {
   id: string;
@@ -151,6 +157,56 @@ export function useCompanyData(
       setVisits(list);
     });
   }, [eventId, companyNit, subscribeToVisits]);
+
+  // Registra una visita al stand a partir de un uid escaneado por el
+  // representante del stand (dirección inversa a StandVisitScanPage.tsx, donde
+  // es el propio visitante quien escanea el QR fijo del stand). Misma
+  // validación: el asistente debe existir, haber hecho check-in, no ser de la
+  // misma empresa, y no tener ya una visita registrada.
+  const registerVisitForScannedAttendee = useCallback(
+    async (scannedUserId: string): Promise<VisitScanResult> => {
+      if (!eventId || !companyNit) {
+        return { kind: "error", message: "No se encontró la información del stand." };
+      }
+      try {
+        const attendeeSnap = await getDoc(doc(db, "users", scannedUserId));
+        if (!attendeeSnap.exists()) {
+          return { kind: "error", message: "Este código no corresponde a un asistente del evento." };
+        }
+        const attendeeData = attendeeSnap.data() as any;
+        if (attendeeData.eventId !== eventId) {
+          return { kind: "error", message: "Este código no corresponde a un asistente de este evento." };
+        }
+        if (!attendeeData.checkedIn) {
+          return { kind: "error", message: "El asistente debe hacer check-in antes de registrar la visita." };
+        }
+        const attendeeCompanyNit = attendeeData.companyId || attendeeData.company_nit;
+        if (attendeeCompanyNit === companyNit) {
+          return { kind: "error", message: "No puedes registrar una visita de tu propio stand." };
+        }
+
+        const attendeeName = attendeeData.nombre || "Asistente";
+        const visitRef = doc(db, "events", eventId, "companies", companyNit, "visits", scannedUserId);
+        const visitSnap = await getDoc(visitRef);
+        if (visitSnap.exists()) {
+          return { kind: "already-visited", attendeeName };
+        }
+
+        await setDoc(visitRef, {
+          attendeeId: scannedUserId,
+          attendeeName,
+          attendeeEmpresa: attendeeData.empresa || attendeeData.company_razonSocial || "",
+          visitedAt: new Date(),
+        });
+
+        return { kind: "success", attendeeName };
+      } catch (e) {
+        console.error("Error al registrar visita escaneada:", e);
+        return { kind: "error", message: "Ocurrió un error al registrar la visita. Intenta de nuevo." };
+      }
+    },
+    [eventId, companyNit],
+  );
 
   // Cargar reuniones del usuario actual para ver si hay solicitudes pendientes
   useEffect(() => {
@@ -465,6 +521,7 @@ export function useCompanyData(
     products,
     representatives,
     visits,
+    registerVisitForScannedAttendee,
     eventConfig,
     eventName,
     eventImage,

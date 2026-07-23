@@ -80,6 +80,7 @@ export default function EventPoliciesModal({
   const [raffleEnabled, setRaffleEnabled] = useState(false);
   const [raffleShowPointsToAttendee, setRaffleShowPointsToAttendee] = useState(false);
   const [standVisitsEnabled, setStandVisitsEnabled] = useState(false);
+  const [standVisitAllowSellerScan, setStandVisitAllowSellerScan] = useState(false);
 
   // Empresas y asignación de mesas fijas
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -128,6 +129,7 @@ export default function EventPoliciesModal({
     setRaffleEnabled(p.raffleEnabled ?? false);
     setRaffleShowPointsToAttendee(p.raffleShowPointsToAttendee ?? false);
     setStandVisitsEnabled(p.standVisitsEnabled ?? false);
+    setStandVisitAllowSellerScan(p.standVisitAllowSellerScan ?? false);
   }, [event]);
 
   // Cargar empresas cuando se abre el modal y tableMode es "fixed"
@@ -244,6 +246,7 @@ export default function EventPoliciesModal({
               raffleEnabled,
               raffleShowPointsToAttendee,
               standVisitsEnabled,
+              standVisitAllowSellerScan,
             },
           },
         },
@@ -466,6 +469,15 @@ export default function EventPoliciesModal({
           checked={standVisitsEnabled}
           onChange={(e) => setStandVisitsEnabled(e.currentTarget.checked)}
         />
+
+        {standVisitsEnabled && (
+          <Switch
+            label="Permitir que el vendedor también escanee al comprador"
+            description="Además del QR fijo del stand, el representante del stand puede escanear la credencial del comprador para registrar la misma visita"
+            checked={standVisitAllowSellerScan}
+            onChange={(e) => setStandVisitAllowSellerScan(e.currentTarget.checked)}
+          />
+        )}
 
         <Switch
           label="Reuniones en standby hasta check-in"

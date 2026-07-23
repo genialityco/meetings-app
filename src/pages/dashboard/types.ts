@@ -149,6 +149,8 @@ export interface EventPolicies {
   raffleShowPointsToAttendee?: boolean;
   /** Habilita el registro de visitas a stands: el stand muestra un QR fijo, el asistente lo escanea y queda como visitante */
   standVisitsEnabled?: boolean;
+  /** Además del QR fijo del stand, permite que el vendedor escanee la credencial del comprador para registrar la visita (solo aplica si standVisitsEnabled) */
+  standVisitAllowSellerScan?: boolean;
 }
 
 /** Campo de un formulario de encuesta (reutiliza el modelo de ConfigureSurveyModal) */
@@ -242,4 +244,5 @@ export const DEFAULT_POLICIES: EventPolicies = {
   raffleEnabled: false,
   raffleShowPointsToAttendee: false,
   standVisitsEnabled: false,
+  standVisitAllowSellerScan: false,
 };

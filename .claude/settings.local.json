@@ -6,7 +6,9 @@
       "Bash(ls -la \"d:\\\\gen.iality\\\\Proyectos\\\\my-meetings-app\\\\src\\\\components\"\" 2>/dev/null || find \"d:gen.ialityProyectosmy-meetings-appsrccomponents\" -type f -name \"*.tsx\" -o -name \"*.jsx \")",
       "Bash(firebase deploy:*)",
       "Bash(npx vite:*)",
-      "Bash(node -e \":*)"
+      "Bash(node -e \":*)",
+      "Bash(npx tsc *)",
+      "Bash(npm view *)"
     ]
   }
 }

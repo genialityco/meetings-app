@@ -41,7 +41,22 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
   const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null);
 
   useEffect(() => {
+    let pendingLogoutTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearAdminState = () => {
+      setAdminUser(null);
+      setIsSuperAdmin(false);
+      setAdminProfile(null);
+      localStorage.removeItem("adminSession");
+      setAdminLoading(false);
+    };
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (pendingLogoutTimer) {
+        clearTimeout(pendingLogoutTimer);
+        pendingLogoutTimer = null;
+      }
+
       if (user) {
         // Verificar que el usuario exista en la colección admins
         const adminDoc = await getDoc(doc(db, "admins", user.uid));
@@ -52,25 +67,31 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
           setIsSuperAdmin(data.isSuperAdmin === true);
           setAdminProfile(data);
           localStorage.setItem("adminSession", "true");
+          setAdminLoading(false);
         } else {
           // Usuario autenticado pero no es admin → solo limpiar estado,
           // no cerrar sesión aquí para no interferir con flujos de registro
-          setAdminUser(null);
-          setIsSuperAdmin(false);
-          setAdminProfile(null);
-          localStorage.removeItem("adminSession");
+          clearAdminState();
         }
+      } else if (localStorage.getItem("adminSession") === "true") {
+        // Firebase comparte la sesión (browserLocalPersistence) entre todas las
+        // pestañas del origen. Al abrir una pestaña nueva, onAuthStateChanged
+        // puede reportar momentáneamente null mientras restaura la sesión
+        // persistida. Si esperábamos una sesión admin activa, damos un breve
+        // margen antes de asumir que es un cierre de sesión real, para no
+        // expulsar a otras pestañas (p.ej. "Administrar evento") por un falso
+        // negativo transitorio. logoutAdmin() borra "adminSession" de forma
+        // síncrona antes de signOut(), así que un logout real no cae aquí.
+        pendingLogoutTimer = setTimeout(clearAdminState, 1500);
       } else {
-        setAdminUser(null);
-        setIsSuperAdmin(false);
-        setAdminProfile(null);
-        localStorage.removeItem("adminSession");
+        clearAdminState();
       }
-
-      setAdminLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      if (pendingLogoutTimer) clearTimeout(pendingLogoutTimer);
+      unsubscribe();
+    };
   }, []);
 
   const loginAdmin = async (email: string, password: string) => {
@@ -95,8 +116,10 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logoutAdmin = async () => {
-    await signOut(auth);
+    // Borrar el flag antes de signOut(): así el onAuthStateChanged(null)
+    // resultante no cae en la ventana de gracia para parpadeos transitorios.
     localStorage.removeItem("adminSession");
+    await signOut(auth);
   };
 
   return (

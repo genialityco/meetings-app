@@ -24,10 +24,13 @@ import {
   IconMail,
   IconPhone,
   IconUsers,
+  IconQrcode,
 } from "@tabler/icons-react";
 import { useCompanyData } from "./useCompanyData";
 import { getTableLabel } from "./meetingSlotEngine";
 import StandVisitQrModal from "./StandVisitQrModal";
+import QrScannerModal from "../../components/QrScannerModal";
+import { parseAttendeeQrUrl } from "../../utils/qrScan";
 import type { Product } from "./types";
 import type { CompanyRepresentative } from "./useCompanyData";
 
@@ -40,12 +43,30 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
     products,
     representatives,
     visits,
+    registerVisitForScannedAttendee,
     loading,
     sendMeetingRequest: companySendMeetingRequest,
   } = useCompanyData(eventId, companyNit, { subscribeToVisits: true });
 
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [scannerOpened, setScannerOpened] = useState(false);
   const myUid = currentUser?.uid;
+
+  const handleScanBuyer = async (decodedText: string) => {
+    const parsed = parseAttendeeQrUrl(decodedText);
+    if (!parsed) {
+      showNotification({ title: "Código no reconocido", message: "Este QR no es una credencial válida.", color: "red" });
+      return;
+    }
+    const result = await registerVisitForScannedAttendee(parsed.userId);
+    if (result.kind === "success") {
+      showNotification({ title: "Visita registrada", message: `${result.attendeeName} quedó registrado como visitante.`, color: "teal" });
+    } else if (result.kind === "already-visited") {
+      showNotification({ title: "Ya registrado", message: `${result.attendeeName} ya había sido registrado.`, color: "yellow" });
+    } else {
+      showNotification({ title: "No se pudo registrar", message: result.message, color: "red" });
+    }
+  };
 
   const handleSendMeeting = async (
     rep: CompanyRepresentative,
@@ -187,6 +208,16 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
           <Paper withBorder radius="lg" p="lg">
             <Stack gap="sm">
               <Group justify="flex-end">
+                {eventConfig?.policies?.standVisitAllowSellerScan && (
+                  <Button
+                    variant="light"
+                    color="grape"
+                    leftSection={<IconQrcode size={16} />}
+                    onClick={() => setScannerOpened(true)}
+                  >
+                    Escanear comprador
+                  </Button>
+                )}
                 <StandVisitQrModal eventId={eventId as string} companyNit={companyNit} />
               </Group>
               {visits.length === 0 ? (
@@ -399,6 +430,14 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
           </Text>
         </Paper>
       )}
+
+      <QrScannerModal
+        opened={scannerOpened}
+        onClose={() => setScannerOpened(false)}
+        onDecode={handleScanBuyer}
+        title="Escanear credencial del comprador"
+        hint="Apunta la cámara a la credencial del asistente para registrar su visita a tu stand."
+      />
     </Stack>
   );
 }
