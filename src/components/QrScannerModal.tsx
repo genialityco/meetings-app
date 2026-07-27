@@ -72,7 +72,7 @@ export default function QrScannerModal({
   }, [opened, elementId]);
 
   return (
-    <Modal opened={opened} onClose={onClose} title={title} centered size="sm">
+    <Modal opened={opened} onClose={onClose} title={title} centered size="sm" keepMounted>
       <Stack align="center" gap="sm">
         {error ? (
           <Alert color="red" icon={<IconAlertCircle size={16} />} title="No se pudo escanear">

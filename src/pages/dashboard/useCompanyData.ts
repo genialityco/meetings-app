@@ -23,9 +23,13 @@ import {
   countMeetingsWithContact,
 } from "./meetingSlotEngine";
 
-export type VisitScanResult =
+export type VisitLookupResult =
+  | { kind: "ready"; attendee: any }
+  | { kind: "already-visited"; attendee: any }
+  | { kind: "error"; message: string };
+
+export type VisitConfirmResult =
   | { kind: "success"; attendeeName: string }
-  | { kind: "already-visited"; attendeeName: string }
   | { kind: "error"; message: string };
 
 export interface CompanyRepresentative {
@@ -158,13 +162,12 @@ export function useCompanyData(
     });
   }, [eventId, companyNit, subscribeToVisits]);
 
-  // Registra una visita al stand a partir de un uid escaneado por el
-  // representante del stand (dirección inversa a StandVisitScanPage.tsx, donde
-  // es el propio visitante quien escanea el QR fijo del stand). Misma
-  // validación: el asistente debe existir, haber hecho check-in, no ser de la
-  // misma empresa, y no tener ya una visita registrada.
-  const registerVisitForScannedAttendee = useCallback(
-    async (scannedUserId: string): Promise<VisitScanResult> => {
+  // Busca y valida al asistente escaneado por el representante del stand
+  // (dirección inversa a StandVisitScanPage.tsx, donde es el propio visitante
+  // quien escanea el QR fijo del stand), SIN registrar nada todavía — eso
+  // permite mostrarle sus datos al vendedor antes de confirmar la visita.
+  const lookupAttendeeForVisit = useCallback(
+    async (scannedUserId: string): Promise<VisitLookupResult> => {
       if (!eventId || !companyNit) {
         return { kind: "error", message: "No se encontró la información del stand." };
       }
@@ -173,7 +176,7 @@ export function useCompanyData(
         if (!attendeeSnap.exists()) {
           return { kind: "error", message: "Este código no corresponde a un asistente del evento." };
         }
-        const attendeeData = attendeeSnap.data() as any;
+        const attendeeData = { id: scannedUserId, ...(attendeeSnap.data() as any) };
         if (attendeeData.eventId !== eventId) {
           return { kind: "error", message: "Este código no corresponde a un asistente de este evento." };
         }
@@ -185,23 +188,39 @@ export function useCompanyData(
           return { kind: "error", message: "No puedes registrar una visita de tu propio stand." };
         }
 
-        const attendeeName = attendeeData.nombre || "Asistente";
         const visitRef = doc(db, "events", eventId, "companies", companyNit, "visits", scannedUserId);
         const visitSnap = await getDoc(visitRef);
         if (visitSnap.exists()) {
-          return { kind: "already-visited", attendeeName };
+          return { kind: "already-visited", attendee: attendeeData };
         }
 
+        return { kind: "ready", attendee: attendeeData };
+      } catch (e) {
+        console.error("Error al buscar asistente escaneado:", e);
+        return { kind: "error", message: "Ocurrió un error al buscar el asistente. Intenta de nuevo." };
+      }
+    },
+    [eventId, companyNit],
+  );
+
+  // Confirma (escribe) la visita para un asistente ya validado por lookupAttendeeForVisit.
+  const confirmVisit = useCallback(
+    async (attendee: any): Promise<VisitConfirmResult> => {
+      if (!eventId || !companyNit) {
+        return { kind: "error", message: "No se encontró la información del stand." };
+      }
+      try {
+        const attendeeName = attendee.nombre || "Asistente";
+        const visitRef = doc(db, "events", eventId, "companies", companyNit, "visits", attendee.id);
         await setDoc(visitRef, {
-          attendeeId: scannedUserId,
+          attendeeId: attendee.id,
           attendeeName,
-          attendeeEmpresa: attendeeData.empresa || attendeeData.company_razonSocial || "",
+          attendeeEmpresa: attendee.empresa || attendee.company_razonSocial || "",
           visitedAt: new Date(),
         });
-
         return { kind: "success", attendeeName };
       } catch (e) {
-        console.error("Error al registrar visita escaneada:", e);
+        console.error("Error al registrar visita:", e);
         return { kind: "error", message: "Ocurrió un error al registrar la visita. Intenta de nuevo." };
       }
     },
@@ -521,7 +540,8 @@ export function useCompanyData(
     products,
     representatives,
     visits,
-    registerVisitForScannedAttendee,
+    lookupAttendeeForVisit,
+    confirmVisit,
     eventConfig,
     eventName,
     eventImage,

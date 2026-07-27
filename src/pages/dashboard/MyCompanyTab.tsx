@@ -17,6 +17,8 @@ import {
   Box,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
+import { doc, getDoc } from "firebase/firestore";
+import * as XLSX from "xlsx";
 import {
   IconBuilding,
   IconBriefcase,
@@ -25,12 +27,16 @@ import {
   IconPhone,
   IconUsers,
   IconQrcode,
+  IconDownload,
 } from "@tabler/icons-react";
+import { db } from "../../firebase/firebaseConfig";
 import { useCompanyData } from "./useCompanyData";
 import { getTableLabel } from "./meetingSlotEngine";
 import StandVisitQrModal from "./StandVisitQrModal";
 import QrScannerModal from "../../components/QrScannerModal";
-import { parseAttendeeQrUrl } from "../../utils/qrScan";
+import AttendeeScanReviewModal from "../../components/AttendeeScanReviewModal";
+import { useAttendeeScanFlow } from "../../hooks/useAttendeeScanFlow";
+import { splitAttendeeFields } from "../../utils/attendeeFields";
 import type { Product } from "./types";
 import type { CompanyRepresentative } from "./useCompanyData";
 
@@ -43,28 +49,72 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
     products,
     representatives,
     visits,
-    registerVisitForScannedAttendee,
+    lookupAttendeeForVisit,
+    confirmVisit,
     loading,
     sendMeetingRequest: companySendMeetingRequest,
   } = useCompanyData(eventId, companyNit, { subscribeToVisits: true });
 
   const [loadingId, setLoadingId] = useState<string | null>(null);
-  const [scannerOpened, setScannerOpened] = useState(false);
+  const [exportingVisits, setExportingVisits] = useState(false);
   const myUid = currentUser?.uid;
 
-  const handleScanBuyer = async (decodedText: string) => {
-    const parsed = parseAttendeeQrUrl(decodedText);
-    if (!parsed) {
-      showNotification({ title: "Código no reconocido", message: "Este QR no es una credencial válida.", color: "red" });
-      return;
-    }
-    const result = await registerVisitForScannedAttendee(parsed.userId);
-    if (result.kind === "success") {
-      showNotification({ title: "Visita registrada", message: `${result.attendeeName} quedó registrado como visitante.`, color: "teal" });
-    } else if (result.kind === "already-visited") {
-      showNotification({ title: "Ya registrado", message: `${result.attendeeName} ya había sido registrado.`, color: "yellow" });
-    } else {
-      showNotification({ title: "No se pudo registrar", message: result.message, color: "red" });
+  // Label del rol contrario al propio, para el escaneo de visitantes (comprador <-> vendedor).
+  // Sin tipoAsistente definido (p. ej. roleMode "open"), se usa un término neutro.
+  const myRole = (currentUser?.data?.tipoAsistente || "").toLowerCase().trim();
+  const counterpartRoleLabel =
+    myRole === "comprador" ? "vendedor" : myRole === "vendedor" ? "comprador" : "asistente";
+
+  const attendeeScan = useAttendeeScanFlow({
+    lookup: async (userId) => {
+      const result = await lookupAttendeeForVisit(userId);
+      if (result.kind === "error") return { error: result.message };
+      return {
+        attendee: result.attendee,
+        alreadyDoneMessage: result.kind === "already-visited" ? "Ya registraste su visita" : undefined,
+      };
+    },
+    confirm: async (attendee) => {
+      const result = await confirmVisit(attendee);
+      if (result.kind === "error") return { error: result.message };
+      return { message: `${result.attendeeName} quedó registrado como visitante.` };
+    },
+  });
+
+  const handleExportVisits = async () => {
+    setExportingVisits(true);
+    try {
+      const { basicFields, additionalFields } = splitAttendeeFields(eventConfig?.formFields || []);
+      const allFields = [...basicFields, ...additionalFields];
+      const header = ["ID_ASISTENTE", "FECHA_VISITA", ...allFields.map((f: any) => (f.label || f.name).toUpperCase())];
+      const rows: any[][] = [header];
+
+      const attendeeSnaps = await Promise.all(
+        visits.map((v) => getDoc(doc(db, "users", v.attendeeId))),
+      );
+
+      visits.forEach((v, i) => {
+        const attendeeData: any = attendeeSnaps[i].exists() ? attendeeSnaps[i].data() : {};
+        const visitDate = (v.visitedAt as any)?.toDate
+          ? (v.visitedAt as any).toDate().toLocaleString("es-CO", { timeZone: "America/Bogota" })
+          : "";
+        const row = [
+          v.attendeeId,
+          visitDate,
+          ...allFields.map((f: any) => {
+            const val = attendeeData[f.name] ?? (f.name === "nombre" ? v.attendeeName : f.name === "empresa" ? v.attendeeEmpresa : "");
+            return Array.isArray(val) ? val.join(", ") : (val ?? "");
+          }),
+        ];
+        rows.push(row);
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Visitas");
+      XLSX.writeFile(wb, `Visitas_${company?.razonSocial || companyNit}.xlsx`);
+    } finally {
+      setExportingVisits(false);
     }
   };
 
@@ -213,9 +263,20 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
                     variant="light"
                     color="grape"
                     leftSection={<IconQrcode size={16} />}
-                    onClick={() => setScannerOpened(true)}
+                    onClick={() => attendeeScan.setScannerOpened(true)}
                   >
-                    Escanear comprador
+                    Escanear {counterpartRoleLabel}
+                  </Button>
+                )}
+                {visits.length > 0 && (
+                  <Button
+                    variant="light"
+                    color="green"
+                    leftSection={<IconDownload size={16} />}
+                    loading={exportingVisits}
+                    onClick={handleExportVisits}
+                  >
+                    Exportar a Excel
                   </Button>
                 )}
                 <StandVisitQrModal eventId={eventId as string} companyNit={companyNit} />
@@ -432,11 +493,24 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
       )}
 
       <QrScannerModal
-        opened={scannerOpened}
-        onClose={() => setScannerOpened(false)}
-        onDecode={handleScanBuyer}
-        title="Escanear credencial del comprador"
+        opened={attendeeScan.scannerOpened}
+        onClose={() => attendeeScan.setScannerOpened(false)}
+        onDecode={attendeeScan.handleDecode}
+        title={`Escanear credencial del ${counterpartRoleLabel}`}
         hint="Apunta la cámara a la credencial del asistente para registrar su visita a tu stand."
+      />
+
+      <AttendeeScanReviewModal
+        opened={!!attendeeScan.reviewing}
+        attendee={attendeeScan.reviewing?.attendee}
+        formFields={eventConfig?.formFields}
+        title="Asistente escaneado"
+        alreadyDoneMessage={attendeeScan.reviewing?.alreadyDoneMessage}
+        actionLabel="Registrar visita"
+        actionColor="grape"
+        confirming={attendeeScan.confirming}
+        onConfirm={attendeeScan.handleConfirm}
+        onCancel={attendeeScan.closeReview}
       />
     </Stack>
   );

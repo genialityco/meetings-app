@@ -16,7 +16,8 @@ import { showNotification } from "@mantine/notifications";
 import { db, storage } from "../../firebase/firebaseConfig";
 import * as XLSX from "xlsx";
 import QrScannerModal from "../../components/QrScannerModal";
-import { parseAttendeeQrUrl } from "../../utils/qrScan";
+import AttendeeScanReviewModal from "../../components/AttendeeScanReviewModal";
+import { useAttendeeScanFlow } from "../../hooks/useAttendeeScanFlow";
 
 // Campos básicos siempre visibles
 const BASIC_FIELDS = [
@@ -27,7 +28,7 @@ const BASIC_FIELDS = [
   { key: "tipoAsistente", label: "Tipo" },
 ];
 
-function AttendeeRow({ a, event, updating, onToggle }) {
+function AttendeeRow({ a, event, updating, onToggle, onEdit }) {
   const [expanded, setExpanded] = useState(false);
   const [editingField, setEditingField] = useState(null);
   const [editValue, setEditValue] = useState("");
@@ -139,6 +140,26 @@ function AttendeeRow({ a, event, updating, onToggle }) {
           >
             <IconId size={18} />
           </ActionIcon>
+          <ActionIcon
+            size="lg"
+            radius="xl"
+            variant="light"
+            color="blue"
+            onClick={() => onEdit(a)}
+            title="Editar asistente"
+          >
+            <IconEdit size={18} />
+          </ActionIcon>
+          <ActionIcon
+            size="lg"
+            radius="xl"
+            variant="light"
+            color="gray"
+            onClick={() => setExpanded((v) => !v)}
+            title={expanded ? "Ocultar datos" : "Ver más datos"}
+          >
+            {expanded ? <IconChevronUp size={18} /> : <IconChevronDown size={18} />}
+          </ActionIcon>
           {a.checkedIn ? (
             <Badge color="green" variant="light" size="sm" leftSection={<IconUserCheck size={12} />}>
               Presente
@@ -224,10 +245,13 @@ export default function CheckInTab({ event }) {
   const [search, setSearch] = useState("");
   const [updating, setUpdating] = useState(null);
   const [createUserOpened, setCreateUserOpened] = useState(false);
-  const [scannerOpened, setScannerOpened] = useState(false);
   const [creatingUser, setCreatingUser] = useState(false);
   const [newUserValues, setNewUserValues] = useState({});
   const [newUserErrors, setNewUserErrors] = useState({});
+  const [editingAttendee, setEditingAttendee] = useState(null);
+  const [editValues, setEditValues] = useState({});
+  const [editErrors, setEditErrors] = useState({});
+  const [savingEditAttendee, setSavingEditAttendee] = useState(false);
 
   const isValidEmail = (v = "") => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim());
   const validateField = (field, value) => {
@@ -263,30 +287,42 @@ export default function CheckInTab({ event }) {
     return null;
   };
 
-  const getCreateValue = (fieldName) => {
+  const getFieldValue = (values, fieldName) => {
     if (fieldName.startsWith("contacto.")) {
       const key = fieldName.split(".")[1];
-      return newUserValues.contacto?.[key] || "";
+      return values.contacto?.[key] || "";
     }
-    return newUserValues[fieldName] ?? "";
+    return values[fieldName] ?? "";
   };
 
-  const setCreateValue = (fieldName, value) => {
+  const setFieldValue = (setValues, fieldName, value) => {
     if (fieldName.startsWith("contacto.")) {
       const key = fieldName.split(".")[1];
-      setNewUserValues((prev) => ({
+      setValues((prev) => ({
         ...prev,
         contacto: { ...prev.contacto, [key]: value },
       }));
       return;
     }
-    setNewUserValues((prev) => ({ ...prev, [fieldName]: value }));
+    setValues((prev) => ({ ...prev, [fieldName]: value }));
   };
+
+  const getCreateValue = (fieldName) => getFieldValue(newUserValues, fieldName);
+  const setCreateValue = (fieldName, value) => setFieldValue(setNewUserValues, fieldName, value);
 
   const resetCreateUserForm = () => {
     setNewUserValues({});
     setNewUserErrors({});
   };
+
+  const startEditAttendee = (attendee) => {
+    setEditingAttendee(attendee);
+    setEditValues({ ...attendee });
+    setEditErrors({});
+  };
+
+  const getEditValue = (fieldName) => getFieldValue(editValues, fieldName);
+  const setEditValueField = (fieldName, value) => setFieldValue(setEditValues, fieldName, value);
 
   const createFields = (() => {
     const eventFields = event?.config?.formFields?.filter((f) => f.name !== "photoURL") || [];
@@ -302,10 +338,11 @@ export default function CheckInTab({ event }) {
     return [...basicFields, ...remainingFields];
   })();
 
-  const renderCreateUserFields = () => {
-    return createFields.map((field) => {
-      const fieldError = newUserErrors[field.name];
-      const value = getCreateValue(field.name);
+  const renderFieldsForm = (fields, getValue, setValue, errors, setErrors) => {
+    return fields.map((field) => {
+      const fieldError = errors[field.name];
+      const value = getValue(field.name);
+      const clearError = () => setErrors((prev) => ({ ...prev, [field.name]: null }));
 
       if (field.name === "photo") {
         return (
@@ -316,8 +353,8 @@ export default function CheckInTab({ event }) {
             accept="image/png,image/jpeg"
             value={value || null}
             onChange={(file) => {
-              setCreateValue(field.name, file);
-              setNewUserErrors((prev) => ({ ...prev, [field.name]: null }));
+              setValue(field.name, file);
+              clearError();
             }}
             error={fieldError}
           />
@@ -331,8 +368,8 @@ export default function CheckInTab({ event }) {
             label={field.label}
             value={value}
             onChange={(e) => {
-              setCreateValue(field.name, e.currentTarget.value);
-              setNewUserErrors((prev) => ({ ...prev, [field.name]: null }));
+              setValue(field.name, e.currentTarget.value);
+              clearError();
             }}
             error={fieldError}
             minRows={4}
@@ -349,8 +386,8 @@ export default function CheckInTab({ event }) {
             data={field.options || []}
             value={value}
             onChange={(v) => {
-              setCreateValue(field.name, v);
-              setNewUserErrors((prev) => ({ ...prev, [field.name]: null }));
+              setValue(field.name, v);
+              clearError();
             }}
             error={fieldError}
             required={field.required}
@@ -366,8 +403,8 @@ export default function CheckInTab({ event }) {
             label={field.label}
             checked={!!value}
             onChange={(e) => {
-              setCreateValue(field.name, e.currentTarget.checked);
-              setNewUserErrors((prev) => ({ ...prev, [field.name]: null }));
+              setValue(field.name, e.currentTarget.checked);
+              clearError();
             }}
             error={fieldError}
             required={field.required}
@@ -382,8 +419,8 @@ export default function CheckInTab({ event }) {
           placeholder={field.label}
           value={value}
           onChange={(e) => {
-            setCreateValue(field.name, e.currentTarget.value);
-            setNewUserErrors((prev) => ({ ...prev, [field.name]: null }));
+            setValue(field.name, e.currentTarget.value);
+            clearError();
           }}
           error={fieldError}
           required={field.required}
@@ -391,6 +428,12 @@ export default function CheckInTab({ event }) {
       );
     });
   };
+
+  const renderCreateUserFields = () =>
+    renderFieldsForm(createFields, getCreateValue, setCreateValue, newUserErrors, setNewUserErrors);
+
+  const renderEditAttendeeFields = () =>
+    renderFieldsForm(createFields, getEditValue, setEditValueField, editErrors, setEditErrors);
 
   const uploadProfilePicture = async (file) => {
     const storageRef = ref(storage, `profilePictures/${Date.now()}_${file.name}`);
@@ -454,6 +497,51 @@ export default function CheckInTab({ event }) {
       console.error("Error creando usuario:", error);
     } finally {
       setCreatingUser(false);
+    }
+  };
+
+  const handleSaveEditAttendee = async () => {
+    if (!editingAttendee) return;
+
+    const errors = {};
+    createFields.forEach((field) => {
+      const value = getEditValue(field.name);
+      const error = validateField(field, value);
+      if (error) errors[field.name] = error;
+    });
+
+    if (Object.keys(errors).length > 0) {
+      setEditErrors(errors);
+      return;
+    }
+
+    const correoValue = getEditValue("correo") || getEditValue("email");
+    if (correoValue && !isValidEmail(correoValue)) {
+      setEditErrors((prev) => ({ ...prev, correo: "Ingresa un correo válido." }));
+      return;
+    }
+
+    setSavingEditAttendee(true);
+    try {
+      const dataToSave = { ...editValues };
+      delete dataToSave.id;
+
+      if (correoValue) {
+        dataToSave.correo = correoValue.trim().toLowerCase();
+      }
+
+      if (dataToSave.photo instanceof File) {
+        const photoURL = await uploadProfilePicture(dataToSave.photo);
+        dataToSave.photoURL = photoURL;
+        delete dataToSave.photo;
+      }
+
+      await updateDoc(doc(db, "users", editingAttendee.id), dataToSave);
+      setEditingAttendee(null);
+    } catch (error) {
+      console.error("Error actualizando asistente:", error);
+    } finally {
+      setSavingEditAttendee(false);
     }
   };
 
@@ -532,36 +620,25 @@ export default function CheckInTab({ event }) {
     }
   };
 
-  const handleScanDecode = async (decodedText) => {
-    const parsed = parseAttendeeQrUrl(decodedText);
-    if (!parsed) {
-      showNotification({ title: "Código no reconocido", message: "Este QR no es una credencial válida.", color: "red" });
-      return;
-    }
-    if (event?.id && parsed.eventId !== event.id) {
-      showNotification({ title: "Evento distinto", message: "Esta credencial pertenece a otro evento.", color: "red" });
-      return;
-    }
-    const attendee = attendees.find((a) => a.id === parsed.userId);
-    if (!attendee) {
-      showNotification({ title: "No encontrado", message: "Este asistente no pertenece a este evento.", color: "red" });
-      return;
-    }
-    if (attendee.checkedIn) {
-      showNotification({
-        title: "Ya tiene check-in",
-        message: `${attendee.nombre || "El asistente"} ya está registrado como presente.`,
-        color: "yellow",
-      });
-      return;
-    }
-    await handleToggle(attendee);
-    showNotification({
-      title: "Check-in exitoso",
-      message: `${attendee.nombre || "Asistente"} quedó registrado como presente.`,
-      color: "teal",
-    });
-  };
+  const attendeeScan = useAttendeeScanFlow({
+    lookup: async (userId, scannedEventId) => {
+      if (event?.id && scannedEventId && scannedEventId !== event.id) {
+        return { error: "Esta credencial pertenece a otro evento." };
+      }
+      const attendee = attendees.find((a) => a.id === userId);
+      if (!attendee) {
+        return { error: "Este asistente no pertenece a este evento." };
+      }
+      return {
+        attendee,
+        alreadyDoneMessage: attendee.checkedIn ? "Ya tiene check-in" : undefined,
+      };
+    },
+    confirm: async (attendee) => {
+      await handleToggle(attendee);
+      return { message: `${attendee.nombre || "Asistente"} quedó registrado como presente.` };
+    },
+  });
 
   const exportToExcel = () => {
     const wsData = [
@@ -606,7 +683,7 @@ export default function CheckInTab({ event }) {
           <Badge color="green" variant="light">{checkedIn.length} presentes</Badge>
           <Badge color="gray" variant="light">{notCheckedIn.length} pendientes</Badge>
           <Badge color="blue" variant="light">{filtered.length} total</Badge>
-          <Button size="xs" variant="outline" leftSection={<IconQrcode size={14} />} onClick={() => setScannerOpened(true)}>
+          <Button size="xs" variant="outline" leftSection={<IconQrcode size={14} />} onClick={() => attendeeScan.setScannerOpened(true)}>
             Escanear QR
           </Button>
           <Button size="xs" variant="outline" leftSection={<IconDownload size={14} />} onClick={exportToExcel} color="green">
@@ -646,19 +723,19 @@ export default function CheckInTab({ event }) {
         </Text>
       ) : (
         <Box px="md" pt="sm">
-          {checkedIn.length > 0 && (
+          {notCheckedIn.length > 0 && (
             <>
-              <Divider label={<Text size="xs" fw={600} c="green">Presentes ({checkedIn.length})</Text>} labelPosition="left" mb="xs" />
-              {checkedIn.map((a) => (
-                <AttendeeRow key={a.id} a={a} event={event} updating={updating} onToggle={handleToggle} />
+              <Divider label={<Text size="xs" fw={600} c="dimmed">Pendientes ({notCheckedIn.length})</Text>} labelPosition="left" mb="xs" />
+              {notCheckedIn.map((a) => (
+                <AttendeeRow key={a.id} a={a} event={event} updating={updating} onToggle={handleToggle} onEdit={startEditAttendee} />
               ))}
             </>
           )}
-          {notCheckedIn.length > 0 && (
+          {checkedIn.length > 0 && (
             <>
-              <Divider label={<Text size="xs" fw={600} c="dimmed">Pendientes ({notCheckedIn.length})</Text>} labelPosition="left" mb="xs" mt={checkedIn.length > 0 ? "md" : 0} />
-              {notCheckedIn.map((a) => (
-                <AttendeeRow key={a.id} a={a} event={event} updating={updating} onToggle={handleToggle} />
+              <Divider label={<Text size="xs" fw={600} c="green">Presentes ({checkedIn.length})</Text>} labelPosition="left" mb="xs" mt={notCheckedIn.length > 0 ? "md" : 0} />
+              {checkedIn.map((a) => (
+                <AttendeeRow key={a.id} a={a} event={event} updating={updating} onToggle={handleToggle} onEdit={startEditAttendee} />
               ))}
             </>
           )}
@@ -666,12 +743,45 @@ export default function CheckInTab({ event }) {
       )}
 
       <QrScannerModal
-        opened={scannerOpened}
-        onClose={() => setScannerOpened(false)}
-        onDecode={handleScanDecode}
+        opened={attendeeScan.scannerOpened}
+        onClose={() => attendeeScan.setScannerOpened(false)}
+        onDecode={attendeeScan.handleDecode}
         title="Escanear credencial"
         hint="Apunta la cámara al código QR de la credencial del asistente para hacer check-in."
       />
+
+      <AttendeeScanReviewModal
+        opened={!!attendeeScan.reviewing}
+        attendee={attendeeScan.reviewing?.attendee}
+        formFields={event?.config?.formFields}
+        title="Asistente escaneado"
+        alreadyDoneMessage={attendeeScan.reviewing?.alreadyDoneMessage}
+        actionLabel="Confirmar check-in"
+        actionColor="green"
+        confirming={attendeeScan.confirming}
+        onConfirm={attendeeScan.handleConfirm}
+        onCancel={attendeeScan.closeReview}
+      />
+
+      <Modal
+        opened={!!editingAttendee}
+        onClose={() => setEditingAttendee(null)}
+        title="Editar asistente"
+        size="lg"
+        centered
+      >
+        <Stack>
+          {renderEditAttendeeFields()}
+          <Group position="right" spacing="xs">
+            <Button variant="default" onClick={() => setEditingAttendee(null)}>
+              Cancelar
+            </Button>
+            <Button loading={savingEditAttendee} onClick={handleSaveEditAttendee}>
+              Guardar cambios
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Stack>
   );
 }

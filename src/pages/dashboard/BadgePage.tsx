@@ -25,8 +25,10 @@ export default function BadgePage() {
         if (userSnap.exists()) setUser(userSnap.data());
         if (eventSnap.exists()) setEvent(eventSnap.data());
 
-        const checkInUrl = `${window.location.origin}/admin/event/${eventId}/checkin/${userId}`;
-        const qrUrl = await QRCode.toDataURL(checkInUrl, { width: 250, margin: 2 });
+        // El QR codifica solo el uid del asistente (no un enlace): así el check-in
+        // se hace siempre desde el escáner en el panel de CheckInTab.jsx, en vez
+        // de navegar a otra página al abrir la cámara nativa del teléfono.
+        const qrUrl = await QRCode.toDataURL(userId, { width: 250, margin: 2 });
         setQrCodeUrl(qrUrl);
       } catch (e) {
         console.error("Error loading badge data", e);
