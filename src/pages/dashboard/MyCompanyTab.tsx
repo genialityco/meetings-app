@@ -265,7 +265,7 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
                     leftSection={<IconQrcode size={16} />}
                     onClick={() => attendeeScan.setScannerOpened(true)}
                   >
-                    Escanear {counterpartRoleLabel}
+                    Escanear visitante
                   </Button>
                 )}
                 {visits.length > 0 && (
