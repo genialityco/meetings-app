@@ -1,10 +1,17 @@
 import { Tabs, SegmentedControl, Stack, Badge, Group } from "@mantine/core";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import {
   IconCalendarEvent,
   IconInbox,
   IconCalendar,
+  IconMessageChatbot,
+  IconSparkles,
+  IconUsers,
+  IconBuildings,
+  IconBuildingStore,
+  IconPackage,
+  IconClipboardList,
 } from "@tabler/icons-react";
 import AttendeesView from "./AttendeesView";
 import CompaniesView from "./CompaniesView";
@@ -15,6 +22,7 @@ import RequestsTab from "./RequestsTab";
 import CalendarTab from "./CalendarTab";
 import MatchesTab from "./MatchesTab";
 import EventSurveyTab from "./EventSurveyTab";
+import MyCompanyTab from "./MyCompanyTab";
 import { DEFAULT_POLICIES } from "./types";
 import { useMediaQuery } from "@mantine/hooks";
 import { trackTabChange } from "../../utils/analytics";
@@ -26,6 +34,19 @@ interface ViewRequest {
   highlightEntityId?: string;
   highlightEntityType?: "assistant" | "product" | "company";
 }
+
+// Icono de cada vista principal — mismo lenguaje visual en móvil (pills) y
+// escritorio (SegmentedControl) para que cada tab se reconozca de un vistazo.
+const VIEW_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
+  mystand: IconBuildingStore,
+  chatbot: IconMessageChatbot,
+  matches: IconSparkles,
+  attendees: IconUsers,
+  companies: IconBuildings,
+  products: IconPackage,
+  activity: IconCalendarEvent,
+  survey: IconClipboardList,
+};
 
 export default function TabsPanel({
   dashboard,
@@ -67,7 +88,31 @@ export default function TabsPanel({
     return (ia === -1 ? Number.MAX_SAFE_INTEGER : ia) - (ib === -1 ? Number.MAX_SAFE_INTEGER : ib);
   });
 
+  // "Mi stand": vista principal del representante de stand cuando el evento
+  // maneja visitas a stands (standVisitsEnabled). Solo los vendedores tienen
+  // stand — los compradores también registran empresa, así que tener empresa
+  // no basta. Se antepone al resto para que sea su pantalla de aterrizaje.
+  const roleLower = (dashboard.currentUser?.data?.tipoAsistente || "").toLowerCase().trim();
+  const hasCompany = !!(dashboard.currentUser?.data?.companyId || dashboard.currentUser?.data?.company_nit);
+  const showMyStand = policies.standVisitsEnabled === true && hasCompany && roleLower === "vendedor";
+  if (showMyStand) viewOptions.unshift({ value: "mystand", label: "Mi stand" });
+
+  // Con "el solicitante elige horario" no existen solicitudes pendientes
+  // (toda reunión se confirma al instante), así que la sub-tab Solicitudes
+  // quedaría siempre vacía y confunde: se oculta.
+  const hideSolicitudes = policies.schedulingMode === "requester_picks";
+
   const [topView, setTopView] = useState(viewOptions[0]?.value || "companies");
+
+  // Aterrizar en "Mi stand" una sola vez cuando la vista aparece (las políticas
+  // cargan async, así que en el primer render aún no existe).
+  const autoLandedMyStand = useRef(false);
+  useEffect(() => {
+    if (showMyStand && !autoLandedMyStand.current) {
+      autoLandedMyStand.current = true;
+      setTopView("mystand");
+    }
+  }, [showMyStand]);
 
   // Función para cambiar vista principal con tracking
   const handleTopViewChange = (newView: string) => {
@@ -102,7 +147,7 @@ export default function TabsPanel({
       setTopView(view);
     }
     if (tab) {
-      setActivityDefaultTab(tab);
+      setActivityDefaultTab(tab === "solicitudes" && hideSolicitudes ? "reuniones" : tab);
     }
     
     // Guardar highlight info para persistir durante el render
@@ -132,26 +177,43 @@ export default function TabsPanel({
     <Stack mt="md">
     {isMobile ? (
       <Tabs value={topView} onChange={(v) => v && handleTopViewChange(v)} variant="pills">
-        <Tabs.List style={{ flexWrap: "nowrap", overflowX: "auto", gap: 4 }}>
-          {viewOptions.map((o) => (
-            <Tabs.Tab
-              key={o.value}
-              value={o.value}
-              style={(theme) => ({
-                fontWeight: topView === o.value ? 700 : 500,
-                transition: "background 0.15s",
-              })}
-            >
-              {o.label}
-            </Tabs.Tab>
-          ))}
+        <Tabs.List style={{ flexWrap: "nowrap", overflowX: "auto", gap: 4, paddingBottom: 4 }}>
+          {viewOptions.map((o) => {
+            const Icon = VIEW_ICONS[o.value];
+            return (
+              <Tabs.Tab
+                key={o.value}
+                value={o.value}
+                leftSection={Icon ? <Icon size={16} /> : undefined}
+                style={{
+                  fontWeight: topView === o.value ? 700 : 500,
+                  transition: "background 0.15s",
+                  flexShrink: 0,
+                }}
+              >
+                {o.label}
+              </Tabs.Tab>
+            );
+          })}
         </Tabs.List>
       </Tabs>
     ) : (
       <SegmentedControl
         value={topView}
         onChange={handleTopViewChange}
-        data={viewOptions}
+        data={viewOptions.map((o) => {
+          const Icon = VIEW_ICONS[o.value];
+          return {
+            value: o.value,
+            label: (
+              <Group gap={6} wrap="nowrap" justify="center">
+                {Icon && <Icon size={16} />}
+                <span>{o.label}</span>
+              </Group>
+            ),
+          };
+        })}
+        radius="xl"
         fullWidth
       />
     )}
@@ -180,11 +242,16 @@ export default function TabsPanel({
         />
       )}
 
+      {topView === "mystand" && <MyCompanyTab {...dashboard} />}
+
       {topView === "companies" && (
         <CompaniesView
           filteredAssistants={dashboard.filteredAssistants}
           companies={dashboard.companies}
           policies={policies}
+          acceptedMeetings={dashboard.acceptedMeetings}
+          participantsInfo={dashboard.participantsInfo}
+          myStandVisits={dashboard.myStandVisits}
           eventConfig={dashboard.eventConfig}
           solicitarReunionHabilitado={dashboard.solicitarReunionHabilitado}
           sendMeetingRequest={dashboard.sendMeetingRequest}
@@ -275,20 +342,22 @@ export default function TabsPanel({
                 )}
               </Group>
             </Tabs.Tab>
-            <Tabs.Tab
-              value="solicitudes"
-              leftSection={<IconInbox size={16} />}
-              style={{ fontWeight: activityDefaultTab === "solicitudes" ? 700 : 500, transition: "background 0.15s" }}
-            >
-              <Group gap={4} wrap="nowrap">
-                Solicitudes
-                {requestsCount > 0 && (
-                  <Badge size="sm" variant="filled" color="red" circle>
-                    {requestsCount}
-                  </Badge>
-                )}
-              </Group>
-            </Tabs.Tab>
+            {!hideSolicitudes && (
+              <Tabs.Tab
+                value="solicitudes"
+                leftSection={<IconInbox size={16} />}
+                style={{ fontWeight: activityDefaultTab === "solicitudes" ? 700 : 500, transition: "background 0.15s" }}
+              >
+                <Group gap={4} wrap="nowrap">
+                  Solicitudes
+                  {requestsCount > 0 && (
+                    <Badge size="sm" variant="filled" color="red" circle>
+                      {requestsCount}
+                    </Badge>
+                  )}
+                </Group>
+              </Tabs.Tab>
+            )}
           </Tabs.List>
 
           <Tabs.Panel value="agenda" pt="md">
@@ -324,9 +393,11 @@ export default function TabsPanel({
               }}
             />
           </Tabs.Panel>
-          <Tabs.Panel value="solicitudes" pt="md">
-            <RequestsTab {...dashboard} />
-          </Tabs.Panel>
+          {!hideSolicitudes && (
+            <Tabs.Panel value="solicitudes" pt="md">
+              <RequestsTab {...dashboard} />
+            </Tabs.Panel>
+          )}
         </Tabs>
       )}
     </Stack>

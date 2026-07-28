@@ -1,9 +1,9 @@
 // Dashboard/Dashboard.tsx
 
-import { Container, MantineProvider, createTheme } from "@mantine/core";
+import { Container, MantineProvider } from "@mantine/core";
 import { useParams } from "react-router-dom";
 import { useDashboardData } from "./useDashboardData";
-import { generateColors } from "@mantine/colors-generator";
+import { buildEventTheme } from "../../theme.js";
 
 import TabsPanel from "./TabsPanel";
 import AvatarModal from "./AvatarModal";
@@ -139,14 +139,10 @@ export default function Dashboard() {
     [dashboard.markNotificationRead],
   );
 
-  const eventTheme = useMemo(() => {
-    const hex = dashboard.eventConfig?.primaryColor;
-    if (!hex) return createTheme({});
-    return createTheme({
-      colors: { eventPrimary: generateColors(hex) },
-      primaryColor: "eventPrimary",
-    });
-  }, [dashboard.eventConfig?.primaryColor]);
+  const eventTheme = useMemo(
+    () => buildEventTheme(dashboard.eventConfig?.primaryColor),
+    [dashboard.eventConfig?.primaryColor],
+  );
 
   return (
     <MantineProvider theme={eventTheme}>

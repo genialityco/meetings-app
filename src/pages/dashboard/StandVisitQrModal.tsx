@@ -6,6 +6,8 @@ import QRCode from "qrcode";
 interface StandVisitQrModalProps {
   eventId: string;
   companyNit: string;
+  /** Disparador propio (p. ej. una tarjeta de acción); si se omite, se usa el botón por defecto. */
+  renderTrigger?: (open: () => void) => React.ReactNode;
 }
 
 /**
@@ -15,7 +17,7 @@ interface StandVisitQrModalProps {
  * QR de sorteo de RaffleQrModal.tsx). A diferencia del QR de sorteo, este es
  * reutilizable: la deduplicación ocurre del lado de quien escanea, no aquí.
  */
-export default function StandVisitQrModal({ eventId, companyNit }: StandVisitQrModalProps) {
+export default function StandVisitQrModal({ eventId, companyNit, renderTrigger }: StandVisitQrModalProps) {
   const [opened, setOpened] = useState(false);
   const [qrCodeUrl, setQrCodeUrl] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -35,14 +37,18 @@ export default function StandVisitQrModal({ eventId, companyNit }: StandVisitQrM
 
   return (
     <>
-      <Button
-        variant="light"
-        color="grape"
-        leftSection={<IconQrcode size={16} />}
-        onClick={handleOpen}
-      >
-        Mostrar código QR del stand
-      </Button>
+      {renderTrigger ? (
+        renderTrigger(handleOpen)
+      ) : (
+        <Button
+          variant="light"
+          color="grape"
+          leftSection={<IconQrcode size={16} />}
+          onClick={handleOpen}
+        >
+          Mostrar código QR del stand
+        </Button>
+      )}
       <Modal opened={opened} onClose={() => setOpened(false)} title="Código de visita al stand" centered>
         <Stack align="center" gap="md">
           <Text size="sm" ta="center" c="dimmed">

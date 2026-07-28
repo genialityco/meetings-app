@@ -15,6 +15,10 @@ import {
   Loader,
   Paper,
   Box,
+  ThemeIcon,
+  SimpleGrid,
+  ScrollArea,
+  UnstyledButton,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import { doc, getDoc } from "firebase/firestore";
@@ -27,6 +31,7 @@ import {
   IconPhone,
   IconUsers,
   IconQrcode,
+  IconScan,
   IconDownload,
 } from "@tabler/icons-react";
 import { db } from "../../firebase/firebaseConfig";
@@ -64,6 +69,28 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
   const myRole = (currentUser?.data?.tipoAsistente || "").toLowerCase().trim();
   const counterpartRoleLabel =
     myRole === "comprador" ? "vendedor" : myRole === "vendedor" ? "comprador" : "asistente";
+
+  // Visitas registradas hoy (para la ficha "Hoy" del panel del stand)
+  const visitsToday = visits.filter((v) => {
+    const d = (v.visitedAt as any)?.toDate ? (v.visitedAt as any).toDate() : null;
+    return d && d.toDateString() === new Date().toDateString();
+  }).length;
+
+  // Hora corta si la visita fue hoy; fecha corta + hora si fue otro día
+  const formatVisitTime = (visitedAt: any) => {
+    const d = visitedAt?.toDate ? visitedAt.toDate() : null;
+    if (!d) return "";
+    const isToday = d.toDateString() === new Date().toDateString();
+    return isToday
+      ? d.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", timeZone: "America/Bogota" })
+      : d.toLocaleString("es-CO", {
+          day: "numeric",
+          month: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+          timeZone: "America/Bogota",
+        });
+  };
 
   const attendeeScan = useAttendeeScanFlow({
     lookup: async (userId) => {
@@ -196,6 +223,18 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
   }
 
   return (
+    <>
+      <style>
+        {`
+          .stand-action-card .mantine-Paper-root {
+            transition: box-shadow 150ms ease, transform 150ms ease;
+          }
+          .stand-action-card:hover .mantine-Paper-root {
+            box-shadow: var(--mantine-shadow-md);
+            transform: translateY(-2px);
+          }
+        `}
+      </style>
     <Stack gap="lg">
       {/* Company header */}
       <Paper withBorder radius="lg" p="lg">
@@ -244,73 +283,162 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
         </Group>
       </Paper>
 
-      {/* Stand visits section */}
+      {/* Panel del stand: métricas, acciones principales y visitantes */}
       {eventConfig?.policies?.standVisitsEnabled && (
-        <>
-          <Divider
-            label={
-              <Group gap={6}>
-                <IconUsers size={16} />
-                <Text fw={600}>Visitantes de mi stand ({visits.length})</Text>
-              </Group>
-            }
-          />
-          <Paper withBorder radius="lg" p="lg">
-            <Stack gap="sm">
-              <Group justify="flex-end">
-                {eventConfig?.policies?.standVisitAllowSellerScan && (
-                  <Button
-                    variant="light"
-                    color="grape"
-                    leftSection={<IconQrcode size={16} />}
+        <Paper withBorder radius="lg" p="lg">
+          <Stack gap="md">
+            <Group gap={8}>
+              <ThemeIcon variant="light" color="grape" radius="xl" size={32}>
+                <IconUsers size={18} />
+              </ThemeIcon>
+              <Title order={4}>Mi stand</Title>
+            </Group>
+
+            {/* Métricas del stand */}
+            <SimpleGrid cols={3} spacing="sm">
+              <Paper radius="md" p="sm" bg="gray.0" ta="center">
+                <Text size="xxl" fw={700} lh={1.2}>
+                  {visits.length}
+                </Text>
+                <Text size="xs" c="dimmed" fw={600} tt="uppercase">
+                  Visitantes
+                </Text>
+              </Paper>
+              <Paper radius="md" p="sm" bg="gray.0" ta="center">
+                <Text size="xxl" fw={700} lh={1.2}>
+                  {visitsToday}
+                </Text>
+                <Text size="xs" c="dimmed" fw={600} tt="uppercase">
+                  Hoy
+                </Text>
+              </Paper>
+              <Paper radius="md" p="sm" bg="gray.0" ta="center">
+                <Text size="xxl" fw={700} lh={1.2}>
+                  {products.length}
+                </Text>
+                <Text size="xs" c="dimmed" fw={600} tt="uppercase">
+                  Productos
+                </Text>
+              </Paper>
+            </SimpleGrid>
+
+            {/* Acciones principales */}
+            <Grid gutter="sm">
+              <Grid.Col
+                span={{ base: 12, xs: eventConfig?.policies?.standVisitAllowSellerScan ? 6 : 12 }}
+              >
+                <StandVisitQrModal
+                  eventId={eventId as string}
+                  companyNit={companyNit}
+                  renderTrigger={(open) => (
+                    <UnstyledButton onClick={open} className="stand-action-card" w="100%">
+                      <Paper withBorder radius="lg" p="md" ta="center" h="100%">
+                        <ThemeIcon variant="light" color="grape" size={44} radius="xl" mb={6}>
+                          <IconQrcode size={24} />
+                        </ThemeIcon>
+                        <Text fw={600} size="sm">
+                          Mostrar QR del stand
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                          El visitante lo escanea y su visita queda registrada
+                        </Text>
+                      </Paper>
+                    </UnstyledButton>
+                  )}
+                />
+              </Grid.Col>
+              {eventConfig?.policies?.standVisitAllowSellerScan && (
+                <Grid.Col span={{ base: 12, xs: 6 }}>
+                  <UnstyledButton
                     onClick={() => attendeeScan.setScannerOpened(true)}
+                    className="stand-action-card"
+                    w="100%"
                   >
-                    Escanear visitante
-                  </Button>
-                )}
+                    <Paper withBorder radius="lg" p="md" ta="center" h="100%">
+                      <ThemeIcon variant="light" color="blue" size={44} radius="xl" mb={6}>
+                        <IconScan size={24} />
+                      </ThemeIcon>
+                      <Text fw={600} size="sm">
+                        Escanear visitante
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        Escanea la credencial del {counterpartRoleLabel} para registrar su visita
+                      </Text>
+                    </Paper>
+                  </UnstyledButton>
+                </Grid.Col>
+              )}
+            </Grid>
+
+            {/* Lista de visitantes */}
+            <Box>
+              <Group justify="space-between" mb="xs">
+                <Group gap={6}>
+                  <Text fw={600} size="sm">
+                    Visitantes registrados
+                  </Text>
+                  <Badge variant="light" color="grape" size="sm">
+                    {visits.length}
+                  </Badge>
+                </Group>
                 {visits.length > 0 && (
                   <Button
-                    variant="light"
+                    variant="subtle"
                     color="green"
-                    leftSection={<IconDownload size={16} />}
+                    size="compact-sm"
+                    leftSection={<IconDownload size={14} />}
                     loading={exportingVisits}
                     onClick={handleExportVisits}
                   >
                     Exportar a Excel
                   </Button>
                 )}
-                <StandVisitQrModal eventId={eventId as string} companyNit={companyNit} />
               </Group>
               {visits.length === 0 ? (
-                <Text c="dimmed" ta="center" size="sm">
-                  Aún no tienes visitantes registrados.
-                </Text>
+                <Paper radius="md" p="lg" bg="gray.0" ta="center">
+                  <IconUsers size={28} color="var(--mantine-color-gray-5)" />
+                  <Text c="dimmed" size="sm" mt={4}>
+                    Aún no tienes visitantes. Muestra el QR del stand
+                    {eventConfig?.policies?.standVisitAllowSellerScan
+                      ? " o escanea credenciales"
+                      : ""}{" "}
+                    para registrarlos.
+                  </Text>
+                </Paper>
               ) : (
-                <Stack gap="xs">
-                  {visits.map((v) => (
-                    <Group key={v.id} justify="space-between" wrap="nowrap">
-                      <Stack gap={0} style={{ minWidth: 0 }}>
-                        <Text size="sm" fw={500} lineClamp={1}>
-                          {v.attendeeName || "Asistente"}
-                        </Text>
-                        {v.attendeeEmpresa && (
-                          <Text size="xs" c="dimmed" lineClamp={1}>
-                            {v.attendeeEmpresa}
+                <ScrollArea.Autosize mah={340} offsetScrollbars>
+                  <Stack gap={0}>
+                    {visits.map((v, i) => (
+                      <Box key={v.id}>
+                        {i > 0 && <Divider />}
+                        <Group justify="space-between" wrap="nowrap" py={8}>
+                          <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
+                            <Avatar radius="xl" size={32} color="grape">
+                              {(v.attendeeName || "A")[0]?.toUpperCase()}
+                            </Avatar>
+                            <Stack gap={0} style={{ minWidth: 0 }}>
+                              <Text size="sm" fw={500} lineClamp={1}>
+                                {v.attendeeName || "Asistente"}
+                              </Text>
+                              {v.attendeeEmpresa && (
+                                <Text size="xs" c="dimmed" lineClamp={1}>
+                                  {v.attendeeEmpresa}
+                                </Text>
+                              )}
+                            </Stack>
+                          </Group>
+                          <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
+                            {formatVisitTime(v.visitedAt)}
                           </Text>
-                        )}
-                      </Stack>
-                      <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
-                        {v.visitedAt?.toDate
-                          ? v.visitedAt.toDate().toLocaleString("es-CO", { timeZone: "America/Bogota" })
-                          : ""}
-                      </Text>
-                    </Group>
-                  ))}
-                </Stack>
+                        </Group>
+                      </Box>
+                    ))}
+                  </Stack>
+                </ScrollArea.Autosize>
               )}
-            </Stack>
-          </Paper>
-        </>
+            </Box>
+          </Stack>
+        </Paper>
       )}
 
       {/* Representatives section */}
@@ -404,7 +532,7 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
               const isMine = !!myUid && p.ownerUserId === myUid;
               const key = `${p.id}-${p.ownerUserId}`;
               return (
-                <Grid.Col key={p.id} span={6}>
+                <Grid.Col key={p.id} span={{ base: 6, md: 4, lg: 3 }}>
                   <Card
                     withBorder
                     radius="lg"
@@ -513,5 +641,6 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
         onCancel={attendeeScan.closeReview}
       />
     </Stack>
+    </>
   );
 }

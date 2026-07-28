@@ -19,11 +19,11 @@ This is a React 19 + Vite 6 meetings/networking app for events, using **Firebase
 
 - **organizations/{orgId}**: Tenant grouping of events (name, owners: admin uids). Superadmins see all; regular admins only orgs where they're listed in `owners`.
 - **events/{eventId}**: Event config (scheduling, formFields, registrationForm, policies, eventSurvey). Has its own `owners: uid[]` (independent of the parent org's owners) and an `organizationId` linking it to `organizations/{orgId}`.
-- **events/{eventId}/companies/{nitNorm}**: Companies (razonSocial, logoUrl, fixedTable)
+- **events/{eventId}/companies/{nitNorm}**: Companies (razonSocial, logoUrl, fixedTable). Subcollection `visits/{attendeeUid}`: stand visits (see `StandVisit` in types.ts) — one doc per visitor, covered by the `companies/{companyId=**}` wildcard rule.
 - **events/{eventId}/meetings**: Meeting requests (requesterId, receiverId, status, productId?, companyId?, contextNote?). `status` includes `standby` (accepted but blocked on check-in) and external/completed meetings (`isExternal`, `completed`).
 - **events/{eventId}/products**: Products (ownerUserId, companyId, title, description, imageUrl)
 - **events/{eventId}/agenda**: Slots with tableNumber, startTime, endTime, available, meetingId, date, isBreak
-- **users**: Global collection, filtered by `eventId`. Attendees with companyId, tipoAsistente, raffleTickets, etc.
+- **users**: Global collection, filtered by `eventId`. Attendees with companyId, tipoAsistente, raffleTickets, etc. Check-in is per-day: `checkIns` map keyed by event date (`YYYY-MM-DD`, or `"unico"` for single-day events without dates) — helpers in `src/utils/eventDays.ts`.
 - **locks**: Prevents double-booking: lockId = `{eventId}_{userId}_{date}_{start}-{end}`
 - **aiChats**: Chatbot conversation history (userId, eventId, message, intent, aiMessage, results)
 - **admins/{uid}**, **adminRequests/{uid}**: Admin accounts and pending admin-signup approval requests (superadmin-gated)
@@ -50,6 +50,7 @@ Configurable per event via admin panel (`EventPoliciesModal.tsx`). Interface + d
 - `groupByRazonSocial` — group companies by name instead of NIT
 - `allowProductImageUpload`, `maxMeetingsPerContact` — product/meeting limits
 - `raffleEnabled`, `raffleShowPointsToAttendee` — enables the meeting-raffle feature (see below)
+- `standVisitsEnabled`, `standVisitAllowSellerScan` — stand-visit registration via QR (see below)
 
 Some newer per-event toggles (e.g. `cancelMeetingDisabled`, read in `CalendarTab.tsx`/`EventPoliciesModal.tsx`) are set directly on the policies object without yet being formalized in the `EventPolicies` interface — check `EventPoliciesModal.tsx` for the full current set of admin-configurable toggles rather than relying solely on the type.
 
@@ -57,11 +58,15 @@ Some newer per-event toggles (e.g. `cancelMeetingDisabled`, read in `CalendarTab
 
 - `src/firebase/firebaseConfig.js` — Firebase init, exports `db`, `auth`, `storage`, `messaging`
 - `src/context/UserContext.jsx` — Auth state (anonymous auth + manual login by cedula/email), exports `UserProvider` and `UserContext`
-- `src/context/AdminAuthContext.tsx` — Separate admin auth layer (Firebase email/password). Exports `AdminAuthProvider`, `useAdminAuth`. Checks `admins/{uid}` collection to verify admin status and `isSuperAdmin` flag.
+- `src/context/AdminAuthContext.tsx` — Separate admin auth layer (Firebase email/password). Exports `AdminAuthProvider`, `useAdminAuth`. Checks `admins/{uid}` collection to verify admin status and `isSuperAdmin` flag. Firebase auth persistence is shared across tabs, so a transient `null` from `onAuthStateChanged` with the `adminSession` localStorage flag set gets a 1.5s grace timer before clearing admin state — don't "simplify" this away or new tabs will kick existing admin tabs to login.
 - `src/utils/companyStorage.ts` — Logo upload to Firebase Storage
 - `src/utils/analytics.ts` — Centralized GA4 event tracking (typed `AnalyticsEvent` union, used via `TrackedButton` and direct `trackEvent()` calls)
 - `src/utils/whatsappService.ts` — Client-side WhatsApp notification sender (supports v1/v2 API controlled by `whatsappApiVersion` policy)
+- `src/utils/eventDays.ts` — Per-day check-in helpers (`getEventDayKeys`, `resolveCheckInDay`, `isCheckedInOnDay`); the check-in "day" key is an event date or `"unico"`
+- `src/utils/qrScan.ts` — `parseAttendeeQrUrl`: parses a scanned badge QR. Current badges encode only the attendee uid as plain text; legacy link patterns (`/admin/event/:id/checkin/:uid`, `/badge/:id/:uid`) still parse for already-printed badges. When eventId comes back null, the caller must validate the attendee belongs to the event.
+- `src/utils/attendeeFields.ts` — splits event formFields into basic/additional for scan-review cards
 - `src/hooks/usePageTracking.ts` — GA4 page view tracking on route changes
+- `src/hooks/useAttendeeScanFlow.ts` — shared "scan → review card → confirm → keep scanning" state machine used by admin check-in (`CheckInTab.jsx`) and seller stand-visit scanning (`MyCompanyTab.tsx`), built on `QrScannerModal.tsx` (camera scanner; stays open between reads with a 2s same-code debounce; imports html5-qrcode dynamically so the ~100 kB lib only loads when a scanner opens) + `AttendeeScanReviewModal.tsx`/`AttendeeInfoCard.tsx`
 - `src/pages/admin/` — Admin panel: organizations, event management, attendees, meetings, policies config. `AdminLogin.tsx` / `AdminRegister.tsx` for admin auth. `AdminsManagementModal.tsx` for superadmin to approve/reject admin requests. `MatrixPage.jsx` and `EventAdmin.jsx` are the largest files (~3900 and ~2260 lines).
 - `src/pages/dashboard/` — Attendee dashboard with discovery views + activity tabs. `AssistantsTab.tsx` for AI assistant view.
 - `src/components/` — Shared components (UserProfile, DashboardHeader, TrackedButton, ProtectedAdminRoute, OptimisticCheckbox). Note: `components/NotificationMenu.jsx` is an empty, unreferenced file — the real one is `pages/dashboard/NotificationsMenu.tsx`.
@@ -81,10 +86,15 @@ Some newer per-event toggles (e.g. `cancelMeetingDisabled`, read in `CalendarTab
 
 Meeting requests from CompaniesView/ProductsView pass context (productId, companyId, contextNote). `EventSurveyTab.tsx` renders the event-wide satisfaction survey (`event.config.eventSurvey`) when enabled, separate from the per-meeting survey flow.
 
+Conditional view behavior:
+- With `standVisitsEnabled`, a **"Mi stand"** view (embeds `MyCompanyTab`) is prepended only for users with a company AND `tipoAsistente === "vendedor"` (buyers also register companies, so having a company is not enough), and becomes their landing view. `CompaniesView` cards show "Visitado" (from `myStandVisits` in `useDashboardData`) and "Reunión hh:mm" (derived from acceptedMeetings + participantsInfo) status badges.
+- With `schedulingMode: "requester_picks"`, the "Solicitudes" sub-tab is hidden (instant confirmation means pending requests never exist).
+- `DashboardHeader` always shows a badge-QR icon button (opens `/badge/:eventId/:uid`); with `standVisitsEnabled` it also shows an "Escanear stand" button that opens the in-app `QrScannerModal` and navigates to `/stand-visit/...` on a valid stand QR (`parseStandVisitQrUrl`) — this avoids the native-camera flow landing in a browser without the attendee's session.
+
 ### Key Hooks
 
 - **`useDashboardData.ts`** — Centralizes ALL dashboard state and Firestore operations (real-time via onSnapshot). ~2100 lines; also owns standby/check-in promotion, meeting confirmation, and raffle-ticket logic.
-- **`useCompanyData.ts`** — Used by `CompanyLanding` and `MyCompanyTab` for company data, products, representatives, and meeting requests.
+- **`useCompanyData.ts`** — Used by `CompanyLanding` and `MyCompanyTab` for company data, products, representatives, and meeting requests. Also owns stand-visit logic: real-time `visits` subscription (opt-in via `subscribeToVisits` — only `MyCompanyTab` passes it; the visitor list is not public on `CompanyLanding`) and the seller-scan `lookupAttendeeForVisit`/`confirmVisit` pair.
 
 ### Organizations & Admin Hierarchy
 
@@ -96,11 +106,12 @@ Admins are grouped by **organizations** (a multi-tenant layer above events):
 ### Meeting Lifecycle Extras
 
 Beyond the base request/accept/cancel flow (see `EventPoliciesModal.tsx`, `CalendarTab.tsx`, `MeetingsTab.tsx`, `EventAdmin.jsx` "Operación" tab):
-- **Standby check-in** (`standbyCheckInRequired`): accepted meetings sit in `standby` status until both participants check in; un-checking in reverts them. Standby slots are usable as a scheduling fallback.
+- **Standby check-in** (`standbyCheckInRequired`): accepted meetings sit in `standby` status until both participants check in on the meeting's date (`checkIns[meetingDate]` — see per-day check-in above); un-checking in reverts them. Standby slots are usable as a scheduling fallback.
 - **Meeting confirmation** (`meetingConfirmationEnabled`): `MeetingConfirmationGuard.tsx` blocks the UI and polls until a participant confirms a past meeting actually happened.
 - **External meetings**: `ExternalMeetingModal.jsx` (attendee-admin driven) registers meetings that happened outside the system — no agenda slot consumed, stored with `isExternal: true, completed: true`.
 - **Raffle** (`raffleEnabled`): sellers show a per-meeting QR (`RaffleQrModal.tsx`); buyers scan it via `/raffle-scan/:eventId/:meetingId` (`RaffleScanPage.tsx`) to award themselves a ticket (`users/{uid}.raffleTickets`, incremented, one claim per meeting). `raffleShowPointsToAttendee` controls whether buyers see their own count. Admin draws winners (ticket-weighted random) at `/admin/event/:eventId/raffle` (`RafflePage.tsx`).
-- **Check-in / badges**: `CheckInTab.jsx` (inside `AttendeesList.jsx`) lists real-time check-in status; `BadgePage.tsx` (`/badge/:eventId/:userId`) renders a printable badge with a QR pointing at `QuickCheckInPage.tsx` (`/admin/event/:eventId/checkin/:userId`) for one-tap admin check-in.
+- **Check-in / badges**: `CheckInTab.jsx` (inside `AttendeesList.jsx`) lists real-time check-in status with a day selector (writes `checkIns.{day}` on the user doc; un-checking uses `deleteField()`) and an "Escanear QR" badge-scanning flow via `useAttendeeScanFlow`. `BadgePage.tsx` (`/badge/:eventId/:userId`, also reachable from the dashboard header menu "Ver mi código QR") renders a printable badge whose QR encodes only the attendee uid — check-in happens from the admin scanner, not by navigating. `QuickCheckInPage.tsx` (`/admin/event/:eventId/checkin/:userId`) remains for legacy printed badges that encoded a link.
+- **Stand visits** (`standVisitsEnabled`): two directions for registering that an attendee visited a company's stand, both writing `events/{eventId}/companies/{nitNorm}/visits/{attendeeUid}` (one visit per attendee per stand; requires the visitor to be checked in on the current day, and not visiting their own stand). (1) Attendee scans the stand's fixed QR (`StandVisitQrModal.tsx` in `MyCompanyTab`, encodes `/stand-visit/:eventId/:companyNit`) → `StandVisitScanPage.tsx` self-registers the visit. (2) With `standVisitAllowSellerScan`, the stand representative scans the visitor's badge from `MyCompanyTab` ("Escanear visitante") → `lookupAttendeeForVisit`/`confirmVisit` in `useCompanyData.ts`. `MyCompanyTab` shows the real-time visitor list.
 
 ### Data Flow
 
@@ -153,6 +164,7 @@ All `/admin/...` routes (except `/admin/login` and `/admin/register`) are wrappe
 | `/matrix/:eventId` | MatrixPage | Matrix view (not admin-protected) |
 | `/badge/:eventId/:userId` | BadgePage | Printable attendee badge with check-in QR (not admin-protected) |
 | `/raffle-scan/:eventId/:meetingId` | RaffleScanPage | Buyer scans seller's QR to claim a raffle ticket |
+| `/stand-visit/:eventId/:companyNit` | StandVisitScanPage | Attendee scans a stand's QR to register a visit |
 | `/phonesadmin` | PhonesAdminPage | Phone management |
 | `/meeting-response/:eventId/:meetingId/:action` | MeetingAutoResponse | Auto-response handler |
 
@@ -162,7 +174,7 @@ Events support multiple days via two Firestore fields on the event document:
 - `eventDates`: string[] — list of ISO date strings for event days
 - `dailyConfig`: `{ [date: string]: { startTime, endTime, breakBlocks: [{start, end}][] } }` — per-day schedule
 
-`AgendaSlot` has a `date: string` field and `isBreak?: boolean`. The `EditEventConfigModal.jsx` reads `dailyConfig` or falls back to legacy `eventDate` (single-day). Migration scripts in `scripts/` handle data migrations for existing events.
+`AgendaSlot` has a `date: string` field and `isBreak?: boolean`. The `EditEventConfigModal.jsx` reads `dailyConfig` or falls back to legacy `eventDate` (single-day). Attendee check-in is also per-day (`users.checkIns` map; day resolution in `src/utils/eventDays.ts`). Migration scripts in `scripts/` handle data migrations for existing events.
 
 ### Agenda Optimizer (`OptimizeAgendaPage.tsx`)
 
@@ -195,6 +207,7 @@ Node.js scripts using Firebase Admin SDK. Require `scripts/serviceAccountKey.jso
 
 - Mantine v7 (core, dates, modals, notifications, tiptap)
 - @dnd-kit for drag-and-drop (admin field config)
+- qrcode for QR generation (badges, raffle, stand QRs); html5-qrcode for camera scanning (`QrScannerModal`)
 - dayjs for date handling
 - xlsx for Excel import/export
 - @tabler/icons-react for icons

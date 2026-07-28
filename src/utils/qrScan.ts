@@ -24,3 +24,16 @@ export function parseAttendeeQrUrl(text: string): { eventId: string | null; user
   }
   return null;
 }
+
+/**
+ * Extrae {eventId, companyNit} del QR fijo de un stand (StandVisitQrModal.tsx),
+ * que codifica un enlace a /stand-visit/:eventId/:companyNit. Permite que el
+ * asistente escanee el QR del stand desde dentro de la app (sesión garantizada)
+ * en vez de depender de la cámara nativa del teléfono.
+ */
+export function parseStandVisitQrUrl(text: string): { eventId: string; companyNit: string } | null {
+  if (!text) return null;
+  const match = text.match(/\/stand-visit\/([^/]+)\/([^/?#]+)/);
+  if (!match) return null;
+  return { eventId: decodeURIComponent(match[1]), companyNit: decodeURIComponent(match[2]) };
+}

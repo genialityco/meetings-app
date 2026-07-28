@@ -2,7 +2,6 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import {
   Paper,
   Title,
-  Table,
   Badge,
   Modal,
   Stack,
@@ -13,10 +12,8 @@ import {
   ThemeIcon,
   Box,
   Select,
-  ScrollArea,
-  Checkbox,
-  Menu,
-  ActionIcon,
+  SegmentedControl,
+  Chip,
   Tooltip,
   Button,
 } from "@mantine/core";
@@ -30,11 +27,13 @@ import {
   IconCalendar,
   IconLock,
   IconLockOpen,
-  IconDots,
+  IconChevronRight,
+  IconClipboardCheck,
   IconAddressBook,
   IconBrandWhatsapp,
   IconX,
 } from "@tabler/icons-react";
+import { getTableLabel } from "./meetingSlotEngine";
 import { doc, updateDoc, collection, query, where, getDocs, addDoc, deleteDoc, onSnapshot, getDoc, setDoc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { showNotification } from "@mantine/notifications";
@@ -558,195 +557,187 @@ export default function CalendarTab({
   return (
     <>
       <Stack gap="md">
-        {/* Controles superiores */}
-        <Group justify="space-between" wrap="wrap">
-          {/* Selector de día para eventos multi-día */}
-          {isMultiDay && (
-            <Select
-              label="Seleccionar día"
-              placeholder="Escoge un día"
-              data={eventDates.map((date: string) => ({
-                value: date,
-                label: formatDateShort(date),
-              }))}
-              value={selectedDate || eventDates[0]}
-              onChange={setSelectedDate}
-              style={{ width: 250 }}
-            />
-          )}
+        {/* Encabezado: día + filtros por estado (los chips filtran y sirven de leyenda de color) */}
+        <Paper withBorder radius="lg" p="md">
+          <Stack gap="sm">
+            <Group justify="space-between" align="flex-end" wrap="wrap" gap="sm">
+              <Box>
+                <Title order={4}>Agenda</Title>
+                <Text size="sm" c="dimmed" tt="capitalize">
+                  {formatDate(currentDate)}
+                </Text>
+              </Box>
 
-          {/* Filtros de visualización */}
-          <Group gap="md">
-            <Checkbox
-              label="Aceptadas"
-              checked={showAccepted}
-              onChange={(e) => setShowAccepted(e.currentTarget.checked)}
-              color="green"
-            />
-            <Checkbox
-              label="Pendientes"
-              checked={showPending}
-              onChange={(e) => setShowPending(e.currentTarget.checked)}
-              color="yellow"
-            />
-            <Checkbox
-              label="Canceladas"
-              checked={showCancelled}
-              onChange={(e) => setShowCancelled(e.currentTarget.checked)}
-              color="red"
-            />
-          </Group>
-        </Group>
+              {/* Selector de día para eventos multi-día */}
+              {isMultiDay &&
+                (eventDates.length <= 4 ? (
+                  <SegmentedControl
+                    size="sm"
+                    radius="xl"
+                    data={eventDates.map((date: string) => ({
+                      value: date,
+                      label: formatDateShort(date),
+                    }))}
+                    value={selectedDate || eventDates[0]}
+                    onChange={setSelectedDate}
+                  />
+                ) : (
+                  <Select
+                    data={eventDates.map((date: string) => ({
+                      value: date,
+                      label: formatDateShort(date),
+                    }))}
+                    value={selectedDate || eventDates[0]}
+                    onChange={setSelectedDate}
+                    style={{ width: 200 }}
+                  />
+                ))}
+            </Group>
 
-        <Paper withBorder radius="md" p="md">
-          <Title order={4} mb="md">
-            Agenda - {formatDate(currentDate)}
-          </Title>
+            <Group gap="xs">
+              <Chip checked={showAccepted} onChange={setShowAccepted} color="green" size="xs">
+                Aceptadas
+              </Chip>
+              <Chip checked={showPending} onChange={setShowPending} color="yellow" size="xs">
+                Pendientes
+              </Chip>
+              <Chip checked={showCancelled} onChange={setShowCancelled} color="red" size="xs">
+                Canceladas
+              </Chip>
+            </Group>
+          </Stack>
 
-          {/* Leyenda */}
-          <Group gap="xs" mb="md">
-            {showAccepted && <Badge color="green" variant="light">Aceptada</Badge>}
-            {showPending && (
-              <>
-                <Badge color="yellow" variant="light">Pendiente (recibida)</Badge>
-                <Badge color="blue" variant="light">Pendiente (enviada)</Badge>
-              </>
-            )}
-            {showCancelled && <Badge color="red" variant="light">Cancelada</Badge>}
-          </Group>
+          <Divider my="md" />
 
-          <ScrollArea>
-            <Table striped highlightOnHover withTableBorder>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th style={{ minWidth: 100 }}>Hora</Table.Th>
-                  <Table.Th>Reuniones</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
+          <Stack gap={4}>
                 {timeSlots.map((time) => {
                   const meetings = meetingsByTime[time] || [];
                   const isBlocked = blockedSlots.some((s) => s.startTime === time);
                   const hasAvailableSlot = agendaSlots.some(
                     (s) => s.startTime === time && s.available && !s.isBreak
                   );
-                  
+
                   return (
-                    <Table.Tr key={time}>
-                      <Table.Td>
-                        <Text fw={600} size="sm">
+                    <Group key={time} wrap="nowrap" align="stretch" gap="sm">
+                      <Box w={52} pt={6} style={{ flexShrink: 0 }}>
+                        <Text fw={700} size="sm" ta="right" c={meetings.length > 0 ? undefined : "dimmed"}>
                           {time}
                         </Text>
-                      </Table.Td>
-                      <Table.Td>
+                      </Box>
+                      <Box
+                        pb={6}
+                        pl="sm"
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          borderLeft: "2px solid var(--mantine-color-gray-3)",
+                        }}
+                      >
                         {isBlocked ? (
-                          <Group gap="xs">
-                            <Badge
-                              color="gray"
-                              variant="filled"
-                              leftSection={<IconLock size={12} />}
-                            >
-                              Bloqueado por ti
-                            </Badge>
-                            <Menu position="bottom-start" shadow="md">
-                              <Menu.Target>
-                                <ActionIcon variant="subtle" color="gray" size="sm">
-                                  <IconDots size={16} />
-                                </ActionIcon>
-                              </Menu.Target>
-                              <Menu.Dropdown>
-                                <Menu.Item
-                                  leftSection={<IconLockOpen size={14} />}
-                                  onClick={() => handleUnblockSlot(time)}
-                                >
-                                  Desbloquear franja
-                                </Menu.Item>
-                              </Menu.Dropdown>
-                            </Menu>
-                          </Group>
+                          <Paper radius="md" p="xs" bg="gray.1">
+                            <Group gap="xs" justify="space-between" wrap="nowrap">
+                              <Group gap={6} wrap="nowrap">
+                                <IconLock size={14} color="var(--mantine-color-gray-6)" />
+                                <Text size="sm" c="dimmed">
+                                  Franja bloqueada por ti
+                                </Text>
+                              </Group>
+                              <Button
+                                variant="subtle"
+                                color="gray"
+                                size="compact-xs"
+                                leftSection={<IconLockOpen size={12} />}
+                                onClick={() => handleUnblockSlot(time)}
+                              >
+                                Desbloquear
+                              </Button>
+                            </Group>
+                          </Paper>
                         ) : meetings.length === 0 ? (
-                          <Group gap="xs">
+                          <Group gap="xs" justify="space-between" wrap="nowrap" py={4}>
                             <Text c="dimmed" size="sm">
-                              Sin reuniones
+                              Disponible
                             </Text>
                             {hasAvailableSlot && (
-                              <Menu position="bottom-start" shadow="md">
-                                <Menu.Target>
-                                  <ActionIcon variant="subtle" color="gray" size="sm">
-                                    <IconDots size={16} />
-                                  </ActionIcon>
-                                </Menu.Target>
-                                <Menu.Dropdown>
-                                  <Menu.Item
-                                    leftSection={<IconLock size={14} />}
-                                    onClick={() => handleBlockSlot(time)}
-                                  >
-                                    Bloquear franja
-                                  </Menu.Item>
-                                </Menu.Dropdown>
-                              </Menu>
+                              <Button
+                                variant="subtle"
+                                color="gray"
+                                size="compact-xs"
+                                leftSection={<IconLock size={12} />}
+                                onClick={() => handleBlockSlot(time)}
+                              >
+                                Bloquear franja
+                              </Button>
                             )}
                           </Group>
                         ) : (
-                          <Group gap="xs">
+                          <Stack gap={6}>
                             {meetings.map((meeting, idx) => {
                               const participant = getOtherParticipant(meeting);
+                              const statusColor = getStatusColor(meeting.type);
                               return (
-                                <Group key={idx} gap={4} wrap="nowrap">
-                                  <Badge
-                                    color={getStatusColor(meeting.type)}
-                                    variant="filled"
-                                    style={{ cursor: "pointer" }}
-                                    onClick={() => handleMeetingClick(meeting)}
-                                  >
-                                    {participant?.nombre || "Cargando..."}
-                                    {meeting.tableAssigned && ` - Mesa ${meeting.tableAssigned}`}
-                                  </Badge>
-                                  {meeting.type === "standby" && (
-                                    <Tooltip label="Haz check-in para activar esta reunión" withArrow>
-                                      <Badge color="orange" variant="light" size="xs">
-                                        ⏳ Check-in pendiente
-                                      </Badge>
-                                    </Tooltip>
-                                  )}
-                                  {meeting.type === "accepted" && (
-                                    <>
-                                      <Tooltip label={surveyExists(meeting.id) ? "Ver/editar encuesta" : "Llenar encuesta"} withArrow>
-                                        <Button
-                                          size="compact-xs"
-                                          color={surveyExists(meeting.id) ? "violet" : "gray"}
-                                          variant={surveyExists(meeting.id) ? "filled" : "outline"}
-                                          px={6}
-                                          disabled={surveyBlocked}
-                                          onClick={() => handleOpenSurvey(meeting)}
-                                        >
-                                          📋 {surveyExists(meeting.id) ? "Ver/editar encuesta" : "Llenar encuesta"}
-                                        </Button>
-                                      </Tooltip>
-                                      <OptimisticCheckbox
-                                        size="xs"
-                                        color="green"
-                                        label="Realizada"
-                                        checked={!!meeting.completed}
-                                        onClick={(e) => e.stopPropagation()}
-                                        onChange={(_e, newValue) =>
-                                          toggleMeetingCompleted(meeting, newValue)
-                                        }
-                                      />
-                                    </>
-                                  )}
-                                </Group>
+                                <Paper
+                                  key={idx}
+                                  withBorder
+                                  radius="md"
+                                  p="xs"
+                                  onClick={() => handleMeetingClick(meeting)}
+                                  style={{
+                                    cursor: "pointer",
+                                    borderLeft: `4px solid var(--mantine-color-${statusColor}-6)`,
+                                  }}
+                                >
+                                  <Group gap="sm" justify="space-between" wrap="nowrap">
+                                    <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
+                                      <Avatar src={participant?.photoURL} radius="xl" size={34}>
+                                        {(participant?.nombre || "R")[0]?.toUpperCase()}
+                                      </Avatar>
+                                      <Box style={{ minWidth: 0 }}>
+                                        <Text size="sm" fw={600} lineClamp={1}>
+                                          {participant?.nombre || "Cargando..."}
+                                        </Text>
+                                        <Text size="xs" c="dimmed" lineClamp={1}>
+                                          {[
+                                            participant?.empresa,
+                                            meeting.tableAssigned
+                                              ? getTableLabel(meeting.tableAssigned, eventConfig?.tableNames)
+                                              : null,
+                                          ]
+                                            .filter(Boolean)
+                                            .join(" · ")}
+                                        </Text>
+                                      </Box>
+                                    </Group>
+                                    <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
+                                      {meeting.type === "standby" ? (
+                                        <Tooltip label="Haz check-in para activar esta reunión">
+                                          <Badge color="orange" variant="light" size="sm">
+                                            Check-in pendiente
+                                          </Badge>
+                                        </Tooltip>
+                                      ) : (
+                                        <Badge color={statusColor} variant="light" size="sm">
+                                          {getStatusLabel(meeting.type)}
+                                        </Badge>
+                                      )}
+                                      {meeting.type === "accepted" && meeting.completed && (
+                                        <Badge color="green" variant="filled" size="sm">
+                                          Realizada
+                                        </Badge>
+                                      )}
+                                      <IconChevronRight size={16} color="var(--mantine-color-gray-5)" />
+                                    </Group>
+                                  </Group>
+                                </Paper>
                               );
                             })}
-                          </Group>
+                          </Stack>
                         )}
-                      </Table.Td>
-                    </Table.Tr>
+                      </Box>
+                    </Group>
                   );
                 })}
-              </Table.Tbody>
-            </Table>
-          </ScrollArea>
+          </Stack>
         </Paper>
       </Stack>
 
@@ -940,6 +931,19 @@ export default function CalendarTab({
                       toggleMeetingCompleted(selectedMeeting, newValue)
                     }
                   />
+                  {!surveyBlocked && (
+                    <Button
+                      variant={surveyExists(selectedMeeting.id) ? "light" : "filled"}
+                      color="violet"
+                      size="compact-sm"
+                      radius="md"
+                      fullWidth
+                      leftSection={<IconClipboardCheck size={14} />}
+                      onClick={() => handleOpenSurvey(selectedMeeting)}
+                    >
+                      {surveyExists(selectedMeeting.id) ? "Ver/editar encuesta" : "Llenar encuesta"}
+                    </Button>
+                  )}
                   <Group grow gap="xs">
                     {downloadVCard && (
                       <Button

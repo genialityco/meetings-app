@@ -644,6 +644,14 @@ export default function CheckInTab({ event }) {
     },
   });
 
+  // Mientras se revisa un escaneo, mostrar siempre la versión más reciente del
+  // asistente (attendees se actualiza en tiempo real): así, si el admin edita
+  // sus datos desde el propio modal de revisión, al volver ve los cambios ya
+  // guardados en vez de la instantánea tomada al escanear.
+  const reviewingAttendee = attendeeScan.reviewing
+    ? attendees.find((a) => a.id === attendeeScan.reviewing.attendee.id) || attendeeScan.reviewing.attendee
+    : null;
+
   const exportToExcel = () => {
     const dayColumns = dayOptions.length > 0 ? dayOptions : [selectedDay];
     const wsData = [
@@ -784,8 +792,8 @@ export default function CheckInTab({ event }) {
       />
 
       <AttendeeScanReviewModal
-        opened={!!attendeeScan.reviewing}
-        attendee={attendeeScan.reviewing?.attendee}
+        opened={!!attendeeScan.reviewing && !editingAttendee}
+        attendee={reviewingAttendee}
         formFields={event?.config?.formFields}
         title="Asistente escaneado"
         alreadyDoneMessage={attendeeScan.reviewing?.alreadyDoneMessage}
@@ -794,6 +802,7 @@ export default function CheckInTab({ event }) {
         confirming={attendeeScan.confirming}
         onConfirm={attendeeScan.handleConfirm}
         onCancel={attendeeScan.closeReview}
+        onEdit={() => startEditAttendee(reviewingAttendee)}
       />
 
       <Modal

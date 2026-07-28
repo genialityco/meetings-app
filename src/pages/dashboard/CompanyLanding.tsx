@@ -3,7 +3,6 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
   Container,
   MantineProvider,
-  createTheme,
   Group,
   Stack,
   Title,
@@ -21,7 +20,7 @@ import {
   Box,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
-import { generateColors } from "@mantine/colors-generator";
+import { buildEventTheme } from "../../theme.js";
 import {
   IconArrowLeft,
   IconMail,
@@ -111,14 +110,10 @@ export default function CompanyLanding() {
     return cfg?.companyCard || DEFAULT_POLICIES.cardFieldsConfig!.companyCard;
   }, [eventConfig]);
 
-  const eventTheme = useMemo(() => {
-    const hex = eventConfig?.primaryColor;
-    if (!hex) return createTheme({});
-    return createTheme({
-      colors: { eventPrimary: generateColors(hex) },
-      primaryColor: "eventPrimary",
-    });
-  }, [eventConfig?.primaryColor]);
+  const eventTheme = useMemo(
+    () => buildEventTheme(eventConfig?.primaryColor),
+    [eventConfig?.primaryColor],
+  );
 
   const handleSendMeeting = async (
     rep: CompanyRepresentative,

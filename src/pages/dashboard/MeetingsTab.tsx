@@ -60,6 +60,7 @@ import { trackEvent } from "../../utils/analytics";
 import { DEFAULT_SURVEY_FIELDS } from "../../pages/admin/ConfigureSurveyModal";
 import OptimisticCheckbox from "../../components/OptimisticCheckbox";
 import RaffleQrModal from "./RaffleQrModal";
+import { getTableLabel } from "./meetingSlotEngine";
 import { Meeting, ParticipantInfo, EventPolicies } from "./types";
 
 interface SurveyField {
@@ -410,7 +411,7 @@ export default function MeetingsTab({
                     }}
                   >
                     {/* Header */}
-                    <Group wrap="nowrap" align="center" gap="sm">
+                    <Group wrap="nowrap" align="flex-start" gap="sm">
                       <Avatar
                         src={participant?.photoURL}
                         radius="xl"
@@ -434,42 +435,52 @@ export default function MeetingsTab({
                           </Badge>
                         )}
                       </Box>
+
+                      {!isStandby && (
+                        <Badge color="green" variant="light" size="sm" style={{ flexShrink: 0 }}>
+                          Confirmada
+                        </Badge>
+                      )}
                     </Group>
 
                     <Divider my="sm" />
 
-                    {/* Slot info */}
-                    <Stack gap={8}>
-                      {meeting.meetingDate && (() => {
-                        const [year, month, day] = meeting.meetingDate.split("-").map(Number);
-                        const date = new Date(year, month - 1, day);
-                        return (
-                          <InfoRow
-                            icon={<IconClock size={14} />}
-                            label="Día"
-                            value={date.toLocaleDateString("es-ES", {
-                              weekday: "short",
-                              day: "numeric",
-                              month: "short",
-                            })}
-                          />
-                        );
-                      })()}
-                      <InfoRow
-                        icon={<IconClock size={14} />}
-                        label="Horario"
-                        value={meeting.timeSlot || "Por asignar"}
-                      />
-                      <InfoRow
-                        icon={<IconTable size={14} />}
-                        label="Mesa"
-                        value={
-                          meeting.tableAssigned
-                            ? String(meeting.tableAssigned)
-                            : "Por asignar"
-                        }
-                      />
-                    </Stack>
+                    {/* Horario y mesa: la información clave, destacada */}
+                    <Paper radius="md" p="sm" withBorder bg="var(--mantine-color-gray-0)">
+                      <Group gap="lg" wrap="wrap">
+                        <Group gap={8} wrap="nowrap">
+                          <ThemeIcon variant="light" radius="xl" size={32}>
+                            <IconClock size={16} />
+                          </ThemeIcon>
+                          <Box>
+                            <Text size="xs" c="dimmed" fw={600} tt="uppercase">
+                              Horario
+                            </Text>
+                            <Text size="sm" fw={700}>
+                              {meeting.meetingDate && isMultiDay
+                                ? `${formatDate(meeting.meetingDate)} · `
+                                : ""}
+                              {meeting.timeSlot || "Por asignar"}
+                            </Text>
+                          </Box>
+                        </Group>
+                        <Group gap={8} wrap="nowrap">
+                          <ThemeIcon variant="light" radius="xl" size={32}>
+                            <IconTable size={16} />
+                          </ThemeIcon>
+                          <Box>
+                            <Text size="xs" c="dimmed" fw={600} tt="uppercase">
+                              Mesa
+                            </Text>
+                            <Text size="sm" fw={700}>
+                              {meeting.tableAssigned
+                                ? getTableLabel(meeting.tableAssigned, (eventConfig as any)?.tableNames)
+                                : "Por asignar"}
+                            </Text>
+                          </Box>
+                        </Group>
+                      </Group>
+                    </Paper>
 
                     {meeting.contextNote && (
                       <Badge

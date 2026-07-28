@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, useId } from "react";
 import { Modal, Text, Loader, Center, Stack, Alert } from "@mantine/core";
 import { IconAlertCircle } from "@tabler/icons-react";
-import { Html5Qrcode } from "html5-qrcode";
 
 interface QrScannerModalProps {
   opened: boolean;
@@ -34,27 +33,37 @@ export default function QrScannerModal({
     setError(null);
     setStarting(true);
 
-    const scanner = new Html5Qrcode(elementId);
+    // Import dinámico: html5-qrcode pesa ~100 kB gzip y solo se necesita con el
+    // modal abierto — así no se carga con el dashboard de eventos que no escanean.
+    let scanner: any = null;
+    let cancelled = false;
     let lastDecoded: { text: string; time: number } | null = null;
 
-    scanner
-      .start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText) => {
-          const now = Date.now();
-          if (lastDecoded && lastDecoded.text === decodedText && now - lastDecoded.time < DEBOUNCE_MS) {
-            return;
+    import("html5-qrcode")
+      .then(({ Html5Qrcode }) => {
+        if (cancelled) return;
+        scanner = new Html5Qrcode(elementId);
+        return scanner.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 250, height: 250 } },
+          (decodedText: string) => {
+            const now = Date.now();
+            if (lastDecoded && lastDecoded.text === decodedText && now - lastDecoded.time < DEBOUNCE_MS) {
+              return;
+            }
+            lastDecoded = { text: decodedText, time: now };
+            onDecodeRef.current(decodedText);
+          },
+          () => {
+            // Ignorar errores de decodificación por frame (normal mientras enfoca)
           }
-          lastDecoded = { text: decodedText, time: now };
-          onDecodeRef.current(decodedText);
-        },
-        () => {
-          // Ignorar errores de decodificación por frame (normal mientras enfoca)
-        }
-      )
-      .then(() => setStarting(false))
+        );
+      })
+      .then(() => {
+        if (!cancelled) setStarting(false);
+      })
       .catch((err) => {
+        if (cancelled) return;
         setStarting(false);
         setError(
           err?.name === "NotAllowedError"
@@ -64,10 +73,13 @@ export default function QrScannerModal({
       });
 
     return () => {
-      scanner
-        .stop()
-        .then(() => scanner.clear())
-        .catch(() => {});
+      cancelled = true;
+      if (scanner) {
+        scanner
+          .stop()
+          .then(() => scanner.clear())
+          .catch(() => {});
+      }
     };
   }, [opened, elementId]);
 

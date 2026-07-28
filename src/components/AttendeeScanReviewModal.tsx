@@ -1,4 +1,5 @@
 import { Badge, Button, Group, Modal, Stack } from "@mantine/core";
+import { IconEdit } from "@tabler/icons-react";
 import AttendeeInfoCard from "./AttendeeInfoCard";
 
 interface AttendeeScanReviewModalProps {
@@ -12,6 +13,9 @@ interface AttendeeScanReviewModalProps {
   confirming?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
+  /** Si se pasa, muestra "Editar datos" para corregir la información del
+   * asistente antes de confirmar (p. ej. check-in en puerta). */
+  onEdit?: () => void;
 }
 
 export default function AttendeeScanReviewModal({
@@ -25,6 +29,7 @@ export default function AttendeeScanReviewModal({
   confirming = false,
   onConfirm,
   onCancel,
+  onEdit,
 }: AttendeeScanReviewModalProps) {
   return (
     <Modal opened={opened} onClose={onCancel} title={title} centered size="md">
@@ -36,13 +41,20 @@ export default function AttendeeScanReviewModal({
               {alreadyDoneMessage}
             </Badge>
           )}
-          <Group justify="flex-end">
-            <Button variant="default" onClick={onCancel}>
-              Cancelar
-            </Button>
-            <Button color={actionColor} loading={confirming} disabled={!!alreadyDoneMessage} onClick={onConfirm}>
-              {actionLabel}
-            </Button>
+          <Group justify={onEdit ? "space-between" : "flex-end"}>
+            {onEdit && (
+              <Button variant="light" leftSection={<IconEdit size={16} />} onClick={onEdit}>
+                Editar datos
+              </Button>
+            )}
+            <Group gap="xs">
+              <Button variant="default" onClick={onCancel}>
+                Cancelar
+              </Button>
+              <Button color={actionColor} loading={confirming} disabled={!!alreadyDoneMessage} onClick={onConfirm}>
+                {actionLabel}
+              </Button>
+            </Group>
           </Group>
         </Stack>
       )}

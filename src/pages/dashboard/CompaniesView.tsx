@@ -37,6 +37,8 @@ import {
   IconFileDescription,
   IconPhone,
   IconSparkles,
+  IconCircleCheck,
+  IconCalendarEvent,
 } from "@tabler/icons-react";
 import type { Assistant, Company, EventPolicies, MeetingContext } from "./types";
 import MeetingRequestModal from "./MeetingRequestModal";
@@ -71,6 +73,17 @@ function formatFieldValue(fieldName: string, data: any): string | null {
   return String(raw);
 }
 
+/** Texto del badge de reunión ya agendada con la empresa: hora (y día si el evento es multi-día). */
+function meetingBadgeLabel(m: any, eventConfig: any): string {
+  const time = String(m.timeSlot || "").split(" - ")[0];
+  const multiDay = (eventConfig?.eventDates?.length || 0) > 1;
+  if (multiDay && m.meetingDate) {
+    const [, month, day] = String(m.meetingDate).split("-").map(Number);
+    if (day && month) return `Reunión ${day}/${month} ${time}`.trim();
+  }
+  return time ? `Reunión ${time}` : "Reunión agendada";
+}
+
 interface CompaniesViewProps {
   filteredAssistants: Assistant[];
   companies: Company[];
@@ -96,6 +109,9 @@ interface CompaniesViewProps {
   cardFields: string[];
   affinityScores: Record<string, number>;
   highlightEntityId?: string;
+  acceptedMeetings?: any[];
+  participantsInfo?: Record<string, any>;
+  myStandVisits?: Set<string>;
 }
 
 export default function CompaniesView({
@@ -113,6 +129,9 @@ export default function CompaniesView({
   cardFields,
   affinityScores,
   highlightEntityId,
+  acceptedMeetings,
+  participantsInfo,
+  myStandVisits,
 }: CompaniesViewProps) {
   const theme = useMantineTheme();
   const navigate = useNavigate();
@@ -203,6 +222,7 @@ export default function CompaniesView({
 
       return {
         nit: keyStr, // Used as ID
+        nitLookup: nitForLookup, // NIT real del doc de empresa (puede diferir de keyStr con groupByRazonSocial)
         empresa,
         logoUrl: companyDoc?.logoUrl || null,
         fixedTable: companyDoc?.fixedTable || null,
@@ -211,6 +231,28 @@ export default function CompaniesView({
       };
     });
   }, [filteredAssistants, companiesByNit, policies.groupByRazonSocial]);
+
+  // Reunión aceptada ya existente con cada empresa (por NIT o razón social),
+  // para el badge "Reunión hh:mm" de la tarjeta.
+  const meetingsByCompany = useMemo(() => {
+    const map = new Map<string, any>();
+    (acceptedMeetings || []).forEach((m: any) => {
+      const otherId = m.requesterId === myUid ? m.receiverId : m.requesterId;
+      const other = participantsInfo?.[otherId];
+      const keys = new Set<string>();
+      if (m.companyId) keys.add(String(m.companyId));
+      const otherCompany = other?.companyId || other?.company_nit;
+      if (otherCompany) keys.add(String(otherCompany));
+      if (policies.groupByRazonSocial) {
+        const razon = other?.company_razonSocial || other?.empresa;
+        if (razon) keys.add(String(razon));
+      }
+      keys.forEach((k) => {
+        if (!map.has(k)) map.set(k, m);
+      });
+    });
+    return map;
+  }, [acceptedMeetings, participantsInfo, myUid, policies.groupByRazonSocial]);
 
   // Búsqueda por vectores con debounce
   useEffect(() => {
@@ -420,6 +462,17 @@ export default function CompaniesView({
               opacity: 0;
             }
           }
+
+          .company-card {
+            transition: box-shadow 150ms ease, transform 150ms ease;
+          }
+          .company-card:hover {
+            box-shadow: var(--mantine-shadow-md);
+            transform: translateY(-2px);
+          }
+          .company-card .company-title:hover {
+            color: var(--mantine-primary-color-filled);
+          }
         `}
       </style>
     <Stack gap="md">
@@ -458,9 +511,15 @@ export default function CompaniesView({
 
       <Grid gutter="sm">
         {filtered.length > 0 ? (
-          filtered.map(({ nit, empresa, logoUrl, fixedTable, asistentes, _similarity, _isSemantic }: any) => {
+          filtered.map(({ nit, nitLookup, empresa, logoUrl, fixedTable, asistentes, _similarity, _isSemantic }: any) => {
             const companyKey = nit; // clave estable
             const selectedId = selectedAssistantPerCompany[companyKey];
+
+            const visited =
+              policies.standVisitsEnabled === true &&
+              !!(myStandVisits?.has(nitLookup) || myStandVisits?.has(nit));
+            const companyMeeting =
+              meetingsByCompany.get(nit) || (nitLookup ? meetingsByCompany.get(nitLookup) : undefined);
 
             // si no hay seleccionado, por defecto el primero
             const selectedAssistant =
@@ -477,13 +536,14 @@ export default function CompaniesView({
 
             return (
               <Grid.Col span={{ base: 12, md: 6, lg: 4 }} key={companyKey}>
-                <Card 
+                <Card
                   id={`company-card-${nit}`}
-                  withBorder 
-                  radius="xl" 
-                  padding="md" 
-                  shadow="sm" 
-                  style={{ 
+                  className="company-card"
+                  withBorder
+                  radius="xl"
+                  padding="md"
+                  shadow="sm"
+                  style={{
                     height: "100%",
                     position: "relative",
                     border: isHighlighted ? "3px solid var(--mantine-color-teal-5)" : undefined,
@@ -550,11 +610,13 @@ export default function CompaniesView({
                         <Title
                           order={5}
                           lineClamp={2}
+                          className="company-title"
                           style={{
                             letterSpacing: rem(0.2),
                             cursor: nit !== "sin-nit" ? "pointer" : undefined,
                             textDecoration: nit !== "sin-nit" ? "underline" : undefined,
                             textDecorationColor: "var(--mantine-color-dimmed)",
+                            transition: "color 120ms ease",
                           }}
                           onClick={
                             nit !== "sin-nit" && eventId
@@ -606,6 +668,28 @@ export default function CompaniesView({
                       {fixedTable && (
                         <Badge variant="light" color="green" radius="xl">
                           {getTableLabel(fixedTable, eventConfig?.tableNames)}
+                        </Badge>
+                      )}
+
+                      {visited && (
+                        <Badge
+                          variant="light"
+                          color="teal"
+                          radius="xl"
+                          leftSection={<IconCircleCheck size={12} />}
+                        >
+                          Visitado
+                        </Badge>
+                      )}
+
+                      {companyMeeting && (
+                        <Badge
+                          variant="light"
+                          color="blue"
+                          radius="xl"
+                          leftSection={<IconCalendarEvent size={12} />}
+                        >
+                          {meetingBadgeLabel(companyMeeting, eventConfig)}
                         </Badge>
                       )}
                     </Stack>

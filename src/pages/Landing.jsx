@@ -23,11 +23,10 @@ import {
   Badge,
   Stepper,
   MantineProvider,
-  createTheme,
   ActionIcon,
   Tooltip,
 } from "@mantine/core";
-import { generateColors } from "@mantine/colors-generator";
+import { buildEventTheme } from "../theme.js";
 import { RichTextEditor, Link } from "@mantine/tiptap";
 import { useEditor } from "@tiptap/react";
 import Highlight from "@tiptap/extension-highlight";
@@ -1304,14 +1303,10 @@ const Landing = () => {
     return renderFieldsForNames(event.config.formFields.map((f) => f.name));
   }, [event?.config?.formFields, renderFieldsForNames]);
 
-  const eventTheme = useMemo(() => {
-    const hex = event.config?.primaryColor;
-    if (!hex) return createTheme({});
-    return createTheme({
-      colors: { eventPrimary: generateColors(hex) },
-      primaryColor: "eventPrimary",
-    });
-  }, [event.config?.primaryColor]);
+  const eventTheme = useMemo(
+    () => buildEventTheme(event.config?.primaryColor),
+    [event.config?.primaryColor],
+  );
 
   const bgStyle = useMemo(() => {
     const img =

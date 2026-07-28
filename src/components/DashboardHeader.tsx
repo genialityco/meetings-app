@@ -23,11 +23,14 @@ import {
   Divider,
   Grid,
   Tooltip,
+  ActionIcon,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
-import { IconEdit, IconLogout, IconChevronDown, IconPackage, IconBuilding, IconCheck, IconUserCheck, IconQrcode } from "@tabler/icons-react";
+import { IconEdit, IconLogout, IconChevronDown, IconPackage, IconBuilding, IconCheck, IconUserCheck, IconQrcode, IconScan } from "@tabler/icons-react";
 import { UserContext } from "../context/UserContext";
 import { resolveCheckInDay, isCheckedInOnDay } from "../utils/eventDays";
+import { parseStandVisitQrUrl } from "../utils/qrScan";
+import QrScannerModal from "./QrScannerModal";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { doc, setDoc, getDoc } from "firebase/firestore";
 import { storage, db } from "../firebase/firebaseConfig";
@@ -87,6 +90,35 @@ const DashboardHeader = ({
     "idle" | "ready" | "uploading" | "done" | "error"
   >("idle");
   const [photoUploadError, setPhotoUploadError] = useState("");
+
+  // Escáner in-app del QR fijo del stand (evita depender de la cámara nativa,
+  // que puede abrir un navegador sin la sesión del asistente)
+  const [standScannerOpened, setStandScannerOpened] = useState(false);
+
+  const handleStandScan = useCallback(
+    (text: string) => {
+      const parsed = parseStandVisitQrUrl(text);
+      if (!parsed) {
+        showNotification({
+          title: "Código no reconocido",
+          message: "Este QR no es un código de visita a stand.",
+          color: "red",
+        });
+        return;
+      }
+      if (eventId && parsed.eventId !== eventId) {
+        showNotification({
+          title: "Código de otro evento",
+          message: "Este código de stand pertenece a otro evento.",
+          color: "red",
+        });
+        return;
+      }
+      setStandScannerOpened(false);
+      navigate(`/stand-visit/${parsed.eventId}/${parsed.companyNit}`);
+    },
+    [eventId, navigate],
+  );
 
   // Check-in state
 
@@ -490,6 +522,47 @@ const DashboardHeader = ({
 
         {/* Derecha: Notificaciones + Check-in + Avatar con Menu */}
         <Group gap="sm" align="center">
+          {policies?.standVisitsEnabled === true && (
+            isMobile ? (
+              <Tooltip label="Escanear stand" withArrow>
+                <ActionIcon
+                  variant="light"
+                  color="grape"
+                  size={42}
+                  radius="xl"
+                  onClick={() => setStandScannerOpened(true)}
+                  aria-label="Escanear stand"
+                >
+                  <IconScan size={20} />
+                </ActionIcon>
+              </Tooltip>
+            ) : (
+              <Button
+                variant="light"
+                color="grape"
+                radius="xl"
+                leftSection={<IconScan size={18} />}
+                onClick={() => setStandScannerOpened(true)}
+              >
+                Escanear stand
+              </Button>
+            )
+          )}
+
+          {eventId && uid && (
+            <Tooltip label="Mi código QR" withArrow>
+              <ActionIcon
+                variant="default"
+                size={42}
+                radius="xl"
+                onClick={() => window.open(`/badge/${eventId}/${uid}`, "_blank")}
+                aria-label="Mi código QR"
+              >
+                <IconQrcode size={20} />
+              </ActionIcon>
+            </Tooltip>
+          )}
+
           <Tooltip
             label={checkedIn ? "Asistencia confirmada" : "Sin check-in"}
             withArrow
@@ -763,6 +836,14 @@ const DashboardHeader = ({
           </Button>
         </Stack>
       </Modal>
+
+      <QrScannerModal
+        opened={standScannerOpened}
+        onClose={() => setStandScannerOpened(false)}
+        onDecode={handleStandScan}
+        title="Escanear código del stand"
+        hint="Apunta la cámara al código QR del stand para registrar tu visita."
+      />
     </>
   );
 };

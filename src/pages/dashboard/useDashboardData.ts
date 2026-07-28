@@ -291,6 +291,7 @@ export function useDashboardData(eventId?: string) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [globalDateFilter, setGlobalDateFilter] = useState<string | null>(null);
   const [affinityScores, setAffinityScores] = useState<Record<string, number>>({});
+  const [myStandVisits, setMyStandVisits] = useState<Set<string>>(new Set());
 
   // ---------------------- EFECTOS PRINCIPALES ----------------------
 
@@ -325,6 +326,29 @@ export function useDashboardData(eventId?: string) {
       }
     );
   }, [eventId]);
+
+  // 1c. Stands ya visitados por el usuario (para los badges "Visitado" en
+  // CompaniesView). Lectura puntual por empresa en vez de collectionGroup:
+  // no requiere índices ni reglas adicionales. Se refresca al montar el
+  // dashboard (p. ej. al volver de StandVisitScanPage) y cuando cambia la
+  // lista de empresas.
+  useEffect(() => {
+    if (!eventId || !uid || !policies.standVisitsEnabled || companies.length === 0) return;
+    let cancelled = false;
+    Promise.all(
+      companies.map((c) =>
+        getDoc(doc(db, "events", eventId, "companies", c.nitNorm, "visits", uid))
+          .then((snap) => (snap.exists() ? c.nitNorm : null))
+          .catch(() => null),
+      ),
+    ).then((results) => {
+      if (cancelled) return;
+      setMyStandVisits(new Set(results.filter(Boolean) as string[]));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId, uid, policies.standVisitsEnabled, companies]);
 
   // 2. Notificaciones del usuario
   useEffect(() => {
@@ -2092,6 +2116,7 @@ export function useDashboardData(eventId?: string) {
     updateProduct,
     deleteProduct,
     companies,
+    myStandVisits,
     policies,
     selectedDate,
     setSelectedDate,
