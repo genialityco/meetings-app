@@ -13,6 +13,7 @@ import {
 import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
 import { Company, Product, EventPolicies, DEFAULT_POLICIES, MeetingContext, StandVisit } from "./types";
+import { resolveCheckInDay, isCheckedInOnDay } from "../../utils/eventDays";
 import { showNotification } from "@mantine/notifications";
 import { sendWhatsAppMessage as sendWhatsAppAPI } from "../../utils/whatsappService";
 import {
@@ -180,8 +181,9 @@ export function useCompanyData(
         if (attendeeData.eventId !== eventId) {
           return { kind: "error", message: "Este código no corresponde a un asistente de este evento." };
         }
-        if (!attendeeData.checkedIn) {
-          return { kind: "error", message: "El asistente debe hacer check-in antes de registrar la visita." };
+        const checkInDay = resolveCheckInDay(eventConfig);
+        if (!isCheckedInOnDay(attendeeData, checkInDay)) {
+          return { kind: "error", message: "El asistente debe hacer check-in hoy antes de registrar la visita." };
         }
         const attendeeCompanyNit = attendeeData.companyId || attendeeData.company_nit;
         if (attendeeCompanyNit === companyNit) {
@@ -200,7 +202,7 @@ export function useCompanyData(
         return { kind: "error", message: "Ocurrió un error al buscar el asistente. Intenta de nuevo." };
       }
     },
-    [eventId, companyNit],
+    [eventId, companyNit, eventConfig],
   );
 
   // Confirma (escribe) la visita para un asistente ya validado por lookupAttendeeForVisit.

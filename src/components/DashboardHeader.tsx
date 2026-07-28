@@ -27,6 +27,7 @@ import {
 import { useMediaQuery } from "@mantine/hooks";
 import { IconEdit, IconLogout, IconChevronDown, IconPackage, IconBuilding, IconCheck, IconUserCheck, IconQrcode } from "@tabler/icons-react";
 import { UserContext } from "../context/UserContext";
+import { resolveCheckInDay, isCheckedInOnDay } from "../utils/eventDays";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { doc, setDoc, getDoc } from "firebase/firestore";
 import { storage, db } from "../firebase/firebaseConfig";
@@ -430,7 +431,7 @@ const DashboardHeader = ({
     [getFieldValue, handleChange, profilePicPreview, photoUploadStatus, photoUploadError, data],
   );
 
-  const checkedIn = !!currentUser?.data?.checkedIn;
+  const checkedIn = isCheckedInOnDay(currentUser?.data, resolveCheckInDay(eventConfig));
   const avatarSrc = data?.photoURL || null;
   const userName = data?.nombre || data?.name || "U";
   const attendeeId = attendeeIdLocal || data?.attendeeId || null;

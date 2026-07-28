@@ -3,14 +3,14 @@ import {
   Stack, TextInput, Text, Group, Badge, Avatar,
   ActionIcon, Loader, Box, ScrollArea, Divider,
   Collapse, Paper, SimpleGrid, Button, Modal,
-  Textarea, Select, Checkbox, FileInput,
+  Textarea, Select, Checkbox, FileInput, SegmentedControl,
 } from "@mantine/core";
 import {
   IconSearch, IconX, IconCheck, IconUserCheck,
   IconChevronDown, IconChevronUp, IconEdit, IconDeviceFloppy, IconDownload,
   IconQrcode, IconId,
 } from "@tabler/icons-react";
-import { collection, query, where, onSnapshot, doc, updateDoc, getDocs, getDoc, addDoc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, updateDoc, getDocs, getDoc, addDoc, deleteField } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { showNotification } from "@mantine/notifications";
 import { db, storage } from "../../firebase/firebaseConfig";
@@ -18,6 +18,7 @@ import * as XLSX from "xlsx";
 import QrScannerModal from "../../components/QrScannerModal";
 import AttendeeScanReviewModal from "../../components/AttendeeScanReviewModal";
 import { useAttendeeScanFlow } from "../../hooks/useAttendeeScanFlow";
+import { getEventDayKeys, resolveCheckInDay, isCheckedInOnDay, formatDayLabel } from "../../utils/eventDays";
 
 // Campos básicos siempre visibles
 const BASIC_FIELDS = [
@@ -28,7 +29,7 @@ const BASIC_FIELDS = [
   { key: "tipoAsistente", label: "Tipo" },
 ];
 
-function AttendeeRow({ a, event, updating, onToggle, onEdit }) {
+function AttendeeRow({ a, event, updating, onToggle, onEdit, checkedInToday, checkInTimeToday }) {
   const [expanded, setExpanded] = useState(false);
   const [editingField, setEditingField] = useState(null);
   const [editValue, setEditValue] = useState("");
@@ -103,7 +104,7 @@ function AttendeeRow({ a, event, updating, onToggle, onEdit }) {
       withBorder
       radius="md"
       mb="xs"
-      style={{ background: a.checkedIn ? "#f0fdf4" : "#fff", overflow: "hidden" }}
+      style={{ background: checkedInToday ? "#f0fdf4" : "#fff", overflow: "hidden" }}
     >
       {/* Header row */}
       <Box
@@ -160,7 +161,7 @@ function AttendeeRow({ a, event, updating, onToggle, onEdit }) {
           >
             {expanded ? <IconChevronUp size={18} /> : <IconChevronDown size={18} />}
           </ActionIcon>
-          {a.checkedIn ? (
+          {checkedInToday ? (
             <Badge color="green" variant="light" size="sm" leftSection={<IconUserCheck size={12} />}>
               Presente
             </Badge>
@@ -170,11 +171,11 @@ function AttendeeRow({ a, event, updating, onToggle, onEdit }) {
           <ActionIcon
             size="lg"
             radius="xl"
-            variant={a.checkedIn ? "filled" : "light"}
-            color={a.checkedIn ? "green" : "blue"}
+            variant={checkedInToday ? "filled" : "light"}
+            color={checkedInToday ? "green" : "blue"}
             loading={updating === a.id}
             onClick={() => onToggle(a)}
-            title={a.checkedIn ? "Revertir check-in" : "Confirmar asistencia"}
+            title={checkedInToday ? "Revertir check-in" : "Confirmar asistencia"}
           >
             <IconCheck size={18} />
           </ActionIcon>
@@ -228,9 +229,9 @@ function AttendeeRow({ a, event, updating, onToggle, onEdit }) {
             </>
           )}
 
-          {a.checkInTime && (
+          {checkInTimeToday && (
             <Text size="xs" c="dimmed" mt="sm">
-              ✅ Check-in: {a.checkInTime?.toDate ? a.checkInTime.toDate().toLocaleString("es-CO") : new Date(a.checkInTime).toLocaleString("es-CO")}
+              ✅ Check-in: {checkInTimeToday?.toDate ? checkInTimeToday.toDate().toLocaleString("es-CO") : new Date(checkInTimeToday).toLocaleString("es-CO")}
             </Text>
           )}
         </Box>
@@ -252,6 +253,9 @@ export default function CheckInTab({ event }) {
   const [editValues, setEditValues] = useState({});
   const [editErrors, setEditErrors] = useState({});
   const [savingEditAttendee, setSavingEditAttendee] = useState(false);
+
+  const dayOptions = useMemo(() => getEventDayKeys(event?.config), [event?.config]);
+  const [selectedDay, setSelectedDay] = useState(() => resolveCheckInDay(event?.config));
 
   const isValidEmail = (v = "") => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim());
   const validateField = (field, value) => {
@@ -476,7 +480,6 @@ export default function CheckInTab({ event }) {
       const dataToSave = {
         ...newUserValues,
         eventId: event?.id,
-        checkedIn: false,
         createdAt: new Date().toISOString(),
       };
 
@@ -567,16 +570,15 @@ export default function CheckInTab({ event }) {
     );
   }, [attendees, search]);
 
-  const checkedIn = filtered.filter((a) => a.checkedIn);
-  const notCheckedIn = filtered.filter((a) => !a.checkedIn);
+  const checkedIn = filtered.filter((a) => isCheckedInOnDay(a, selectedDay));
+  const notCheckedIn = filtered.filter((a) => !isCheckedInOnDay(a, selectedDay));
 
   const handleToggle = async (attendee) => {
     setUpdating(attendee.id);
     try {
-      const newValue = !attendee.checkedIn;
+      const newValue = !isCheckedInOnDay(attendee, selectedDay);
       await updateDoc(doc(db, "users", attendee.id), {
-        checkedIn: newValue,
-        ...(newValue ? { checkInTime: new Date() } : { checkOutTime: new Date() }),
+        [`checkIns.${selectedDay}`]: newValue ? new Date() : deleteField(),
       });
 
       const standbyEnabled = event?.config?.policies?.standbyCheckInRequired === true;
@@ -592,10 +594,11 @@ export default function CheckInTab({ event }) {
           );
           for (const d of standbySnap.docs) {
             const m = d.data();
+            if (m.meetingDate !== selectedDay) continue;
             const otherId = (m.participants || []).find((p) => p !== attendee.id);
             if (!otherId) continue;
             const otherUserDoc = await getDoc(doc(db, "users", otherId));
-            const otherCheckedIn = otherUserDoc.exists() && otherUserDoc.data().checkedIn === true;
+            const otherCheckedIn = otherUserDoc.exists() && !!otherUserDoc.data()?.checkIns?.[selectedDay];
             if (otherCheckedIn) {
               await updateDoc(doc(db, "events", event.id, "meetings", d.id), { checkInStatus: "ready" });
             }
@@ -609,6 +612,7 @@ export default function CheckInTab({ event }) {
             )
           );
           for (const d of acceptedSnap.docs) {
+            if (d.data().meetingDate !== selectedDay) continue;
             await updateDoc(doc(db, "events", event.id, "meetings", d.id), { checkInStatus: "standby" });
           }
         }
@@ -631,7 +635,7 @@ export default function CheckInTab({ event }) {
       }
       return {
         attendee,
-        alreadyDoneMessage: attendee.checkedIn ? "Ya tiene check-in" : undefined,
+        alreadyDoneMessage: isCheckedInOnDay(attendee, selectedDay) ? "Ya tiene check-in" : undefined,
       };
     },
     confirm: async (attendee) => {
@@ -641,14 +645,15 @@ export default function CheckInTab({ event }) {
   });
 
   const exportToExcel = () => {
+    const dayColumns = dayOptions.length > 0 ? dayOptions : [selectedDay];
     const wsData = [
-      ["ID_USUARIO", "CHECKIN", "NOMBRE", "CORREO", "EMPRESA", "TELEFONO", "TIPO_ASISTENTE"]
+      ["ID_USUARIO", ...dayColumns.map((d) => `CHECKIN_${d}`), "NOMBRE", "CORREO", "EMPRESA", "TELEFONO", "TIPO_ASISTENTE"]
     ];
 
     attendees.forEach((a) => {
       wsData.push([
         a.id,
-        a.checkedIn ? "SI" : "NO",
+        ...dayColumns.map((d) => (isCheckedInOnDay(a, d) ? "SI" : "NO")),
         a.nombre || "",
         a.correo || "",
         a.empresa || "",
@@ -679,6 +684,16 @@ export default function CheckInTab({ event }) {
           ) : null}
           radius="xl"
         />
+        {dayOptions.length > 1 && (
+          <SegmentedControl
+            mt="xs"
+            size="xs"
+            fullWidth
+            value={selectedDay}
+            onChange={setSelectedDay}
+            data={dayOptions.map((d, i) => ({ value: d, label: formatDayLabel(d, i) }))}
+          />
+        )}
         <Group mt="xs" gap="xs" align="center">
           <Badge color="green" variant="light">{checkedIn.length} presentes</Badge>
           <Badge color="gray" variant="light">{notCheckedIn.length} pendientes</Badge>
@@ -727,7 +742,16 @@ export default function CheckInTab({ event }) {
             <>
               <Divider label={<Text size="xs" fw={600} c="dimmed">Pendientes ({notCheckedIn.length})</Text>} labelPosition="left" mb="xs" />
               {notCheckedIn.map((a) => (
-                <AttendeeRow key={a.id} a={a} event={event} updating={updating} onToggle={handleToggle} onEdit={startEditAttendee} />
+                <AttendeeRow
+                  key={a.id}
+                  a={a}
+                  event={event}
+                  updating={updating}
+                  onToggle={handleToggle}
+                  onEdit={startEditAttendee}
+                  checkedInToday={isCheckedInOnDay(a, selectedDay)}
+                  checkInTimeToday={a.checkIns?.[selectedDay]}
+                />
               ))}
             </>
           )}
@@ -735,7 +759,16 @@ export default function CheckInTab({ event }) {
             <>
               <Divider label={<Text size="xs" fw={600} c="green">Presentes ({checkedIn.length})</Text>} labelPosition="left" mb="xs" mt={notCheckedIn.length > 0 ? "md" : 0} />
               {checkedIn.map((a) => (
-                <AttendeeRow key={a.id} a={a} event={event} updating={updating} onToggle={handleToggle} onEdit={startEditAttendee} />
+                <AttendeeRow
+                  key={a.id}
+                  a={a}
+                  event={event}
+                  updating={updating}
+                  onToggle={handleToggle}
+                  onEdit={startEditAttendee}
+                  checkedInToday={isCheckedInOnDay(a, selectedDay)}
+                  checkInTimeToday={a.checkIns?.[selectedDay]}
+                />
               ))}
             </>
           )}

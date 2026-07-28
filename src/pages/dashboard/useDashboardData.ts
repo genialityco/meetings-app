@@ -1594,8 +1594,8 @@ export function useDashboardData(eventId?: string) {
           getDoc(doc(db, "users", preRequesterId)),
           getDoc(doc(db, "users", preReceiverId)),
         ]);
-        reqCheckedIn = reqUserSnap.exists() ? !!reqUserSnap.data()?.checkedIn : false;
-        recCheckedIn = recUserSnap.exists() ? !!recUserSnap.data()?.checkedIn : false;
+        reqCheckedIn = reqUserSnap.exists() ? !!reqUserSnap.data()?.checkIns?.[eventDateISO] : false;
+        recCheckedIn = recUserSnap.exists() ? !!recUserSnap.data()?.checkIns?.[eventDateISO] : false;
         console.log("[confirmAcceptWithSlot] reqCheckedIn:", reqCheckedIn, "recCheckedIn:", recCheckedIn);
       }
 

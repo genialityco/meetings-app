@@ -333,13 +333,14 @@ export default function MeetingsTab({
   const getCheckInMissingLabel = (meeting: Meeting) => {
     const myId = uid;
     const otherId = meeting.requesterId === myId ? meeting.receiverId : meeting.requesterId;
-    const myCheckedIn = currentUser?.data?.checkedIn;
-    const otherCheckedIn = participantsInfo[otherId]?.checkedIn;
+    const day = (meeting as any).meetingDate;
+    const myCheckIns = currentUser?.data?.checkIns;
+    const otherInfo = participantsInfo[otherId] as any;
 
-    if (myCheckedIn === false) {
+    if (day && myCheckIns && !myCheckIns[day]) {
       return "Falta tu check-in";
     }
-    if (otherCheckedIn === false) {
+    if (day && otherInfo?.checkIns && !otherInfo.checkIns[day]) {
       return "Falta check-in de la contraparte";
     }
     return "Check-in pendiente";

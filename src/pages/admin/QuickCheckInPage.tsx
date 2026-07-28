@@ -4,6 +4,7 @@ import { Container, Title, Text, Center, Loader, Button, Paper } from "@mantine/
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { IconCheck, IconX } from "@tabler/icons-react";
+import { resolveCheckInDay, isCheckedInOnDay } from "../../utils/eventDays";
 
 export default function QuickCheckInPage() {
   const { eventId, userId } = useParams();
@@ -26,13 +27,15 @@ export default function QuickCheckInPage() {
         const userData = userSnap.data();
         setUser(userData);
 
-        if (!userData.checkedIn) {
+        const eventSnap = await getDoc(doc(db, "events", eventId));
+        const checkInDay = resolveCheckInDay(eventSnap.exists() ? eventSnap.data()?.config : null);
+
+        if (!isCheckedInOnDay(userData, checkInDay)) {
           await updateDoc(userRef, {
-            checkedIn: true,
-            checkInTime: new Date()
+            [`checkIns.${checkInDay}`]: new Date(),
           });
         }
-        
+
         setStatus("success");
       } catch (err) {
         console.error(err);

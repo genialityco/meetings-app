@@ -477,8 +477,8 @@ export async function createConfirmedMeeting(
       getDoc(doc(db, "users", requesterId)),
       getDoc(doc(db, "users", receiverId)),
     ]);
-    reqCheckedIn = reqUserSnap.exists() ? !!reqUserSnap.data()?.checkedIn : false;
-    recCheckedIn = recUserSnap.exists() ? !!recUserSnap.data()?.checkedIn : false;
+    reqCheckedIn = reqUserSnap.exists() ? !!reqUserSnap.data()?.checkIns?.[eventDateISO] : false;
+    recCheckedIn = recUserSnap.exists() ? !!recUserSnap.data()?.checkIns?.[eventDateISO] : false;
   }
 
   await runTransaction(db, async (tx) => {

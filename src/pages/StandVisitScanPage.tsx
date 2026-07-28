@@ -4,6 +4,7 @@ import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db, auth } from "../firebase/firebaseConfig";
 import { UserContext } from "../context/UserContext";
 import { Container, Paper, Text, Title, Loader, Button, Stack } from "@mantine/core";
+import { resolveCheckInDay, isCheckedInOnDay } from "../utils/eventDays";
 
 type ScanState =
   | { kind: "loading" }
@@ -31,18 +32,20 @@ export default function StandVisitScanPage() {
       }
 
       const userData = currentUser?.data;
-      if (!userData?.checkedIn) {
-        setState({
-          kind: "error",
-          message: "Debes hacer check-in en el evento antes de registrar visitas a stands.",
-        });
-        return;
-      }
 
       try {
         const eventSnap = await getDoc(doc(db, "events", eventId));
         if (eventSnap.data()?.config?.policies?.standVisitsEnabled !== true) {
           setState({ kind: "error", message: "Esta función no está habilitada para este evento." });
+          return;
+        }
+
+        const checkInDay = resolveCheckInDay(eventSnap.data()?.config);
+        if (!isCheckedInOnDay(userData, checkInDay)) {
+          setState({
+            kind: "error",
+            message: "Debes hacer check-in en el evento hoy antes de registrar visitas a stands.",
+          });
           return;
         }
 

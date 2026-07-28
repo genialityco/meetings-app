@@ -2757,7 +2757,7 @@ const MatrixPage = () => {
                     <Text size="xs" c="dimmed">
                       {asistente.nombre}
                     </Text>
-                    {asistente.checkedIn ? (
+                    {asistente.checkIns?.[selectedDate] ? (
                       <Badge color="green" variant="light" size="xs">
                         ✓ Check-in
                       </Badge>
