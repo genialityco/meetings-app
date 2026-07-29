@@ -55,6 +55,7 @@ export default function EventPoliciesModal({
   const [discoveryMode, setDiscoveryMode] = useState<EventPolicies["discoveryMode"]>("all");
   const [schedulingMode, setSchedulingMode] = useState<EventPolicies["schedulingMode"]>("manual");
   const [sellerRedirectToProducts, setSellerRedirectToProducts] = useState(false);
+  const [forceBuyerRoleOnRegistration, setForceBuyerRoleOnRegistration] = useState(false);
   const [uiViews, setUiViews] = useState(DEFAULT_POLICIES.uiViewsEnabled);
   const [viewsOrder, setViewsOrder] = useState<string[]>(DEFAULT_POLICIES.viewsOrder ?? ALL_VIEW_KEYS);
   const [attendeeCardFields, setAttendeeCardFields] = useState<string[]>(
@@ -98,6 +99,7 @@ export default function EventPoliciesModal({
     setDiscoveryMode(p.discoveryMode ?? "all");
     setSchedulingMode(p.schedulingMode ?? "manual");
     setSellerRedirectToProducts(p.sellerRedirectToProducts ?? false);
+    setForceBuyerRoleOnRegistration(p.forceBuyerRoleOnRegistration ?? false);
     setUiViews(p.uiViewsEnabled ?? DEFAULT_POLICIES.uiViewsEnabled);
     // Normalizar: respetar el orden guardado y anexar vistas nuevas al final
     const savedOrder: string[] = p.viewsOrder ?? DEFAULT_POLICIES.viewsOrder ?? ALL_VIEW_KEYS;
@@ -223,6 +225,7 @@ export default function EventPoliciesModal({
               discoveryMode,
               schedulingMode,
               sellerRedirectToProducts,
+              forceBuyerRoleOnRegistration,
               cardFieldsConfig: {
                 attendeeCard: attendeeCardFields,
                 companyCard: companyCardFields,
@@ -316,6 +319,15 @@ export default function EventPoliciesModal({
             description="Vendedores inician en 'Mi actividad → Mis productos'. Compradores no ven el tab de productos propios."
             checked={sellerRedirectToProducts}
             onChange={(e) => setSellerRedirectToProducts(e.currentTarget.checked)}
+          />
+        )}
+
+        {roleMode === "buyer_seller" && (
+          <Switch
+            label="Forzar todo registro público como 'Comprador'"
+            description="Oculta el selector 'Tipo de asistente' en el formulario de registro (solo queda el consentimiento de tratamiento de datos) y asigna 'Comprador' automáticamente. Los vendedores deben asignarse manualmente desde el listado de asistentes."
+            checked={forceBuyerRoleOnRegistration}
+            onChange={(e) => setForceBuyerRoleOnRegistration(e.currentTarget.checked)}
           />
         )}
 

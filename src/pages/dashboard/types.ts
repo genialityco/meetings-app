@@ -97,6 +97,8 @@ export interface EventPolicies {
   schedulingMode: "manual" | "requester_picks";
   /** Redirige vendedores a "Mis productos" en su primer ingreso y oculta ese tab a compradores */
   sellerRedirectToProducts?: boolean;
+  /** Oculta el selector "Tipo de asistente" en el formulario público y fuerza todo registro como "Comprador" (los vendedores se asignan manualmente desde el panel admin) */
+  forceBuyerRoleOnRegistration?: boolean;
   /** Campos visibles en las tarjetas del dashboard (configuración independiente por vista) */
   cardFieldsConfig?: {
     attendeeCard: string[];
@@ -215,6 +217,7 @@ export const DEFAULT_POLICIES: EventPolicies = {
   discoveryMode: "all",
   schedulingMode: "manual",
   sellerRedirectToProducts: false,
+  forceBuyerRoleOnRegistration: false,
   cardFieldsConfig: {
     attendeeCard: ["empresa", "cargo", "correo", "descripcion", "interesPrincipal", "necesidad"],
     companyCard: ["cargo", "correo", "interesPrincipal", "necesidad"],

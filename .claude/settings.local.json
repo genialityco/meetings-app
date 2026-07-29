@@ -14,7 +14,9 @@
       "Bash(git -C \"d:/gen.iality/Proyectos/my-meetings-app\" show ddee23c -- src/context/AdminAuthContext.tsx)",
       "Bash(git -C \"d:/gen.iality/Proyectos/my-meetings-app\" show ddee23c -- src/components/DashboardHeader.tsx src/pages/dashboard/BadgePage.tsx)",
       "Bash(git -C \"d:/gen.iality/Proyectos/my-meetings-app\" show ee4b5c8 -- src/pages/dashboard/BadgePage.tsx)",
-      "Bash(npx esbuild *)"
+      "Bash(npx esbuild *)",
+      "Bash(npx eslint *)",
+      "Bash(git stash *)"
     ]
   }
 }

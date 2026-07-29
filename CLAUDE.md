@@ -39,6 +39,7 @@ Configurable per event via admin panel (`EventPoliciesModal.tsx`). Interface + d
 - `discoveryMode`: "all" | "by_role" — directory visibility
 - `schedulingMode`: "manual" | "requester_picks"
 - `sellerRedirectToProducts`, `cardFieldsConfig`, `uiViewsEnabled` — as before
+- `forceBuyerRoleOnRegistration` (only relevant when `roleMode: "buyer_seller"`) — public registration form (`Landing.jsx`) hides the "Tipo de asistente" selector and forces every registration to `tipoAsistente: "comprador"`; sellers must be assigned manually afterward (e.g. `ModalEditAttendee.jsx`) since they no longer self-select "vendedor" at signup
 - `viewsOrder`: string[] — order of dashboard tabs (`chatbot`, `matches`, `attendees`, `companies`, `products`, `activity`, `survey`); enabled views missing from the array render last
 - `whatsappApiVersion`: "v1" | "v2", `whatsappNotificationsEnabled`, `fallbackEmailOnWaFailure` — WhatsApp notification behavior
 - `autoReassignOnCancel` — auto-reassign slot when a meeting is cancelled
