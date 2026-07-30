@@ -201,7 +201,9 @@ export default function CompaniesView({
             ? String((assistant as any)[nitField])
                 .split("-")[0]
                 .toLowerCase()
-            : "sin-nit";
+            // Sin NIT/empresa: clave única por asistente para no mezclar
+            // asistentes sin empresa entre sí en una sola tarjeta falsa.
+            : `sin-empresa-${assistant.id}`;
         })();
 
       // Convert to string to avoid object keys issues if undefined
