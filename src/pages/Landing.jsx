@@ -25,6 +25,7 @@ import {
   MantineProvider,
   ActionIcon,
   Tooltip,
+  ThemeIcon,
 } from "@mantine/core";
 import { buildEventTheme } from "../theme.js";
 import { RichTextEditor, Link } from "@mantine/tiptap";
@@ -48,7 +49,7 @@ import {
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useMediaQuery } from "@mantine/hooks";
-import { IconSparkles } from "@tabler/icons-react";
+import { IconSparkles, IconMapPin, IconArrowUpRight } from "@tabler/icons-react";
 
 import { db } from "../firebase/firebaseConfig";
 import { storage } from "../firebase/firebaseConfig";
@@ -1544,12 +1545,39 @@ const Landing = () => {
                       ) : null}
 
                       {event?.config?.eventLocation ? (
-                        <Text size="sm" c="dimmed">
-                          <Text span fw={700} c="dark">
-                            Lugar:
-                          </Text>{" "}
-                          {event.config.eventLocation}
-                        </Text>
+                        <Paper
+                          withBorder
+                          radius="lg"
+                          p="sm"
+                          style={{
+                            background: "rgba(255,255,255,0.9)",
+                            borderColor: "rgba(0,0,0,0.08)",
+                          }}
+                        >
+                          <Stack gap={8} align="center">
+                            <Group gap={8} wrap="nowrap" justify="center">
+                              <ThemeIcon size={26} radius="xl" variant="light">
+                                <IconMapPin size={15} />
+                              </ThemeIcon>
+                              <Text size="sm" fw={700} ta="center">
+                                {event.config.eventLocation}
+                              </Text>
+                            </Group>
+                            {event?.config?.eventLocationMapUrl ? (
+                              <Button
+                                component="a"
+                                href={event.config.eventLocationMapUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                size="xs"
+                                radius="xl"
+                                rightSection={<IconArrowUpRight size={14} />}
+                              >
+                                Cómo llegar
+                              </Button>
+                            ) : null}
+                          </Stack>
+                        </Paper>
                       ) : null}
                     </Stack>
 
@@ -1804,7 +1832,7 @@ const Landing = () => {
                       )}
                     </Tabs.Panel>
 
-                    <Text
+                    {/* <Text
                       ta="center"
                       size="xs"
                       style={{ maxWidth: 560, margin: "0 auto" }}
@@ -1816,7 +1844,7 @@ const Landing = () => {
                       para agendar reuniones durante el evento. Ingresa con el
                       correo registrado de la empresa o regístrate si es tu
                       primera vez.
-                    </Text>
+                    </Text> */}
 
                     <Divider my={6} />
                   </Stack>
@@ -1952,16 +1980,43 @@ const Landing = () => {
                             ) : null}
 
                             {event?.config?.eventLocation ? (
-                              <Text size="md" c="dimmed">
-                                <Text span fw={700} c="dark">
-                                  Lugar:
-                                </Text>{" "}
-                                {event.config.eventLocation}
-                              </Text>
+                              <Paper
+                                withBorder
+                                radius="lg"
+                                p="md"
+                                style={{
+                                  background: "rgba(255,255,255,0.9)",
+                                  borderColor: "rgba(0,0,0,0.08)",
+                                }}
+                              >
+                                <Stack gap={10} align="center">
+                                  <Group gap={10} wrap="nowrap" justify="center">
+                                    <ThemeIcon size={32} radius="xl" variant="light">
+                                      <IconMapPin size={18} />
+                                    </ThemeIcon>
+                                    <Text size="md" fw={700} ta="center">
+                                      {event.config.eventLocation}
+                                    </Text>
+                                  </Group>
+                                  {event?.config?.eventLocationMapUrl ? (
+                                    <Button
+                                      component="a"
+                                      href={event.config.eventLocationMapUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      size="sm"
+                                      radius="xl"
+                                      rightSection={<IconArrowUpRight size={16} />}
+                                    >
+                                      Cómo llegar
+                                    </Button>
+                                  ) : null}
+                                </Stack>
+                              </Paper>
                             ) : null}
                           </Stack>
 
-                          <Text size="md" c="dimmed">
+                          {/* <Text size="md" c="dimmed">
                             <strong>
                               Plataforma de Networking y Reuniones de Negocio.
                             </strong>{" "}
@@ -1969,7 +2024,7 @@ const Landing = () => {
                             correo electrónico. Si aún no estás registrado y
                             deseas participar como comprador o vendedor, haz
                             clic en Registrarse.
-                          </Text>
+                          </Text> */}
                         </Stack>
                       </Paper>
                     </Box>
@@ -2280,7 +2335,7 @@ const Landing = () => {
               rel="noopener noreferrer"
               style={{ color: "inherit", textDecoration: "underline" }}
             >
-              Powered by Geniality
+              Powered by Magnetic
             </a>
           </Text>
         </Container>

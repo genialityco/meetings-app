@@ -86,6 +86,7 @@ const EditEventConfigModal = ({
   });
   
   const [eventLocation, setEventLocation] = useState(event.config?.eventLocation || "");
+  const [eventLocationMapUrl, setEventLocationMapUrl] = useState(event.config?.eventLocationMapUrl || "");
   const [eventImageUrl, setEventImageUrl] = useState(event.eventImage || "");
   const [eventImageFile, setEventImageFile] = useState(null);
   const [landingTitleType, setLandingTitleType] = useState(event.config?.landingTitleType || "text");
@@ -301,6 +302,7 @@ const EditEventConfigModal = ({
       eventDate: eventDates[0] || "", // Primera fecha (compatibilidad)
       dailyConfig, // NUEVO: configuración específica por día
       eventLocation,
+      eventLocationMapUrl,
       primaryColor,
       landingTitleType,
       landingTitleImage: finalLandingTitleImage,
@@ -401,6 +403,13 @@ const EditEventConfigModal = ({
               placeholder="Ej: Centro de Convenciones, Hotel XYZ, etc."
               onChange={(e) => setEventLocation(e.target.value)}
               description="Ubicación física donde se realizará el evento. Se mostrará a los asistentes."
+            />
+            <TextInput
+              label="Enlace de Google Maps"
+              value={eventLocationMapUrl}
+              placeholder="https://maps.app.goo.gl/..."
+              onChange={(e) => setEventLocationMapUrl(e.target.value)}
+              description="Enlace a Google Maps del lugar del evento. Se mostrará como botón junto al lugar en la landing."
             />
             <TextInput
               label="URL del Landing"
