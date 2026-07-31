@@ -852,6 +852,7 @@ const Landing = () => {
                 phone: dataToUpdate.telefono,
                 name: dataToUpdate.nombre || "Asistente",
                 eventName: eventName,
+                eventId,
                 badgeUrl,
                 headerImageUrl: event?.eventImage || event?.config?.landingTitleImage,
                 date: formattedDate,
@@ -866,6 +867,7 @@ const Landing = () => {
                 phone: "+570000000000", // Teléfono falso para forzar fallback al correo
                 name: dataToUpdate.nombre || "Asistente",
                 eventName: eventName,
+                eventId,
                 badgeUrl,
                 headerImageUrl: event?.eventImage || event?.config?.landingTitleImage,
                 date: formattedDate,

@@ -697,15 +697,6 @@ export default function CompaniesView({
                     </Stack>
                   </Group>
 
-                  {/* Descripción corta */}
-                  {!!(asistentes?.[0]?.descripcion || "").trim() && (
-                    <>
-                      <Text mt="sm" c="dimmed" size="sm">
-                        {asistentes[0]?.descripcion}
-                      </Text>
-                    </>
-                  )}
-
                   <Divider my="md" />
 
                   {/* Lista de reps (compacta y bonita) */}

@@ -15,6 +15,7 @@ import {
   Select,
   SegmentedControl,
   MultiSelect,
+  NumberInput,
 } from "@mantine/core";
 import { updateDoc, doc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
@@ -111,7 +112,7 @@ const AVAILABLE_FIELDS = [
     label: "Descripción breve",
     type: "richtext",
     validation: {
-      maxLength: 1000,
+      maxLength: 2000,
     },
   },
   {
@@ -179,6 +180,54 @@ function isCustomField(field: any) {
   );
 }
 
+// Presets de validación seleccionables para campos de texto (ej. dejar "Cédula" en alfanumérico)
+const TEXT_VALIDATION_PRESETS: Record<
+  string,
+  { label: string; pattern?: string; errorMessage?: string }
+> = {
+  numeric: {
+    label: "Solo números",
+    pattern: "^[0-9]+$",
+    errorMessage: "Debe contener solo números",
+  },
+  alphanumeric: {
+    label: "Alfanumérico",
+    pattern: "^[A-Za-z0-9]+$",
+    errorMessage: "Debe contener solo letras y números",
+  },
+  letters: {
+    label: "Solo letras",
+    pattern: "^[a-zA-ZáéíóúÁÉÍÓÚñÑ\\s]+$",
+    errorMessage: "Debe contener solo letras y espacios",
+  },
+  any: {
+    label: "Sin restricción",
+  },
+};
+
+function detectValidationPresetKey(field: any): string {
+  const pattern = field?.validation?.pattern;
+  if (!pattern) return "any";
+  const patternStr =
+    pattern instanceof RegExp
+      ? pattern.source
+      : String(pattern).replace(/^\/|\/$/g, "");
+  const found = Object.entries(TEXT_VALIDATION_PRESETS).find(
+    ([key, preset]) => key !== "any" && preset.pattern === patternStr,
+  );
+  return found ? found[0] : "custom";
+}
+
+// Campos donde tiene sentido editar el límite de caracteres (los que ya nacen con maxLength)
+function hasEditableMaxLength(field: any): boolean {
+  if (field.type !== "text" && field.type !== "richtext") return false;
+  const base = AVAILABLE_FIELDS.find((f) => f.name === field.name);
+  return (
+    field.validation?.maxLength !== undefined ||
+    base?.validation?.maxLength !== undefined
+  );
+}
+
 const getDefaultFields = (formFields: any[] | undefined, eventType?: string) => {
   return AVAILABLE_FIELDS.filter((f) => !(eventType === "Networking" && f.name === "tipoAsistente")).map((field) => ({
     ...field,
@@ -222,6 +271,8 @@ function SortableFieldItem({
   handlePlaceholderChange,
   handleToggleRequired,
   onUpdateShowWhen,
+  onUpdateValidationType,
+  onUpdateMaxLength,
 }: {
   field: any;
   allFields: any[];
@@ -230,6 +281,8 @@ function SortableFieldItem({
   handlePlaceholderChange: (name: string, value: string) => void;
   handleToggleRequired: (name: string, value: boolean) => void;
   onUpdateShowWhen: (name: string, showWhen: any) => void;
+  onUpdateValidationType: (name: string, presetKey: string) => void;
+  onUpdateMaxLength: (name: string, value: number | null) => void;
 }) {
   const {
     attributes,
@@ -318,6 +371,39 @@ function SortableFieldItem({
                           ? "Teléfono"
                           : "Texto"}
         </Text>
+        {field.type === "text" && (
+          <Select
+            size="xs"
+            label="Tipo de valor"
+            style={{ width: 150 }}
+            data={[
+              ...(detectValidationPresetKey(field) === "custom"
+                ? [{ value: "custom", label: "Personalizado (actual)" }]
+                : []),
+              ...Object.entries(TEXT_VALIDATION_PRESETS).map(
+                ([value, preset]) => ({ value, label: preset.label }),
+              ),
+            ]}
+            value={detectValidationPresetKey(field)}
+            onChange={(v) => v && onUpdateValidationType(field.name, v)}
+            allowDeselect={false}
+          />
+        )}
+        {hasEditableMaxLength(field) && (
+          <NumberInput
+            size="xs"
+            label="Máx. caracteres"
+            style={{ width: 130 }}
+            min={1}
+            value={field.validation?.maxLength ?? ""}
+            onChange={(v) =>
+              onUpdateMaxLength(
+                field.name,
+                typeof v === "number" ? v : null,
+              )
+            }
+          />
+        )}
         {isCustomField(field) && (
           <ActionIcon
             color="red"
@@ -560,6 +646,48 @@ export default function ConfigureFieldsModal({
           return rest;
         }
         return { ...f, showWhen };
+      }),
+    );
+  };
+
+  const handleUpdateValidationType = (fieldName: string, presetKey: string) => {
+    if (presetKey === "custom") return;
+    const preset = TEXT_VALIDATION_PRESETS[presetKey];
+    if (!preset) return;
+    setFields((prev) =>
+      prev.map((f) => {
+        if (f.name !== fieldName) return f;
+        if (!preset.pattern) {
+          // Objeto (posiblemente vacío) para no caer al validation.pattern
+          // por defecto del campo base (ej. cedula) al guardar.
+          const { pattern, errorMessage, ...restValidation } =
+            f.validation || {};
+          return { ...f, validation: restValidation };
+        }
+        return {
+          ...f,
+          validation: {
+            ...(f.validation || {}),
+            pattern: preset.pattern,
+            errorMessage: preset.errorMessage,
+          },
+        };
+      }),
+    );
+  };
+
+  const handleUpdateMaxLength = (fieldName: string, value: number | null) => {
+    setFields((prev) =>
+      prev.map((f) => {
+        if (f.name !== fieldName) return f;
+        if (value === null) {
+          const { maxLength, ...restValidation } = f.validation || {};
+          return { ...f, validation: restValidation };
+        }
+        return {
+          ...f,
+          validation: { ...(f.validation || {}), maxLength: value },
+        };
       }),
     );
   };
@@ -1057,6 +1185,8 @@ export default function ConfigureFieldsModal({
                     handlePlaceholderChange={handlePlaceholderChange}
                     handleToggleRequired={handleToggleRequired}
                     onUpdateShowWhen={handleUpdateShowWhen}
+                    onUpdateValidationType={handleUpdateValidationType}
+                    onUpdateMaxLength={handleUpdateMaxLength}
                   />
                   );
                 })}

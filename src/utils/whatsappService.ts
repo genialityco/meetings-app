@@ -510,6 +510,7 @@ export async function sendWelcomeNotification(options: {
   phone: string;
   name: string;
   eventName: string;
+  eventId?: string;
   badgeUrl?: string;
   headerImageUrl?: string;
   date?: string;
@@ -522,7 +523,7 @@ export async function sendWelcomeNotification(options: {
     logoUrl?: string;
   };
 }): Promise<boolean> {
-  const { phone, name, eventName, badgeUrl, headerImageUrl, date, time, fallbackInfo } = options;
+  const { phone, name, eventName, eventId, badgeUrl, headerImageUrl, date, time, fallbackInfo } = options;
 
   // Limpiar número de teléfono (ya viene con prefijo)
   const fullPhone = phone.replace(/[^\d]/g, "");
@@ -542,8 +543,9 @@ export async function sendWelcomeNotification(options: {
 
     if (fallbackInfo?.enabled && fallbackInfo.email) {
       const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+      const dashboardUrl = eventId ? `${baseUrl}/dashboard/${eventId}` : `${baseUrl}/dashboard`;
       const btnStyle = "display: inline-block; padding: 12px 24px; margin: 15px 0; color: white; background-color: #3b82f6; text-decoration: none; border-radius: 6px; font-weight: bold; text-align: center; font-size: 14px;";
-      
+
       const contentHtml = `
         <p>Hola <strong>${name}</strong>,</p>
         <p>¡Bienvenido/a al evento <strong>${eventName}</strong>!</p>
@@ -560,7 +562,7 @@ export async function sendWelcomeNotification(options: {
         <p>Puedes acceder al dashboard para ver tu acreditación y más detalles.</p>
         
         <div style="text-align: center; margin-top: 25px;">
-          <a href="${baseUrl}/dashboard" style="${btnStyle}">Ir al Dashboard del Evento</a>
+          <a href="${dashboardUrl}" style="${btnStyle}">Ir al Dashboard del Evento</a>
         </div>
       `;
 

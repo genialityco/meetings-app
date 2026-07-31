@@ -14,7 +14,9 @@ import { useCallback, useContext, useMemo, useState, useEffect } from "react";
 import { UserContext } from "../../context/UserContext";
 import DashboardHeader from "../../components/DashboardHeader";
 import type { Notification, NotificationType } from "./types";
-import { Modal, Text, Button, TextInput, Stack, Group, Loader } from "@mantine/core";
+import { DEFAULT_POLICIES } from "./types";
+import { Modal, Text, Button, TextInput, Stack, Group, Loader, List, ThemeIcon } from "@mantine/core";
+import { IconBuildings, IconCalendarEvent } from "@tabler/icons-react";
 
 const NOTIF_NAV_MAP: Record<string, { view: string; tab?: string }> = {
   meeting_request: { view: "activity", tab: "solicitudes" },
@@ -56,6 +58,10 @@ export default function Dashboard() {
   const [phoneError, setPhoneError] = useState("");
   const [emailError, setEmailError] = useState("");
   const [isSendingWelcome, setIsSendingWelcome] = useState(false);
+
+  const companiesTabEnabled =
+    dashboard.policies?.uiViewsEnabled?.companies ??
+    DEFAULT_POLICIES.uiViewsEnabled.companies;
 
   useEffect(() => {
     // Si el usuario acaba de registrarse, no ha visto el popup, y la política está habilitada
@@ -273,6 +279,28 @@ export default function Dashboard() {
           <Text size="sm">
             ¡Hola <b>{currentUser?.data?.nombre}</b>! Nos alegra tenerte aquí.
           </Text>
+          <List spacing="xs" size="sm" center>
+            {companiesTabEnabled && (
+              <List.Item
+                icon={
+                  <ThemeIcon color="blue" size={22} radius="xl">
+                    <IconBuildings size={14} />
+                  </ThemeIcon>
+                }
+              >
+                En el tab <b>Empresas</b> puedes buscar asistentes y empresas para solicitar reuniones.
+              </List.Item>
+            )}
+            <List.Item
+              icon={
+                <ThemeIcon color="blue" size={22} radius="xl">
+                  <IconCalendarEvent size={14} />
+                </ThemeIcon>
+              }
+            >
+              En el tab <b>Mis reuniones</b> verás tus reuniones agendadas y solicitudes.
+            </List.Item>
+          </List>
           <Text size="sm">
             Revisa tu WhatsApp y correo electrónico para verificar si te llegó el mensaje de bienvenida. Si no lo has recibido, por favor <b>corrige tu teléfono o tu correo</b> a continuación. Así garantizamos que recibirás todas tus notificaciones de reuniones.
           </Text>

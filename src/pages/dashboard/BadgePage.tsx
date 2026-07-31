@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import { Container, Paper, Title, Text, Center, Loader, Avatar, Stack, Box } from "@mantine/core";
+import { useParams, Link } from "react-router-dom";
+import { Container, Paper, Title, Text, Center, Loader, Avatar, Stack, Box, Button } from "@mantine/core";
+import { IconArrowRight } from "@tabler/icons-react";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import QRCode from "qrcode";
@@ -113,6 +114,18 @@ export default function BadgePage() {
             <Text size="xs" c="dimmed" ta="center" mt="sm">
               Presenta este código QR en la entrada del evento para realizar tu check-in.
             </Text>
+
+            <Button
+              component={Link}
+              to={`/dashboard/${eventId}`}
+              fullWidth
+              mt="md"
+              radius="md"
+              color={event?.config?.primaryColor || "teal"}
+              rightSection={<IconArrowRight size={16} />}
+            >
+              Ir al evento
+            </Button>
           </Stack>
         </Paper>
       </Container>

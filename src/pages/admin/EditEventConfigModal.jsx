@@ -49,22 +49,27 @@ const EditEventConfigModal = ({
   const [eventType, setEventType] = useState(event.eventType || "Networking");
   // Soporte multi-día con configuración por día
   const [eventDays, setEventDays] = useState(() => {
-    // Si existe dailyConfig, usarlo
+    // eventDates es la fuente de verdad de qué días tiene el evento (dailyConfig
+    // puede tener claves huérfanas de días eliminados); se usa para tomar los
+    // horarios/descansos de cada día cuando existen.
+    if (event.config?.eventDates?.length) {
+      return event.config.eventDates.map((date) => {
+        const dayConfig = event.config?.dailyConfig?.[date];
+        return {
+          date,
+          startTime: dayConfig?.startTime || event.config?.startTime || "09:00",
+          endTime: dayConfig?.endTime || event.config?.endTime || "18:00",
+          breakBlocks: dayConfig?.breakBlocks || event.config?.breakBlocks || [],
+        };
+      });
+    }
+    // Sin eventDates, usar dailyConfig tal cual (dato legado)
     if (event.config?.dailyConfig) {
       return Object.entries(event.config.dailyConfig).map(([date, config]) => ({
         date,
         startTime: config.startTime || "09:00",
         endTime: config.endTime || "18:00",
         breakBlocks: config.breakBlocks || [],
-      }));
-    }
-    // Si existe eventDates, crear configuración por defecto
-    if (event.config?.eventDates?.length) {
-      return event.config.eventDates.map((date) => ({
-        date,
-        startTime: event.config?.startTime || "09:00",
-        endTime: event.config?.endTime || "18:00",
-        breakBlocks: event.config?.breakBlocks || [],
       }));
     }
     // Si solo existe eventDate, crear un día

@@ -1,4 +1,4 @@
-import { Tabs, SegmentedControl, Stack, Badge, Group } from "@mantine/core";
+import { Tabs, SegmentedControl, Stack, Badge, Group, Popover, Button, Text } from "@mantine/core";
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import {
@@ -12,6 +12,7 @@ import {
   IconBuildingStore,
   IconPackage,
   IconClipboardList,
+  IconInfoCircle,
 } from "@tabler/icons-react";
 import AttendeesView from "./AttendeesView";
 import CompaniesView from "./CompaniesView";
@@ -46,6 +47,12 @@ const VIEW_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
   products: IconPackage,
   activity: IconCalendarEvent,
   survey: IconClipboardList,
+};
+
+// Ayuda contextual por tab: solo los tabs listados aquí muestran el botón de instrucciones.
+const TAB_INSTRUCTIONS: Record<string, string> = {
+  companies: "Busca empresas o sus representantes y solicita una reunión directamente desde su tarjeta.",
+  activity: "Aquí verás tus reuniones agendadas, tus solicitudes y tu agenda del evento.",
 };
 
 export default function TabsPanel({
@@ -216,6 +223,27 @@ export default function TabsPanel({
         radius="xl"
         fullWidth
       />
+    )}
+
+    {TAB_INSTRUCTIONS[topView] && (
+      <Group justify="flex-start">
+        <Popover width={300} position="bottom-start" withArrow shadow="md">
+          <Popover.Target>
+            <Button
+              variant="light"
+              color="blue"
+              size="xs"
+              radius="xl"
+              leftSection={<IconInfoCircle size={16} />}
+            >
+              ¿Cómo funciona esta sección?
+            </Button>
+          </Popover.Target>
+          <Popover.Dropdown>
+            <Text size="sm">{TAB_INSTRUCTIONS[topView]}</Text>
+          </Popover.Dropdown>
+        </Popover>
+      </Group>
     )}
 
       {topView === "attendees" && (
