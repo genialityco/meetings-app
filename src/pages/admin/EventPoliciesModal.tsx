@@ -78,6 +78,9 @@ export default function EventPoliciesModal({
   const [groupByRazonSocial, setGroupByRazonSocial] = useState(false);
   const [allowProductImageUpload, setAllowProductImageUpload] = useState(true);
   const [maxMeetingsPerContact, setMaxMeetingsPerContact] = useState<number | "">("");
+  const [maxMeetingsCompradorPerRole, setMaxMeetingsCompradorPerRole] = useState<number | "">("");
+  const [maxMeetingsVendedorPerRole, setMaxMeetingsVendedorPerRole] = useState<number | "">("");
+  const [maxMeetingsPerRoleScope, setMaxMeetingsPerRoleScope] = useState<EventPolicies["maxMeetingsPerRoleScope"]>("total");
   const [raffleEnabled, setRaffleEnabled] = useState(false);
   const [raffleShowPointsToAttendee, setRaffleShowPointsToAttendee] = useState(false);
   const [standVisitsEnabled, setStandVisitsEnabled] = useState(false);
@@ -128,6 +131,9 @@ export default function EventPoliciesModal({
     setGroupByRazonSocial(p.groupByRazonSocial ?? false);
     setAllowProductImageUpload(p.allowProductImageUpload ?? true);
     setMaxMeetingsPerContact(p.maxMeetingsPerContact ? p.maxMeetingsPerContact : "");
+    setMaxMeetingsCompradorPerRole(p.maxMeetingsPerRole?.comprador ? p.maxMeetingsPerRole.comprador : "");
+    setMaxMeetingsVendedorPerRole(p.maxMeetingsPerRole?.vendedor ? p.maxMeetingsPerRole.vendedor : "");
+    setMaxMeetingsPerRoleScope(p.maxMeetingsPerRoleScope ?? "total");
     setRaffleEnabled(p.raffleEnabled ?? false);
     setRaffleShowPointsToAttendee(p.raffleShowPointsToAttendee ?? false);
     setStandVisitsEnabled(p.standVisitsEnabled ?? false);
@@ -246,6 +252,11 @@ export default function EventPoliciesModal({
               groupByRazonSocial,
               allowProductImageUpload,
               maxMeetingsPerContact: maxMeetingsPerContact === "" ? null : maxMeetingsPerContact,
+              maxMeetingsPerRole: {
+                comprador: maxMeetingsCompradorPerRole === "" ? null : maxMeetingsCompradorPerRole,
+                vendedor: maxMeetingsVendedorPerRole === "" ? null : maxMeetingsVendedorPerRole,
+              },
+              maxMeetingsPerRoleScope,
               raffleEnabled,
               raffleShowPointsToAttendee,
               standVisitsEnabled,
@@ -433,6 +444,50 @@ export default function EventPoliciesModal({
           value={maxMeetingsPerContact}
           onChange={(v) => setMaxMeetingsPerContact(v === "" ? "" : Number(v))}
         />
+
+        {roleMode === "buyer_seller" && (
+          <Paper p="md" withBorder>
+            <Text fw={600} mb="xs">Límite de reuniones por rol</Text>
+            <Text size="sm" c="dimmed" mb="sm">
+              Máximo de reuniones que puede SOLICITAR cada rol (el que recibe nunca se cuenta ni se limita aquí). Deja un rol vacío para no aplicarle límite.
+            </Text>
+            <Group grow>
+              <NumberInput
+                label="Máximo para compradores"
+                placeholder="Sin límite"
+                min={1}
+                step={1}
+                allowDecimal={false}
+                allowNegative={false}
+                clampBehavior="strict"
+                value={maxMeetingsCompradorPerRole}
+                onChange={(v) => setMaxMeetingsCompradorPerRole(v === "" ? "" : Number(v))}
+              />
+              <NumberInput
+                label="Máximo para vendedores"
+                placeholder="Sin límite"
+                min={1}
+                step={1}
+                allowDecimal={false}
+                allowNegative={false}
+                clampBehavior="strict"
+                value={maxMeetingsVendedorPerRole}
+                onChange={(v) => setMaxMeetingsVendedorPerRole(v === "" ? "" : Number(v))}
+              />
+            </Group>
+            <Select
+              mt="sm"
+              label="Alcance del límite"
+              description="'Por evento' acumula todas las solicitudes; 'Por día' reinicia el conteo cada día del evento"
+              data={[
+                { value: "total", label: "Por evento (acumulado)" },
+                { value: "day", label: "Por día" },
+              ]}
+              value={maxMeetingsPerRoleScope}
+              onChange={(v) => setMaxMeetingsPerRoleScope((v as EventPolicies["maxMeetingsPerRoleScope"]) ?? "total")}
+            />
+          </Paper>
+        )}
 
         <Select
           label="API de WhatsApp"

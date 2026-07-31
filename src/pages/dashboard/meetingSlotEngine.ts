@@ -75,6 +75,35 @@ export async function countMeetingsWithContact(params: {
   return count;
 }
 
+/**
+ * Cuenta las reuniones activas (pendientes o aceptadas, sin contar rechazadas/
+ * canceladas) donde `userId` es el SOLICITANTE — usado por la política
+ * "maxMeetingsPerRole" para limitar cuántas reuniones puede pedir un rol (ej.
+ * comprador) sin afectar al que recibe. Si se pasa `date`, solo cuenta las
+ * reuniones cuyo `meetingDate` coincide (para el alcance "day"); las
+ * solicitudes "pending" sin fecha resuelta aún no cuentan en ese caso.
+ */
+export async function countMeetingsAsRequester(params: {
+  eventId: string;
+  userId: string;
+  date?: string | null;
+}): Promise<number> {
+  const { eventId, userId, date } = params;
+  const meetingsSnap = await getDocs(
+    query(collection(db, "events", eventId, "meetings"), where("requesterId", "==", userId)),
+  );
+
+  let count = 0;
+  meetingsSnap.docs.forEach((d) => {
+    const m = d.data() as any;
+    if (m.status === "rejected" || m.status === "cancelled" || m.status === "taken") return;
+    if (date && m.meetingDate !== date) return;
+    count++;
+  });
+
+  return count;
+}
+
 export function slotOverlapsBreakBlock(
   slotStart: string,
   meetingDuration: number,

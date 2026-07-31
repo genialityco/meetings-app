@@ -33,6 +33,7 @@ import {
   notifyMeetingConfirmed,
   getTableLabel,
   countMeetingsWithContact,
+  countMeetingsAsRequester,
 } from "./meetingSlotEngine";
 
 type Product = {
@@ -761,6 +762,51 @@ export function useDashboardData(eventId?: string) {
     return true;
   };
 
+  // Valida la política "maxMeetingsPerRole": límite de reuniones que el usuario
+  // actual puede SOLICITAR según su rol (comprador/vendedor). Solo aplica con
+  // roleMode "buyer_seller" y un límite configurado para ese rol; el límite se
+  // lee en vivo de `policies` en cada llamada, así que si el admin lo cambia
+  // durante el evento la siguiente solicitud ya valida contra el nuevo valor.
+  // `date` solo se usa cuando el alcance configurado es "day"; si se omite y el
+  // alcance es "day", el chequeo se salta (la fecha aún no se conoce, como en
+  // el flujo clásico de solicitud pendiente).
+  const checkRoleMeetingLimit = async (date?: string | null): Promise<boolean> => {
+    if (policies.roleMode !== "buyer_seller" || !policies.maxMeetingsPerRole || !uid || !eventId) {
+      return true;
+    }
+
+    const myRole = (currentUser?.data?.tipoAsistente || "").toLowerCase().trim();
+    const limit =
+      myRole === "comprador"
+        ? policies.maxMeetingsPerRole.comprador
+        : myRole === "vendedor"
+        ? policies.maxMeetingsPerRole.vendedor
+        : null;
+
+    if (!limit) return true;
+
+    const scopedByDay = policies.maxMeetingsPerRoleScope === "day";
+    if (scopedByDay && !date) return true;
+
+    const count = await countMeetingsAsRequester({
+      eventId,
+      userId: uid,
+      date: scopedByDay ? date : null,
+    });
+
+    if (count >= limit) {
+      showNotification({
+        title: "Límite de reuniones alcanzado",
+        message: scopedByDay
+          ? `Ya alcanzaste el máximo de ${limit} solicitud(es) de reunión para este día.`
+          : `Ya alcanzaste el máximo de ${limit} solicitud(es) de reunión para este evento.`,
+        color: "red",
+      });
+      return false;
+    }
+    return true;
+  };
+
   const sendMeetingRequest = async (
     assistantId: string,
     assistantPhone: string,
@@ -804,6 +850,10 @@ export function useDashboardData(eventId?: string) {
 
       if (!(await checkContactMeetingLimit(assistantId, receiverSnap.data()))) {
         return Promise.reject(new Error("Meeting limit reached"));
+      }
+
+      if (!(await checkRoleMeetingLimit())) {
+        return Promise.reject(new Error("Role meeting limit reached"));
       }
 
       const data: any = {
@@ -951,6 +1001,10 @@ export function useDashboardData(eventId?: string) {
       return Promise.reject(new Error("Meeting limit reached"));
     }
 
+    if (!(await checkRoleMeetingLimit())) {
+      return Promise.reject(new Error("Role meeting limit reached"));
+    }
+
     setPendingMeetingRequest({ assistantId, assistantPhone, groupId, context });
     await prepareSlotSelectionForRequest(assistantId);
     return { deferred: true };
@@ -960,6 +1014,10 @@ export function useDashboardData(eventId?: string) {
   const confirmSendMeetingRequestWithSlot = async (slot: any): Promise<boolean> => {
     if (!pendingMeetingRequest || !eventId || !uid || !slot?.id) return false;
     const { assistantId, context } = pendingMeetingRequest;
+
+    if (!(await checkRoleMeetingLimit(slot.date))) {
+      return false;
+    }
 
     setConfirmLoading(true);
     const notifId = `request-meeting-${assistantId}-${Date.now()}`;

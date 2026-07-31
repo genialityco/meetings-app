@@ -543,7 +543,7 @@ export async function sendWelcomeNotification(options: {
 
     if (fallbackInfo?.enabled && fallbackInfo.email) {
       const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
-      const dashboardUrl = eventId ? `${baseUrl}/dashboard/${eventId}` : `${baseUrl}/dashboard`;
+      const landingUrl = eventId ? `${baseUrl}/event/${eventId}` : `${baseUrl}`;
       const btnStyle = "display: inline-block; padding: 12px 24px; margin: 15px 0; color: white; background-color: #3b82f6; text-decoration: none; border-radius: 6px; font-weight: bold; text-align: center; font-size: 14px;";
 
       const contentHtml = `
@@ -559,10 +559,10 @@ export async function sendWelcomeNotification(options: {
           </ul>
         </div>
 
-        <p>Puedes acceder al dashboard para ver tu acreditación y más detalles.</p>
-        
+        <p>Puedes acceder al evento para ver tu acreditación y más detalles.</p>
+
         <div style="text-align: center; margin-top: 25px;">
-          <a href="${dashboardUrl}" style="${btnStyle}">Ir al Dashboard del Evento</a>
+          <a href="${landingUrl}" style="${btnStyle}">Ir al Evento</a>
         </div>
       `;
 

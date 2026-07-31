@@ -145,6 +145,10 @@ export interface EventPolicies {
   allowProductImageUpload?: boolean;
   /** Máximo de reuniones (pendientes o aceptadas) que un mismo par persona/empresa puede tener entre sí. null/0 = sin límite */
   maxMeetingsPerContact?: number | null;
+  /** Máximo de reuniones que un asistente puede SOLICITAR según su rol (solo aplica si roleMode es "buyer_seller"). Cada rol es independiente; null/0/vacío = sin límite para ese rol. Los receptores nunca se cuentan ni se limitan por esta política. */
+  maxMeetingsPerRole?: { comprador?: number | null; vendedor?: number | null } | null;
+  /** Alcance de "maxMeetingsPerRole": "total" = acumulado en todo el evento, "day" = el conteo se reinicia cada día del evento (según la fecha del slot elegido) */
+  maxMeetingsPerRoleScope?: "total" | "day";
   /** Habilita el sorteo por reuniones: el vendedor muestra un QR por reunión, el comprador lo escanea y gana un punto */
   raffleEnabled?: boolean;
   /** Si el comprador ve su propio conteo de puntos para el sorteo (solo aplica si raffleEnabled) */
@@ -244,6 +248,8 @@ export const DEFAULT_POLICIES: EventPolicies = {
   groupByRazonSocial: false,
   allowProductImageUpload: true,
   maxMeetingsPerContact: null,
+  maxMeetingsPerRole: null,
+  maxMeetingsPerRoleScope: "total",
   raffleEnabled: false,
   raffleShowPointsToAttendee: false,
   standVisitsEnabled: false,

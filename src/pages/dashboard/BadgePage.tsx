@@ -117,7 +117,7 @@ export default function BadgePage() {
 
             <Button
               component={Link}
-              to={`/dashboard/${eventId}`}
+              to={`/event/${eventId}`}
               fullWidth
               mt="md"
               radius="md"
