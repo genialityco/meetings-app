@@ -39,6 +39,7 @@ import {
   IconSparkles,
   IconCircleCheck,
   IconCalendarEvent,
+  IconInfoCircle,
 } from "@tabler/icons-react";
 import type { Assistant, Company, EventPolicies, MeetingContext } from "./types";
 import MeetingRequestModal from "./MeetingRequestModal";
@@ -780,6 +781,21 @@ export default function CompaniesView({
                       );
                     })}
                   </Stack>
+
+                  {/* Ver más info de la empresa */}
+                  {nit !== "sin-nit" && eventId && (
+                    <Button
+                      fullWidth
+                      mt="md"
+                      radius="md"
+                      variant="outline"
+                      color={theme.primaryColor}
+                      leftSection={<IconInfoCircle size={16} />}
+                      onClick={() => navigate(`/dashboard/${eventId}/company/${nit}`)}
+                    >
+                      Ver más info de la empresa
+                    </Button>
+                  )}
 
                   {/* CTA grande abajo */}
                   <Button
