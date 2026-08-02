@@ -49,13 +49,11 @@ interface MatchesTabProps {
   sendMeetingRequest: (
     id: string,
     phone: string,
-    groupId?: string | null,
     context?: MeetingContext,
   ) => Promise<void>;
   requestMeetingWithSlotPicker?: (
     id: string,
     phone: string,
-    groupId?: string | null,
     context?: MeetingContext,
   ) => Promise<{ deferred: boolean } | void>;
   solicitarReunionHabilitado: boolean;
@@ -186,7 +184,7 @@ export default function MatchesTab({
       const phone = userData?.telefono || "";
 
       const send = requestMeetingWithSlotPicker || sendMeetingRequest;
-      const result = await send(selectedMatch.userId, phone, null, {
+      const result = await send(selectedMatch.userId, phone, {
         contextNote: message || `Match de ${selectedMatch.affinityScore}% de afinidad`,
       });
 

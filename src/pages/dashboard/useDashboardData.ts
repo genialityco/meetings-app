@@ -11,12 +11,12 @@ import {
   orderBy,
   getDoc,
   deleteDoc,
-  writeBatch,
   runTransaction,
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
 import { Assistant, Meeting, Notification, Company, EventPolicies, DEFAULT_POLICIES, MeetingContext } from "./types";
+import { normalizeTipoAsistente } from "../../utils/attendeeRole";
 import { showNotification, notifications as mantineNotifications } from "@mantine/notifications";
 import { serverTimestamp } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
@@ -32,8 +32,12 @@ import {
   createConfirmedMeeting,
   notifyMeetingConfirmed,
   getTableLabel,
-  countMeetingsWithContact,
   countMeetingsAsRequester,
+  checkContactMeetingLimit as checkContactMeetingLimitShared,
+  createMeetingRequestDoc,
+  pickAvailableCompanyAdvisor,
+  notifyCompanyAdvisors,
+  getCompanyAdvisors,
 } from "./meetingSlotEngine";
 
 type Product = {
@@ -281,7 +285,6 @@ export function useDashboardData(eventId?: string) {
   const [pendingMeetingRequest, setPendingMeetingRequest] = useState<{
     assistantId: string;
     assistantPhone: string;
-    groupId: string | null;
     context?: MeetingContext;
   } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -502,8 +505,9 @@ export function useDashboardData(eventId?: string) {
     if (policies.discoveryMode === "by_role" && currentUser?.data?.tipoAsistente) {
       const tipoField = formFields.find((f) => f.name === "tipoAsistente")?.name;
       if (tipoField) {
+        const myTipo = normalizeTipoAsistente(currentUser?.data?.tipoAsistente);
         filtered = filtered.filter(
-          (a) => a[tipoField] !== currentUser?.data?.tipoAsistente,
+          (a) => normalizeTipoAsistente(a[tipoField]) !== myTipo,
         );
       }
     }
@@ -512,7 +516,7 @@ export function useDashboardData(eventId?: string) {
     filtered = filtered.map((a) => {
       if (a.empresa) return a;
       // Caso 1: tiene NIT → buscar en colección de empresas del evento
-      const nit = a.companyId || a.company_nit;
+      const nit = a.companyId;
       if (nit && companies.length > 0) {
         const companyDoc = companies.find((c) => c.nitNorm === nit);
         const razonSocial = companyDoc?.razonSocial as string | undefined;
@@ -679,6 +683,108 @@ export function useDashboardData(eventId?: string) {
     });
   }, [uid, eventId]);
 
+  // ---------------------- Etapa 1: Agenda agregada de empresa ----------------------
+  // "Asesor" = cualquier persona asociada a la empresa (por companyId), sin importar
+  // su tipoAsistente. No todas las empresas registran a su contacto como "vendedor"
+  // (ej. solo tiene un comprador vinculado), y esa persona debe poder seguir
+  // recibiendo/atendiendo solicitudes de reunión dirigidas a su empresa.
+  const myCompanyNit = currentUser?.data?.companyId as string | undefined;
+  const isCompanyAdvisor = !!myCompanyNit;
+
+  const getCompanyAdvisorIds = useCallback(
+    (nit: string | null | undefined): string[] => {
+      if (!nit) return [];
+      const ids = assistants.filter((a) => a.companyId === nit).map((a) => a.id);
+      // `assistants` excluye al usuario actual (ver efecto de carga de asistentes), así
+      // que si el propio usuario pertenece a esta empresa hay que agregarlo aparte.
+      if (isCompanyAdvisor && uid && myCompanyNit === nit && !ids.includes(uid)) {
+        ids.push(uid);
+      }
+      return ids;
+    },
+    [assistants, isCompanyAdvisor, uid, myCompanyNit],
+  );
+
+  const [companyMeetings, setCompanyMeetings] = useState<Meeting[]>([]);
+
+  // 8b. Reuniones aceptadas de todos los asesores de mi empresa (vista "Empresa" en Mis Reuniones)
+  useEffect(() => {
+    if (!eventId || !isCompanyAdvisor || !myCompanyNit) {
+      setCompanyMeetings([]);
+      return;
+    }
+    const advisorIds = getCompanyAdvisorIds(myCompanyNit);
+    if (advisorIds.length === 0) {
+      setCompanyMeetings([]);
+      return;
+    }
+
+    // Firestore limita "array-contains-any" a 10 valores: particionamos si hay más asesores.
+    const chunks: string[][] = [];
+    for (let i = 0; i < advisorIds.length; i += 10) {
+      chunks.push(advisorIds.slice(i, i + 10));
+    }
+
+    const results: Record<number, Meeting[]> = {};
+    const unsubs = chunks.map((chunk, idx) =>
+      onSnapshot(
+        query(
+          collection(db, "events", eventId, "meetings"),
+          where("participants", "array-contains-any", chunk),
+          where("status", "==", "accepted"),
+        ),
+        async (snap) => {
+          const mts: Meeting[] = [];
+          for (const d of snap.docs) {
+            const m = { id: d.id, ...d.data() } as Meeting;
+            mts.push(m);
+            for (const p of [m.requesterId, m.receiverId]) {
+              if (p && !participantsInfo[p]) {
+                try {
+                  const uSnap = await getDoc(doc(db, "users", p));
+                  if (uSnap.exists()) {
+                    setParticipantsInfo((prev) => ({ ...prev, [p]: uSnap.data() as Assistant }));
+                  }
+                } catch (e) {}
+              }
+            }
+          }
+          results[idx] = mts;
+          setCompanyMeetings(Object.values(results).flat());
+        },
+      ),
+    );
+
+    return () => unsubs.forEach((u) => u());
+  }, [eventId, isCompanyAdvisor, myCompanyNit, getCompanyAdvisorIds]);
+
+  const [companyPendingRequests, setCompanyPendingRequests] = useState<Meeting[]>([]);
+
+  // Etapa 2: solicitudes dirigidas a mi empresa, aún sin reclamar por ningún asesor
+  // (receiverId null). Visibles para cualquier asesor; el primero en aceptar se la queda
+  // (ver el guard de status "pending" en confirmAcceptWithSlot).
+  useEffect(() => {
+    if (!eventId || !isCompanyAdvisor || !myCompanyNit) {
+      setCompanyPendingRequests([]);
+      return;
+    }
+    const q = query(
+      collection(db, "events", eventId, "meetings"),
+      where("companyId", "==", myCompanyNit),
+      where("status", "==", "pending"),
+      where("receiverId", "==", null),
+    );
+    return onSnapshot(q, (snap) => {
+      setCompanyPendingRequests(
+        snap.docs.map((d) => ({ id: d.id, ...d.data(), isCompanyRequest: true }) as Meeting),
+      );
+    });
+  }, [eventId, isCompanyAdvisor, myCompanyNit]);
+
+  // Notifica (WhatsApp + notificación in-app) a los demás asesores de una empresa cuando
+  // una reunión con companyId cambia de estado (creada/aceptada/cancelada/rechazada).
+  // No incluye lógica de silencio (Etapa 3); respeta los mismos gates de policy que el
+  // resto de notificaciones de reunión.
   useEffect(() => {
     if (!eventId) return;
     const q = query(
@@ -736,30 +842,24 @@ export function useDashboardData(eventId?: string) {
     }
   };
 
-  // Valida la política "maxMeetingsPerContact": si ya se alcanzó el máximo de
-  // reuniones con esta persona (o cualquier representante de su misma empresa),
-  // muestra el error y devuelve false para que el llamador aborte.
+  // Valida la política "maxMeetingsPerContact" (lógica compartida en meetingSlotEngine.ts,
+  // también usada por useCompanyData.ts): si ya se alcanzó el máximo de reuniones con
+  // esta persona (o cualquier representante de su misma empresa), muestra el error y
+  // devuelve false para que el llamador aborte.
   const checkContactMeetingLimit = async (receiverId: string, receiverData: any): Promise<boolean> => {
-    const limit = policies.maxMeetingsPerContact;
-    if (!limit || !uid || !eventId) return true;
-
-    const receiverCompanyId = receiverData?.companyId || receiverData?.company_nit || null;
-    const count = await countMeetingsWithContact({
-      eventId,
-      userId: uid,
-      contactId: receiverId,
-      contactCompanyId: receiverCompanyId,
-    });
-
-    if (count >= limit) {
-      showNotification({
-        title: "Límite de reuniones alcanzado",
-        message: `Ya tienes ${count} reunión(es) con esta persona o empresa. El máximo permitido es ${limit}.`,
-        color: "red",
+    if (!uid || !eventId) return true;
+    try {
+      await checkContactMeetingLimitShared({
+        eventId,
+        userId: uid,
+        receiverId,
+        receiverData,
+        limit: policies.maxMeetingsPerContact,
       });
+      return true;
+    } catch {
       return false;
     }
-    return true;
   };
 
   // Valida la política "maxMeetingsPerRole": límite de reuniones que el usuario
@@ -775,7 +875,7 @@ export function useDashboardData(eventId?: string) {
       return true;
     }
 
-    const myRole = (currentUser?.data?.tipoAsistente || "").toLowerCase().trim();
+    const myRole = normalizeTipoAsistente(currentUser?.data?.tipoAsistente);
     const limit =
       myRole === "comprador"
         ? policies.maxMeetingsPerRole.comprador
@@ -807,13 +907,15 @@ export function useDashboardData(eventId?: string) {
     return true;
   };
 
+  // Solicitud directa a una persona (flujo individual "de siempre"). Delegada por
+  // completo en la lógica compartida de meetingSlotEngine.ts (createMeetingRequestDoc),
+  // la misma que usan las solicitudes de empresa y useCompanyData.ts (CompanyLanding) —
+  // ver §"Solicitudes dirigidas a empresa / asesores" en ese archivo.
   const sendMeetingRequest = async (
     assistantId: string,
     assistantPhone: string,
-    groupId: string | null = null,
     context?: MeetingContext,
   ) => {
-    // Validar que haya usuario logueado
     if (!uid || !eventId) {
       showNotification({
         title: "Error",
@@ -822,8 +924,7 @@ export function useDashboardData(eventId?: string) {
       });
       return Promise.reject(new Error("No user logged in"));
     }
-    
-    // Validar que exista currentUser con datos
+
     if (!currentUser?.data) {
       showNotification({
         title: "Error",
@@ -835,9 +936,8 @@ export function useDashboardData(eventId?: string) {
       }, 1500);
       return Promise.reject(new Error("User data not found"));
     }
-    
+
     try {
-      // Validar que el receptor exista en Firestore antes de crear la reunión
       const receiverSnap = await getDoc(doc(db, "users", assistantId));
       if (!receiverSnap.exists()) {
         showNotification({
@@ -856,118 +956,21 @@ export function useDashboardData(eventId?: string) {
         return Promise.reject(new Error("Role meeting limit reached"));
       }
 
-      const data: any = {
+      await createMeetingRequestDoc({
         eventId,
         requesterId: uid,
-        receiverId: assistantId,
-        status: "pending",
-        createdAt: new Date(),
-        participants: [uid, assistantId],
-      };
-      if (groupId) {
-        data.groupId = groupId;
-      }
-      if (context?.productId) data.productId = context.productId;
-      if (context?.companyId) data.companyId = context.companyId;
-      if (context?.contextNote) data.contextNote = context.contextNote;
-      const meetingDoc = await addDoc(
-        collection(db, "events", eventId, "meetings"),
-        data,
-      );
-      const requesterSnap = await getDoc(doc(db, "users", uid));
-      const requester = requesterSnap.exists()
-        ? requesterSnap.data()
-        : currentUser?.data;
-      const requesterName = (requester?.nombre || "").trim();
-      const requesterCompany =
-        requester?.company_razonSocial ||
-        requester?.companyName ||
-        requester?.empresa ||
-        requester?.razonSocial ||
-        requester?.company ||
-        "";
-      const meetingId = meetingDoc.id;
-      const baseUrl = window.location.origin;
+        advisorId: assistantId,
+        advisorPhone: assistantPhone,
+        companyNit: context?.companyId || null,
+        context,
+        policies,
+        eventName,
+        dashboardLogo,
+      });
 
-      const acceptUrl = `${baseUrl}/meeting-response/${eventId}/${meetingId}/accept`;
-      const rejectUrl = `${baseUrl}/meeting-response/${eventId}/${meetingId}/reject`;
-      const landingUrl = `${baseUrl}/event/${eventId}`;
-
-      // Rutas sin base URL para API V2
-      const acceptPath = `/meeting-response/${eventId}/${meetingId}/accept`;
-      const rejectPath = `/meeting-response/${eventId}/${meetingId}/reject`;
-
-      const contextLine = context?.contextNote
-        ? `\n📋 *Mensaje:* ${context.contextNote}\n`
-        : "";
-
-      const eventLine = eventName ? `📌 *Evento:* ${eventName}\n\n` : "";
-
-      const message =
-        `📩 *Nueva solicitud de reunión*\n\n` +
-        eventLine +
-        `Has recibido una solicitud de reunión de:\n\n` +
-        `👤 *Nombre:* ${requesterName}\n` +
-        `🏢 *Empresa:* ${requesterCompany}\n` +
-        `💼 *Cargo:* ${requester?.cargo || ""}\n` +
-        `📧 *Correo:* ${requester?.correo || ""}\n` +
-        `📞 *Teléfono:* ${requester?.telefono || ""}\n` +
-        contextLine +
-        `\n*Opciones:*\n` +
-        `✅ *Aceptar:* \n${acceptUrl}\n\n` +
-        `❌ *Rechazar:* \n${rejectUrl}\n\n` +
-        `🔗 Ir al evento: \n${landingUrl}\n\n` +
-        `_⚠️ Si los enlaces no están activos, responde primero a este chat y luego haz clic en el enlace._`;
-
-      // WhatsApp backend - usar API configurada en políticas
-      const whatsappApiVersion = policies.whatsappApiVersion || "v1";
-      const fallbackEnabled = policies.fallbackEmailOnWaFailure ?? false;
-      if (policies.whatsappNotificationsEnabled !== false) {
-        await sendWhatsAppAPI({
-          apiVersion: whatsappApiVersion,
-          phone: assistantPhone.replace(/[^\d]/g, ""),
-          message: whatsappApiVersion === "v2" ? (context?.contextNote || "Sin mensaje adicional") : message,
-          fallbackInfo: {
-            enabled: fallbackEnabled,
-            email: receiverSnap.data()?.correo || receiverSnap.data()?.contacto?.correo || "",
-            subject: `Nueva solicitud de reunión - ${eventName}`,
-            logoUrl: dashboardLogo || "",
-          },
-          metadata: {
-            eventName: eventName || "Evento",
-            requesterName,
-            requesterCompany,
-            requesterPosition: requester?.cargo || "",
-            requesterEmail: requester?.correo || "",
-            requesterPhone: requester?.telefono || "",
-            acceptUrl: acceptPath,
-            cancelUrl: rejectPath,
-            contextNote: context?.contextNote,
-          },
-        });
-      }
-
-      // Notificación en la app
-      if (policies.dashboardNotificationsEnabled !== false) {
-        const notificationMessage = context?.contextNote
-          ? `${requesterName || "Alguien"} te ha enviado una solicitud de reunión.\n\nMensaje: "${context.contextNote}"`
-          : `${requesterName || "Alguien"} te ha enviado una solicitud de reunión.`;
-        await addDoc(collection(db, "notifications"), {
-          userId: assistantId,
-          title: "Nueva solicitud de reunión",
-          message: notificationMessage,
-          timestamp: new Date(),
-          read: false,
-          type: "meeting_request",
-        });
-      }
-
-      // Trackear evento de analytics
       meetingAnalytics.requestSent(assistantId, !!context?.contextNote);
-
       return Promise.resolve();
     } catch (e) {
-      // console.error(e);
       trackError(e instanceof Error ? e.message : String(e), 'useDashboardData.sendMeetingRequest');
       return Promise.reject(e);
     }
@@ -976,15 +979,14 @@ export function useDashboardData(eventId?: string) {
   // Punto de entrada único para solicitudes de reunión 1:1: si la política
   // schedulingMode es "requester_picks", abre el selector de horario para que
   // el solicitante elija el slot y la reunión quede confirmada de inmediato.
-  // Si no (o si es un envío grupal con groupId), delega en el flujo clásico.
+  // Si no, delega en el flujo clásico (solicitud pendiente por aceptar).
   const requestMeetingWithSlotPicker = async (
     assistantId: string,
     assistantPhone: string,
-    groupId: string | null = null,
     context?: MeetingContext,
   ): Promise<{ deferred: boolean } | void> => {
-    if (policies.schedulingMode !== "requester_picks" || groupId) {
-      return sendMeetingRequest(assistantId, assistantPhone, groupId, context);
+    if (policies.schedulingMode !== "requester_picks") {
+      return sendMeetingRequest(assistantId, assistantPhone, context);
     }
 
     const receiverSnap = await getDoc(doc(db, "users", assistantId));
@@ -1005,7 +1007,7 @@ export function useDashboardData(eventId?: string) {
       return Promise.reject(new Error("Role meeting limit reached"));
     }
 
-    setPendingMeetingRequest({ assistantId, assistantPhone, groupId, context });
+    setPendingMeetingRequest({ assistantId, assistantPhone, context });
     await prepareSlotSelectionForRequest(assistantId);
     return { deferred: true };
   };
@@ -1181,6 +1183,25 @@ export function useDashboardData(eventId?: string) {
           timestamp: new Date(),
           read: false,
           type: "meeting_cancelled",
+        });
+      }
+
+      // 8b. Notificar también a los demás asesores de la empresa (Etapa 1: fan-out)
+      if (meeting.companyId) {
+        await notifyCompanyAdvisors({
+          eventId: meeting.eventId || eventId!,
+          companyNit: meeting.companyId,
+          excludeUids: [meeting.requesterId, meeting.receiverId as string],
+          policies,
+          whatsappBuilder: (advisor) => ({
+            phone: advisor.telefono || "",
+            message: `La reunión de tu compañero${cancellerName ? ` (cancelada por ${cancellerName})` : ""} fue cancelada.`,
+          }),
+          dashboardNotif: {
+            title: "Reunión cancelada",
+            message: "Se canceló una reunión de un compañero de tu empresa.",
+            type: "meeting_cancelled",
+          },
         });
       }
 
@@ -1426,7 +1447,26 @@ export function useDashboardData(eventId?: string) {
             { enabled: fallbackEnabled, email: requester.correo || "", subject: `Reunión rechazada - ${eventName}` }
           );
         }
-        
+
+        // Notificar también a los demás asesores de la empresa (Etapa 1: fan-out)
+        if (data.companyId) {
+          await notifyCompanyAdvisors({
+            eventId: eventId!,
+            companyNit: data.companyId,
+            excludeUids: [data.requesterId, data.receiverId],
+            policies,
+            whatsappBuilder: (advisor) => ({
+              phone: advisor.telefono || "",
+              message: `${receiver?.nombre || "Un compañero"} rechazó una solicitud de reunión de la empresa.`,
+            }),
+            dashboardNotif: {
+              title: "Reunión rechazada",
+              message: "Se rechazó una solicitud de reunión de tu empresa.",
+              type: "meeting_rejected",
+            },
+          });
+        }
+
         // Trackear evento de analytics
         meetingAnalytics.rejected(meetingId);
       }
@@ -1521,7 +1561,7 @@ export function useDashboardData(eventId?: string) {
   // Resuelve la mesa fija (si existe) de la empresa del receptor, para el filtro de tableMode "fixed"
   const resolveFixedTableForReceiver = (receiverId: string): string | null => {
     const receiver = assistants.find((a: Assistant) => a.id === receiverId);
-    const receiverCompanyId = receiver?.companyId || receiver?.company_nit;
+    const receiverCompanyId = receiver?.companyId;
     const receiverCompany = companies.find((c: Company) => c.nitNorm === receiverCompanyId);
     return receiverCompany?.fixedTable || null;
   };
@@ -1600,6 +1640,95 @@ export function useDashboardData(eventId?: string) {
     }
   };
 
+  // Cuenta reuniones activas (pendientes o aceptadas) de un asesor, como requester o
+  // receiver, para elegir al de menor carga en el modo "sin aceptación" de empresa.
+  // Solicitud de empresa: punto de entrada único tanto para "solicitar a la
+  // empresa" (sin advisorId, ver meetingSlotEngine.createMeetingRequestDoc) como
+  // para "solicitar a un asesor puntual dentro de la vista de empresa" (con
+  // advisorId, delega en requestMeetingWithSlotPicker — el mismo flujo que
+  // cualquier solicitud individual, solo etiquetado con companyNit).
+  const sendMeetingRequestToCompany = async (
+    companyNit: string,
+    context?: MeetingContext,
+    advisorId?: string,
+  ): Promise<{ deferred: boolean } | void> => {
+    if (!uid || !eventId) {
+      showNotification({
+        title: "Error",
+        message: "Debes iniciar sesión para enviar solicitudes de reunión",
+        color: "red",
+      });
+      return Promise.reject(new Error("No user logged in"));
+    }
+
+    if (advisorId) {
+      const advisorSnap = await getDoc(doc(db, "users", advisorId));
+      if (!advisorSnap.exists()) {
+        showNotification({
+          title: "Error",
+          message: "El asistente al que intentas enviar la solicitud ya no existe.",
+          color: "red",
+        });
+        return Promise.reject(new Error("Receiver not found"));
+      }
+      return requestMeetingWithSlotPicker(advisorId, advisorSnap.data()?.telefono || "", {
+        ...context,
+        companyId: companyNit,
+      });
+    }
+
+    // Validar que la empresa tenga al menos un asesor antes de crear cualquier
+    // solicitud: sin este check, una empresa sin asesores (ej. sólo compradores
+    // asociados) generaría una solicitud "fantasma" que nadie puede ver ni
+    // reclamar (con aceptación), o un mensaje de "sin disponibilidad" engañoso
+    // (sin aceptación) cuando el problema real es que no hay ningún asesor.
+    const advisors = await getCompanyAdvisors(eventId, companyNit);
+    if (advisors.length === 0) {
+      showNotification({
+        title: "Sin asesores",
+        message: "Esta empresa no tiene asesores disponibles para recibir la solicitud.",
+        color: "red",
+      });
+      return Promise.reject(new Error("No advisors available"));
+    }
+
+    if (policies.schedulingMode === "requester_picks") {
+      if (!(await checkRoleMeetingLimit())) {
+        return Promise.reject(new Error("Role meeting limit reached"));
+      }
+      const picked = await pickAvailableCompanyAdvisor({ eventId, eventConfig, policies, requesterId: uid, companyNit });
+      if (!picked) {
+        showNotification({
+          title: "Sin disponibilidad",
+          message: "Ningún asesor de la empresa tiene horarios libres en este momento.",
+          color: "red",
+        });
+        return Promise.reject(new Error("No availability"));
+      }
+      setPendingMeetingRequest({
+        assistantId: picked.receiverId,
+        assistantPhone: picked.receiverPhone,
+        context: { ...context, companyId: companyNit },
+      });
+      setSelectedDate(picked.eventDayISO);
+      setAvailableSlots(picked.slots);
+      setSlotModalOpened(true);
+      return { deferred: true };
+    }
+
+    await createMeetingRequestDoc({
+      eventId,
+      requesterId: uid,
+      companyNit,
+      context,
+      policies,
+      eventName,
+      dashboardLogo,
+    });
+    meetingAnalytics.requestSent(companyNit, !!context?.contextNote);
+    return Promise.resolve();
+  };
+
   // Confirmar la selección de slot para la reunión
   const confirmAcceptWithSlot = async (meetingId: string, slot: any): Promise<boolean> => {
     // Helpers locales (evitas duplicados en el archivo)
@@ -1660,7 +1789,11 @@ export function useDashboardData(eventId?: string) {
       if (!mtgPreSnap.exists()) throw new Error("Reunión no existe");
       const mtgPreData = mtgPreSnap.data() as any;
       const preRequesterId: string = mtgPreData.requesterId;
-      const preReceiverId: string = mtgPreData.receiverId;
+      // Solicitud de empresa sin reclamar: receiverId es null hasta que alguien la acepta,
+      // en cuyo caso el receptor efectivo será el usuario actual (uid).
+      const preReceiverId: string | null = mtgPreData.receiverId || null;
+      const preIsCompanyClaim = !preReceiverId && !!mtgPreData.companyId;
+      const effectivePreReceiverId = preReceiverId || (preIsCompanyClaim ? uid : undefined);
 
       // Pre-read checkedIn status outside transaction (users collection has restricted read rules)
       let reqCheckedIn = false;
@@ -1674,10 +1807,12 @@ export function useDashboardData(eventId?: string) {
       if (standbyRequired && !isEdit) {
         const [reqUserSnap, recUserSnap] = await Promise.all([
           getDoc(doc(db, "users", preRequesterId)),
-          getDoc(doc(db, "users", preReceiverId)),
+          effectivePreReceiverId
+            ? getDoc(doc(db, "users", effectivePreReceiverId))
+            : Promise.resolve(null),
         ]);
         reqCheckedIn = reqUserSnap.exists() ? !!reqUserSnap.data()?.checkIns?.[eventDateISO] : false;
-        recCheckedIn = recUserSnap.exists() ? !!recUserSnap.data()?.checkIns?.[eventDateISO] : false;
+        recCheckedIn = recUserSnap?.exists() ? !!recUserSnap.data()?.checkIns?.[eventDateISO] : false;
         console.log("[confirmAcceptWithSlot] reqCheckedIn:", reqCheckedIn, "recCheckedIn:", recCheckedIn);
       }
 
@@ -1688,8 +1823,19 @@ export function useDashboardData(eventId?: string) {
         if (!mtgSnap.exists()) throw new Error("Reunión no existe");
         const mtg = mtgSnap.data() as any;
 
+        // Evita que dos aceptaciones simultáneas (p. ej. dos asesores de la misma empresa)
+        // generen dos reuniones: si no es una edición, la reunión debe seguir "pending".
+        if (!isEdit && mtg.status !== "pending") {
+          throw new Error(
+            "Esta reunión ya no está disponible (alguien más la aceptó o fue cancelada).",
+          );
+        }
+
         const requesterId: string | undefined = mtg.requesterId;
-        const receiverId: string | undefined = mtg.receiverId;
+        // Solicitud de empresa sin reclamar (receiverId null): quien acepta se convierte
+        // en el receptor, seteado atómicamente dentro de esta misma transacción.
+        const isCompanyClaim = !mtg.receiverId && !!mtg.companyId;
+        const receiverId: string | undefined = mtg.receiverId || (isCompanyClaim ? uid : undefined);
         if (!requesterId || !receiverId)
           throw new Error("Datos de la reunión incompletos");
 
@@ -1786,6 +1932,10 @@ export function useDashboardData(eventId?: string) {
           } else {
             updatePayload.checkInStatus = "ready";
           }
+          if (isCompanyClaim) {
+            updatePayload.receiverId = receiverId;
+            updatePayload.participants = [requesterId, receiverId];
+          }
         }
         tx.update(mtgRef, updatePayload);
 
@@ -1808,33 +1958,10 @@ export function useDashboardData(eventId?: string) {
         }
       }
 
-      // 2) Si existe groupId: marca otras meetings del grupo como "taken" (fuera de la TX por simplicidad)
       const mtgAfter = await getDoc(mtgRef);
-      const { requesterId, receiverId, groupId } = (mtgAfter.data() ||
-        {}) as Partial<Meeting> & {
-        groupId?: string;
-      };
+      const { requesterId, receiverId, companyId } = (mtgAfter.data() || {}) as Partial<Meeting>;
 
-      if (groupId) {
-        const groupMeetingsSnap = await getDocs(
-          query(
-            collection(db, "events", eventId, "meetings"),
-            where("groupId", "==", groupId),
-          ),
-        );
-        const batch = writeBatch(db);
-        groupMeetingsSnap.docs.forEach((d) => {
-          if (d.id === meetingId) {
-            // ya quedó accepted en la transacción
-            batch.update(d.ref, { status: "accepted" });
-            return;
-          }
-          batch.update(d.ref, { status: "taken" });
-        });
-        await batch.commit();
-      }
-
-      // 3) Notificaciones/SMS/WhatsApp
+      // 2) Notificaciones/SMS/WhatsApp
       await notifyMeetingConfirmed({
         requesterId: requesterId!,
         receiverId: receiverId!,
@@ -1845,6 +1972,25 @@ export function useDashboardData(eventId?: string) {
         eventName,
         tableNames: eventConfig?.tableNames,
       });
+
+      // 2b. Notificar también a los demás asesores de la empresa (Etapa 1: fan-out)
+      if (companyId) {
+        await notifyCompanyAdvisors({
+          eventId: eventId!,
+          companyNit: companyId,
+          excludeUids: [requesterId as string, receiverId as string],
+          policies,
+          whatsappBuilder: (advisor) => ({
+            phone: advisor.telefono || "",
+            message: `Un compañero de tu empresa aceptó una reunión (${slot.startTime} - ${slot.endTime}, mesa ${slot.tableNumber}).`,
+          }),
+          dashboardNotif: {
+            title: "Reunión aceptada",
+            message: "Un compañero de tu empresa aceptó una reunión.",
+            type: "meeting_accepted",
+          },
+        });
+      }
 
       // 4) Cierra los modales y limpia estado
       setSlotModalOpened(false);
@@ -1964,7 +2110,7 @@ export function useDashboardData(eventId?: string) {
       ownerName: owner.nombre || owner.name || "",
       ownerCompany: owner.empresa || owner.company || "",
       ownerPhone: owner.telefono || owner.contacto?.telefono || null,
-      companyId: owner.companyId || owner.company_nit || null,
+      companyId: owner.companyId || null,
       title: payload.title.trim(),
       description: payload.description.trim(),
       category: payload.category?.trim() || "",
@@ -2050,9 +2196,10 @@ export function useDashboardData(eventId?: string) {
   }, [cancelledMeetings, globalDateFilter]);
 
   const filteredPendingRequests = useMemo(() => {
-    if (!globalDateFilter) return pendingRequests;
-    return pendingRequests.filter(m => m.meetingDate === globalDateFilter);
-  }, [pendingRequests, globalDateFilter]);
+    const combined = [...pendingRequests, ...companyPendingRequests];
+    if (!globalDateFilter) return combined;
+    return combined.filter(m => m.meetingDate === globalDateFilter);
+  }, [pendingRequests, companyPendingRequests, globalDateFilter]);
 
   const filteredSentRequests = useMemo(() => {
     if (!globalDateFilter) return sentRequests;
@@ -2115,6 +2262,7 @@ export function useDashboardData(eventId?: string) {
 
     sendMeetingRequest,
     requestMeetingWithSlotPicker,
+    sendMeetingRequestToCompany,
     confirmSendMeetingRequestWithSlot,
     pendingMeetingRequest,
     setPendingMeetingRequest,
@@ -2181,5 +2329,10 @@ export function useDashboardData(eventId?: string) {
     handleDateChange,
     globalDateFilter,
     setGlobalDateFilter,
+
+    companyMeetings,
+    isCompanyAdvisor,
+    myCompanyNit,
+    getCompanyAdvisorIds,
   };
 }

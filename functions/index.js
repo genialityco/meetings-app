@@ -1451,7 +1451,7 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
                 
                 // Reutilizar allEventUsers en vez de query por empresa (optimización)
                 const companyAssistants = companyData.nitNorm
-                  ? allEventUsers.filter((u) => u.company_nit === companyData.nitNorm)
+                  ? allEventUsers.filter((u) => u.companyId === companyData.nitNorm)
                   : [];
                 
                 companyData.assistants = companyAssistants;
@@ -2178,7 +2178,6 @@ results = results.slice(0, limit);
             interesPrincipal: user.interesPrincipal,
             tipoAsistente: user.tipoAsistente,
             photoURL: user.photoURL || null,
-            company_nit: user.company_nit,
             company_razonSocial: user.company_razonSocial,
             companyId: user.companyId,
             nitNorm: user.nitNorm,
@@ -4017,15 +4016,15 @@ export const cancelAndReassign = onRequest(
         }
       }
 
-      // Pares que ya se reunieron (por company_nit)
+      // Pares que ya se reunieron (por companyId)
       const metPairs = new Set();
       for (const m of acceptedMeetings) {
         const [a, b] = m.participants || [];
         if (a && b) {
           const uA = allUsers.find((u) => u.id === a);
           const uB = allUsers.find((u) => u.id === b);
-          const nitA = uA?.company_nit || uA?.companyId || a;
-          const nitB = uB?.company_nit || uB?.companyId || b;
+          const nitA = uA?.companyId || a;
+          const nitB = uB?.companyId || b;
           metPairs.add(`${nitA}__${nitB}`);
           metPairs.add(`${nitB}__${nitA}`);
         }
@@ -4057,10 +4056,10 @@ export const cancelAndReassign = onRequest(
       // Siempre excluir al que canceló
       const excludedIds = new Set(cancellerUserId ? [cancellerUserId] : []);
 
-      // Helper: verifica si dos usuarios ya se reunieron por company_nit
+      // Helper: verifica si dos usuarios ya se reunieron por companyId
       const alreadyMet = (uA, uB) => {
-        const nitA = uA?.company_nit || uA?.companyId || uA?.id;
-        const nitB = uB?.company_nit || uB?.companyId || uB?.id;
+        const nitA = uA?.companyId || uA?.id;
+        const nitB = uB?.companyId || uB?.id;
         return metPairs.has(`${nitA}__${nitB}`);
       };
 

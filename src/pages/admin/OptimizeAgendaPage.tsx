@@ -51,6 +51,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
+import { isComprador, isVendedor } from "../../utils/attendeeRole";
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
@@ -401,12 +402,8 @@ export default function OptimizeAgendaPage() {
   };
 
   // ── Helpers de UI ─────────────────────────────────────────────────────────
-  const compradores = attendees.filter(
-    (a) => a.tipoAsistente?.toLowerCase() === "comprador"
-  );
-  const vendedores = attendees.filter(
-    (a) => a.tipoAsistente?.toLowerCase() === "vendedor"
-  );
+  const compradores = attendees.filter((a) => isComprador(a.tipoAsistente));
+  const vendedores = attendees.filter((a) => isVendedor(a.tipoAsistente));
 
   const slotsDisponiblesFiltrados = agendaSlots.filter(
     (s) =>

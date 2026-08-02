@@ -8,20 +8,21 @@ import {
   where,
   orderBy,
   onSnapshot,
-  addDoc,
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
 import { Company, Product, EventPolicies, DEFAULT_POLICIES, MeetingContext, StandVisit } from "./types";
 import { resolveCheckInDay, isCheckedInOnDay } from "../../utils/eventDays";
 import { showNotification } from "@mantine/notifications";
-import { sendWhatsAppMessage as sendWhatsAppAPI } from "../../utils/whatsappService";
 import {
   computeAvailableSlots,
   createConfirmedMeeting,
   notifyMeetingConfirmed,
   getTableLabel,
-  countMeetingsWithContact,
+  checkContactMeetingLimit as checkContactMeetingLimitShared,
+  createMeetingRequestDoc,
+  pickAvailableCompanyAdvisor,
+  getCompanyAdvisors,
 } from "./meetingSlotEngine";
 
 export type VisitLookupResult =
@@ -139,11 +140,7 @@ export function useCompanyData(
     return onSnapshot(q, (snap) => {
       const list = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as CompanyRepresentative))
-        .filter(
-          (u) =>
-            u.companyId === companyNit ||
-            u.company_nit === companyNit,
-        );
+        .filter((u) => u.companyId === companyNit);
       setRepresentatives(list);
     });
   }, [eventId, companyNit]);
@@ -185,7 +182,7 @@ export function useCompanyData(
         if (!isCheckedInOnDay(attendeeData, checkInDay)) {
           return { kind: "error", message: "El asistente debe hacer check-in hoy antes de registrar la visita." };
         }
-        const attendeeCompanyNit = attendeeData.companyId || attendeeData.company_nit;
+        const attendeeCompanyNit = attendeeData.companyId;
         if (attendeeCompanyNit === companyNit) {
           return { kind: "error", message: "No puedes registrar una visita de tu propio stand." };
         }
@@ -249,42 +246,33 @@ export function useCompanyData(
     };
   }, [eventId, companyNit, currentUser?.uid]);
 
-  // Valida la política "maxMeetingsPerContact": si ya se alcanzó el máximo de
-  // reuniones con esta persona (o cualquier representante de su misma empresa),
-  // muestra el error y lanza para que el llamador aborte.
+  // Valida la política "maxMeetingsPerContact" (lógica compartida en
+  // meetingSlotEngine.ts, también usada por useDashboardData.ts): si ya se
+  // alcanzó el máximo de reuniones con esta persona (o cualquier representante
+  // de su misma empresa), muestra el error y lanza para que el llamador aborte.
   const checkContactMeetingLimit = useCallback(
     async (receiverId: string, receiverData: any) => {
-      const limit = policies.maxMeetingsPerContact;
-      if (!limit || !uid || !eventId) return;
-
-      const receiverCompanyId = receiverData?.companyId || receiverData?.company_nit || null;
-      const count = await countMeetingsWithContact({
+      if (!uid || !eventId) return;
+      await checkContactMeetingLimitShared({
         eventId,
         userId: uid,
-        contactId: receiverId,
-        contactCompanyId: receiverCompanyId,
+        receiverId,
+        receiverData,
+        limit: policies.maxMeetingsPerContact,
       });
-
-      if (count >= limit) {
-        showNotification({
-          title: "Límite de reuniones alcanzado",
-          message: `Ya tienes ${count} reunión(es) con esta persona o empresa. El máximo permitido es ${limit}.`,
-          color: "red",
-        });
-        throw new Error("Meeting limit reached");
-      }
     },
     [policies.maxMeetingsPerContact, uid, eventId],
   );
 
-  // Send meeting request (simplified version)
+  // Solicitud directa a una persona (flujo individual). Delegada en la misma
+  // lógica compartida de meetingSlotEngine.ts (createMeetingRequestDoc) que usa
+  // useDashboardData.ts (CompaniesView), para no duplicar esta lógica en dos hooks.
   const sendMeetingRequest = useCallback(
     async (
       receiverId: string,
       receiverPhone: string,
       context?: { productId?: string; companyId?: string | null; contextNote?: string },
     ) => {
-      // Validar que haya usuario logueado
       if (!uid || !eventId) {
         showNotification({
           title: "Error",
@@ -293,8 +281,7 @@ export function useCompanyData(
         });
         throw new Error("No user logged in");
       }
-      
-      // Validar que exista currentUser con datos
+
       if (!currentUser?.data) {
         showNotification({
           title: "Error",
@@ -307,7 +294,6 @@ export function useCompanyData(
         throw new Error("User data not found");
       }
 
-      // Validar que el receptor exista en Firestore antes de crear la reunión
       const receiverSnap = await getDoc(doc(db, "users", receiverId));
       if (!receiverSnap.exists()) {
         showNotification({
@@ -320,89 +306,24 @@ export function useCompanyData(
 
       await checkContactMeetingLimit(receiverId, receiverSnap.data());
 
-      const data: any = {
+      await createMeetingRequestDoc({
         eventId,
         requesterId: uid,
-        receiverId,
-        status: "pending",
-        createdAt: new Date(),
-        participants: [uid, receiverId],
-      };
-      if (context?.productId) data.productId = context.productId;
-      if (context?.companyId) data.companyId = context.companyId;
-      if (context?.contextNote) data.contextNote = context.contextNote;
-
-      const meetingDoc = await addDoc(
-        collection(db, "events", eventId, "meetings"),
-        data,
-      );
-
-      const requester = currentUser?.data;
-      const meetingId = meetingDoc.id;
-      const baseUrl = window.location.origin;
-
-      const acceptUrl = `${baseUrl}/meeting-response/${eventId}/${meetingId}/accept`;
-      const rejectUrl = `${baseUrl}/meeting-response/${eventId}/${meetingId}/reject`;
-      const landingUrl = `${baseUrl}/event/${eventId}`;
-
-      // Rutas sin base URL para API V2
-      const acceptPath = `/meeting-response/${eventId}/${meetingId}/accept`;
-      const rejectPath = `/meeting-response/${eventId}/${meetingId}/reject`;
-
-      const contextLine = context?.contextNote
-        ? `\n📋 *Mensaje:* ${context.contextNote}\n`
-        : "";
-
-      const eventLine = eventName ? `📌 *Evento:* ${eventName}\n\n` : "";
-
-      const message =
-        `📩 *Nueva solicitud de reunión*\n\n` +
-        eventLine +
-        `Has recibido una solicitud de reunión de:\n\n` +
-        `👤 *Nombre:* ${requester?.nombre || ""}\n` +
-        `🏢 *Empresa:* ${requester?.empresa || ""}\n` +
-        `💼 *Cargo:* ${requester?.cargo || ""}\n` +
-        `📧 *Correo:* ${requester?.correo || ""}\n` +
-        `📞 *Teléfono:* ${requester?.telefono || ""}\n` +
-        contextLine +
-        `\n*Opciones:*\n` +
-        `✅ *Aceptar:* \n${acceptUrl}\n\n` +
-        `❌ *Rechazar:* \n${rejectUrl}\n\n` +
-        `🔗 Ir al evento: \n${landingUrl}`;
-
-      const whatsappApiVersion = policies.whatsappApiVersion || "v1";
-      if (policies.whatsappNotificationsEnabled !== false) {
-        await sendWhatsAppAPI({
-          apiVersion: whatsappApiVersion,
-          phone: receiverPhone.replace(/[^\d]/g, ""),
-          message: whatsappApiVersion === "v2" ? (context?.contextNote || "Sin mensaje adicional") : message,
-          metadata: {
-            eventName: eventName || "Evento",
-            requesterName: requester?.nombre || "",
-            requesterCompany: requester?.empresa || "",
-            requesterPosition: requester?.cargo || "",
-            requesterEmail: requester?.correo || "",
-            requesterPhone: requester?.telefono || "",
-            acceptUrl: acceptPath,
-            cancelUrl: rejectPath,
-          },
-        });
-      }
-
-      if (policies.dashboardNotificationsEnabled !== false) {
-        await addDoc(collection(db, "notifications"), {
-          userId: receiverId,
-          title: "Nueva solicitud de reunión",
-          message: `${requester?.nombre || "Alguien"} te ha enviado una solicitud de reunión.`,
-          timestamp: new Date(),
-          read: false,
-          type: "meeting_request",
-        });
-      }
+        advisorId: receiverId,
+        advisorPhone: receiverPhone,
+        companyNit: context?.companyId || companyNit || null,
+        context,
+        policies,
+        eventName,
+        dashboardLogo,
+      });
     },
-    [uid, eventId, currentUser, eventName, policies, checkContactMeetingLimit],
+    [uid, eventId, currentUser, eventName, dashboardLogo, policies, companyNit, checkContactMeetingLimit],
   );
 
+  // Solicitud dirigida a la empresa completa (Etapa 2): igual que en CompaniesView,
+  // sin advisorId crea/reclama según schedulingMode; con advisorId es una solicitud
+  // directa (equivalente a sendMeetingRequest, mismo punto de entrada unificado).
   // Selector de horario para que el solicitante elija slot/mesa. El receptor
   // es siempre un representante de `company` (la página desde la que se
   // pide); la mesa fija puede venir del propio representante o, si no la
@@ -459,6 +380,77 @@ export function useCompanyData(
       return { deferred: true };
     },
     [policies.schedulingMode, sendMeetingRequest, prepareSlotSelectionForRequest, checkContactMeetingLimit],
+  );
+
+  // Solicitud dirigida a la empresa completa (Etapa 2): igual que en CompaniesView,
+  // sin advisorId crea/reclama según schedulingMode; con advisorId delega en
+  // requestMeetingWithSlotPicker (mismo punto de entrada unificado que cualquier
+  // solicitud individual, solo etiquetado con companyNit).
+  const sendMeetingRequestToCompany = useCallback(
+    async (
+      context?: MeetingContext,
+      advisorId?: string,
+    ): Promise<{ deferred: boolean } | void> => {
+      if (!uid || !eventId || !companyNit) {
+        showNotification({
+          title: "Error",
+          message: "Debes iniciar sesión para enviar solicitudes de reunión",
+          color: "red",
+        });
+        throw new Error("No user logged in");
+      }
+
+      if (advisorId) {
+        const advisorPhone = representatives.find((r) => r.id === advisorId)?.telefono || "";
+        return requestMeetingWithSlotPicker(advisorId, advisorPhone, { ...context, companyId: companyNit });
+      }
+
+      // Validar que la empresa tenga al menos un asesor antes de crear cualquier
+      // solicitud (ver la misma validación en useDashboardData.ts).
+      const advisors = await getCompanyAdvisors(eventId, companyNit);
+      if (advisors.length === 0) {
+        showNotification({
+          title: "Sin asesores",
+          message: "Esta empresa no tiene asesores disponibles para recibir la solicitud.",
+          color: "red",
+        });
+        throw new Error("No advisors available");
+      }
+
+      if (policies.schedulingMode === "requester_picks") {
+        const picked = await pickAvailableCompanyAdvisor({
+          eventId, eventConfig, policies, requesterId: uid, companyNit,
+        });
+        if (!picked) {
+          showNotification({
+            title: "Sin disponibilidad",
+            message: "Ningún asesor de la empresa tiene horarios libres en este momento.",
+            color: "red",
+          });
+          throw new Error("No availability");
+        }
+        setPendingMeetingRequest({
+          receiverId: picked.receiverId,
+          receiverPhone: picked.receiverPhone,
+          context: { ...context, companyId: companyNit },
+        });
+        setSelectedDate(picked.eventDayISO);
+        setAvailableSlots(picked.slots);
+        setSlotModalOpened(true);
+        return { deferred: true };
+      }
+
+      await createMeetingRequestDoc({
+        eventId,
+        requesterId: uid,
+        companyNit,
+        context,
+        policies,
+        eventName,
+        dashboardLogo,
+      });
+    },
+    [uid, eventId, companyNit, eventConfig, policies, eventName, dashboardLogo, representatives, requestMeetingWithSlotPicker],
   );
 
   const confirmSendMeetingRequestWithSlot = useCallback(
@@ -553,6 +545,7 @@ export function useCompanyData(
     userMeetings,
     sendMeetingRequest,
     requestMeetingWithSlotPicker,
+    sendMeetingRequestToCompany,
     prepareSlotSelectionForRequest,
     confirmSendMeetingRequestWithSlot,
     pendingMeetingRequest,

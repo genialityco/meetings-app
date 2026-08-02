@@ -42,6 +42,7 @@ import {
 import type { Assistant } from "./types";
 import { useNavigate, useParams } from "react-router-dom";
 import MeetingRequestModal from "./MeetingRequestModal";
+import { normalizeTipoAsistente, isVendedor, isComprador } from "../../utils/attendeeRole";
 
 interface MeetingContext {
   contextNote?: string;
@@ -96,13 +97,11 @@ interface AttendeesViewProps {
   sendMeetingRequest: (
     id: string,
     phone: string,
-    groupId?: string | null,
     context?: MeetingContext,
   ) => Promise<void>;
   requestMeetingWithSlotPicker?: (
     id: string,
     phone: string,
-    groupId?: string | null,
     context?: MeetingContext,
   ) => Promise<{ deferred: boolean } | void>;
   setAvatarModalOpened: (v: boolean) => void;
@@ -288,11 +287,11 @@ export default function AttendeesView({
     }
     
     if (filterByRole && isRuedaNegocios) {
-      const myRole = (currentUser?.data?.tipoAsistente || "").toLowerCase().trim();
+      const myRole = normalizeTipoAsistente(currentUser?.data?.tipoAsistente);
       if (myRole === "comprador") {
-        baseAssistants = baseAssistants.filter((a) => (a.tipoAsistente || "").toLowerCase().trim() === "vendedor");
+        baseAssistants = baseAssistants.filter((a) => isVendedor(a.tipoAsistente));
       } else if (myRole === "vendedor") {
-        baseAssistants = baseAssistants.filter((a) => (a.tipoAsistente || "").toLowerCase().trim() === "comprador");
+        baseAssistants = baseAssistants.filter((a) => isComprador(a.tipoAsistente));
       }
     }
     
@@ -356,7 +355,7 @@ export default function AttendeesView({
     setLoadingId(selectedAssistant.id);
     try {
       const send = requestMeetingWithSlotPicker || sendMeetingRequest;
-      const result = await send(selectedAssistant.id, selectedAssistant.telefono || "", null, {
+      const result = await send(selectedAssistant.id, selectedAssistant.telefono || "", {
         contextNote: message || undefined,
       });
 
@@ -607,7 +606,7 @@ export default function AttendeesView({
                       size="sm" 
                       variant="light" 
                       radius="md"
-                      color={String(assistant.tipoAsistente).toLowerCase().trim() === 'comprador' ? 'blue' : 'orange'}
+                      color={isComprador(assistant.tipoAsistente) ? 'blue' : 'orange'}
                       style={{
                         position: "absolute",
                         top: 10,
@@ -676,7 +675,7 @@ export default function AttendeesView({
                           assistant.nitNorm !== "sin-nit" && assistant.eventId
                             ? () =>
                                 navigate(
-                                  `/dashboard/${assistant.eventId}/company/${assistant.company_nit}`,
+                                  `/dashboard/${assistant.eventId}/company/${assistant.companyId}`,
                                 )
                             : undefined
                         }

@@ -40,6 +40,7 @@ import { showNotification } from "@mantine/notifications";
 import { DEFAULT_SURVEY_FIELDS } from "../admin/ConfigureSurveyModal";
 import OptimisticCheckbox from "../../components/OptimisticCheckbox";
 import RaffleQrModal from "./RaffleQrModal";
+import { normalizeTipoAsistente } from "../../utils/attendeeRole";
 
 interface CalendarTabProps {
   acceptedMeetings: any[];
@@ -109,7 +110,7 @@ export default function CalendarTab({
 
   // Survey config
   const surveyMode = policies?.surveyMode || "default";
-  const myRole = (currentUser?.data?.tipoAsistente || "").toLowerCase();
+  const myRole = normalizeTipoAsistente(currentUser?.data?.tipoAsistente);
   const surveyFields: any[] = (() => {
     if (surveyMode === "custom") {
       const cfg = eventConfig?.surveyConfig;

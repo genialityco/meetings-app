@@ -91,17 +91,13 @@ interface CompaniesViewProps {
   policies: EventPolicies;
   eventConfig?: any;
   solicitarReunionHabilitado: boolean;
-  sendMeetingRequest: (
-    id: string,
-    phone: string,
-    groupId?: string | null,
+  // Punto de entrada único para reuniones desde esta vista: sin advisorId, la
+  // solicitud va a la empresa (compartida o menor-carga); con advisorId, es una
+  // solicitud directa a esa persona (mismo flujo que cualquier solicitud individual).
+  sendMeetingRequestToCompany?: (
+    companyNit: string,
     context?: MeetingContext,
-  ) => Promise<void>;
-  requestMeetingWithSlotPicker?: (
-    id: string,
-    phone: string,
-    groupId?: string | null,
-    context?: MeetingContext,
+    advisorId?: string,
   ) => Promise<{ deferred: boolean } | void>;
   setAvatarModalOpened: (v: boolean) => void;
   setSelectedImage: (v: string | null) => void;
@@ -121,8 +117,7 @@ export default function CompaniesView({
   policies,
   eventConfig,
   solicitarReunionHabilitado,
-  sendMeetingRequest,
-  requestMeetingWithSlotPicker,
+  sendMeetingRequestToCompany,
   setAvatarModalOpened,
   setSelectedImage,
   currentUser,
@@ -145,6 +140,8 @@ export default function CompaniesView({
   const [searchTerm, setSearchTerm] = useState("");
   const [modalOpened, setModalOpened] = useState(false);
   const [selectedMeeting, setSelectedMeeting] = useState<{ assistant: Assistant; companyNit: string } | null>(null);
+  const [companyModalOpened, setCompanyModalOpened] = useState(false);
+  const [selectedCompanyRequest, setSelectedCompanyRequest] = useState<{ empresa: string; companyNit: string } | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
   const [vectorResults, setVectorResults] = useState<any[]>([]);
@@ -188,7 +185,7 @@ export default function CompaniesView({
     const grouped = new Map<string, Assistant[]>();
 
     filteredAssistants.forEach((assistant) => {
-      let companyKey = assistant.companyId || assistant.company_nit;
+      let companyKey = assistant.companyId;
       
       if (policies.groupByRazonSocial) {
          companyKey = assistant.company_razonSocial || assistant.empresa || companyKey;
@@ -217,7 +214,7 @@ export default function CompaniesView({
     return Array.from(grouped.entries()).map(([keyStr, asistentes]) => {
       // Find the companyDoc by NIT just in case, but if grouped by razonSocial, it might not match perfectly by keyStr if it's not a NIT.
       // We look up by NIT using the first assistant's companyId
-      const nitForLookup = asistentes[0]?.companyId || asistentes[0]?.company_nit || keyStr;
+      const nitForLookup = asistentes[0]?.companyId || keyStr;
       const companyDoc = companiesByNit.get(nitForLookup);
       
       const empresa =
@@ -230,6 +227,9 @@ export default function CompaniesView({
         logoUrl: companyDoc?.logoUrl || null,
         fixedTable: companyDoc?.fixedTable || null,
         asistentes,
+        // Cualquier miembro de la empresa cuenta como "asesor" para la solicitud
+        // dirigida a la empresa, sin importar su tipoAsistente (ver getCompanyAdvisors).
+        hasAdvisor: asistentes.length > 0,
         similarity: undefined as number | undefined,
       };
     });
@@ -244,7 +244,7 @@ export default function CompaniesView({
       const other = participantsInfo?.[otherId];
       const keys = new Set<string>();
       if (m.companyId) keys.add(String(m.companyId));
-      const otherCompany = other?.companyId || other?.company_nit;
+      const otherCompany = other?.companyId;
       if (otherCompany) keys.add(String(otherCompany));
       if (policies.groupByRazonSocial) {
         const razon = other?.company_razonSocial || other?.empresa;
@@ -366,17 +366,17 @@ export default function CompaniesView({
   };
 
   const handleConfirmMeeting = async (message: string) => {
-    if (!selectedMeeting) return;
-    
+    if (!selectedMeeting || !sendMeetingRequestToCompany) return;
+
     const { assistant, companyNit } = selectedMeeting;
     setLoadingId(assistant.id);
-    
+
     try {
-      const send = requestMeetingWithSlotPicker || sendMeetingRequest;
-      const result = await send(assistant.id, assistant.telefono || "", null, {
-        companyId: companyNit,
-        contextNote: message || `Reunión desde vista de empresa: ${assistant.empresa || ""}`,
-      });
+      const result = await sendMeetingRequestToCompany(
+        companyNit,
+        { contextNote: message || `Reunión desde vista de empresa: ${assistant.empresa || ""}` },
+        assistant.id,
+      );
 
       if (!(result && (result as any).deferred)) {
         showNotification({
@@ -406,37 +406,38 @@ export default function CompaniesView({
     }));
   };
 
-  const handleSendMeetingToAllCompany = async (
-    empresa: string,
-    asistentes: Assistant[],
-    companyNit: string,
-  ) => {
+  const handleOpenCompanyModal = (empresa: string, companyNit: string) => {
+    setSelectedCompanyRequest({ empresa, companyNit });
+    setCompanyModalOpened(true);
+  };
+
+  const handleConfirmCompanyMeeting = async (message: string) => {
+    if (!selectedCompanyRequest || !sendMeetingRequestToCompany) return;
+
+    const { empresa, companyNit } = selectedCompanyRequest;
     setLoadingCompany(empresa);
-    const groupId = `mtg_${Date.now()}`;
-    let successCount = 0;
 
     try {
-      for (const assistant of asistentes) {
-        try {
-          await sendMeetingRequest(assistant.id, assistant.telefono || "", groupId, {
-            companyId: companyNit,
-            contextNote: `Reunión con empresa: ${empresa}`,
-          });
-          successCount++;
-        } catch {
-          // continue
-        }
-      }
+      const result = await sendMeetingRequestToCompany(companyNit, {
+        contextNote: message || `Reunión con empresa: ${empresa}`,
+      });
 
-      if (successCount > 0) {
+      if (!(result && (result as any).deferred)) {
         showNotification({
-          title: "Solicitudes enviadas",
-          message: `Se enviaron ${successCount} solicitud${
-            successCount !== 1 ? "es" : ""
-          }.`,
+          title: "Solicitud enviada",
+          message: `Se envió la solicitud de reunión a ${empresa}.`,
           color: "teal",
         });
       }
+
+      setCompanyModalOpened(false);
+      setSelectedCompanyRequest(null);
+    } catch {
+      showNotification({
+        title: "Error",
+        message: "No se pudo enviar la solicitud a la empresa.",
+        color: "red",
+      });
     } finally {
       setLoadingCompany(null);
     }
@@ -514,7 +515,7 @@ export default function CompaniesView({
 
       <Grid gutter="sm">
         {filtered.length > 0 ? (
-          filtered.map(({ nit, nitLookup, empresa, logoUrl, fixedTable, asistentes, _similarity, _isSemantic }: any) => {
+          filtered.map(({ nit, nitLookup, empresa, logoUrl, fixedTable, asistentes, hasAdvisor, _similarity, _isSemantic }: any) => {
             const companyKey = nit; // clave estable
             const selectedId = selectedAssistantPerCompany[companyKey];
 
@@ -527,8 +528,6 @@ export default function CompaniesView({
             // si no hay seleccionado, por defecto el primero
             const selectedAssistant =
               asistentes.find((a) => a.id === selectedId) || asistentes[0];
-
-            const isMulti = asistentes.length > 1;
 
             // Verificar si tiene similarity score (viene de búsqueda por vectores)
             const hasSimilarity = _isSemantic && typeof _similarity === 'number';
@@ -819,19 +818,25 @@ export default function CompaniesView({
                         : `Solicitar reunión a ${selectedAssistant?.nombre || "..."}`}
                   </Button>
 
-                  {/* CTA “a todos” opcional (si hay varios) */}
-                  {isMulti && (
+                  {/* CTA de solicitud dirigida a la empresa (cualquier asesor la puede reclamar).
+                      Oculto si la empresa no tiene ningún vendedor registrado: sin eso, no hay
+                      a quién enviarle la solicitud. */}
+                  {nit !== "sin-nit" && sendMeetingRequestToCompany && hasAdvisor && (
                     <Button
                       fullWidth
                       mt="xs"
                       radius="md"
                       variant="light"
                       color={theme.primaryColor}
-                      onClick={() => handleSendMeetingToAllCompany(empresa, asistentes, nit)}
-                      disabled={!solicitarReunionHabilitado || loadingCompany === empresa}
+                      onClick={() => handleOpenCompanyModal(empresa, nit)}
+                      disabled={
+                        !solicitarReunionHabilitado ||
+                        loadingCompany === empresa ||
+                        asistentes.some((a) => a.id === myUid)
+                      }
                       loading={loadingCompany === empresa}
                     >
-                      Solicitar a todos ({asistentes.length})
+                      Solicitar reunión a la empresa
                     </Button>
                   )}
                 </Card>
@@ -857,6 +862,19 @@ export default function CompaniesView({
         }}
         onConfirm={handleConfirmMeeting}
         loading={loadingId === selectedMeeting?.assistant.id}
+      />
+
+      {/* Modal de solicitud dirigida a la empresa */}
+      <MeetingRequestModal
+        opened={companyModalOpened}
+        recipientName={selectedCompanyRequest?.empresa || ""}
+        recipientType="empresa"
+        onCancel={() => {
+          setCompanyModalOpened(false);
+          setSelectedCompanyRequest(null);
+        }}
+        onConfirm={handleConfirmCompanyMeeting}
+        loading={loadingCompany === selectedCompanyRequest?.empresa}
       />
     </Stack>
     </>

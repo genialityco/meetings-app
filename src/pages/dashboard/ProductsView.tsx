@@ -33,13 +33,11 @@ interface ProductsViewProps {
   sendMeetingRequest: (
     id: string,
     phone: string,
-    groupId?: string | null,
     context?: MeetingContext,
   ) => Promise<void>;
   requestMeetingWithSlotPicker?: (
     id: string,
     phone: string,
-    groupId?: string | null,
     context?: MeetingContext,
   ) => Promise<{ deferred: boolean } | void>;
   currentUser: any;
@@ -238,7 +236,7 @@ export default function ProductsView({
     
     try {
       const send = requestMeetingWithSlotPicker || sendMeetingRequest;
-      const result = await send(assistantId, assistantPhone, null, {
+      const result = await send(assistantId, assistantPhone, {
         productId: product.id,
         companyId: product.companyId || null,
         contextNote: message || `Interesado en: ${product.title}`,

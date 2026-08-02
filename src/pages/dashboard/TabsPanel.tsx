@@ -25,6 +25,7 @@ import MatchesTab from "./MatchesTab";
 import EventSurveyTab from "./EventSurveyTab";
 import MyCompanyTab from "./MyCompanyTab";
 import { DEFAULT_POLICIES } from "./types";
+import { isVendedor } from "../../utils/attendeeRole";
 import { useMediaQuery } from "@mantine/hooks";
 import { trackTabChange } from "../../utils/analytics";
 
@@ -99,9 +100,9 @@ export default function TabsPanel({
   // maneja visitas a stands (standVisitsEnabled). Solo los vendedores tienen
   // stand — los compradores también registran empresa, así que tener empresa
   // no basta. Se antepone al resto para que sea su pantalla de aterrizaje.
-  const roleLower = (dashboard.currentUser?.data?.tipoAsistente || "").toLowerCase().trim();
-  const hasCompany = !!(dashboard.currentUser?.data?.companyId || dashboard.currentUser?.data?.company_nit);
-  const showMyStand = policies.standVisitsEnabled === true && hasCompany && roleLower === "vendedor";
+  const hasCompany = !!dashboard.currentUser?.data?.companyId;
+  const showMyStand =
+    policies.standVisitsEnabled === true && hasCompany && isVendedor(dashboard.currentUser?.data?.tipoAsistente);
   if (showMyStand) viewOptions.unshift({ value: "mystand", label: "Mi stand" });
 
   // Con "el solicitante elige horario" no existen solicitudes pendientes
@@ -282,8 +283,7 @@ export default function TabsPanel({
           myStandVisits={dashboard.myStandVisits}
           eventConfig={dashboard.eventConfig}
           solicitarReunionHabilitado={dashboard.solicitarReunionHabilitado}
-          sendMeetingRequest={dashboard.sendMeetingRequest}
-          requestMeetingWithSlotPicker={dashboard.requestMeetingWithSlotPicker}
+          sendMeetingRequestToCompany={dashboard.sendMeetingRequestToCompany}
           setAvatarModalOpened={dashboard.setAvatarModalOpened}
           setSelectedImage={dashboard.setSelectedImage}
           currentUser={dashboard.currentUser}

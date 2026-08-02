@@ -14,6 +14,8 @@ import * as XLSX from "xlsx";
 import { IconSearch, IconX } from "@tabler/icons-react";
 import ModalEditAttendee from "./ModalEditAttendee";
 import ImportWizard from "./ImportWizard";
+import { isComprador, isVendedor } from "../../utils/attendeeRole";
+import { getTableLabel } from "../dashboard/meetingSlotEngine";
 
 // Utilidad para obtener campos configurados para el evento (omite foto y consentimiento)
 const getEventTableFields = (event, entityType = "users") => {
@@ -185,6 +187,34 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
   const [attendeeToEdit, setAttendeeToEdit] = useState(null);
   const [editCompanyModalOpen, setEditCompanyModalOpen] = useState(false);
   const [companyToEdit, setCompanyToEdit] = useState(null);
+
+  // Mesas sin asignar (+ la mesa actual de la empresa en edición, para no
+  // desaparecer del selector) — usadas por el dropdown "Mesa asignada" del
+  // modal de edición de empresa.
+  const companyTableOptions = useMemo(() => {
+    const numTables = event.config?.numTables || 0;
+    const tableNamesArr = event.config?.tableNames || [];
+    const assignedByOthers = new Set(
+      companies
+        .filter((c) => c.id !== companyToEdit?.id && c.fixedTable)
+        .map((c) => c.fixedTable)
+    );
+    const opts = [{ value: "", label: "Sin asignar" }];
+    for (let i = 1; i <= numTables; i++) {
+      const key = String(i);
+      if (assignedByOthers.has(key)) continue;
+      opts.push({ value: key, label: tableNamesArr[i - 1] || `Mesa ${i}` });
+    }
+    return opts;
+  }, [event.config?.numTables, event.config?.tableNames, companies, companyToEdit]);
+
+  const companyEditFields = useMemo(
+    () => [
+      ...companyFields,
+      { name: "fixedTable", label: "Mesa asignada", type: "select", options: companyTableOptions },
+    ],
+    [companyFields, companyTableOptions],
+  );
   const [editProductModalOpen, setEditProductModalOpen] = useState(false);
   const [productToEdit, setProductToEdit] = useState(null);
 
@@ -916,7 +946,7 @@ function parseFirestoreTimestamp(input) {
     XLSX.writeFile(wb, `asistentes_${event?.eventName || event.id}.xlsx`);
   };
   const exportCompradoresToExcel = () => {
-    const compradores = attendees.filter((a) => (a.tipoAsistente || "").toLowerCase() === "comprador");
+    const compradores = attendees.filter((a) => isComprador(a.tipoAsistente));
     if (compradores.length === 0) return setGlobalMessage("No hay compradores.");
 
     const visibleFields = fields.filter((f) => shownFields.includes(f.name));
@@ -959,7 +989,7 @@ function parseFirestoreTimestamp(input) {
   };
 
   const exportVendedoresToExcel = () => {
-    const vendedores = attendees.filter((a) => (a.tipoAsistente || "").toLowerCase() === "vendedor");
+    const vendedores = attendees.filter((a) => isVendedor(a.tipoAsistente));
     if (vendedores.length === 0) return setGlobalMessage("No hay vendedores.");
 
     const visibleFields = fields.filter((f) => shownFields.includes(f.name));
@@ -1016,9 +1046,7 @@ function parseFirestoreTimestamp(input) {
     
     // Calcular conteos de citas por empresa (suma de todos sus usuarios)
     const getCompanyMeetingCounts = (companyId) => {
-      const companyUsers = attendees.filter(a => 
-        a.companyId === companyId || a.company_nit === companyId
-      );
+      const companyUsers = attendees.filter(a => a.companyId === companyId);
       const userIds = companyUsers.map(u => u.id);
       
       const companyMeetings = meetings.filter(m => 
@@ -1355,6 +1383,7 @@ function parseFirestoreTimestamp(input) {
                       .map((f) => (
                         <Table.Th key={f.name}>{f.label}</Table.Th>
                       ))}
+                    <Table.Th>Mesa asignada</Table.Th>
                     <Table.Th>Acciones</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
@@ -1368,6 +1397,15 @@ function parseFirestoreTimestamp(input) {
                             <EditableCell item={c} field={f} entityType="companies" />
                           </Table.Td>
                         ))}
+                      <Table.Td>
+                        {c.fixedTable ? (
+                          <Badge variant="light" color="green">
+                            {getTableLabel(c.fixedTable, event.config?.tableNames)}
+                          </Badge>
+                        ) : (
+                          <Text size="sm" c="dimmed">Sin asignar</Text>
+                        )}
+                      </Table.Td>
                       <Table.Td>
                         <Button
                           size="xs"
@@ -1507,7 +1545,7 @@ function parseFirestoreTimestamp(input) {
             await updateDoc(doc(db, "users", id), toSave);
 
             // Sincronizar documento de empresa si el asistente tiene NIT y evento
-            const nitNorm = String(toSave.company_nit || toSave.companyId || "").replace(/\D/g, "");
+            const nitNorm = String(toSave.companyId || "").replace(/\D/g, "");
             const eventId = toSave.eventId || event?.id;
             if (nitNorm && eventId) {
               const companyDoc = { nitNorm, updatedAt: new Date() };
@@ -1527,12 +1565,24 @@ function parseFirestoreTimestamp(input) {
         opened={editCompanyModalOpen}
         onClose={() => setEditCompanyModalOpen(false)}
         attendee={companyToEdit}
-        fields={companyFields}
+        fields={companyEditFields}
         onSave={async (updated) => {
           const id = updated.id;
           const { id: _id, ...toSave } = updated;
+          toSave.fixedTable = toSave.fixedTable || null;
           try {
             await updateDoc(doc(db, "events", event.id, "companies", id), toSave);
+            // Propagar la mesa fija a los asistentes de esta empresa (igual que
+            // la asignación masiva de EventPoliciesModal), para que quede
+            // consistente sin importar desde dónde se asignó.
+            const companyUsers = attendees.filter((a) => a.companyId === id);
+            if (companyUsers.length > 0) {
+              const batch = writeBatch(db);
+              companyUsers.forEach((u) => {
+                batch.set(doc(db, "users", u.id), { fixedTable: toSave.fixedTable }, { merge: true });
+              });
+              await batch.commit();
+            }
             setGlobalMessage("Empresa actualizada correctamente.");
             fetchCompanies();
           } catch (err) {

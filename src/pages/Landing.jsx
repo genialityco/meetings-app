@@ -655,6 +655,9 @@ const Landing = () => {
           updatedAt: new Date().toISOString(),
         }).filter(([, v]) => v !== undefined)
       );
+      // company_nit es solo el nombre del campo del formulario (paso de empresa);
+      // el dato persistido en el asistente vive únicamente en companyId (ver más abajo).
+      delete dataToUpdate.company_nit;
 
       // Validación de correo duplicado (mejorada)
       if (dataToUpdate.correo) {
@@ -779,7 +782,6 @@ const Landing = () => {
         }
 
         dataToUpdate.companyId = nitNorm;
-        dataToUpdate.company_nit = nitNorm;
         dataToUpdate.company_razonSocial = razon || null;
         dataToUpdate.empresa = razon || nitNorm;
       }

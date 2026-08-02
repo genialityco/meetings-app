@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { doc, getDoc, updateDoc, increment } from "firebase/firestore";
 import { db, auth } from "../firebase/firebaseConfig";
 import { UserContext } from "../context/UserContext";
+import { normalizeTipoAsistente } from "../utils/attendeeRole";
 import { Container, Paper, Text, Title, Loader, Center, Box, Button, Stack } from "@mantine/core";
 
 type ScanState =
@@ -59,8 +60,8 @@ export default function RaffleScanPage() {
           getDoc(doc(db, "users", requesterId)),
           getDoc(doc(db, "users", receiverId)),
         ]);
-        const reqRole = (reqSnap.data()?.tipoAsistente || "").toLowerCase();
-        const recRole = (recSnap.data()?.tipoAsistente || "").toLowerCase();
+        const reqRole = normalizeTipoAsistente(reqSnap.data()?.tipoAsistente);
+        const recRole = normalizeTipoAsistente(recSnap.data()?.tipoAsistente);
 
         const buyerId =
           reqRole === "comprador" ? requesterId : recRole === "comprador" ? receiverId : null;

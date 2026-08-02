@@ -42,12 +42,13 @@ import QrScannerModal from "../../components/QrScannerModal";
 import AttendeeScanReviewModal from "../../components/AttendeeScanReviewModal";
 import { useAttendeeScanFlow } from "../../hooks/useAttendeeScanFlow";
 import { splitAttendeeFields } from "../../utils/attendeeFields";
+import { normalizeTipoAsistente } from "../../utils/attendeeRole";
 import type { Product } from "./types";
 import type { CompanyRepresentative } from "./useCompanyData";
 
 export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker, sendMeetingRequest: dashboardSendMeetingRequest, eventConfig }: any) {
   const { eventId } = useParams();
-  const companyNit = currentUser?.data?.companyId || currentUser?.data?.company_nit;
+  const companyNit = currentUser?.data?.companyId;
 
   const {
     company,
@@ -66,7 +67,7 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
 
   // Label del rol contrario al propio, para el escaneo de visitantes (comprador <-> vendedor).
   // Sin tipoAsistente definido (p. ej. roleMode "open"), se usa un término neutro.
-  const myRole = (currentUser?.data?.tipoAsistente || "").toLowerCase().trim();
+  const myRole = normalizeTipoAsistente(currentUser?.data?.tipoAsistente);
   const counterpartRoleLabel =
     myRole === "comprador" ? "vendedor" : myRole === "vendedor" ? "comprador" : "asistente";
 
@@ -258,6 +259,9 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
             <Title order={3}>{company.razonSocial}</Title>
             <Text size="sm" c="dimmed">
               NIT: {company.nitNorm}
+              {company.fixedTable && (
+                <> · Mesa asignada: {getTableLabel(company.fixedTable, eventConfig?.tableNames)}</>
+              )}
             </Text>
             {company.descripcion && (
               <Text size="sm" mt="xs" style={{ whiteSpace: "pre-wrap" }}>
@@ -273,11 +277,6 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
                 {products.length}{" "}
                 {products.length === 1 ? "producto" : "productos"}
               </Badge>
-              {company.fixedTable && (
-                <Badge variant="light" size="sm" color="orange">
-                  {getTableLabel(company.fixedTable, eventConfig?.tableNames)}
-                </Badge>
-              )}
             </Group>
           </Stack>
         </Group>

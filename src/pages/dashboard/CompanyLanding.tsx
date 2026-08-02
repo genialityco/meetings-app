@@ -79,7 +79,7 @@ export default function CompanyLanding() {
     loading,
     currentUser,
     userMeetings,
-    requestMeetingWithSlotPicker,
+    sendMeetingRequestToCompany,
     prepareSlotSelectionForRequest,
     confirmSendMeetingRequestWithSlot,
     pendingMeetingRequest,
@@ -102,6 +102,8 @@ export default function CompanyLanding() {
   const myUid = currentUser?.uid;
 
   const allowImageUpload = eventConfig?.policies?.allowProductImageUpload !== false;
+  // Cualquier miembro de la empresa cuenta como "asesor", sin importar su tipoAsistente.
+  const hasAdvisor = representatives.length > 0;
 
   // Campos configurables para la card de empresa
   const formFields = useMemo(() => eventConfig?.formFields || [], [eventConfig]);
@@ -115,6 +117,9 @@ export default function CompanyLanding() {
     [eventConfig?.primaryColor],
   );
 
+  // Solicitud directa a un representante puntual (tarjeta de representante o de
+  // producto). Unificada con el mismo punto de entrada que "Solicitar reunión a
+  // la empresa" — solo que aquí se pasa un advisorId específico.
   const handleSendMeeting = async (
     rep: CompanyRepresentative,
     context?: { productId?: string; contextNote?: string },
@@ -124,10 +129,7 @@ export default function CompanyLanding() {
       : `rep-${rep.id}`;
     setLoadingId(key);
     try {
-      const result = await requestMeetingWithSlotPicker(rep.id, rep.telefono || "", {
-        companyId: companyNit || null,
-        ...context,
-      });
+      const result = await sendMeetingRequestToCompany(context, rep.id);
       if (!(result && (result as any).deferred)) {
         showNotification({
           title: "Solicitud enviada",
@@ -153,6 +155,32 @@ export default function CompanyLanding() {
       productId: p.id,
       contextNote: `Interesado en: ${p.title}`,
     });
+  };
+
+  // Solicitud dirigida a la empresa completa (Etapa 2): cualquier asesor la puede
+  // reclamar, o se asigna automáticamente por menor carga según schedulingMode.
+  const handleCompanyMeeting = async () => {
+    setLoadingId("company");
+    try {
+      const result = await sendMeetingRequestToCompany({
+        contextNote: `Reunión con empresa: ${company?.razonSocial || ""}`,
+      });
+      if (!(result && (result as any).deferred)) {
+        showNotification({
+          title: "Solicitud enviada",
+          message: `Se envió la solicitud de reunión a ${company?.razonSocial || "la empresa"}.`,
+          color: "teal",
+        });
+      }
+    } catch {
+      showNotification({
+        title: "Error",
+        message: "No se pudo enviar la solicitud a la empresa.",
+        color: "red",
+      });
+    } finally {
+      setLoadingId(null);
+    }
   };
 
   if (loading) {
@@ -278,6 +306,20 @@ export default function CompanyLanding() {
               </>
             )}
           </Paper>
+
+          {/* CTA de solicitud dirigida a la empresa (cualquier asesor la puede reclamar).
+              Oculto si la empresa no tiene ningún vendedor registrado. */}
+          {hasAdvisor && !representatives.some((r) => r.id === myUid) && (
+            <Button
+              radius="md"
+              size="md"
+              onClick={handleCompanyMeeting}
+              disabled={loadingId === "company"}
+              loading={loadingId === "company"}
+            >
+              Solicitar reunión a la empresa
+            </Button>
+          )}
 
           {/* Representatives section */}
           {representatives.length > 0 && (

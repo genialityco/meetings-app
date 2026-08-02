@@ -19,6 +19,7 @@ import { doc, setDoc, collection, getDocs, query, where, writeBatch } from "fire
 import { db } from "../../firebase/firebaseConfig";
 import { DEFAULT_POLICIES } from "../dashboard/types";
 import type { EventPolicies, Company } from "../dashboard/types";
+import { normalizeTipoAsistente } from "../../utils/attendeeRole";
 
 /** Etiquetas legibles de cada vista del dashboard (para configurar su orden) */
 const VIEW_LABELS: Record<string, string> = {
@@ -166,11 +167,11 @@ export default function EventPoliciesModal({
         const usersByNit: Record<string, string[]> = {};
         usersSnap.docs.forEach((d) => {
           const u = d.data() as any;
-          const nit = u.companyId || u.company_nit;
+          const nit = u.companyId;
           if (!nit) return;
           if (!usersByNit[nit]) usersByNit[nit] = [];
           usersByNit[nit].push(d.id);
-          const tipo = (u.tipoAsistente || "").toLowerCase().trim();
+          const tipo = normalizeTipoAsistente(u.tipoAsistente);
           if (!tipo) return;
           if (!roles[nit]) roles[nit] = new Set();
           roles[nit].add(tipo);

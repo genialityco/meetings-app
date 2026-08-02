@@ -54,6 +54,7 @@ import CreateFreeMeetingModal from "./CreateFreeMeetingModal";
 import { useDashboardData } from "../dashboard/useDashboardData";
 import { formatPhoneForWhatsApp } from "../../utils/whatsappService";
 import { getTableLabel } from "../dashboard/meetingSlotEngine";
+import { normalizeTipoAsistente } from "../../utils/attendeeRole";
 import {
   IconClipboard,
   IconClipboardCheck,
@@ -1740,7 +1741,7 @@ const MatrixPage = () => {
     if (surveyMode === "custom") {
       const cfg = config?.config?.surveyConfig;
       const userInfo = participantsInfo[userId];
-      const role = (userInfo?.tipoAsistente || "").toLowerCase();
+      const role = normalizeTipoAsistente(userInfo?.tipoAsistente);
       if (role === "vendedor" && cfg?.vendedorFields?.length)
         return cfg.vendedorFields;
       if (role === "comprador" && cfg?.compradorFields?.length)
