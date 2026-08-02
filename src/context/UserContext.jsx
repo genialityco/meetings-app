@@ -194,11 +194,16 @@ export const UserProvider = ({ children }) => {
       const userData = userDoc.data();
       const uid = userDoc.id;
 
-      // Guardar nueva fecha de conexión
-      const now = new Date();
-      await updateDoc(doc(db, "users", uid), {
-        lastConnection: now,
-      });
+      // Guardar nueva fecha de conexión (no crítico: no debe bloquear el login si falla).
+      // En sesiones manuales no siempre hay Firebase Auth (ver comentario más arriba),
+      // así que sólo lo intentamos si hay un usuario de Auth activo.
+      if (auth.currentUser) {
+        try {
+          await updateDoc(doc(db, "users", uid), { lastConnection: new Date() });
+        } catch (error) {
+          console.warn("No se pudo actualizar lastConnection:", error);
+        }
+      }
 
       // Establecer usuario en el contexto
       const newUser = { uid: userDoc.id, data: userData };
@@ -254,11 +259,16 @@ export const UserProvider = ({ children }) => {
     const userData = userDoc.data();
     const uid = userDoc.id;
 
-    // Guardar nueva fecha de conexión
-    const now = new Date();
-    await updateDoc(doc(db, "users", uid), {
-      lastConnection: now,
-    });
+    // Guardar nueva fecha de conexión (no crítico: no debe bloquear el login si falla).
+    // En sesiones manuales no siempre hay Firebase Auth (ver comentario más arriba),
+    // así que sólo lo intentamos si hay un usuario de Auth activo.
+    if (auth.currentUser) {
+      try {
+        await updateDoc(doc(db, "users", uid), { lastConnection: new Date() });
+      } catch (error) {
+        console.warn("No se pudo actualizar lastConnection:", error);
+      }
+    }
 
     // Establecer usuario en el contexto
     const newUser = { uid: userDoc.id, data: userData };
