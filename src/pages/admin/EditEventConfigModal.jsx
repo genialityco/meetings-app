@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Button,
   Modal,
@@ -17,10 +17,11 @@ import {
   Paper,
   Box,
   Title,
-  Grid
+  Grid,
+  ActionIcon
 } from "@mantine/core";
-import { IconSettings, IconCalendarTime, IconPalette, IconCalendarEvent, IconUsers, IconChecklist, IconStar } from "@tabler/icons-react";
-import { doc, setDoc } from "firebase/firestore";
+import { IconSettings, IconCalendarTime, IconPalette, IconCalendarEvent, IconUsers, IconChecklist, IconStar, IconPlus, IconMinus } from "@tabler/icons-react";
+import { doc, setDoc, collection, getDocs, query, where } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../../firebase/firebaseConfig";
 import QRCode from "qrcode";
@@ -118,9 +119,68 @@ const EditEventConfigModal = ({
   // Configuración global (ya no se usa para horarios, solo para referencia)
   const [startTime, setStartTime] = useState(event.config?.startTime || "09:00");
   const [endTime, setEndTime] = useState(event.config?.endTime || "18:00");
-  const [tableNamesInput, setTableNamesInput] = useState(
-    (event.config?.tableNames || []).join(", ")
-  );
+  const [tableNames, setTableNames] = useState(() => {
+    const existing = event.config?.tableNames || [];
+    const count = event.config?.numTables || 50;
+    return Array.from({ length: count }, (_, i) => existing[i] || `Mesa ${i + 1}`);
+  });
+
+  // Empresas/asistentes con mesa fija asignada, para advertir antes de borrar una
+  // mesa en uso y para mostrar junto a cada mesa a quién pertenece.
+  const [tableAssignmentMap, setTableAssignmentMap] = useState({});
+  useEffect(() => {
+    if (!opened || !event?.id) return;
+    (async () => {
+      const map = {};
+      const companiesSnap = await getDocs(collection(db, "events", event.id, "companies"));
+      companiesSnap.docs.forEach((d) => {
+        const c = d.data();
+        if (c.fixedTable) {
+          (map[c.fixedTable] = map[c.fixedTable] || []).push(`Empresa: ${c.razonSocial || d.id}`);
+        }
+      });
+      const usersSnap = await getDocs(query(collection(db, "users"), where("eventId", "==", event.id)));
+      usersSnap.docs.forEach((d) => {
+        const u = d.data();
+        if (u.fixedTable) {
+          (map[u.fixedTable] = map[u.fixedTable] || []).push(`Asistente: ${u.nombre || d.id}`);
+        }
+      });
+      setTableAssignmentMap(map);
+    })();
+  }, [opened, event?.id]);
+
+  // Aplica un nuevo total de mesas (desde +/- o escribiendo directo), truncando o
+  // extendiendo tableNames. Si se van a quitar mesas con asignación existente,
+  // advierte antes de continuar.
+  const applyNumTablesChange = (newCountRaw) => {
+    const newCount = Math.max(1, Number(newCountRaw) || 1);
+    if (newCount === numTables) return;
+
+    if (newCount < numTables) {
+      const removed = [];
+      for (let i = newCount + 1; i <= numTables; i++) {
+        const labels = tableAssignmentMap[String(i)];
+        if (labels?.length) removed.push({ i, labels });
+      }
+      if (removed.length > 0) {
+        const detail = removed
+          .map(({ i, labels }) => `${tableNames[i - 1] || `Mesa ${i}`}: ${labels.join(", ")}`)
+          .join("\n");
+        const confirmed = window.confirm(
+          `Estás por eliminar mesa(s) con asignación existente:\n\n${detail}\n\nSi continúas, esa asignación se perderá. ¿Deseas continuar?`
+        );
+        if (!confirmed) return;
+      }
+    }
+
+    setNumTables(newCount);
+    setTableNames((prev) => {
+      const next = prev.slice(0, newCount);
+      for (let i = next.length; i < newCount; i++) next.push(`Mesa ${i + 1}`);
+      return next;
+    });
+  };
   // Bloques de descanso globales (ya no se usan, cada día tiene los suyos)
   const [breakBlocks, setBreakBlocks] = useState(event.config?.breakBlocks?.length
     ? event.config.breakBlocks
@@ -259,14 +319,11 @@ const EditEventConfigModal = ({
       return;
     }
 
-    // Nombres de mesas (si los dan, forzar a la cantidad real)
-    let tableNames = [];
-    if (tableNamesInput.trim() !== "") {
-      tableNames = tableNamesInput.split(",").map((t) => t.trim()).filter(Boolean);
-      if (tableNames.length !== numTables) setNumTables(tableNames.length);
-    } else {
-      tableNames = Array.from({ length: numTables }, (_, i) => `Mesa ${i + 1}`);
-    }
+    // Nombres de mesas: un input por mesa, con "Mesa N" como default si se deja vacío.
+    const tableNamesToSave = Array.from(
+      { length: numTables },
+      (_, i) => (tableNames[i] || "").trim() || `Mesa ${i + 1}`,
+    );
 
     // Formato: [{start: "10:00", end: "10:15"}, ...]
     const breakBlocksSanitized = breakBlocks.filter(
@@ -300,7 +357,7 @@ const EditEventConfigModal = ({
       breakTime,
       startTime, // Mantener para compatibilidad
       endTime, // Mantener para compatibilidad
-      tableNames,
+      tableNames: tableNamesToSave,
       breakBlocks: breakBlocksSanitized, // Mantener para compatibilidad
       maxMeetingsPerUser: maxMeetingsPerUser || configSummary.maxMeetingsPerUser,
       eventDates: eventDates, // Array de fechas
@@ -372,7 +429,7 @@ const EditEventConfigModal = ({
           <Tabs.Tab value="general" leftSection={<IconSettings size={16} />}>General</Tabs.Tab>
           <Tabs.Tab value="horarios" leftSection={<IconCalendarTime size={16} />}>Horarios</Tabs.Tab>
           <Tabs.Tab value="apariencia" leftSection={<IconPalette size={16} />}>Apariencia</Tabs.Tab>
-          <Tabs.Tab value="agendamiento" leftSection={<IconCalendarEvent size={16} />}>Agendamiento</Tabs.Tab>
+          <Tabs.Tab value="agendamiento" leftSection={<IconCalendarEvent size={16} />}>Mesas/Espacios</Tabs.Tab>
           <Tabs.Tab value="campos" leftSection={<IconUsers size={16} />}>Campos</Tabs.Tab>
           <Tabs.Tab value="politicas" leftSection={<IconSettings size={16} />}>Políticas</Tabs.Tab>
           <Tabs.Tab value="encuesta" leftSection={<IconChecklist size={16} />}>Encuesta</Tabs.Tab>
@@ -554,9 +611,9 @@ const EditEventConfigModal = ({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setEventDays([...eventDays, { 
-                date: "", 
-                startTime: "09:00", 
+              onClick={() => setEventDays([...eventDays, {
+                date: "",
+                startTime: "09:00",
                 endTime: "18:00",
                 breakBlocks: []
               }])}
@@ -564,6 +621,49 @@ const EditEventConfigModal = ({
             >
               Añadir día al evento
             </Button>
+
+            <Divider label="Duración de las citas" my="sm" />
+            <Group grow>
+              <NumberInput
+                label="Duración de cada cita"
+                description="Tiempo neto de la reunión en minutos (ej: 15)."
+                value={meetingDuration}
+                onChange={setMeetingDuration}
+                min={5}
+              />
+              <NumberInput
+                label="Tiempo de transición"
+                description="Minutos entre citas para que las personas cambien de mesa (ej: 5)."
+                value={breakTime}
+                onChange={setBreakTime}
+                min={0}
+              />
+            </Group>
+
+            <NumberInput
+              label="Límite de citas por usuario"
+              description="Máximo de reuniones que una sola persona puede tener en todo el evento."
+              value={maxMeetingsPerUser}
+              onChange={setMaxMeetingsPerUser}
+              min={1}
+            />
+
+            <Alert color="gray" mt="md">
+              <Text><b>Resumen de Capacidad del Evento:</b></Text>
+              <Text size="sm">
+                • Días del evento: {configSummary.numDays}
+              </Text>
+              <Text size="sm">
+                • Bloques de reunión generados por día: {configSummary.avgBlocksPerDay}
+              </Text>
+              <Text size="sm">
+                • Capacidad total (Mesas × Bloques): <strong>{configSummary.totalSlots} cupos de reunión.</strong>
+              </Text>
+              <Text size="sm">
+                • Tiempo total asignado a descansos: {configSummary.totalBreakMinutes} minutos.
+              </Text>
+            </Alert>
+
             <Group justify="flex-end" mt="md">
               <Button variant="default" onClick={onClose}>Cancelar</Button>
               <Button onClick={saveConfig}>Guardar fechas y horarios</Button>
@@ -710,67 +810,76 @@ const EditEventConfigModal = ({
 
         <Tabs.Panel value="agendamiento">
           <Stack>
-            <Alert title="Configuración de la Agenda" color="blue" variant="light">
-              Define las reglas matemáticas para la generación de reuniones. Modificar esto recalculará los cupos disponibles.
+            <Alert title="Mesas / Espacios" color="blue" variant="light">
+              Define cuántas mesas físicas hay disponibles y cómo se llaman. Quitar una mesa
+              que ya tiene una empresa o asistente asignado hará que pierda esa asignación.
             </Alert>
-            
-            <NumberInput
-              label="Cantidad de mesas físicas disponibles"
-              description="El total de espacios simultáneos donde pueden ocurrir reuniones (ej. 50 mesas)."
-              value={numTables}
-              onChange={setNumTables}
-              min={1}
-            />
-            <TextInput
-              label="Nombres de las mesas (Opcional)"
-              description="Si quieres dar nombres específicos, sepáralos por coma (ej: VIP 1, VIP 2). Si no, se llamarán Mesa 1, Mesa 2..."
-              value={tableNamesInput}
-              placeholder="Ejemplo: Mesa 1, Mesa 2, VIP, ..."
-              onChange={(e) => setTableNamesInput(e.target.value)}
-            />
-            <Group grow>
+
+            <Group align="flex-end" gap="xs">
               <NumberInput
-                label="Duración de cada cita"
-                description="Tiempo neto de la reunión en minutos (ej: 15)."
-                value={meetingDuration}
-                onChange={setMeetingDuration}
-                min={5}
+                label="Cantidad de mesas físicas disponibles"
+                description="El total de espacios simultáneos donde pueden ocurrir reuniones (ej. 50 mesas)."
+                value={numTables}
+                onChange={applyNumTablesChange}
+                min={1}
+                style={{ flex: 1 }}
               />
-              <NumberInput
-                label="Tiempo de transición"
-                description="Minutos entre citas para que las personas cambien de mesa (ej: 5)."
-                value={breakTime}
-                onChange={setBreakTime}
-                min={0}
-              />
+              <ActionIcon
+                variant="light"
+                color="red"
+                size="lg"
+                onClick={() => applyNumTablesChange(numTables - 1)}
+                disabled={numTables <= 1}
+                aria-label="Quitar mesa"
+              >
+                <IconMinus size={16} />
+              </ActionIcon>
+              <ActionIcon
+                variant="light"
+                color="blue"
+                size="lg"
+                onClick={() => applyNumTablesChange(numTables + 1)}
+                aria-label="Agregar mesa"
+              >
+                <IconPlus size={16} />
+              </ActionIcon>
             </Group>
-            
-            <NumberInput
-              label="Límite de citas por usuario"
-              description="Máximo de reuniones que una sola persona puede tener en todo el evento."
-              value={maxMeetingsPerUser}
-              onChange={setMaxMeetingsPerUser}
-              min={1}
-            />
-            
-            <Alert color="gray" mt="md">
-              <Text><b>Resumen de Capacidad del Evento:</b></Text>
-              <Text size="sm">
-                • Días del evento: {configSummary.numDays}
-              </Text>
-              <Text size="sm">
-                • Bloques de reunión generados por día: {configSummary.avgBlocksPerDay}
-              </Text>
-              <Text size="sm">
-                • Capacidad total (Mesas × Bloques): <strong>{configSummary.totalSlots} cupos de reunión.</strong>
-              </Text>
-              <Text size="sm">
-                • Tiempo total asignado a descansos: {configSummary.totalBreakMinutes} minutos.
-              </Text>
-            </Alert>
+
+            <Divider label="Nombres de las mesas (Opcional)" my="xs" />
+            <Text size="xs" c="dimmed" mb="xs">
+              Puedes sobreescribir el nombre de cada mesa individualmente. Si lo dejas vacío, se usará &quot;Mesa N&quot;.
+            </Text>
+            <Stack gap="xs">
+              {Array.from({ length: numTables }, (_, i) => {
+                const assignedTo = tableAssignmentMap[String(i + 1)];
+                return (
+                  <TextInput
+                    key={i}
+                    label={
+                      <Group gap={6} wrap="nowrap">
+                        <Text size="sm" fw={500}>Mesa {i + 1}</Text>
+                        {assignedTo?.length > 0 && (
+                          <Text size="xs" c="orange" fw={600}>
+                            ({assignedTo.join(", ")})
+                          </Text>
+                        )}
+                      </Group>
+                    }
+                    value={tableNames[i] || ""}
+                    placeholder={`Mesa ${i + 1}`}
+                    onChange={(e) => {
+                      const next = [...tableNames];
+                      next[i] = e.target.value;
+                      setTableNames(next);
+                    }}
+                  />
+                );
+              })}
+            </Stack>
+
             <Group justify="flex-end" mt="md">
               <Button variant="default" onClick={onClose}>Cancelar</Button>
-              <Button onClick={saveConfig}>Guardar agendamiento</Button>
+              <Button onClick={saveConfig}>Guardar mesas/espacios</Button>
             </Group>
           </Stack>
         </Tabs.Panel>

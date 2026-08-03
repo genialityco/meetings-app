@@ -57,7 +57,7 @@ export default function StandVisitScanPage() {
         }
         const standName = companySnap.data()?.razonSocial || "este stand";
 
-        if (userData.companyId === companyNit || userData.company_nit === companyNit) {
+        if (userData.companyId === companyNit) {
           setState({ kind: "error", message: "No puedes registrar una visita a tu propio stand." });
           return;
         }

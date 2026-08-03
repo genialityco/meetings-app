@@ -22,6 +22,7 @@ import {
   Select,
   Skeleton,
   Alert,
+  SegmentedControl,
 } from "@mantine/core";
 import {
   IconClock,
@@ -62,6 +63,7 @@ import OptimisticCheckbox from "../../components/OptimisticCheckbox";
 import RaffleQrModal from "./RaffleQrModal";
 import { getTableLabel } from "./meetingSlotEngine";
 import { Meeting, ParticipantInfo, EventPolicies } from "./types";
+import { normalizeTipoAsistente } from "../../utils/attendeeRole";
 
 interface SurveyField {
   name: string;
@@ -98,6 +100,32 @@ interface MeetingsTabProps {
   globalDateFilter: string | null;
   setGlobalDateFilter: (date: string | null) => void;
   policies: EventPolicies;
+  companyMeetings?: Meeting[];
+  isCompanyAdvisor?: boolean;
+  myCompanyNit?: string;
+  getCompanyAdvisorIds?: (nit: string | null | undefined) => string[];
+}
+
+function resolveMeetingParties(
+  meeting: Meeting,
+  advisorIds: string[],
+  uid: string,
+): { advisorId: string; otherId: string } {
+  if (
+    advisorIds.length > 0 &&
+    (advisorIds.includes(meeting.requesterId) ||
+      (meeting.receiverId && advisorIds.includes(meeting.receiverId)))
+  ) {
+    const advisorId = advisorIds.includes(meeting.requesterId)
+      ? meeting.requesterId
+      : (meeting.receiverId as string);
+    const otherId =
+      meeting.requesterId === advisorId ? (meeting.receiverId as string) : meeting.requesterId;
+    return { advisorId, otherId };
+  }
+  const otherId =
+    meeting.requesterId === uid ? (meeting.receiverId as string) : meeting.requesterId;
+  return { advisorId: uid, otherId };
 }
 
 function InfoRow({
@@ -142,13 +170,23 @@ export default function MeetingsTab({
   globalDateFilter,
   setGlobalDateFilter,
   policies,
+  companyMeetings = [],
+  isCompanyAdvisor = false,
+  myCompanyNit,
+  getCompanyAdvisorIds,
 }: MeetingsTabProps) {
   const { currentUser } = useContext(UserContext);
   const theme = useMantineTheme();
 
+  const [viewMode, setViewMode] = useState<"empresa" | "mias">("empresa");
+  const companyAdvisorIds =
+    viewMode === "empresa" && isCompanyAdvisor && getCompanyAdvisorIds
+      ? getCompanyAdvisorIds(myCompanyNit)
+      : [];
+
   // Survey fields: default or custom per role
   const surveyMode = policies?.surveyMode || "default";
-  const myRole = (currentUser?.data?.tipoAsistente || "").toLowerCase();
+  const myRole = normalizeTipoAsistente(currentUser?.data?.tipoAsistente);
 
   const surveyFields: SurveyField[] = (() => {
     if (surveyMode === "custom") {
@@ -329,7 +367,10 @@ export default function MeetingsTab({
   }
 
   const surveyExists = (meetingId: string) => !!userSurveys[meetingId];
-  const acceptedDisplayMeetings = [...acceptedMeetings, ...standbyMeetings];
+  const acceptedDisplayMeetings =
+    viewMode === "empresa" && isCompanyAdvisor
+      ? companyMeetings
+      : [...acceptedMeetings, ...standbyMeetings];
 
   const getCheckInMissingLabel = (meeting: Meeting) => {
     const myId = uid;
@@ -356,6 +397,19 @@ export default function MeetingsTab({
           </Badge>
         </Group>
       )}
+      {isCompanyAdvisor && (
+        <Group mb="md">
+          <SegmentedControl
+            value={viewMode}
+            onChange={(v) => setViewMode(v as "empresa" | "mias")}
+            data={[
+              { label: "Empresa", value: "empresa" },
+              { label: "Solo mías", value: "mias" },
+            ]}
+          />
+        </Group>
+      )}
+
       {/* Selector de día para eventos multi-día */}
       {isMultiDay && (
         <Group mb="md">
@@ -389,11 +443,15 @@ export default function MeetingsTab({
               return aH * 60 + aM - (bH * 60 + bM);
             })
             .map((meeting) => {
-              const otherUserId =
-                meeting.requesterId === uid
-                  ? meeting.receiverId
-                  : meeting.requesterId;
+              const { advisorId, otherId: otherUserId } = resolveMeetingParties(
+                meeting,
+                companyAdvisorIds,
+                uid,
+              );
               const participant = participantsInfo[otherUserId];
+              const isOwnMeeting = advisorId === uid;
+              const advisorInfo =
+                viewMode === "empresa" && !isOwnMeeting ? participantsInfo[advisorId] : null;
               const isStandby = meeting.checkInStatus === "standby" || meeting.type === "standby";
               const isExpanded = expandedMeetingId === meeting.id;
 
@@ -432,6 +490,11 @@ export default function MeetingsTab({
                         {isStandby && (
                           <Badge color="yellow" variant="light" size="xs" mt="xs">
                             {getCheckInMissingLabel(meeting)}
+                          </Badge>
+                        )}
+                        {advisorInfo && (
+                          <Badge color="blue" variant="light" size="xs" mt="xs">
+                            Atiende: {advisorInfo.nombre || "—"}
                           </Badge>
                         )}
                       </Box>
@@ -542,8 +605,8 @@ export default function MeetingsTab({
                       )}
                     </Collapse>
 
-                    {/* Actions */}
-                    {participant && (
+                    {/* Actions (solo para tu propia reunión, no para las de tus compañeros de empresa) */}
+                    {participant && isOwnMeeting && (
                       <Stack gap="xs" mt="auto" pt="sm">
                         <Button
                           variant="subtle"

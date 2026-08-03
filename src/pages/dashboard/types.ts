@@ -22,8 +22,8 @@ export interface Assistant {
   necesidad?: string;
   lastConnectionDateTime?: string;
   connectedToday?: boolean;
+  /** NIT normalizado de la empresa (mismo id que el doc events/{eventId}/companies/{companyId}) */
   companyId?: string | null;
-  company_nit?: string;
   company_razonSocial?: string;
   tipoAsistente?: string;
   /** Mesa fija asignada directamente al asistente (o heredada de su empresa) */
@@ -36,7 +36,8 @@ export interface Assistant {
 export interface Meeting {
   id: string;
   requesterId: string;
-  receiverId: string;
+  /** null = solicitud dirigida a empresa (companyId), aún no reclamada por un asesor específico */
+  receiverId: string | null;
   timeSlot?: string;
   tableAssigned?: string;
   meetingDate?: string; // Fecha específica de la reunión "YYYY-MM-DD"

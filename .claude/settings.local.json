@@ -16,7 +16,21 @@
       "Bash(git -C \"d:/gen.iality/Proyectos/my-meetings-app\" show ee4b5c8 -- src/pages/dashboard/BadgePage.tsx)",
       "Bash(npx esbuild *)",
       "Bash(npx eslint *)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "Bash(firebase projects:list)",
+      "Bash(grep -n \"companyGroups\\\\|const \\\\[.*Requests\\\\|onSnapshot\\(q\\\\|collection\\(db, \\\\\"events\\\\\", eventId, \\\\\"meetings\\\\\"\\)\\\\|sendMeetingRequest\\\\s*=\\\\|requestMeetingWithSlotPicker\\\\s*=\\\\|confirmAcceptWithSlot\\\\s*=\\\\|confirmSendMeetingRequestWithSlot\\\\s*=\\\\|cancelMeeting\\\\s*=\\\\|groupId\\\\|updateMeetingStatus\\\\s*=\\\\|changeMeetingAssistantId\\\\|changeAssistant\\\\s*=\\\\|return {\" src/pages/dashboard/useDashboardData.ts)",
+      "Bash(grep -n \"sendMeetingRequest = async\\\\|getCompanyAdvisorIds = useCallback\\\\|const \\\\[companyMeetings\\\\|// 8b\\\\. Reuniones aceptadas\\\\|useEffect\\(\\(\\) => {\\\\s*$\" src/pages/dashboard/useDashboardData.ts)",
+      "Bash(npm run *)",
+      "Bash(node --check index.js)",
+      "Bash(curl -s -X POST https://cancelandreassign-6eaymlz5eq-uc.a.run.app -H 'Content-Type: application/json' -d '{\"eventId\":\"__test_nonexistent__\",\"meetingId\":\"__test_nonexistent__\"}' -w '\\\\nHTTP_STATUS:%{http_code}\\\\n' --max-time 30)",
+      "Bash(curl -s -X POST https://cancelandreassign-6eaymlz5eq-uc.a.run.app -H 'Content-Type: application/json' -d '{\"eventId\":\"test-nonexistent-event-xyz123\",\"meetingId\":\"test-nonexistent-meeting-xyz123\"}' -w '\\\\nHTTP_STATUS:%{http_code}\\\\n' --max-time 30)",
+      "Bash(curl -s -X POST https://aiproxy-6eaymlz5eq-uc.a.run.app -H 'Content-Type: application/json' -d '{}' -w '\\\\nHTTP_STATUS:%{http_code}\\\\n' --max-time 30)",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/firebase/package.json'\\).version\\)\")",
+      "Bash(node /private/tmp/claude-501/-Users-linapaolabm-dev-meetings-app/1ba26db8-d46d-4a47-a313-4ae92c95da33/scratchpad/inspect-event.mjs)",
+      "Bash(node /Users/linapaolabm/dev/meetings-app/_tmp_inspect_event.mjs)",
+      "Bash(curl -s -X POST https://aiproxy-6eaymlz5eq-uc.a.run.app -H 'Content-Type: application/json' -d '{ *)",
+      "Bash(node /Users/linapaolabm/dev/meetings-app/_tmp_inspect_geniality.mjs)",
+      "Bash(grep -n \"Table.Panel value=\\\\\"companies\\\\\"\\\\|Table.Thead\\\\|companyFields\\\\s*$\\\\|Table.Th>Acciones\" src/pages/admin/AttendeesList.jsx)"
     ]
   }
 }

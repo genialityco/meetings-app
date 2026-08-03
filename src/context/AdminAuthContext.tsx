@@ -58,19 +58,26 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
       }
 
       if (user) {
-        // Verificar que el usuario exista en la colección admins
-        const adminDoc = await getDoc(doc(db, "admins", user.uid));
+        try {
+          // Verificar que el usuario exista en la colección admins
+          const adminDoc = await getDoc(doc(db, "admins", user.uid));
 
-        if (adminDoc.exists()) {
-          const data = adminDoc.data() as AdminProfile;
-          setAdminUser(user);
-          setIsSuperAdmin(data.isSuperAdmin === true);
-          setAdminProfile(data);
-          localStorage.setItem("adminSession", "true");
-          setAdminLoading(false);
-        } else {
-          // Usuario autenticado pero no es admin → solo limpiar estado,
-          // no cerrar sesión aquí para no interferir con flujos de registro
+          if (adminDoc.exists()) {
+            const data = adminDoc.data() as AdminProfile;
+            setAdminUser(user);
+            setIsSuperAdmin(data.isSuperAdmin === true);
+            setAdminProfile(data);
+            localStorage.setItem("adminSession", "true");
+            setAdminLoading(false);
+          } else {
+            // Usuario autenticado pero no es admin → solo limpiar estado,
+            // no cerrar sesión aquí para no interferir con flujos de registro
+            clearAdminState();
+          }
+        } catch (error) {
+          // No se pudo verificar el estado de admin (p.ej. carrera transitoria
+          // de auth durante un login anónimo) → tratar como no-admin en vez de
+          // dejar una promesa rechazada sin manejar y adminLoading colgado en true.
           clearAdminState();
         }
       } else if (localStorage.getItem("adminSession") === "true") {

@@ -125,10 +125,10 @@ function RequestCard({
           radius="xl"
           size={52}
           color={theme.primaryColor}
-          style={{ cursor: user.company_nit && user.eventId ? 'pointer' : 'default' }}
+          style={{ cursor: user.companyId && user.eventId ? 'pointer' : 'default' }}
           onClick={() => {
-            if (user.company_nit && user.eventId) {
-              navigate(`/dashboard/${user.eventId}/company/${user.company_nit}`);
+            if (user.companyId && user.eventId) {
+              navigate(`/dashboard/${user.eventId}/company/${user.companyId}`);
             }
           }}
         >
@@ -146,10 +146,10 @@ function RequestCard({
           <Text
             size="sm"
             c="dimmed"
-            style={{ textDecoration: user.company_nit && user.eventId ? "underline" : "none", cursor: user.company_nit && user.eventId ? "pointer" : "default" }}
+            style={{ textDecoration: user.companyId && user.eventId ? "underline" : "none", cursor: user.companyId && user.eventId ? "pointer" : "default" }}
             onClick={() => {
-              if (user.company_nit && user.eventId) {
-                navigate(`/dashboard/${user.eventId}/company/${user.company_nit}`);
+              if (user.companyId && user.eventId) {
+                navigate(`/dashboard/${user.eventId}/company/${user.companyId}`);
               }
             }}
           >
@@ -258,6 +258,13 @@ export default function RequestsTab({
                     <RequestCard
                       user={requester}
                       request={request}
+                      statusBadge={
+                        (request as any).isCompanyRequest ? (
+                          <Badge color="blue" variant="light" radius="xl">
+                            Solicitud de empresa
+                          </Badge>
+                        ) : undefined
+                      }
                       actions={
                         <Group grow gap="xs">
                           <Button

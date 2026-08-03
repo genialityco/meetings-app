@@ -28,6 +28,7 @@ import {
 import { useMediaQuery } from "@mantine/hooks";
 import { IconEdit, IconLogout, IconChevronDown, IconPackage, IconBuilding, IconCheck, IconUserCheck, IconQrcode, IconScan } from "@tabler/icons-react";
 import { UserContext } from "../context/UserContext";
+import { isComprador as isCompradorRole } from "../utils/attendeeRole";
 import { resolveCheckInDay, isCheckedInOnDay } from "../utils/eventDays";
 import { parseStandVisitQrUrl } from "../utils/qrScan";
 import QrScannerModal from "./QrScannerModal";
@@ -76,8 +77,7 @@ const DashboardHeader = ({
   const uid = currentUser?.uid;
 
   const sellerRedirect = policies?.sellerRedirectToProducts === true;
-  const roleLower = currentUser?.data?.tipoAsistente?.toLowerCase();
-  const isComprador = sellerRedirect && roleLower === "comprador";
+  const isComprador = sellerRedirect && isCompradorRole(currentUser?.data?.tipoAsistente);
   const data = currentUser?.data || {};
   const isMobile = useMediaQuery("(max-width: 600px)");
 
@@ -169,6 +169,11 @@ const DashboardHeader = ({
       if (fieldName.startsWith("contacto.")) {
         return editData.contacto?.[fieldName.split(".")[1]] || "";
       }
+      // "company_nit" es solo el nombre del campo del formulario: el valor
+      // persistido en el asistente vive en companyId.
+      if (fieldName === "company_nit") {
+        return editData.companyId ?? "";
+      }
       return editData[fieldName] ?? "";
     },
     [editData],
@@ -211,12 +216,13 @@ const DashboardHeader = ({
         }
       }
 
-      // Normalize NIT and sync companyId
+      // "company_nit" es solo el nombre del campo del formulario (paso de
+      // empresa); el dato persistido en el asistente vive únicamente en companyId.
       const nitNorm = normalizeNit(dataToUpdate.company_nit);
       if (nitNorm) {
-        dataToUpdate.company_nit = nitNorm;
         dataToUpdate.companyId = nitNorm;
       }
+      delete dataToUpdate.company_nit;
       // Compat: empresa = razon social
       if (dataToUpdate.company_razonSocial) {
         dataToUpdate.empresa = String(dataToUpdate.company_razonSocial).trim();

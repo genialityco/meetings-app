@@ -112,8 +112,8 @@ const UserProfile = () => {
       }
 
       // 2) Normalizar NIT (si lo usan)
-      if (dataToUpdate.company_nit) {
-        dataToUpdate.company_nit = normalizeNit(dataToUpdate.company_nit);
+      if (dataToUpdate.companyId) {
+        dataToUpdate.companyId = normalizeNit(dataToUpdate.companyId);
       }
 
       // 3) Compatibilidad: empresa = razon social
@@ -173,7 +173,7 @@ const UserProfile = () => {
                 <strong>Empresa:</strong> {empresaLabel}
               </Text>
               <Text>
-                <strong>NIT:</strong> {data.company_nit || "—"}
+                <strong>NIT:</strong> {data.companyId || "—"}
               </Text>
 
               <Text>
@@ -270,11 +270,11 @@ const UserProfile = () => {
           {/* Empresa (nuevo modelo) */}
           <TextInput
             label="NIT (solo números)"
-            value={editProfileData.company_nit || ""}
+            value={editProfileData.companyId || ""}
             onChange={(e) =>
               setEditProfileData((p: any) => ({
                 ...p,
-                company_nit: normalizeNit(e.target.value),
+                companyId: normalizeNit(e.target.value),
               }))
             }
             description="Si tu evento usa empresa por NIT, este campo identifica tu empresa."

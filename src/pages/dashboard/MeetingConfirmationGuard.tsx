@@ -8,6 +8,7 @@ import { doc, updateDoc, getDoc, setDoc, collection, query, where, getDocs } fro
 import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
 import { DEFAULT_SURVEY_FIELDS } from "../admin/ConfigureSurveyModal";
+import { normalizeTipoAsistente } from "../../utils/attendeeRole";
 
 interface Props {
   uid: string;
@@ -57,7 +58,7 @@ export default function MeetingConfirmationGuard({ uid, eventId, enabled, eventC
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Determine survey fields based on policy and user role
-  const myRole = (currentUser?.data?.tipoAsistente || "").toLowerCase();
+  const myRole = normalizeTipoAsistente(currentUser?.data?.tipoAsistente);
   const surveyMode = eventConfig?.policies?.surveyMode || "default";
   const surveyBlocked = (() => {
     const blocked = eventConfig?.policies?.surveyBlockedFor || "none";

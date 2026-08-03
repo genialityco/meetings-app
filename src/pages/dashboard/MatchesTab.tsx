@@ -19,7 +19,7 @@ import {
 import { showNotification } from "@mantine/notifications";
 import { useState, useEffect } from "react";
 import { IconHeart, IconX, IconCheck, IconSparkles, IconMail, IconPhone, IconBriefcase, IconFileDescription, IconBulb } from "@tabler/icons-react";
-import type { Assistant, MeetingContext } from "./types";
+import type { Assistant, MeetingContext, EventPolicies } from "./types";
 import MeetingRequestModal from "./MeetingRequestModal";
 import { collection, onSnapshot, query, where, updateDoc, doc, getDoc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
@@ -49,15 +49,14 @@ interface MatchesTabProps {
   sendMeetingRequest: (
     id: string,
     phone: string,
-    groupId?: string | null,
     context?: MeetingContext,
   ) => Promise<void>;
   requestMeetingWithSlotPicker?: (
     id: string,
     phone: string,
-    groupId?: string | null,
     context?: MeetingContext,
   ) => Promise<{ deferred: boolean } | void>;
+  policies?: EventPolicies;
   solicitarReunionHabilitado: boolean;
   eventId?: string;
   highlightEntityId?: string;
@@ -67,6 +66,7 @@ export default function MatchesTab({
   currentUser,
   sendMeetingRequest,
   requestMeetingWithSlotPicker,
+  policies,
   solicitarReunionHabilitado,
   eventId,
   highlightEntityId,
@@ -169,7 +169,26 @@ export default function MatchesTab({
     }
   };
 
-  const handleOpenModal = (match: Match) => {
+  const handleOpenModal = async (match: Match) => {
+    // Con "sin aceptación" (requester_picks), se salta el modal de mensaje: se
+    // va directo al selector de horario (SlotModal), que ya incluye el
+    // mensaje opcional en el mismo paso.
+    if (policies?.schedulingMode === "requester_picks" && requestMeetingWithSlotPicker) {
+      setLoadingId(match.id);
+      try {
+        const userDocSnap = await getDoc(doc(db, "users", match.userId));
+        const phone = userDocSnap.data()?.telefono || "";
+        await requestMeetingWithSlotPicker(match.userId, phone, {});
+        await updateDoc(doc(db, "users", myUid, "matches", match.id), {
+          status: "meeting_requested",
+        });
+      } catch {
+        showNotification({ title: "Error", message: "No se pudo iniciar la solicitud.", color: "red" });
+      } finally {
+        setLoadingId(null);
+      }
+      return;
+    }
     setSelectedMatch(match);
     setModalOpened(true);
   };
@@ -186,7 +205,7 @@ export default function MatchesTab({
       const phone = userData?.telefono || "";
 
       const send = requestMeetingWithSlotPicker || sendMeetingRequest;
-      const result = await send(selectedMatch.userId, phone, null, {
+      const result = await send(selectedMatch.userId, phone, {
         contextNote: message || `Match de ${selectedMatch.affinityScore}% de afinidad`,
       });
 

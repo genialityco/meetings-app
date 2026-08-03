@@ -103,12 +103,12 @@ export function trackEvent(event: AnalyticsEvent): void {
     window.gtag!('event', event.name, event.params || {});
     
     // Log en desarrollo y producción para debugging
-    console.log('📊 Analytics event tracked:', event.name, event.params);
+    //console.log('📊 Analytics event tracked:', event.name, event.params);
     
     // Verificar que se agregó al dataLayer
     if (window.dataLayer) {
       const lastEvent = window.dataLayer[window.dataLayer.length - 1];
-      console.log('📊 Last dataLayer entry:', lastEvent);
+      //console.log('📊 Last dataLayer entry:', lastEvent);
     }
   } catch (error) {
     console.error('❌ Error tracking analytics event:', error);

@@ -39,9 +39,10 @@ import {
   IconFileTypePdf,
   IconSparkles,
 } from "@tabler/icons-react";
-import type { Assistant } from "./types";
+import type { Assistant, EventPolicies } from "./types";
 import { useNavigate, useParams } from "react-router-dom";
 import MeetingRequestModal from "./MeetingRequestModal";
+import { normalizeTipoAsistente, isVendedor, isComprador } from "../../utils/attendeeRole";
 
 interface MeetingContext {
   contextNote?: string;
@@ -92,17 +93,16 @@ interface AttendeesViewProps {
   interestFilter: string | null;
   setInterestFilter: (v: string | null) => void;
   eventConfig: any;
+  policies?: EventPolicies;
   solicitarReunionHabilitado: boolean;
   sendMeetingRequest: (
     id: string,
     phone: string,
-    groupId?: string | null,
     context?: MeetingContext,
   ) => Promise<void>;
   requestMeetingWithSlotPicker?: (
     id: string,
     phone: string,
-    groupId?: string | null,
     context?: MeetingContext,
   ) => Promise<{ deferred: boolean } | void>;
   setAvatarModalOpened: (v: boolean) => void;
@@ -160,6 +160,7 @@ export default function AttendeesView({
   interestFilter,
   setInterestFilter,
   eventConfig,
+  policies,
   solicitarReunionHabilitado,
   sendMeetingRequest,
   requestMeetingWithSlotPicker,
@@ -288,11 +289,11 @@ export default function AttendeesView({
     }
     
     if (filterByRole && isRuedaNegocios) {
-      const myRole = (currentUser?.data?.tipoAsistente || "").toLowerCase().trim();
+      const myRole = normalizeTipoAsistente(currentUser?.data?.tipoAsistente);
       if (myRole === "comprador") {
-        baseAssistants = baseAssistants.filter((a) => (a.tipoAsistente || "").toLowerCase().trim() === "vendedor");
+        baseAssistants = baseAssistants.filter((a) => isVendedor(a.tipoAsistente));
       } else if (myRole === "vendedor") {
-        baseAssistants = baseAssistants.filter((a) => (a.tipoAsistente || "").toLowerCase().trim() === "comprador");
+        baseAssistants = baseAssistants.filter((a) => isComprador(a.tipoAsistente));
       }
     }
     
@@ -345,7 +346,21 @@ export default function AttendeesView({
     return [...exactMatches, ...semanticMatches];
   }, [filteredAssistants, searchTerm, formFields, showOnlyToday, sortBy, affinityScores, vectorResults, filterByRole, isRuedaNegocios, currentUser]);
 
-  const handleOpenModal = (assistant: Assistant) => {
+  const handleOpenModal = async (assistant: Assistant) => {
+    // Con "sin aceptación" (requester_picks), se salta el modal de mensaje: se
+    // va directo al selector de horario (SlotModal), que ya incluye el
+    // mensaje opcional en el mismo paso.
+    if (policies?.schedulingMode === "requester_picks" && requestMeetingWithSlotPicker) {
+      setLoadingId(assistant.id);
+      try {
+        await requestMeetingWithSlotPicker(assistant.id, assistant.telefono || "", {});
+      } catch {
+        showNotification({ title: "Error", message: "No se pudo iniciar la solicitud.", color: "red" });
+      } finally {
+        setLoadingId(null);
+      }
+      return;
+    }
     setSelectedAssistant(assistant);
     setModalOpened(true);
   };
@@ -356,7 +371,7 @@ export default function AttendeesView({
     setLoadingId(selectedAssistant.id);
     try {
       const send = requestMeetingWithSlotPicker || sendMeetingRequest;
-      const result = await send(selectedAssistant.id, selectedAssistant.telefono || "", null, {
+      const result = await send(selectedAssistant.id, selectedAssistant.telefono || "", {
         contextNote: message || undefined,
       });
 
@@ -607,7 +622,7 @@ export default function AttendeesView({
                       size="sm" 
                       variant="light" 
                       radius="md"
-                      color={String(assistant.tipoAsistente).toLowerCase().trim() === 'comprador' ? 'blue' : 'orange'}
+                      color={isComprador(assistant.tipoAsistente) ? 'blue' : 'orange'}
                       style={{
                         position: "absolute",
                         top: 10,
@@ -676,7 +691,7 @@ export default function AttendeesView({
                           assistant.nitNorm !== "sin-nit" && assistant.eventId
                             ? () =>
                                 navigate(
-                                  `/dashboard/${assistant.eventId}/company/${assistant.company_nit}`,
+                                  `/dashboard/${assistant.eventId}/company/${assistant.companyId}`,
                                 )
                             : undefined
                         }

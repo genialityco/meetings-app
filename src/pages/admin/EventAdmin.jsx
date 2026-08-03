@@ -48,6 +48,7 @@ import * as XLSX from "xlsx";
 import ExternalMeetingModal from "./ExternalMeetingModal";
 
 import SendWaRemindersModal from "./SendWaRemindersModal";
+import { isComprador, isVendedor } from "../../utils/attendeeRole";
 
 // Crea documentos nuevos en events/{eventId}/agenda usando writeBatch en vez de
 // un addDoc secuencial por slot (que en agendas grandes tarda minutos por hacer
@@ -1459,7 +1460,7 @@ const EventAdmin = () => {
               Vendedores
             </Text>
             <Title order={3}>
-              {attendees.filter((a) => a.tipoAsistente?.toLowerCase() === "vendedor").length}
+              {attendees.filter((a) => isVendedor(a.tipoAsistente)).length}
             </Title>
           </Card>
 
@@ -1468,7 +1469,7 @@ const EventAdmin = () => {
               Compradores
             </Text>
             <Title order={3}>
-              {attendees.filter((a) => a.tipoAsistente?.toLowerCase() === "comprador").length}
+              {attendees.filter((a) => isComprador(a.tipoAsistente)).length}
             </Title>
           </Card>
         </SimpleGrid>

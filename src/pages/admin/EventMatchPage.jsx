@@ -31,6 +31,7 @@ import {
 import { db } from "../../firebase/firebaseConfig";
 import * as XLSX from "xlsx";
 import ManualMeetingModal from "./ManualMeetingModal";
+import { normalizeTipoAsistente } from "../../utils/attendeeRole";
 
 const LLAMA_API = "http://localhost:8080/api/match";
 const LLAMA_CANDIDATES = [
@@ -100,7 +101,7 @@ const EventMatchPage = () => {
   const getAsistenteType = (attendee) => {
     // Modelo 1: Si existe tipoAsistente, usarlo (case-insensitive)
     if (attendee.tipoAsistente) {
-      const tipo = attendee.tipoAsistente.toLowerCase();
+      const tipo = normalizeTipoAsistente(attendee.tipoAsistente);
       if (tipo === "comprador") return "comprador";
       if (tipo === "vendedor") return "vendedor";
       return "flexible";

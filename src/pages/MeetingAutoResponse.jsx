@@ -14,7 +14,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../firebase/firebaseConfig";
 import { UserContext } from "../context/UserContext";
-import { getTableLabel } from "./dashboard/meetingSlotEngine";
+import { getTableLabel, getCompanyAdvisors } from "./dashboard/meetingSlotEngine";
 import {
   Loader,
   Container,
@@ -137,7 +137,7 @@ export default function MeetingAutoResponse() {
       }
 
       const meetingData = mtgSnap.data();
-      const { receiverId, requesterId, status: meetingStatus } = meetingData;
+      const { receiverId, requesterId, companyId, status: meetingStatus } = meetingData;
 
       // 3. Validar que la reunión no ha sido procesada aún
       if (meetingStatus && meetingStatus !== "pending") {
@@ -162,6 +162,23 @@ export default function MeetingAutoResponse() {
         const receiverSnap = await getDoc(doc(db, "users", receiverId));
         if (receiverSnap.exists()) {
           loginAsUser(receiverId, receiverSnap.data());
+        }
+      } else if (!receiverId && companyId) {
+        // Solicitud dirigida a una empresa (sin reclamar): no hay un destinatario
+        // fijo, así que no forzamos sesión a nadie en particular. Solo validamos
+        // que la sesión activa sea la de un asesor de esa empresa.
+        const myUserSnap = await getDoc(doc(db, "users", userId));
+        const myData = myUserSnap.exists() ? myUserSnap.data() : null;
+        const myCompanyNit = myData?.companyId;
+        // Cualquier persona asociada a la empresa puede reclamarla, sin importar
+        // su tipoAsistente (ver getCompanyAdvisors en meetingSlotEngine.ts).
+        const isAdvisorOfCompany = !!myCompanyNit && myCompanyNit === companyId;
+        if (!isAdvisorOfCompany) {
+          setValidationError(
+            "Esta solicitud es para un asesor de la empresa. Inicia sesión con tu cuenta de asesor en el dashboard y vuelve a intentarlo."
+          );
+          setTimeout(() => navigate(`/event/${eventId}`), 3000);
+          return false;
         }
       }
 
@@ -211,6 +228,10 @@ export default function MeetingAutoResponse() {
       const mtgSnap = await getDoc(mtgRef);
       if (!mtgSnap.exists()) throw new Error("Reunión no existe");
       const { requesterId, receiverId } = mtgSnap.data();
+      // Solicitud de empresa sin reclamar: quien está viendo esta página (ya validado
+      // como asesor de la empresa) es quien efectivamente ocuparía el slot.
+      const effectiveReceiverId =
+        receiverId || currentUser?.uid || auth.currentUser?.uid;
 
       // Carga el nombre del solicitante
       const userSnap = await getDoc(doc(db, "users", requesterId));
@@ -223,7 +244,7 @@ export default function MeetingAutoResponse() {
         query(
           collection(db, "events", eventId, "meetings"),
           where("status", "==", "accepted"),
-          where("participants", "array-contains-any", [requesterId, receiverId])
+          where("participants", "array-contains-any", [requesterId, effectiveReceiverId])
         )
       );
       const occupied = accSn.docs
@@ -286,9 +307,12 @@ export default function MeetingAutoResponse() {
 
       const mtgData = (await getDoc(mtgRef)).data();
 
-      // Obtener datos del solicitante y del receptor (quien rechaza)
+      // Obtener datos del solicitante y del receptor (quien rechaza). Para una
+      // solicitud de empresa sin reclamar, receiverId puede ser null: se atribuye
+      // el rechazo a la sesión activa (el asesor que abrió el enlace).
+      const myUid = currentUser?.uid || auth.currentUser?.uid;
       const requesterSnap = await getDoc(doc(db, "users", mtgData.requesterId));
-      const receiverSnap = await getDoc(doc(db, "users", mtgData.receiverId));
+      const receiverSnap = await getDoc(doc(db, "users", mtgData.receiverId || myUid));
       const requester = requesterSnap.exists() ? requesterSnap.data() : {};
       const receiver = receiverSnap.exists() ? receiverSnap.data() : {};
 
@@ -366,7 +390,8 @@ export default function MeetingAutoResponse() {
             new Date().toISOString().slice(0, 10)
           : new Date().toISOString().slice(0, 10);
 
-      let requesterId, receiverId;
+      let requesterId, receiverId, isCompanyClaim;
+      const myUid = currentUser?.uid || auth.currentUser?.uid;
 
       // TRANSACCIÓN: valida, crea locks, actualiza meeting y ocupa slot
       await runTransaction(db, async (tx) => {
@@ -388,7 +413,11 @@ export default function MeetingAutoResponse() {
         }
 
         requesterId = mtg.requesterId;
-        receiverId = mtg.receiverId;
+        // Solicitud de empresa sin reclamar: quien acepta (ya validado como asesor
+        // de la empresa) se convierte en el receptor, seteado atómicamente aquí.
+        isCompanyClaim = !mtg.receiverId && !!mtg.companyId;
+        receiverId = mtg.receiverId || (isCompanyClaim ? myUid : undefined);
+        if (!receiverId) throw new Error("No se pudo determinar el asesor que acepta.");
 
         // 2. Validar que el slot sigue disponible
         const sSnap = await tx.get(slotRef);
@@ -445,6 +474,7 @@ export default function MeetingAutoResponse() {
           slotId: slot.id,
           lockIds: [reqLockRef.id, recLockRef.id],
           updatedAt: new Date(),
+          ...(isCompanyClaim ? { receiverId, participants: [requesterId, receiverId] } : {}),
         });
         tx.update(slotRef, { available: false, meetingId });
       });
@@ -554,6 +584,45 @@ export default function MeetingAutoResponse() {
               }),
             }).catch(() => {});
           }
+        }
+      }
+
+      // Notificar también a los demás asesores de la empresa (Etapa 1/2: fan-out).
+      // Usa getCompanyAdvisors (meetingSlotEngine.ts) en vez de una query directa por
+      // tipoAsistente: Firestore no puede filtrar ese campo sin distinguir mayúsculas,
+      // así que se consulta por empresa y se filtra/normaliza del lado del cliente.
+      if (mtgData.companyId) {
+        try {
+          const advisors = await getCompanyAdvisors(eventId, mtgData.companyId);
+          const otherAdvisors = advisors.filter(
+            (a) => a.id !== mtgData.requesterId && a.id !== mtgData.receiverId
+          );
+          for (const advisor of otherAdvisors) {
+            if (evPolicies.dashboardNotificationsEnabled !== false) {
+              await addDoc(collection(db, "notifications"), {
+                userId: advisor.id,
+                title: "Reunión aceptada",
+                message: `${receiver?.nombre || "Un compañero"} aceptó una reunión de tu empresa.`,
+                timestamp: new Date(),
+                read: false,
+                type: "meeting_accepted",
+              });
+            }
+            if (evPolicies.whatsappNotificationsEnabled !== false && advisor?.telefono) {
+              const advisorPhone = (advisor.telefono || "").toString().replace(/[^\d]/g, "");
+              fetch(API_WP_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  clientId: CLIENT_ID,
+                  phone: `57${advisorPhone}`,
+                  message: `Un compañero de tu empresa (${receiver?.nombre || ""}) aceptó una reunión (${meetingInfo.timeSlot}, ${tableLabel}).`,
+                }),
+              }).catch(() => {});
+            }
+          }
+        } catch {
+          // No bloquear el flujo principal por un fallo en el fan-out
         }
       }
 
