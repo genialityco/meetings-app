@@ -667,19 +667,6 @@ export default function CompaniesView({
                         >
                           {empresa}
                         </Title>
-                        <Group gap={6} mt={2} justify="flex-start">
-                          <ThemeIcon
-                            variant="light"
-                            color={theme.primaryColor}
-                            size={18}
-                            radius="md"
-                          >
-                            <IconId size={12} />
-                          </ThemeIcon>
-                          <Text size="xs" c="dimmed" lineClamp={1}>
-                            NIT: {nit !== "sin-nit" ? nit : "No disponible"}
-                          </Text>
-                        </Group>
                       </Box>
                     </Stack>
 

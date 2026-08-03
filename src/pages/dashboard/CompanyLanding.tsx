@@ -108,9 +108,13 @@ export default function CompanyLanding() {
 
   // Campos configurables para la card de empresa
   const formFields = useMemo(() => eventConfig?.formFields || [], [eventConfig]);
+  // "necesidad" siempre visible en esta vista de detalle (aunque la política
+  // cardFieldsConfig.companyCard del evento no la incluya para la tarjeta
+  // compacta de CompaniesView).
   const cardFields = useMemo(() => {
     const cfg = eventConfig?.policies?.cardFieldsConfig;
-    return cfg?.companyCard || DEFAULT_POLICIES.cardFieldsConfig!.companyCard;
+    const configured = cfg?.companyCard || DEFAULT_POLICIES.cardFieldsConfig!.companyCard;
+    return configured.includes("necesidad") ? configured : [...configured, "necesidad"];
   }, [eventConfig]);
 
   const eventTheme = useMemo(
