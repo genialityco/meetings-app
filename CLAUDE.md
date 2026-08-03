@@ -50,6 +50,7 @@ Configurable per event via admin panel (`EventPoliciesModal.tsx`). Interface + d
 - `dashboardNotificationsEnabled`, `welcomeMessageEnabled` — in-app notifications / WhatsApp welcome popup
 - `groupByRazonSocial` — group companies by name instead of NIT
 - `allowProductImageUpload`, `maxMeetingsPerContact` — product/meeting limits
+- `maxMeetingsPerRole`: `{ comprador?, vendedor? }` — max meetings a requester of each role may *request* (only meaningful with `roleMode: "buyer_seller"`; receivers are never limited); `maxMeetingsPerRoleScope`: "total" | "day" controls whether the count is event-wide or resets per event day
 - `raffleEnabled`, `raffleShowPointsToAttendee` — enables the meeting-raffle feature (see below)
 - `standVisitsEnabled`, `standVisitAllowSellerScan` — stand-visit registration via QR (see below)
 
@@ -66,6 +67,7 @@ Some newer per-event toggles (e.g. `cancelMeetingDisabled`, read in `CalendarTab
 - `src/utils/eventDays.ts` — Per-day check-in helpers (`getEventDayKeys`, `resolveCheckInDay`, `isCheckedInOnDay`); the check-in "day" key is an event date or `"unico"`
 - `src/utils/qrScan.ts` — `parseAttendeeQrUrl`: parses a scanned badge QR. Current badges encode only the attendee uid as plain text; legacy link patterns (`/admin/event/:id/checkin/:uid`, `/badge/:id/:uid`) still parse for already-printed badges. When eventId comes back null, the caller must validate the attendee belongs to the event.
 - `src/utils/attendeeFields.ts` — splits event formFields into basic/additional for scan-review cards
+- `src/utils/attendeeRole.ts` — `normalizeTipoAsistente`/`isVendedor`/`isComprador`: the `tipoAsistente` field ("comprador"/"vendedor") has been written with inconsistent casing across registration/admin-edit/legacy flows, so role checks should go through these helpers rather than comparing the raw string
 - `src/hooks/usePageTracking.ts` — GA4 page view tracking on route changes
 - `src/hooks/useAttendeeScanFlow.ts` — shared "scan → review card → confirm → keep scanning" state machine used by admin check-in (`CheckInTab.jsx`) and seller stand-visit scanning (`MyCompanyTab.tsx`), built on `QrScannerModal.tsx` (camera scanner; stays open between reads with a 2s same-code debounce; imports html5-qrcode dynamically so the ~100 kB lib only loads when a scanner opens) + `AttendeeScanReviewModal.tsx`/`AttendeeInfoCard.tsx`
 - `src/pages/admin/` — Admin panel: organizations, event management, attendees, meetings, policies config. `AdminLogin.tsx` / `AdminRegister.tsx` for admin auth. `AdminsManagementModal.tsx` for superadmin to approve/reject admin requests. `MatrixPage.jsx` and `EventAdmin.jsx` are the largest files (~3900 and ~2260 lines).

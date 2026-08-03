@@ -66,6 +66,18 @@ async function batchCreateAgendaSlots(eventId, slots) {
   }
 }
 
+// Igual que batchCreateAgendaSlots pero para borrar: reemplaza un deleteDoc
+// secuencial (un round-trip de red por documento) por writeBatch en chunks.
+async function batchDeleteDocs(refs) {
+  for (let i = 0; i < refs.length; i += BATCH_CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    for (const ref of refs.slice(i, i + BATCH_CHUNK_SIZE)) {
+      batch.delete(ref);
+    }
+    await batch.commit();
+  }
+}
+
 const EventAdmin = () => {
   const { eventId } = useParams();
   const navigate = useNavigate();
@@ -561,20 +573,23 @@ const EventAdmin = () => {
       const agendaSnapshot = await getDocs(
         collection(db, "events", event.id, "agenda"),
       );
-      let deletedCountAgenda = 0;
-      for (const docItem of agendaSnapshot.docs) {
-        await deleteDoc(doc(db, "events", event.id, "agenda", docItem.id));
-        deletedCountAgenda++;
-      }
-      const meetingsRef = collection(db, "events", event.id, "meetings");
-      const meetingsSnapshot = await getDocs(meetingsRef);
-      let deletedCountMeetings = 0;
-      for (const docItem of meetingsSnapshot.docs) {
-        await deleteDoc(doc(db, "events", event.id, "meetings", docItem.id));
-        deletedCountMeetings++;
-      }
+      const meetingsSnapshot = await getDocs(
+        collection(db, "events", event.id, "meetings"),
+      );
+      // Los locks (events/{eventId}_{userId}_{fecha}_{inicio}-{fin} en la
+      // colección global "locks") no se borraban junto con las reuniones: al
+      // quedar huérfanos, bloqueaban para siempre volver a agendar a esa misma
+      // persona en la misma fecha/hora aunque la reunión y el slot ya no existieran.
+      const locksSnapshot = await getDocs(
+        query(collection(db, "locks"), where("eventId", "==", event.id)),
+      );
+
+      await batchDeleteDocs(agendaSnapshot.docs.map((d) => d.ref));
+      await batchDeleteDocs(meetingsSnapshot.docs.map((d) => d.ref));
+      await batchDeleteDocs(locksSnapshot.docs.map((d) => d.ref));
+
       setGlobalMessage(
-        `Agenda borrada: ${deletedCountAgenda} slots y ${deletedCountMeetings} reuniones eliminados para el evento ${event.eventName}.`,
+        `Agenda borrada: ${agendaSnapshot.size} slots, ${meetingsSnapshot.size} reuniones y ${locksSnapshot.size} bloqueos eliminados para el evento ${event.eventName}.`,
       );
     } catch (error) {
       console.log(error);

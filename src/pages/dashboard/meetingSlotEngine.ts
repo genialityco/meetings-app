@@ -1011,6 +1011,11 @@ export async function pickAvailableCompanyAdvisor(
   const advisors = (await getCompanyAdvisors(eventId, companyNit)).filter((a) => a.id !== requesterId);
   if (advisors.length === 0) return null;
 
+  // Mesa fija de la empresa (fallback cuando el asesor no tiene una propia),
+  // igual que en resolveFixedTableForReceiver / prepareSlotSelectionForRequest.
+  const companySnap = await getDoc(doc(db, "events", eventId, "companies", companyNit));
+  const companyFixedTable = companySnap.exists() ? (companySnap.data()?.fixedTable || null) : null;
+
   const counts = await Promise.all(
     advisors.map(async (advisor) => ({
       advisor,
@@ -1027,7 +1032,7 @@ export async function pickAvailableCompanyAdvisor(
         policies,
         requesterId,
         receiverId: advisor.id,
-        receiverFixedTable: null, // sin mesas fijas todavía (Etapa 4)
+        receiverFixedTable: advisor.fixedTable || companyFixedTable || null,
       });
       if (slots && slots.length > 0) {
         return { receiverId: advisor.id, receiverPhone: advisor.telefono || "", slots, eventDayISO };
