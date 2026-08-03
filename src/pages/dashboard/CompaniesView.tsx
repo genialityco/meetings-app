@@ -615,47 +615,39 @@ export default function CompaniesView({
                     </Badge>
                   )}
 
-                  {/* HEADER tipo imagen */}
-                  <Group justify="space-between" align="flex-start" wrap="nowrap">
-                    <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
-                      {logoUrl ? (
-                        <Image
-                          src={logoUrl}
-                          alt={empresa}
-                          w={84}
-                          h={84}
-                          radius="xl"
-                          fit="contain"
-                          style={{
-                            flexShrink: 0,
-                            cursor: nit !== "sin-nit" ? "pointer" : undefined,
-                          }}
-                          onClick={
-                            nit !== "sin-nit" && eventId
-                              ? () => navigate(`/dashboard/${eventId}/company/${nit}`)
-                              : undefined
-                          }
-                        />
-                      ) : (
-                        <Avatar
-                          radius="xl"
-                          size={84}
-                          color={theme.primaryColor}
-                          style={{
-                            flexShrink: 0,
-                            cursor: nit !== "sin-nit" ? "pointer" : undefined,
-                          }}
-                          onClick={
-                            nit !== "sin-nit" && eventId
-                              ? () => navigate(`/dashboard/${eventId}/company/${nit}`)
-                              : undefined
-                          }
-                        >
-                          {empresa?.[0]?.toUpperCase()}
-                        </Avatar>
-                      )}
+                  {/* HEADER tipo imagen: columna 1 = logo grande + nombre/nit, columna 2 = info */}
+                  <Group justify="space-between" align="flex-start" wrap="nowrap" gap="md">
+                    <Stack gap={6} align="center" style={{ flex: "1 1 50%", minWidth: 0 }}>
+                      <Box
+                        onClick={
+                          nit !== "sin-nit" && eventId
+                            ? () => navigate(`/dashboard/${eventId}/company/${nit}`)
+                            : undefined
+                        }
+                        style={{
+                          width: "100%",
+                          aspectRatio: "1 / 1",
+                          borderRadius: "var(--mantine-radius-xl)",
+                          overflow: "hidden",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: nit !== "sin-nit" ? "pointer" : undefined,
+                          backgroundColor: logoUrl
+                            ? undefined
+                            : `var(--mantine-color-${theme.primaryColor}-6)`,
+                        }}
+                      >
+                        {logoUrl ? (
+                          <Image src={logoUrl} alt={empresa} w="100%" h="100%" fit="contain" />
+                        ) : (
+                          <Text size="40px" fw={700} c="white">
+                            {empresa?.[0]?.toUpperCase()}
+                          </Text>
+                        )}
+                      </Box>
 
-                      <Box style={{ minWidth: 0 }}>
+                      <Box style={{ minWidth: 0, width: "100%", textAlign: "left" }}>
                         <Title
                           order={5}
                           lineClamp={2}
@@ -675,7 +667,7 @@ export default function CompaniesView({
                         >
                           {empresa}
                         </Title>
-                        <Group gap={6} mt={2}>
+                        <Group gap={6} mt={2} justify="flex-start">
                           <ThemeIcon
                             variant="light"
                             color={theme.primaryColor}
@@ -689,9 +681,9 @@ export default function CompaniesView({
                           </Text>
                         </Group>
                       </Box>
-                    </Group>
+                    </Stack>
 
-                    <Stack gap={6} align="flex-end">
+                    <Stack gap={6} align="flex-end" style={{ flex: "1 1 50%" }}>
                       <Badge
                         variant="light"
                         color={theme.primaryColor}
@@ -843,27 +835,30 @@ export default function CompaniesView({
                     </Button>
                   )}
 
-                  {/* CTA grande abajo */}
-                  <Button
-                    fullWidth
-                    mt="md"
-                    radius="md"
-                    size="md"
-                    color={theme.primaryColor}
-                    onClick={() => handleOpenModal(selectedAssistant, nit)}
-                    disabled={
-                      !solicitarReunionHabilitado ||
-                      loadingId === selectedAssistant?.id ||
-                      selectedAssistant?.id === myUid
-                    }
-                    loading={loadingId === selectedAssistant?.id}
-                  >
-                    {!solicitarReunionHabilitado
-                      ? "Solicitudes deshabilitadas"
-                      : selectedAssistant?.id === myUid
-                        ? "Tu perfil"
-                        : `Solicitar reunión a ${selectedAssistant?.nombre || "..."}`}
-                  </Button>
+                  {/* CTA grande abajo: oculto si solo hay un representante, ya que
+                      en ese caso "Solicitar reunión a la empresa" cubre el mismo caso. */}
+                  {asistentes.length > 1 && (
+                    <Button
+                      fullWidth
+                      mt="md"
+                      radius="md"
+                      size="md"
+                      color={theme.primaryColor}
+                      onClick={() => handleOpenModal(selectedAssistant, nit)}
+                      disabled={
+                        !solicitarReunionHabilitado ||
+                        loadingId === selectedAssistant?.id ||
+                        selectedAssistant?.id === myUid
+                      }
+                      loading={loadingId === selectedAssistant?.id}
+                    >
+                      {!solicitarReunionHabilitado
+                        ? "Solicitudes deshabilitadas"
+                        : selectedAssistant?.id === myUid
+                          ? "Tu perfil"
+                          : `Solicitar reunión a ${selectedAssistant?.nombre || "..."}`}
+                    </Button>
+                  )}
 
                   {/* CTA de solicitud dirigida a la empresa (cualquier asesor la puede reclamar).
                       Oculto si la empresa no tiene ningún vendedor registrado: sin eso, no hay
