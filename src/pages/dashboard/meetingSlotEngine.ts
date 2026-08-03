@@ -18,6 +18,7 @@ import { db } from "../../firebase/firebaseConfig";
 import { AgendaSlot, Assistant, EventPolicies, MeetingContext } from "./types";
 import { sendWhatsAppMessage as sendWhatsAppAPI } from "../../utils/whatsappService";
 import { showNotification } from "@mantine/notifications";
+import { normalizeTipoAsistente } from "../../utils/attendeeRole";
 
 export function parseISODate(dateStr: string): Date {
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -100,6 +101,62 @@ export async function countMeetingsAsRequester(params: {
   });
 
   return count;
+}
+
+/**
+ * Valida la política "maxMeetingsPerRole": límite de reuniones que el usuario
+ * actual puede SOLICITAR según su rol (comprador/vendedor). Solo aplica con
+ * roleMode "buyer_seller" y un límite configurado para ese rol; el límite se
+ * lee en vivo de `policies` en cada llamada, así que si el admin lo cambia
+ * durante el evento la siguiente solicitud ya valida contra el nuevo valor.
+ * `date` solo se usa cuando el alcance configurado es "day"; si se omite y el
+ * alcance es "day", el chequeo se salta (la fecha aún no se conoce, como en
+ * el flujo clásico de solicitud pendiente) — por eso quien llama a esta
+ * función debe volver a invocarla con la fecha ya resuelta justo antes de
+ * confirmar la reunión (ver confirmSendMeetingRequestWithSlot en ambos hooks).
+ */
+export async function checkRoleMeetingLimit(params: {
+  eventId: string;
+  userId: string;
+  policies: EventPolicies;
+  myTipoAsistente: unknown;
+  date?: string | null;
+}): Promise<boolean> {
+  const { eventId, userId, policies, myTipoAsistente, date } = params;
+  if (policies.roleMode !== "buyer_seller" || !policies.maxMeetingsPerRole) {
+    return true;
+  }
+
+  const myRole = normalizeTipoAsistente(myTipoAsistente);
+  const limit =
+    myRole === "comprador"
+      ? policies.maxMeetingsPerRole.comprador
+      : myRole === "vendedor"
+        ? policies.maxMeetingsPerRole.vendedor
+        : null;
+
+  if (!limit) return true;
+
+  const scopedByDay = policies.maxMeetingsPerRoleScope === "day";
+  if (scopedByDay && !date) return true;
+
+  const count = await countMeetingsAsRequester({
+    eventId,
+    userId,
+    date: scopedByDay ? date : null,
+  });
+
+  if (count >= limit) {
+    showNotification({
+      title: "Límite de reuniones alcanzado",
+      message: scopedByDay
+        ? `Ya alcanzaste el máximo de ${limit} solicitud(es) de reunión para este día.`
+        : `Ya alcanzaste el máximo de ${limit} solicitud(es) de reunión para este evento.`,
+      color: "red",
+    });
+    return false;
+  }
+  return true;
 }
 
 export function slotOverlapsBreakBlock(

@@ -88,6 +88,7 @@ export default function CompanyLanding() {
     setSlotModalOpened,
     availableSlots,
     selectedDate,
+    setSelectedDate,
     selectedRange,
     setSelectedRange,
     selectedSlotId,
@@ -649,6 +650,9 @@ export default function CompanyLanding() {
         onClose={() => {
           setSlotModalOpened(false);
           setPendingMeetingRequest(null);
+          setSelectedRange(null);
+          setSelectedSlotId(null);
+          setSelectedDate(null);
           setRequestMessage("");
         }}
         eventDates={[...new Set(eventConfig?.eventDates || (eventConfig?.eventDate ? [eventConfig.eventDate] : []))]}

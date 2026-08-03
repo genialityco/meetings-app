@@ -496,7 +496,7 @@ const DashboardHeader = ({
             <Image
               src={dashboardLogo || eventImage}
               alt={eventName}
-              h={50}
+              h={isMobile ? 33 : 45}
               w="auto"
               fit="contain"
             />

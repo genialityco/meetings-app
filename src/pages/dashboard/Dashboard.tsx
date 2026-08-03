@@ -209,6 +209,11 @@ export default function Dashboard() {
         onClose={() => {
           dashboard.setSlotModalOpened(false);
           dashboard.setPendingMeetingRequest(null);
+          dashboard.setMeetingToAccept(null);
+          dashboard.setMeetingToEdit(null);
+          dashboard.setSelectedRange(null);
+          dashboard.setSelectedSlotId(null);
+          dashboard.setSelectedDate(null);
           setRequestMessage("");
         }}
         eventDates={[...new Set(dashboard.eventConfig?.eventDates || (dashboard.eventConfig?.eventDate ? [dashboard.eventConfig.eventDate] : []))]}

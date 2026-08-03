@@ -20,6 +20,7 @@ import {
   notifyMeetingConfirmed,
   getTableLabel,
   checkContactMeetingLimit as checkContactMeetingLimitShared,
+  checkRoleMeetingLimit as checkRoleMeetingLimitShared,
   createMeetingRequestDoc,
   pickAvailableCompanyAdvisor,
   getCompanyAdvisors,
@@ -264,6 +265,24 @@ export function useCompanyData(
     [policies.maxMeetingsPerContact, uid, eventId],
   );
 
+  // Valida la política "maxMeetingsPerRole" (lógica compartida en
+  // meetingSlotEngine.ts, también usada por useDashboardData.ts). `date` solo
+  // aplica cuando el alcance configurado es "day"; ver el comentario de
+  // checkRoleMeetingLimit en meetingSlotEngine.ts.
+  const checkRoleMeetingLimit = useCallback(
+    async (date?: string | null): Promise<boolean> => {
+      if (!uid || !eventId) return true;
+      return checkRoleMeetingLimitShared({
+        eventId,
+        userId: uid,
+        policies,
+        myTipoAsistente: currentUser?.data?.tipoAsistente,
+        date,
+      });
+    },
+    [uid, eventId, policies, currentUser?.data?.tipoAsistente],
+  );
+
   // Solicitud directa a una persona (flujo individual). Delegada en la misma
   // lógica compartida de meetingSlotEngine.ts (createMeetingRequestDoc) que usa
   // useDashboardData.ts (CompaniesView), para no duplicar esta lógica en dos hooks.
@@ -305,6 +324,9 @@ export function useCompanyData(
       }
 
       await checkContactMeetingLimit(receiverId, receiverSnap.data());
+      if (!(await checkRoleMeetingLimit())) {
+        throw new Error("Role meeting limit reached");
+      }
 
       await createMeetingRequestDoc({
         eventId,
@@ -318,7 +340,7 @@ export function useCompanyData(
         dashboardLogo,
       });
     },
-    [uid, eventId, currentUser, eventName, dashboardLogo, policies, companyNit, checkContactMeetingLimit],
+    [uid, eventId, currentUser, eventName, dashboardLogo, policies, companyNit, checkContactMeetingLimit, checkRoleMeetingLimit],
   );
 
   // Solicitud dirigida a la empresa completa (Etapa 2): igual que en CompaniesView,
@@ -374,12 +396,21 @@ export function useCompanyData(
         throw new Error("Receiver not found");
       }
       await checkContactMeetingLimit(receiverId, receiverSnap.data());
+      if (!(await checkRoleMeetingLimit())) {
+        throw new Error("Role meeting limit reached");
+      }
 
       setPendingMeetingRequest({ receiverId, receiverPhone, context });
       await prepareSlotSelectionForRequest(receiverId);
       return { deferred: true };
     },
-    [policies.schedulingMode, sendMeetingRequest, prepareSlotSelectionForRequest, checkContactMeetingLimit],
+    [
+      policies.schedulingMode,
+      sendMeetingRequest,
+      prepareSlotSelectionForRequest,
+      checkContactMeetingLimit,
+      checkRoleMeetingLimit,
+    ],
   );
 
   // Solicitud dirigida a la empresa completa (Etapa 2): igual que en CompaniesView,
@@ -418,6 +449,9 @@ export function useCompanyData(
       }
 
       if (policies.schedulingMode === "requester_picks") {
+        if (!(await checkRoleMeetingLimit())) {
+          throw new Error("Role meeting limit reached");
+        }
         const picked = await pickAvailableCompanyAdvisor({
           eventId, eventConfig, policies, requesterId: uid, companyNit,
         });
@@ -450,7 +484,18 @@ export function useCompanyData(
         dashboardLogo,
       });
     },
-    [uid, eventId, companyNit, eventConfig, policies, eventName, dashboardLogo, representatives, requestMeetingWithSlotPicker],
+    [
+      uid,
+      eventId,
+      companyNit,
+      eventConfig,
+      policies,
+      eventName,
+      dashboardLogo,
+      representatives,
+      requestMeetingWithSlotPicker,
+      checkRoleMeetingLimit,
+    ],
   );
 
   const confirmSendMeetingRequestWithSlot = useCallback(
@@ -460,6 +505,10 @@ export function useCompanyData(
       // El mensaje se captura en el mismo modal de selección de horario (ver
       // SlotModal), no en un paso separado.
       const finalContext = message?.trim() ? { ...context, contextNote: message.trim() } : context;
+
+      if (!(await checkRoleMeetingLimit(slot.date))) {
+        return false;
+      }
 
       setConfirmLoading(true);
       try {
@@ -503,7 +552,7 @@ export function useCompanyData(
         setConfirmLoading(false);
       }
     },
-    [pendingMeetingRequest, eventId, uid, eventConfig, policies, eventName],
+    [pendingMeetingRequest, eventId, uid, eventConfig, policies, eventName, checkRoleMeetingLimit],
   );
 
   const groupedSlots = useMemo(() => {
@@ -557,6 +606,7 @@ export function useCompanyData(
     setSlotModalOpened,
     availableSlots,
     selectedDate,
+    setSelectedDate,
     selectedRange,
     setSelectedRange,
     selectedSlotId,

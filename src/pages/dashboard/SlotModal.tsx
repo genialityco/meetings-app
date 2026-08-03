@@ -84,10 +84,20 @@ export default function SlotModal({
   }, [tableOptions]);
 
   useEffect(() => {
-    if (singleTableOption && selectedSlotId !== singleTableOption.value) {
-      setSelectedSlotId(singleTableOption.value);
+    if (singleTableOption) {
+      if (selectedSlotId !== singleTableOption.value) {
+        setSelectedSlotId(singleTableOption.value);
+      }
+      return;
     }
-  }, [singleTableOption?.value]);
+    // Modo pool con varias mesas libres a esa hora: se preselecciona la
+    // primera automáticamente para no obligar al solicitante a elegir, pero
+    // el selector de abajo sigue habilitado por si prefiere otra mesa.
+    if (tableOptions.length > 0 && !tableOptions.some((o: any) => o.value === selectedSlotId)) {
+      setSelectedSlotId(tableOptions[0].value);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRange, singleTableOption?.value]);
 
   return (
     <Modal

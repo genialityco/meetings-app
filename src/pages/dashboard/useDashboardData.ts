@@ -32,8 +32,8 @@ import {
   createConfirmedMeeting,
   notifyMeetingConfirmed,
   getTableLabel,
-  countMeetingsAsRequester,
   checkContactMeetingLimit as checkContactMeetingLimitShared,
+  checkRoleMeetingLimit as checkRoleMeetingLimitShared,
   createMeetingRequestDoc,
   pickAvailableCompanyAdvisor,
   notifyCompanyAdvisors,
@@ -862,49 +862,17 @@ export function useDashboardData(eventId?: string) {
     }
   };
 
-  // Valida la política "maxMeetingsPerRole": límite de reuniones que el usuario
-  // actual puede SOLICITAR según su rol (comprador/vendedor). Solo aplica con
-  // roleMode "buyer_seller" y un límite configurado para ese rol; el límite se
-  // lee en vivo de `policies` en cada llamada, así que si el admin lo cambia
-  // durante el evento la siguiente solicitud ya valida contra el nuevo valor.
-  // `date` solo se usa cuando el alcance configurado es "day"; si se omite y el
-  // alcance es "day", el chequeo se salta (la fecha aún no se conoce, como en
-  // el flujo clásico de solicitud pendiente).
+  // Delegado en la lógica compartida de meetingSlotEngine.ts (usada también
+  // por useCompanyData.ts), para no duplicar la validación de "maxMeetingsPerRole".
   const checkRoleMeetingLimit = async (date?: string | null): Promise<boolean> => {
-    if (policies.roleMode !== "buyer_seller" || !policies.maxMeetingsPerRole || !uid || !eventId) {
-      return true;
-    }
-
-    const myRole = normalizeTipoAsistente(currentUser?.data?.tipoAsistente);
-    const limit =
-      myRole === "comprador"
-        ? policies.maxMeetingsPerRole.comprador
-        : myRole === "vendedor"
-        ? policies.maxMeetingsPerRole.vendedor
-        : null;
-
-    if (!limit) return true;
-
-    const scopedByDay = policies.maxMeetingsPerRoleScope === "day";
-    if (scopedByDay && !date) return true;
-
-    const count = await countMeetingsAsRequester({
+    if (!uid || !eventId) return true;
+    return checkRoleMeetingLimitShared({
       eventId,
       userId: uid,
-      date: scopedByDay ? date : null,
+      policies,
+      myTipoAsistente: currentUser?.data?.tipoAsistente,
+      date,
     });
-
-    if (count >= limit) {
-      showNotification({
-        title: "Límite de reuniones alcanzado",
-        message: scopedByDay
-          ? `Ya alcanzaste el máximo de ${limit} solicitud(es) de reunión para este día.`
-          : `Ya alcanzaste el máximo de ${limit} solicitud(es) de reunión para este evento.`,
-        color: "red",
-      });
-      return false;
-    }
-    return true;
   };
 
   // Solicitud directa a una persona (flujo individual "de siempre"). Delegada por
