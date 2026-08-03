@@ -622,13 +622,35 @@ export default function CompaniesView({
                         <Image
                           src={logoUrl}
                           alt={empresa}
-                          w={42}
-                          h={42}
+                          w={84}
+                          h={84}
                           radius="xl"
                           fit="contain"
+                          style={{
+                            flexShrink: 0,
+                            cursor: nit !== "sin-nit" ? "pointer" : undefined,
+                          }}
+                          onClick={
+                            nit !== "sin-nit" && eventId
+                              ? () => navigate(`/dashboard/${eventId}/company/${nit}`)
+                              : undefined
+                          }
                         />
                       ) : (
-                        <Avatar radius="xl" size={42} color={theme.primaryColor}>
+                        <Avatar
+                          radius="xl"
+                          size={84}
+                          color={theme.primaryColor}
+                          style={{
+                            flexShrink: 0,
+                            cursor: nit !== "sin-nit" ? "pointer" : undefined,
+                          }}
+                          onClick={
+                            nit !== "sin-nit" && eventId
+                              ? () => navigate(`/dashboard/${eventId}/company/${nit}`)
+                              : undefined
+                          }
+                        >
                           {empresa?.[0]?.toUpperCase()}
                         </Avatar>
                       )}

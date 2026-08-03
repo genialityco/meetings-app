@@ -240,14 +240,14 @@ export default function CompanyLanding() {
                 <Image
                   src={company.logoUrl}
                   alt={company.razonSocial}
-                  w={80}
-                  h={80}
+                  w={336}
+                  h={336}
                   radius="md"
                   fit="contain"
                   style={{ flexShrink: 0 }}
                 />
               ) : (
-                <Avatar size={80} radius="md" color="blue" style={{ flexShrink: 0 }}>
+                <Avatar size={336} radius="md" color="blue" style={{ flexShrink: 0 }}>
                   {(company.razonSocial || "E")[0]?.toUpperCase()}
                 </Avatar>
               )}

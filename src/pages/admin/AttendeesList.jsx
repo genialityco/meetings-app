@@ -79,9 +79,13 @@ const getEventTableFields = (event, entityType = "users") => {
       f.name.includes("tama")
     ).map((f) => {
       let fieldName = f.name.replace("company_", "");
-      // Mapear company_nit a nit para que getValue lo encuentre
+      // Mapear company_nit/company_logo a los nombres reales del documento de empresa
+      // para que getValue/onSave lean y escriban el campo correcto (nit, logoUrl).
       if (fieldName === "nit") {
         fieldName = "nit";
+      }
+      if (fieldName === "logo") {
+        fieldName = "logoUrl";
       }
       return {
         name: fieldName,
@@ -90,21 +94,24 @@ const getEventTableFields = (event, entityType = "users") => {
         options: f.options,
       };
     });
-    
+
     if (companyRelatedFields.length > 0) {
-      // Agregar campos adicionales que están en el documento de empresa
+      // Campos que deben existir sí o sí; solo se usan si el formulario
+      // configurado no ya trae uno con ese mismo nombre (evita duplicar,
+      // por ej., el Logo configurado como "Logo de empresa").
       const additionalFields = [
         { name: "logoUrl", label: "Logo", type: "image" },
         { name: "nit", label: "NIT", type: "text" },
         { name: "razonSocial", label: "Razón Social", type: "text" },
       ];
-      
-      // Combinar y eliminar duplicados
-      const allFields = [...additionalFields, ...companyRelatedFields];
+
+      // Los campos configurados tienen prioridad (conservan su label real);
+      // los adicionales solo llenan los que falten. Eliminar duplicados por nombre.
+      const allFields = [...companyRelatedFields, ...additionalFields];
       const uniqueFields = allFields.filter((field, index, self) =>
         index === self.findIndex((f) => f.name === field.name)
       );
-      
+
       return uniqueFields;
     }
   }
@@ -1538,6 +1545,7 @@ function parseFirestoreTimestamp(input) {
         onClose={() => setEditModalOpen(false)}
         attendee={attendeeToEdit}
         fields={fields}
+        eventId={event?.id}
         onSave={async (updated) => {
           const id = updated.id;
           const { id: _id, ...toSave } = updated;
@@ -1566,6 +1574,7 @@ function parseFirestoreTimestamp(input) {
         onClose={() => setEditCompanyModalOpen(false)}
         attendee={companyToEdit}
         fields={companyEditFields}
+        eventId={event?.id}
         onSave={async (updated) => {
           const id = updated.id;
           const { id: _id, ...toSave } = updated;
@@ -1596,6 +1605,7 @@ function parseFirestoreTimestamp(input) {
         onClose={() => setEditProductModalOpen(false)}
         attendee={productToEdit}
         fields={productFields}
+        eventId={event?.id}
         onSave={async (updated) => {
           const id = updated.id;
           const { id: _id, ...toSave } = updated;
