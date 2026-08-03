@@ -28,12 +28,12 @@ import {
   getDoc,
   setDoc,
   updateDoc,
-  addDoc,
   deleteDoc,
   collection,
   getDocs,
   query,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { sendWhatsAppMessage, sendMeetingConfirmation } from "../../utils/whatsappService";
@@ -48,6 +48,22 @@ import * as XLSX from "xlsx";
 import ExternalMeetingModal from "./ExternalMeetingModal";
 
 import SendWaRemindersModal from "./SendWaRemindersModal";
+
+// Crea documentos nuevos en events/{eventId}/agenda usando writeBatch en vez de
+// un addDoc secuencial por slot (que en agendas grandes tarda minutos por hacer
+// un round-trip de red por cada documento). El límite de Firestore es 500
+// operaciones por batch, por eso se parte en chunks.
+const BATCH_CHUNK_SIZE = 450;
+async function batchCreateAgendaSlots(eventId, slots) {
+  const agendaRef = collection(db, "events", eventId, "agenda");
+  for (let i = 0; i < slots.length; i += BATCH_CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    for (const slotData of slots.slice(i, i + BATCH_CHUNK_SIZE)) {
+      batch.set(doc(agendaRef), slotData);
+    }
+    await batch.commit();
+  }
+}
 
 const EventAdmin = () => {
   const { eventId } = useParams();
@@ -221,10 +237,10 @@ const EventAdmin = () => {
         breakBlocks: globalBreakBlocks = [],
       } = event.config;
 
-      let createdCount = 0;
+      const slotsToCreate = [];
 
       // Determinar los días a procesar
-      const daysToProcess = dailyConfig 
+      const daysToProcess = dailyConfig
         ? Object.entries(dailyConfig)
         : eventDates?.length
           ? eventDates.map(date => [date, { startTime: globalStartTime, endTime: globalEndTime, breakBlocks: globalBreakBlocks }])
@@ -263,21 +279,22 @@ const EventAdmin = () => {
             const slotEndTime = minutesToTime(slotEnd);
 
             for (let tableNumber = 1; tableNumber <= numTables; tableNumber++) {
-              await addDoc(collection(db, "events", event.id, "agenda"), {
+              slotsToCreate.push({
                 date,
                 tableNumber,
                 startTime: slotStartTime,
                 endTime: slotEndTime,
                 available: true,
               });
-              createdCount++;
             }
           }
         }
       }
 
+      await batchCreateAgendaSlots(event.id, slotsToCreate);
+
       setGlobalMessage(
-        `Agenda generada: ${createdCount} slots creados para el evento ${event.eventName}.`,
+        `Agenda generada: ${slotsToCreate.length} slots creados para el evento ${event.eventName}.`,
       );
     } catch (error) {
       console.log(error);
@@ -336,10 +353,8 @@ const EventAdmin = () => {
         }
       });
 
-      let createdCount = 0;
-      
       // Crear la nueva mesa para cada horario único encontrado
-      for (const t of slotsToCreate) {
+      const newTableSlots = slotsToCreate.map((t) => {
         const slotData = {
           tableNumber: tableNum,
           startTime: t.startTime,
@@ -348,12 +363,12 @@ const EventAdmin = () => {
         };
         // Incluir la fecha solo si existe en el evento (para soporte multi-día)
         if (t.date) slotData.date = t.date;
+        return slotData;
+      });
 
-        await addDoc(collection(db, "events", event.id, "agenda"), slotData);
-        createdCount++;
-      }
+      await batchCreateAgendaSlots(event.id, newTableSlots);
 
-      setGlobalMessage(`Nueva mesa ${tableNum} añadida con éxito. Se crearon ${createdCount} slots.`);
+      setGlobalMessage(`Nueva mesa ${tableNum} añadida con éxito. Se crearon ${newTableSlots.length} slots.`);
       setAddTableModalOpened(false);
       setNewTableNumber("");
 
@@ -412,7 +427,7 @@ const EventAdmin = () => {
         return;
       }
 
-      let createdCount = 0;
+      const slotsToCreate = [];
       let skippedCount = 0;
 
       for (let slot = 0; slot < totalSlots; slot++) {
@@ -427,20 +442,21 @@ const EventAdmin = () => {
             skippedCount++;
             continue;
           }
-          await addDoc(collection(db, "events", event.id, "agenda"), {
+          slotsToCreate.push({
             date,
             tableNumber,
             startTime: slotStartTime,
             endTime: slotEndTime,
             available: true,
           });
-          createdCount++;
         }
       }
 
+      await batchCreateAgendaSlots(event.id, slotsToCreate);
+
       const msg = skippedCount > 0
-        ? `Expansión completada: ${createdCount} slots creados, ${skippedCount} omitidos por ya existir.`
-        : `Expansión completada: ${createdCount} slots creados.`;
+        ? `Expansión completada: ${slotsToCreate.length} slots creados, ${skippedCount} omitidos por ya existir.`
+        : `Expansión completada: ${slotsToCreate.length} slots creados.`;
       setGlobalMessage(msg);
       setExpandAgendaModalOpened(false);
     } catch (error) {
