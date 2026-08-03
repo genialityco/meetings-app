@@ -99,6 +99,7 @@ export default function CompanyLanding() {
   } = useCompanyData(eventId, companyNit);
 
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [requestMessage, setRequestMessage] = useState("");
   const myUid = currentUser?.uid;
 
   const allowImageUpload = eventConfig?.policies?.allowProductImageUpload !== false;
@@ -638,11 +639,13 @@ export default function CompanyLanding() {
           // El solicitante siempre elige el horario en esta página: se confirma
           // directo, sin un segundo modal de revisión.
           setSlotModalOpened(false);
-          await confirmSendMeetingRequestWithSlot(chosenSlot);
+          await confirmSendMeetingRequestWithSlot(chosenSlot, requestMessage);
+          setRequestMessage("");
         }}
         onClose={() => {
           setSlotModalOpened(false);
           setPendingMeetingRequest(null);
+          setRequestMessage("");
         }}
         eventDates={[...new Set(eventConfig?.eventDates || (eventConfig?.eventDate ? [eventConfig.eventDate] : []))]}
         selectedDate={selectedDate}
@@ -651,6 +654,16 @@ export default function CompanyLanding() {
             prepareSlotSelectionForRequest(pendingMeetingRequest.receiverId, date);
           }
         }}
+        description={
+          pendingMeetingRequest
+            ? `Vas a solicitar una reunión con ${
+                representatives.find((r) => r.id === pendingMeetingRequest.receiverId)?.nombre || "..."
+              }.`
+            : undefined
+        }
+        message={requestMessage}
+        onMessageChange={setRequestMessage}
+        confirmLabel="Enviar solicitud"
       />
     </MantineProvider>
   );

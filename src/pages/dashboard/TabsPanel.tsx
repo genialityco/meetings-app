@@ -258,6 +258,7 @@ export default function TabsPanel({
           interestFilter={dashboard.interestFilter}
           setInterestFilter={dashboard.setInterestFilter}
           eventConfig={dashboard.eventConfig}
+          policies={policies}
           solicitarReunionHabilitado={dashboard.solicitarReunionHabilitado}
           sendMeetingRequest={dashboard.sendMeetingRequest}
           requestMeetingWithSlotPicker={dashboard.requestMeetingWithSlotPicker}
@@ -308,6 +309,7 @@ export default function TabsPanel({
           currentUser={dashboard.currentUser}
           sendMeetingRequest={dashboard.sendMeetingRequest}
           requestMeetingWithSlotPicker={dashboard.requestMeetingWithSlotPicker}
+          policies={policies}
           solicitarReunionHabilitado={dashboard.solicitarReunionHabilitado}
           eventId={eventId}
           highlightEntityId={(() => {
@@ -329,6 +331,7 @@ export default function TabsPanel({
           products={dashboard.products}
           companies={dashboard.companies}
           filteredAssistants={dashboard.filteredAssistants}
+          policies={policies}
           solicitarReunionHabilitado={dashboard.solicitarReunionHabilitado}
           sendMeetingRequest={dashboard.sendMeetingRequest}
           requestMeetingWithSlotPicker={dashboard.requestMeetingWithSlotPicker}

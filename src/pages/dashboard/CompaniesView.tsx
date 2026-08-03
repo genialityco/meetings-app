@@ -360,7 +360,21 @@ export default function CompaniesView({
     return [...exactMatches, ...semanticMatches];
   }, [companiesData, searchTerm, vectorResults, affinityScores]);
 
-  const handleOpenModal = (assistant: Assistant, companyNit: string) => {
+  const handleOpenModal = async (assistant: Assistant, companyNit: string) => {
+    // Con "sin aceptación" (requester_picks), se salta el modal de mensaje: se
+    // va directo al selector de horario (SlotModal, en Dashboard.tsx), que ya
+    // incluye el mensaje opcional en el mismo paso.
+    if (policies.schedulingMode === "requester_picks" && sendMeetingRequestToCompany) {
+      setLoadingId(assistant.id);
+      try {
+        await sendMeetingRequestToCompany(companyNit, {}, assistant.id);
+      } catch {
+        showNotification({ title: "Error", message: "No se pudo iniciar la solicitud.", color: "red" });
+      } finally {
+        setLoadingId(null);
+      }
+      return;
+    }
     setSelectedMeeting({ assistant, companyNit });
     setModalOpened(true);
   };
@@ -406,7 +420,18 @@ export default function CompaniesView({
     }));
   };
 
-  const handleOpenCompanyModal = (empresa: string, companyNit: string) => {
+  const handleOpenCompanyModal = async (empresa: string, companyNit: string) => {
+    if (policies.schedulingMode === "requester_picks" && sendMeetingRequestToCompany) {
+      setLoadingCompany(empresa);
+      try {
+        await sendMeetingRequestToCompany(companyNit, {});
+      } catch {
+        showNotification({ title: "Error", message: "No se pudo iniciar la solicitud.", color: "red" });
+      } finally {
+        setLoadingCompany(null);
+      }
+      return;
+    }
     setSelectedCompanyRequest({ empresa, companyNit });
     setCompanyModalOpened(true);
   };

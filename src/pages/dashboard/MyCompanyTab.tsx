@@ -160,7 +160,7 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
       // envío simple de useCompanyData.
       const send = requestMeetingWithSlotPicker || dashboardSendMeetingRequest;
       const result = send
-        ? await send(rep.id, rep.telefono || "", null, { companyId: companyNit || null, ...context })
+        ? await send(rep.id, rep.telefono || "", { companyId: companyNit || null, ...context })
         : await companySendMeetingRequest(rep.id, rep.telefono || "", {
             companyId: companyNit || null,
             ...context,

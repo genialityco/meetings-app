@@ -1013,9 +1013,13 @@ export function useDashboardData(eventId?: string) {
   };
 
   // Crea la reunión ya "accepted" con el slot elegido por el solicitante y notifica a ambos.
-  const confirmSendMeetingRequestWithSlot = async (slot: any): Promise<boolean> => {
+  const confirmSendMeetingRequestWithSlot = async (slot: any, message?: string): Promise<boolean> => {
     if (!pendingMeetingRequest || !eventId || !uid || !slot?.id) return false;
     const { assistantId, context } = pendingMeetingRequest;
+    // El mensaje se captura en el mismo modal de selección de horario (ver
+    // SlotModal), no en un paso separado — se agrega aquí al contexto justo
+    // antes de confirmar.
+    const finalContext = message?.trim() ? { ...context, contextNote: message.trim() } : context;
 
     if (!(await checkRoleMeetingLimit(slot.date))) {
       return false;
@@ -1039,7 +1043,7 @@ export function useDashboardData(eventId?: string) {
         requesterId: uid,
         receiverId: assistantId,
         slot,
-        context,
+        context: finalContext,
       });
 
       await notifyMeetingConfirmed({
@@ -1054,7 +1058,7 @@ export function useDashboardData(eventId?: string) {
         tableNames: eventConfig?.tableNames,
       });
 
-      meetingAnalytics.requestSent(assistantId, !!context?.contextNote);
+      meetingAnalytics.requestSent(assistantId, !!finalContext?.contextNote);
       meetingAnalytics.accepted(meetingId);
 
       setSlotModalOpened(false);

@@ -39,7 +39,7 @@ import {
   IconFileTypePdf,
   IconSparkles,
 } from "@tabler/icons-react";
-import type { Assistant } from "./types";
+import type { Assistant, EventPolicies } from "./types";
 import { useNavigate, useParams } from "react-router-dom";
 import MeetingRequestModal from "./MeetingRequestModal";
 import { normalizeTipoAsistente, isVendedor, isComprador } from "../../utils/attendeeRole";
@@ -93,6 +93,7 @@ interface AttendeesViewProps {
   interestFilter: string | null;
   setInterestFilter: (v: string | null) => void;
   eventConfig: any;
+  policies?: EventPolicies;
   solicitarReunionHabilitado: boolean;
   sendMeetingRequest: (
     id: string,
@@ -159,6 +160,7 @@ export default function AttendeesView({
   interestFilter,
   setInterestFilter,
   eventConfig,
+  policies,
   solicitarReunionHabilitado,
   sendMeetingRequest,
   requestMeetingWithSlotPicker,
@@ -344,7 +346,21 @@ export default function AttendeesView({
     return [...exactMatches, ...semanticMatches];
   }, [filteredAssistants, searchTerm, formFields, showOnlyToday, sortBy, affinityScores, vectorResults, filterByRole, isRuedaNegocios, currentUser]);
 
-  const handleOpenModal = (assistant: Assistant) => {
+  const handleOpenModal = async (assistant: Assistant) => {
+    // Con "sin aceptación" (requester_picks), se salta el modal de mensaje: se
+    // va directo al selector de horario (SlotModal), que ya incluye el
+    // mensaje opcional en el mismo paso.
+    if (policies?.schedulingMode === "requester_picks" && requestMeetingWithSlotPicker) {
+      setLoadingId(assistant.id);
+      try {
+        await requestMeetingWithSlotPicker(assistant.id, assistant.telefono || "", {});
+      } catch {
+        showNotification({ title: "Error", message: "No se pudo iniciar la solicitud.", color: "red" });
+      } finally {
+        setLoadingId(null);
+      }
+      return;
+    }
     setSelectedAssistant(assistant);
     setModalOpened(true);
   };

@@ -1,6 +1,7 @@
-import { Modal, LoadingOverlay, Stack, Select, Button, Text, Tabs, Badge, Group } from "@mantine/core";
-import { IconCalendar } from "@tabler/icons-react";
+import { Modal, LoadingOverlay, Stack, Select, Button, Text, Textarea } from "@mantine/core";
 import { useMemo, useEffect } from "react";
+
+const MAX_MESSAGE_LENGTH = 200;
 
 interface SlotModalProps {
   opened: boolean;
@@ -18,6 +19,13 @@ interface SlotModalProps {
   eventDates?: string[]; // Array de fechas del evento
   selectedDate?: string | null;
   onDateChange?: (date: string) => void;
+  /** Texto describiendo con quién/qué se va a agendar (ej. "Vas a solicitar una
+   *  reunión con Juan de Geniality."). Si se pasa, este modal actúa como el
+   *  único paso de la solicitud (horario + mesa + mensaje opcional). */
+  description?: string;
+  message?: string;
+  onMessageChange?: (value: string) => void;
+  confirmLabel?: string;
 }
 
 export default function SlotModal({
@@ -36,6 +44,10 @@ export default function SlotModal({
   eventDates = [],
   selectedDate,
   onDateChange,
+  description,
+  message,
+  onMessageChange,
+  confirmLabel,
 }: SlotModalProps) {
   // Formatear fechas para mostrar
   const formatDate = (dateStr: string) => {
@@ -90,29 +102,20 @@ export default function SlotModal({
         <Text ta="center">No hay horarios disponibles.</Text>
       ) : (
         <Stack p="md">
+          {description && <Text size="sm">{description}</Text>}
+
           {/* Selector de día (solo si hay múltiples días) */}
           {hasMultipleDays && (
-            <Tabs
+            <Select
+              label="Día"
+              data={eventDates.map((date) => ({
+                value: date,
+                label: `${formatDate(date)} (${slotCountByDate[date] || 0} slots)`,
+              }))}
               value={selectedDate || eventDates[0]}
               onChange={(value) => onDateChange?.(value || eventDates[0])}
-            >
-              <Tabs.List>
-                {eventDates.map((date) => (
-                  <Tabs.Tab
-                    key={date}
-                    value={date}
-                    leftSection={<IconCalendar size={16} />}
-                  >
-                    <Group gap="xs">
-                      <Text size="sm">{formatDate(date)}</Text>
-                      <Badge size="sm" variant="light">
-                        {slotCountByDate[date] || 0} slots
-                      </Badge>
-                    </Group>
-                  </Tabs.Tab>
-                ))}
-              </Tabs.List>
-            </Tabs>
+              disabled={confirmLoading}
+            />
           )}
 
           <Select
@@ -145,6 +148,23 @@ export default function SlotModal({
               required
             />
           )}
+
+          {onMessageChange && (
+            <Textarea
+              label="Mensaje personalizado (opcional)"
+              placeholder="Ej: Me interesa conocer más sobre sus productos..."
+              description={`${(message || "").length}/${MAX_MESSAGE_LENGTH} caracteres`}
+              value={message || ""}
+              onChange={(e) => {
+                const value = e.currentTarget.value;
+                if (value.length <= MAX_MESSAGE_LENGTH) onMessageChange(value);
+              }}
+              minRows={3}
+              maxRows={5}
+              autosize
+            />
+          )}
+
           <Button
             fullWidth
             mt="md"
@@ -152,7 +172,7 @@ export default function SlotModal({
             loading={confirmLoading}
             onClick={onConfirmClick}
           >
-            Confirmar datos
+            {confirmLabel || "Confirmar datos"}
           </Button>
         </Stack>
       )}

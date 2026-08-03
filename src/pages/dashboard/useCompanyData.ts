@@ -454,9 +454,12 @@ export function useCompanyData(
   );
 
   const confirmSendMeetingRequestWithSlot = useCallback(
-    async (slot: any): Promise<boolean> => {
+    async (slot: any, message?: string): Promise<boolean> => {
       if (!pendingMeetingRequest || !eventId || !uid || !slot?.id) return false;
       const { receiverId, context } = pendingMeetingRequest;
+      // El mensaje se captura en el mismo modal de selección de horario (ver
+      // SlotModal), no en un paso separado.
+      const finalContext = message?.trim() ? { ...context, contextNote: message.trim() } : context;
 
       setConfirmLoading(true);
       try {
@@ -466,7 +469,7 @@ export function useCompanyData(
           requesterId: uid,
           receiverId,
           slot,
-          context,
+          context: finalContext,
         });
 
         await notifyMeetingConfirmed({

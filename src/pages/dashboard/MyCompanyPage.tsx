@@ -1,6 +1,6 @@
 import { Container, MantineProvider, Button } from "@mantine/core";
 import { useParams, useNavigate } from "react-router-dom";
-import { useContext, useMemo } from "react";
+import { useContext, useMemo, useState } from "react";
 import { IconArrowLeft } from "@tabler/icons-react";
 import { buildEventTheme } from "../../theme.js";
 import { useDashboardData } from "./useDashboardData";
@@ -16,6 +16,7 @@ export default function MyCompanyPage() {
   const navigate = useNavigate();
   const dashboard = useDashboardData(eventId);
   const { currentUser } = useContext(UserContext);
+  const [requestMessage, setRequestMessage] = useState("");
 
   const eventTheme = useMemo(
     () => buildEventTheme(dashboard.eventConfig?.primaryColor),
@@ -69,7 +70,8 @@ export default function MyCompanyPage() {
           // sin el paso extra de ConfirmModal.
           if (dashboard.pendingMeetingRequest) {
             dashboard.setSlotModalOpened(false);
-            await dashboard.confirmSendMeetingRequestWithSlot(dashboard.chosenSlot);
+            await dashboard.confirmSendMeetingRequestWithSlot(dashboard.chosenSlot, requestMessage);
+            setRequestMessage("");
             return;
           }
           dashboard.setConfirmModalOpened(true);
@@ -77,10 +79,19 @@ export default function MyCompanyPage() {
         onClose={() => {
           dashboard.setSlotModalOpened(false);
           dashboard.setPendingMeetingRequest(null);
+          setRequestMessage("");
         }}
         eventDates={[...new Set(dashboard.eventConfig?.eventDates || (dashboard.eventConfig?.eventDate ? [dashboard.eventConfig.eventDate] : []))]}
         selectedDate={dashboard.selectedDate}
         onDateChange={dashboard.handleDateChange}
+        description={
+          dashboard.pendingMeetingRequest
+            ? `Vas a solicitar una reunión con ${dashboard.currentRequesterName || "..."}.`
+            : undefined
+        }
+        message={dashboard.pendingMeetingRequest ? requestMessage : undefined}
+        onMessageChange={dashboard.pendingMeetingRequest ? setRequestMessage : undefined}
+        confirmLabel={dashboard.pendingMeetingRequest ? "Enviar solicitud" : undefined}
       />
       <ConfirmModal
         opened={dashboard.confirmModalOpened}

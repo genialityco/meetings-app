@@ -58,6 +58,9 @@ export default function Dashboard() {
   const [phoneError, setPhoneError] = useState("");
   const [emailError, setEmailError] = useState("");
   const [isSendingWelcome, setIsSendingWelcome] = useState(false);
+  // Mensaje opcional capturado en el mismo modal de selección de horario
+  // (solo aplica al flujo de "solicitar reunión", no al de aceptar/reagendar).
+  const [requestMessage, setRequestMessage] = useState("");
 
   const companiesTabEnabled =
     dashboard.policies?.uiViewsEnabled?.companies ??
@@ -193,7 +196,9 @@ export default function Dashboard() {
             dashboard.setSlotModalOpened(false);
             const success = await dashboard.confirmSendMeetingRequestWithSlot(
               dashboard.chosenSlot,
+              requestMessage,
             );
+            setRequestMessage("");
             if (success) {
               setViewRequest({ view: "activity", tab: "agenda", _k: Date.now() });
             }
@@ -204,10 +209,19 @@ export default function Dashboard() {
         onClose={() => {
           dashboard.setSlotModalOpened(false);
           dashboard.setPendingMeetingRequest(null);
+          setRequestMessage("");
         }}
         eventDates={[...new Set(dashboard.eventConfig?.eventDates || (dashboard.eventConfig?.eventDate ? [dashboard.eventConfig.eventDate] : []))]}
         selectedDate={dashboard.selectedDate}
         onDateChange={dashboard.handleDateChange}
+        description={
+          dashboard.pendingMeetingRequest
+            ? `Vas a solicitar una reunión con ${dashboard.currentRequesterName || "..."}.`
+            : undefined
+        }
+        message={dashboard.pendingMeetingRequest ? requestMessage : undefined}
+        onMessageChange={dashboard.pendingMeetingRequest ? setRequestMessage : undefined}
+        confirmLabel={dashboard.pendingMeetingRequest ? "Enviar solicitud" : undefined}
       />
       <ConfirmModal
         opened={dashboard.confirmModalOpened}

@@ -219,11 +219,28 @@ export default function ProductsView({
     return [...exactMatches, ...semanticMatches];
   }, [products, searchTerm, categoryFilter, vectorResults, affinityScores]);
 
-  const handleOpenModal = (
+  const handleOpenModal = async (
     assistantId: string,
     assistantPhone: string,
     product: Product,
   ) => {
+    // Con "sin aceptación" (requester_picks), se salta el modal de mensaje: se
+    // va directo al selector de horario (SlotModal), que ya incluye el
+    // mensaje opcional en el mismo paso.
+    if (policies?.schedulingMode === "requester_picks" && requestMeetingWithSlotPicker) {
+      setLoadingId(`${product.id}-${assistantId}`);
+      try {
+        await requestMeetingWithSlotPicker(assistantId, assistantPhone, {
+          productId: product.id,
+          companyId: product.companyId || null,
+        });
+      } catch {
+        showNotification({ title: "Error", message: "No se pudo iniciar la solicitud.", color: "red" });
+      } finally {
+        setLoadingId(null);
+      }
+      return;
+    }
     setSelectedProduct({ product, assistantId, assistantPhone });
     setModalOpened(true);
   };
