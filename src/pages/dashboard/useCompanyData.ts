@@ -448,6 +448,12 @@ export function useCompanyData(
         throw new Error("No advisors available");
       }
 
+      // Sin advisorId no hay un receptor puntual todavía (se elige más abajo), pero
+      // la política "maxMeetingsPerContact" también debe frenar solicitudes a la
+      // empresa en general: se valida contra el grupo de la empresa completa
+      // (contactCompanyId) usando companyNit como id sintético.
+      await checkContactMeetingLimit(companyNit, { companyId: companyNit });
+
       if (policies.schedulingMode === "requester_picks") {
         if (!(await checkRoleMeetingLimit())) {
           throw new Error("Role meeting limit reached");
@@ -495,6 +501,7 @@ export function useCompanyData(
       representatives,
       requestMeetingWithSlotPicker,
       checkRoleMeetingLimit,
+      checkContactMeetingLimit,
     ],
   );
 
@@ -507,6 +514,17 @@ export function useCompanyData(
       const finalContext = message?.trim() ? { ...context, contextNote: message.trim() } : context;
 
       if (!(await checkRoleMeetingLimit(slot.date))) {
+        return false;
+      }
+
+      // Re-valida "maxMeetingsPerContact" justo antes de crear la reunión: el check
+      // inicial (en requestMeetingWithSlotPicker/sendMeetingRequestToCompany) pudo
+      // quedar desactualizado si el modal de horario estuvo abierto un rato (otra
+      // reunión creada mientras tanto, o la política se activó recién).
+      try {
+        const receiverSnap = await getDoc(doc(db, "users", receiverId));
+        await checkContactMeetingLimit(receiverId, receiverSnap.data());
+      } catch {
         return false;
       }
 
@@ -552,7 +570,7 @@ export function useCompanyData(
         setConfirmLoading(false);
       }
     },
-    [pendingMeetingRequest, eventId, uid, eventConfig, policies, eventName, checkRoleMeetingLimit],
+    [pendingMeetingRequest, eventId, uid, eventConfig, policies, eventName, checkRoleMeetingLimit, checkContactMeetingLimit],
   );
 
   const groupedSlots = useMemo(() => {

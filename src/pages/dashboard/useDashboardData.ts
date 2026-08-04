@@ -993,6 +993,15 @@ export function useDashboardData(eventId?: string) {
       return false;
     }
 
+    // Re-valida "maxMeetingsPerContact" justo antes de crear la reunión: el check
+    // inicial (en requestMeetingWithSlotPicker/sendMeetingRequestToCompany) pudo
+    // quedar desactualizado si el modal de horario estuvo abierto un rato (otra
+    // reunión creada mientras tanto, o la política se activó recién).
+    const receiverSnap = await getDoc(doc(db, "users", assistantId));
+    if (!(await checkContactMeetingLimit(assistantId, receiverSnap.data()))) {
+      return false;
+    }
+
     setConfirmLoading(true);
     const notifId = `request-meeting-${assistantId}-${Date.now()}`;
     mantineNotifications.show({
@@ -1662,6 +1671,14 @@ export function useDashboardData(eventId?: string) {
         color: "red",
       });
       return Promise.reject(new Error("No advisors available"));
+    }
+
+    // Sin advisorId no hay un receptor puntual todavía (se elige más abajo), pero
+    // la política "maxMeetingsPerContact" también debe frenar solicitudes a la
+    // empresa en general: se valida contra el grupo de la empresa completa
+    // (contactCompanyId) usando companyNit como id sintético.
+    if (!(await checkContactMeetingLimit(companyNit, { companyId: companyNit }))) {
+      return Promise.reject(new Error("Meeting limit reached"));
     }
 
     if (policies.schedulingMode === "requester_picks") {

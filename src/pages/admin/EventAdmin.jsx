@@ -49,6 +49,7 @@ import ExternalMeetingModal from "./ExternalMeetingModal";
 
 import SendWaRemindersModal from "./SendWaRemindersModal";
 import { isComprador, isVendedor } from "../../utils/attendeeRole";
+import EventLandingQrModal from "./EventLandingQrModal";
 
 // Crea documentos nuevos en events/{eventId}/agenda usando writeBatch en vez de
 // un addDoc secuencial por slot (que en agendas grandes tarda minutos por hacer
@@ -1355,6 +1356,7 @@ const EventAdmin = () => {
           <Button component={Link} to={`/event/${event.id}`} variant="default">
             Ir a la landing
           </Button>
+          <EventLandingQrModal eventId={event.id} />
           <Button component={Link} to={`/matrix/${event.id}`} variant="default">
             Ver Matriz
           </Button>
