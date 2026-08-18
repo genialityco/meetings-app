@@ -64,7 +64,14 @@ export const UserProvider = ({ children }) => {
       return;
     }
 
+    let pendingAnonTimer = null;
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (pendingAnonTimer) {
+        clearTimeout(pendingAnonTimer);
+        pendingAnonTimer = null;
+      }
+
       if (user) {
         const uid = user.uid;
         const userDoc = await getDoc(doc(db, "users", uid));
@@ -94,12 +101,29 @@ export const UserProvider = ({ children }) => {
         // } catch (error) {
         //   console.error("Error al obtener el token de notificación:", error);
         // }
+      } else if (localStorage.getItem("adminSession") === "true") {
+        // AdminAuthContext comparte el mismo `auth` y usa un margen de 1500ms
+        // antes de confirmar un cierre de sesión real (para tolerar parpadeos
+        // transitorios de onAuthStateChanged, p.ej. al abrir una pestaña nueva
+        // mientras se restaura la sesión persistida). Igualamos ese margen aquí:
+        // si tras esperar la bandera ya no está, no era una sesión admin real
+        // y procedemos con el login anónimo en vez de dejar currentUser en null
+        // para siempre (lo que rompía el registro con "permission-denied").
+        setUserLoading(false);
+        pendingAnonTimer = setTimeout(async () => {
+          pendingAnonTimer = null;
+          if (localStorage.getItem("adminSession") === "true" || auth.currentUser) return;
+          try {
+            const userCredential = await signInAnonymously(auth);
+            const newUser = { uid: userCredential.user.uid, data: null };
+            setCurrentUser(newUser);
+            localStorage.setItem("currentUser", JSON.stringify(newUser));
+          } catch (error) {
+            console.error("Error initializing user:", error);
+          }
+        }, 1600);
+        return;
       } else {
-        // No re-autenticar anónimamente si hay una sesión admin activa
-        if (localStorage.getItem("adminSession") === "true") {
-          setUserLoading(false);
-          return;
-        }
         try {
           const userCredential = await signInAnonymously(auth);
           const newUser = { uid: userCredential.user.uid, data: null };
@@ -112,7 +136,10 @@ export const UserProvider = ({ children }) => {
       setUserLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      if (pendingAnonTimer) clearTimeout(pendingAnonTimer);
+      unsubscribe();
+    };
   }, [manualLogin]);
 
   useEffect(() => {
