@@ -135,6 +135,7 @@ const EventAdmin = () => {
     pendientes: 0,
     rechazadas: 0,
     canceladas: 0,
+    realizadas: 0,
   });
   const [meetingsCountLoading, setMeetingsCountLoading] = useState(false);
   const [waRemindersModalOpened, setWaRemindersModalOpened] = useState(false);
@@ -905,20 +906,23 @@ const EventAdmin = () => {
       let aceptadas = 0,
         pendientes = 0,
         rechazadas = 0,
-        canceladas = 0;
+        canceladas = 0,
+        realizadas = 0;
 
       meetingsSnap.forEach((doc) => {
-        const status = (doc.data().status || "").toLowerCase();
+        const data = doc.data();
+        const status = (data.status || "").toLowerCase();
         if (status === "accepted") aceptadas++;
         else if (status === "rejected") rechazadas++;
         else if (status === "cancelled" || status === "canceled") canceladas++;
         else pendientes++; // pending, taken, sin estado
+        if (data.completed) realizadas++;
       });
 
-      setMeetingsCounts({ aceptadas, pendientes, rechazadas, canceladas });
+      setMeetingsCounts({ aceptadas, pendientes, rechazadas, canceladas, realizadas });
     } catch (e) {
       console.log(e);
-      setMeetingsCounts({ aceptadas: 0, pendientes: 0, rechazadas: 0, canceladas: 0 });
+      setMeetingsCounts({ aceptadas: 0, pendientes: 0, rechazadas: 0, canceladas: 0, realizadas: 0 });
     }
     setMeetingsCountLoading(false);
   };
@@ -1510,7 +1514,7 @@ const EventAdmin = () => {
         {meetingsCountLoading ? (
           <Loader size="sm" />
         ) : (
-          <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md">
+          <SimpleGrid cols={{ base: 2, sm: 5 }} spacing="md">
             <Card withBorder radius="md" p="md">
               <Text c="dimmed" size="sm">
                 Aceptadas
@@ -1537,6 +1541,13 @@ const EventAdmin = () => {
                 Canceladas
               </Text>
               <Title order={3}>{meetingsCounts.canceladas}</Title>
+            </Card>
+
+            <Card withBorder radius="md" p="md">
+              <Text c="dimmed" size="sm">
+                Realizadas
+              </Text>
+              <Title order={3}>{meetingsCounts.realizadas}</Title>
             </Card>
           </SimpleGrid>
         )}
