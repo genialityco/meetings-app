@@ -225,7 +225,7 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
   const [editProductModalOpen, setEditProductModalOpen] = useState(false);
   const [productToEdit, setProductToEdit] = useState(null);
 
-  // Estado para búsqueda por ID
+  // Estado para búsqueda de asistentes (ID, nombre, cédula, correo, empresa, etc.)
   const [searchId, setSearchId] = useState("");
 
   // Estado para regeneración de vectores
@@ -1135,10 +1135,18 @@ function parseFirestoreTimestamp(input) {
     XLSX.writeFile(wb, `productos_${event?.eventName || event.id}.xlsx`);
   };
 
-  // Filtrar asistentes por ID
-  const filteredAttendees = searchId.trim() 
-    ? attendees.filter(a => a.id.toLowerCase().includes(searchId.toLowerCase().trim()))
-    : attendees;
+  // Filtrar asistentes por ID, nombre, cédula, correo, empresa o cualquier campo configurado del evento
+  const filteredAttendees = useMemo(() => {
+    const term = searchId.trim().toLowerCase();
+    if (!term) return attendees;
+    return attendees.filter((a) => {
+      if (a.id.toLowerCase().includes(term)) return true;
+      return fields.some((f) => {
+        const val = getDisplayValue(a, f);
+        return String(val ?? "").toLowerCase().includes(term);
+      });
+    });
+  }, [attendees, searchId, fields]);
 
   // Función para regenerar vectores de un usuario
   const handleRegenerateUserVector = async (userId) => {
@@ -1245,7 +1253,7 @@ function parseFirestoreTimestamp(input) {
           {/* Campo de búsqueda por ID */}
           <Group mb="md">
             <TextInput
-              placeholder="Buscar por ID..."
+              placeholder="Buscar por nombre, cédula, correo, empresa, ID..."
               value={searchId}
               onChange={(e) => setSearchId(e.target.value)}
               leftSection={<IconSearch size={16} />}
@@ -1282,8 +1290,8 @@ function parseFirestoreTimestamp(input) {
             <Loader />
           ) : filteredAttendees.length === 0 ? (
             <Text>
-              {searchId 
-                ? `No se encontraron asistentes con ID que contenga "${searchId}"`
+              {searchId
+                ? `No se encontraron asistentes que coincidan con "${searchId}"`
                 : "No hay asistentes registrados para este evento."}
             </Text>
           ) : (
