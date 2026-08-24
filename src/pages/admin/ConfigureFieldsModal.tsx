@@ -143,6 +143,12 @@ const AVAILABLE_FIELDS = [
     },
   },
   {
+    name: "diasAsistencia",
+    label: "Días a los que asistirá",
+    type: "eventDays",
+    required: false,
+  },
+  {
     name: "correo",
     label: "Correo",
     type: "text",
@@ -359,17 +365,19 @@ function SortableFieldItem({
               ? `Select: ${(field.options || []).map((op: any) => op.label).join(", ")}`
               : field.type === "multiselect"
                 ? `Multi-select: ${(field.options || []).map((op: any) => op.label).join(", ")}`
-                : field.type === "richtext"
-                  ? "RichText"
-                  : field.type === "pdf"
-                    ? "PDF"
-                    : field.type === "photo"
-                      ? "Foto"
-                      : field.type === "file"
-                        ? "Archivo"
-                        : field.type === "phone"
-                          ? "Teléfono"
-                          : "Texto"}
+                : field.type === "eventDays"
+                  ? "Multi-select: días del evento (automático)"
+                  : field.type === "richtext"
+                    ? "RichText"
+                    : field.type === "pdf"
+                      ? "PDF"
+                      : field.type === "photo"
+                        ? "Foto"
+                        : field.type === "file"
+                          ? "Archivo"
+                          : field.type === "phone"
+                            ? "Teléfono"
+                            : "Texto"}
         </Text>
         {field.type === "text" && (
           <Select

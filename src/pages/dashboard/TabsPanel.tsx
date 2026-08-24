@@ -24,6 +24,7 @@ import CalendarTab from "./CalendarTab";
 import MatchesTab from "./MatchesTab";
 import EventSurveyTab from "./EventSurveyTab";
 import MyCompanyTab from "./MyCompanyTab";
+import QrOnlyView from "./QrOnlyView";
 import { DEFAULT_POLICIES } from "./types";
 import { isVendedor } from "../../utils/attendeeRole";
 import { useMediaQuery } from "@mantine/hooks";
@@ -180,6 +181,18 @@ export default function TabsPanel({
     (dashboard.rejectedRequests?.length || 0) +
     (dashboard.sentRequests?.length || 0) +
     (dashboard.sentRejectedRequests?.length || 0);
+
+  // Modo "Solo QR": eventos que solo usan la app para control de acceso/check-in.
+  // Reemplaza por completo las pestañas (reuniones, asistentes, empresas...) por
+  // el código de asistencia del usuario. Se resuelve después de todos los hooks
+  // anteriores para no romper el orden de hooks entre renders.
+  if (policies.qrOnlyModeEnabled) {
+    return (
+      <Stack mt="md">
+        <QrOnlyView dashboard={dashboard} />
+      </Stack>
+    );
+  }
 
   return (
     <Stack mt="md">

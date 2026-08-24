@@ -86,6 +86,7 @@ export default function EventPoliciesModal({
   const [raffleShowPointsToAttendee, setRaffleShowPointsToAttendee] = useState(false);
   const [standVisitsEnabled, setStandVisitsEnabled] = useState(false);
   const [standVisitAllowSellerScan, setStandVisitAllowSellerScan] = useState(false);
+  const [qrOnlyModeEnabled, setQrOnlyModeEnabled] = useState(false);
 
   // Empresas y asignación de mesas fijas
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -139,6 +140,7 @@ export default function EventPoliciesModal({
     setRaffleShowPointsToAttendee(p.raffleShowPointsToAttendee ?? false);
     setStandVisitsEnabled(p.standVisitsEnabled ?? false);
     setStandVisitAllowSellerScan(p.standVisitAllowSellerScan ?? false);
+    setQrOnlyModeEnabled(p.qrOnlyModeEnabled ?? false);
   }, [event]);
 
   // Cargar empresas cuando se abre el modal y tableMode es "fixed"
@@ -262,6 +264,7 @@ export default function EventPoliciesModal({
               raffleShowPointsToAttendee,
               standVisitsEnabled,
               standVisitAllowSellerScan,
+              qrOnlyModeEnabled,
             },
           },
         },
@@ -314,6 +317,15 @@ export default function EventPoliciesModal({
 
   const content = (
       <Stack>
+        <Paper p="md" withBorder style={{ borderColor: qrOnlyModeEnabled ? "var(--mantine-color-orange-5)" : undefined }}>
+          <Switch
+            label="Modo 'Solo QR' (evento de asistencia/check-in)"
+            description="El dashboard del asistente muestra únicamente su código QR de asistencia, sin las pestañas de reuniones, asistentes, empresas ni productos. Úsalo para eventos donde la app solo sirve para control de acceso."
+            checked={qrOnlyModeEnabled}
+            onChange={(e) => setQrOnlyModeEnabled(e.currentTarget.checked)}
+          />
+        </Paper>
+
         <Select
           label="Modo de roles"
           description="Define quién puede reunirse con quién"

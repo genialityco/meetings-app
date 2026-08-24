@@ -29,7 +29,7 @@ import { useMediaQuery } from "@mantine/hooks";
 import { IconEdit, IconLogout, IconChevronDown, IconPackage, IconBuilding, IconCheck, IconUserCheck, IconQrcode, IconScan } from "@tabler/icons-react";
 import { UserContext } from "../context/UserContext";
 import { isComprador as isCompradorRole } from "../utils/attendeeRole";
-import { resolveCheckInDay, isCheckedInOnDay } from "../utils/eventDays";
+import { resolveCheckInDay, isCheckedInOnDay, getEventDayKeys, formatDayLabel } from "../utils/eventDays";
 import { parseStandVisitQrUrl } from "../utils/qrScan";
 import QrScannerModal from "./QrScannerModal";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -78,6 +78,7 @@ const DashboardHeader = ({
 
   const sellerRedirect = policies?.sellerRedirectToProducts === true;
   const isComprador = sellerRedirect && isCompradorRole(currentUser?.data?.tipoAsistente);
+  const qrOnlyMode = policies?.qrOnlyModeEnabled === true;
   const data = currentUser?.data || {};
   const isMobile = useMediaQuery("(max-width: 600px)");
 
@@ -413,6 +414,27 @@ const DashboardHeader = ({
         );
       }
 
+      // Días de asistencia (opciones dinámicas = días configurados del evento)
+      if (field.type === "eventDays") {
+        const dayKeys = getEventDayKeys(eventConfig);
+        const dayOptions = dayKeys.map((day: string, idx: number) => ({
+          value: day,
+          label: formatDayLabel(day, idx),
+        }));
+        if (dayOptions.length === 0) return null;
+        return (
+          <MultiSelect
+            key={field.name}
+            label={field.label}
+            placeholder="Selecciona los días a los que asistirás"
+            data={dayOptions}
+            value={Array.isArray(getFieldValue(field.name)) ? getFieldValue(field.name) : []}
+            onChange={(value) => handleChange(field.name, value)}
+            clearable
+          />
+        );
+      }
+
       // Checkbox
       if (field.type === "checkbox") {
         return (
@@ -528,7 +550,7 @@ const DashboardHeader = ({
 
         {/* Derecha: Notificaciones + Check-in + Avatar con Menu */}
         <Group gap="sm" align="center">
-          {policies?.standVisitsEnabled === true && (
+          {!qrOnlyMode && policies?.standVisitsEnabled === true && (
             isMobile ? (
               <Tooltip label="Escanear stand" withArrow>
                 <ActionIcon
@@ -618,7 +640,7 @@ const DashboardHeader = ({
               >
                 Editar perfil
               </Menu.Item>
-              {eventId && !isComprador && (
+              {!qrOnlyMode && eventId && !isComprador && (
                 <Menu.Item
                   leftSection={<IconPackage size={16} />}
                   onClick={() => navigate(`/dashboard/${eventId}/my-products`)}
@@ -626,7 +648,7 @@ const DashboardHeader = ({
                   Mis productos
                 </Menu.Item>
               )}
-              {eventId && (
+              {!qrOnlyMode && eventId && (
                 <Menu.Item
                   leftSection={<IconBuilding size={16} />}
                   onClick={() => navigate(`/dashboard/${eventId}/my-company`)}
@@ -755,7 +777,8 @@ const DashboardHeader = ({
                                   field.type === "textarea" ||
                                   field.type === "richtext" ||
                                   field.name === "descripcion" ||
-                                  field.type === "multiselect"
+                                  field.type === "multiselect" ||
+                                  field.type === "eventDays"
                                     ? 12
                                     : 6
                                 }
@@ -786,7 +809,8 @@ const DashboardHeader = ({
                                 span={
                                   field.type === "textarea" ||
                                   field.type === "richtext" ||
-                                  field.type === "multiselect"
+                                  field.type === "multiselect" ||
+                                  field.type === "eventDays"
                                     ? 12
                                     : 6
                                 }

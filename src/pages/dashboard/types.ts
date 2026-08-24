@@ -158,6 +158,8 @@ export interface EventPolicies {
   standVisitsEnabled?: boolean;
   /** Además del QR fijo del stand, permite que el vendedor escanee la credencial del comprador para registrar la visita (solo aplica si standVisitsEnabled) */
   standVisitAllowSellerScan?: boolean;
+  /** Modo "Solo QR": el dashboard del asistente muestra únicamente su código de asistencia (sin tabs de reuniones, asistentes, empresas, etc). Pensado para eventos que solo usan la app para control de acceso/check-in. */
+  qrOnlyModeEnabled?: boolean;
 }
 
 /** Campo de un formulario de encuesta (reutiliza el modelo de ConfigureSurveyModal) */
@@ -255,4 +257,5 @@ export const DEFAULT_POLICIES: EventPolicies = {
   raffleShowPointsToAttendee: false,
   standVisitsEnabled: false,
   standVisitAllowSellerScan: false,
+  qrOnlyModeEnabled: false,
 };

@@ -64,6 +64,7 @@ import {
   isPhoneField,
 } from "../utils/phoneUtils";
 import { sendWelcomeNotification } from "../utils/whatsappService";
+import { getEventDayKeys, formatDayLabel } from "../utils/eventDays";
 
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
 
@@ -1112,6 +1113,43 @@ const Landing = () => {
                 />
               )}
             </Box>
+          );
+        }
+
+        if (field.type === "eventDays") {
+          const dayKeys = getEventDayKeys(event?.config);
+          const dayOptions = dayKeys.map((day, idx) => ({
+            value: day,
+            label: formatDayLabel(day, idx),
+          }));
+          const dayValue = Array.isArray(getValueForField(field.name))
+            ? getValueForField(field.name)
+            : [];
+
+          if (dayOptions.length === 0) return null;
+
+          return (
+            <MultiSelect
+              key={field.name}
+              label={field.label}
+              placeholder={
+                field.placeholder || "Selecciona los días a los que asistirás"
+              }
+              data={dayOptions}
+              value={dayValue}
+              onChange={(value) => {
+                handleDynamicChange(field.name, value);
+                const error = validateField(
+                  field,
+                  value?.length ? value : "",
+                );
+                setFormErrors((prev) => ({ ...prev, [field.name]: error }));
+              }}
+              required={field.required}
+              clearable
+              error={fieldError}
+              radius="md"
+            />
           );
         }
 
