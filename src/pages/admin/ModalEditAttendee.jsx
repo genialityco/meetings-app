@@ -1,7 +1,8 @@
-import { Modal, Stack, TextInput, Textarea, Select, Checkbox, Button, Group, Box, Text, Image, FileButton } from "@mantine/core";
+import { Modal, Stack, TextInput, Textarea, Select, Checkbox, Button, Group, Box, Text, Image, FileButton, Divider, Loader } from "@mantine/core";
 import { useEffect, useMemo, useState } from "react";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { storage } from "../../firebase/firebaseConfig";
+import { doc, getDoc } from "firebase/firestore";
+import { storage, db } from "../../firebase/firebaseConfig";
 import {
   COUNTRY_CODES,
   detectDefaultIso2,
@@ -9,6 +10,8 @@ import {
   parsePhoneValue,
   isPhoneField,
 } from "../../utils/phoneUtils";
+
+const normalizeNit = (v = "") => String(v || "").replace(/\D/g, "");
 
 const ModalEditAttendee = ({
   opened,
@@ -22,11 +25,19 @@ const ModalEditAttendee = ({
   const [saving, setSaving] = useState(false);
   const [uploadingField, setUploadingField] = useState(null);
   const [dragOverField, setDragOverField] = useState(null);
+  const [companyLookupStatus, setCompanyLookupStatus] = useState("idle"); // idle | loading | found | notfound
+  const [existingCompany, setExistingCompany] = useState(null);
+  const [companyLogoFile, setCompanyLogoFile] = useState(null);
+  const [companyLogoPreviewUrl, setCompanyLogoPreviewUrl] = useState(null);
   const defaultIso2 = useMemo(() => detectDefaultIso2(), []);
 
   // Sincroniza cuando cambia el asistente
   useEffect(() => {
     setValues(attendee || {});
+    setCompanyLookupStatus("idle");
+    setExistingCompany(null);
+    setCompanyLogoFile(null);
+    setCompanyLogoPreviewUrl(null);
   }, [attendee]);
 
   const handleChange = (field, value) => {
@@ -38,10 +49,16 @@ const ModalEditAttendee = ({
 
   const handleSubmit = async () => {
     setSaving(true);
-    await onSave(values);
+    const result = await onSave(values);
     setSaving(false);
-    onClose();
+    // onSave puede devolver `false` explícitamente para mantener el modal
+    // abierto (p.ej. validación de duplicados al registrar un nuevo asistente).
+    if (result !== false) {
+      onClose();
+    }
   };
+
+  const isNew = !attendee?.id;
 
   const handleImageUpload = async (fieldName, file) => {
     if (!file) return;
@@ -63,10 +80,56 @@ const ModalEditAttendee = ({
     }
   };
 
+  const handleNitBlur = async () => {
+    const nitNorm = normalizeNit(values.companyId || "");
+    if (!nitNorm || !eventId) {
+      setCompanyLookupStatus("idle");
+      setExistingCompany(null);
+      return;
+    }
+    setCompanyLookupStatus("loading");
+    try {
+      const snap = await getDoc(doc(db, "events", eventId, "companies", nitNorm));
+      if (snap.exists()) {
+        const data = snap.data();
+        setExistingCompany(data);
+        setCompanyLookupStatus("found");
+        setValues((prev) => ({
+          ...prev,
+          companyId: nitNorm,
+          company_razonSocial: prev.company_razonSocial || data.razonSocial || "",
+        }));
+      } else {
+        setExistingCompany(null);
+        setCompanyLookupStatus("notfound");
+        setValues((prev) => ({ ...prev, companyId: nitNorm }));
+      }
+    } catch (err) {
+      console.error("Error al buscar la empresa:", err);
+      setCompanyLookupStatus("idle");
+    }
+  };
+
+  const handleCompanyLogoSelect = (file) => {
+    if (!file) return;
+    setCompanyLogoFile(file);
+    setCompanyLogoPreviewUrl(URL.createObjectURL(file));
+    handleChange("_companyLogoFile", file);
+  };
+
+  const companyLogoPreview = companyLogoFile
+    ? companyLogoPreviewUrl
+    : existingCompany?.logoUrl || null;
+
   if (!attendee) return null;
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Editar asistente" size="md">
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      title={isNew ? "Registrar asistente" : "Editar asistente"}
+      size="md"
+    >
       <Stack>
         {fields.map((f) => {
           // Omitimos consentimiento, foto y campos especiales si quieres
@@ -268,8 +331,91 @@ const ModalEditAttendee = ({
             />
           );
         })}
+
+        {isNew && (
+          <>
+            <Divider label="Empresa" labelPosition="left" mt="sm" />
+            <TextInput
+              label="NIT de la empresa"
+              placeholder="Ej: 900123456"
+              value={values.companyId || ""}
+              onChange={(e) => handleChange("companyId", normalizeNit(e.target.value))}
+              onBlur={handleNitBlur}
+              rightSection={companyLookupStatus === "loading" ? <Loader size="xs" /> : null}
+            />
+            {companyLookupStatus === "found" && (
+              <Text size="xs" c="teal">
+                Empresa existente encontrada ({existingCompany?.razonSocial || "sin razón social"}): se vinculará a ella.
+              </Text>
+            )}
+            {companyLookupStatus === "notfound" && (
+              <Text size="xs" c="dimmed">
+                No existe una empresa con ese NIT; se creará una nueva.
+              </Text>
+            )}
+            <TextInput
+              label="Razón social"
+              value={values.company_razonSocial || ""}
+              onChange={(e) => handleChange("company_razonSocial", e.target.value)}
+            />
+            <Box>
+              <Text size="sm" fw={500} mb={4}>
+                Logo de la empresa (opcional)
+              </Text>
+              <Group gap="sm" align="center">
+                <FileButton onChange={handleCompanyLogoSelect} accept="image/png,image/jpeg,image/webp">
+                  {(fileButtonProps) =>
+                    companyLogoPreview ? (
+                      <Box {...fileButtonProps} style={{ cursor: "pointer" }}>
+                        <Image
+                          src={companyLogoPreview}
+                          alt="Logo empresa"
+                          w={80}
+                          h={80}
+                          fit="cover"
+                          radius="md"
+                        />
+                      </Box>
+                    ) : (
+                      <Box
+                        {...fileButtonProps}
+                        w={80}
+                        h={80}
+                        style={{
+                          border: "1px dashed #ced4da",
+                          borderRadius: 8,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <Text size="xs" c="dimmed" ta="center" px={4}>
+                          Sin logo
+                        </Text>
+                      </Box>
+                    )
+                  }
+                </FileButton>
+                <Stack gap={4}>
+                  <FileButton onChange={handleCompanyLogoSelect} accept="image/png,image/jpeg,image/webp">
+                    {(props) => (
+                      <Button {...props} variant="light" size="xs">
+                        {companyLogoPreview ? "Cambiar logo" : "Subir logo"}
+                      </Button>
+                    )}
+                  </FileButton>
+                  <Text size="xs" c="dimmed">
+                    Si no subes uno, se usará el ícono por defecto (inicial de la empresa).
+                  </Text>
+                </Stack>
+              </Group>
+            </Box>
+          </>
+        )}
+
         <Button loading={saving} onClick={handleSubmit}>
-          Guardar cambios
+          {isNew ? "Registrar asistente" : "Guardar cambios"}
         </Button>
       </Stack>
     </Modal>

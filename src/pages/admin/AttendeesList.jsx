@@ -15,6 +15,7 @@ import { IconSearch, IconX } from "@tabler/icons-react";
 import ModalEditAttendee from "./ModalEditAttendee";
 import ImportWizard from "./ImportWizard";
 import { isComprador, isVendedor } from "../../utils/attendeeRole";
+import { uploadCompanyLogo } from "../../utils/companyStorage";
 import { getTableLabel } from "../dashboard/meetingSlotEngine";
 
 // Utilidad para obtener campos configurados para el evento (omite foto y consentimiento)
@@ -1194,6 +1195,15 @@ function parseFirestoreTimestamp(input) {
           <Group position="apart" mb="md">
             <Title order={5}>Asistentes del evento</Title>
             <Group>
+              <Button
+                color="teal"
+                onClick={() => {
+                  setAttendeeToEdit({ aceptaTratamiento: true });
+                  setEditModalOpen(true);
+                }}
+              >
+                Nuevo asistente
+              </Button>
               <Button variant="outline" onClick={downloadAttendeesTemplate}>
                 Descargar Plantilla Excel
               </Button>
@@ -1555,24 +1565,61 @@ function parseFirestoreTimestamp(input) {
         fields={fields}
         eventId={event?.id}
         onSave={async (updated) => {
-          const id = updated.id;
-          const { id: _id, ...toSave } = updated;
+          const isNewAttendee = !updated.id;
+          const { id, _companyLogoFile, ...toSave } = updated;
+
+          if (isNewAttendee) {
+            const cedula = String(toSave.cedula || "").trim();
+            if (cedula) {
+              const dupSnap = await getDocs(
+                query(
+                  collection(db, "users"),
+                  where("cedula", "==", cedula),
+                  where("eventId", "==", event.id)
+                )
+              );
+              if (!dupSnap.empty) {
+                setGlobalMessage("Ya existe un asistente con esa cédula en este evento.");
+                return false; // mantiene el modal abierto para corregir
+              }
+              toSave.cedula = cedula;
+            }
+            toSave.eventId = event.id;
+            if (toSave.aceptaTratamiento === undefined) toSave.aceptaTratamiento = true;
+          }
+
+          const nitNorm = String(toSave.companyId || "").replace(/\D/g, "");
+          if (toSave.companyId) toSave.companyId = nitNorm;
+
           try {
-            await updateDoc(doc(db, "users", id), toSave);
+            // Subir el logo de empresa elegido en el formulario de registro,
+            // aunque el campo no esté habilitado en formFields para este evento.
+            let newCompanyLogoUrl = null;
+            if (isNewAttendee && _companyLogoFile && nitNorm) {
+              newCompanyLogoUrl = await uploadCompanyLogo(event.id, nitNorm, _companyLogoFile);
+            }
+
+            if (isNewAttendee) {
+              await addDoc(collection(db, "users"), toSave);
+            } else {
+              await updateDoc(doc(db, "users", id), toSave);
+            }
 
             // Sincronizar documento de empresa si el asistente tiene NIT y evento
-            const nitNorm = String(toSave.companyId || "").replace(/\D/g, "");
             const eventId = toSave.eventId || event?.id;
             if (nitNorm && eventId) {
               const companyDoc = { nitNorm, updatedAt: new Date() };
               if (toSave.company_razonSocial) companyDoc.razonSocial = String(toSave.company_razonSocial).trim();
+              if (newCompanyLogoUrl) companyDoc.logoUrl = newCompanyLogoUrl;
               await setDoc(doc(db, "events", eventId, "companies", nitNorm), companyDoc, { merge: true });
             }
 
-            setGlobalMessage("Asistente actualizado correctamente.");
+            setGlobalMessage(
+              isNewAttendee ? "Asistente registrado correctamente." : "Asistente actualizado correctamente."
+            );
             fetchAttendees();
           } catch (err) {
-            setGlobalMessage("Error al actualizar el asistente.");
+            setGlobalMessage(isNewAttendee ? "Error al registrar el asistente." : "Error al actualizar el asistente.");
           }
         }}
       />
