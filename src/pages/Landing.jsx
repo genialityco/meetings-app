@@ -1524,9 +1524,30 @@ const Landing = () => {
                           style={{ maxWidth: "100%", maxHeight: 100, objectFit: "contain", marginBottom: 8 }} 
                         />
                       ) : (
-                        <Title order={2} style={{ lineHeight: 1.05 }}>
-                          {event.eventName || "Encuentro de afiliados"}
-                        </Title>
+                        <Stack gap={8} align="center">
+                          <Title
+                            order={2}
+                            style={{
+                              lineHeight: 1.1,
+                              fontSize: "clamp(1.5rem, 6vw, 2rem)",
+                              fontWeight: 800,
+                              letterSpacing: "-0.01em",
+                              color: "var(--mantine-primary-color-9)",
+                              textShadow: "0 2px 16px rgba(255,255,255,0.6)",
+                            }}
+                          >
+                            {event.eventName || "Encuentro de afiliados"}
+                          </Title>
+                          <Box
+                            style={{
+                              width: 48,
+                              height: 4,
+                              borderRadius: 999,
+                              background:
+                                "linear-gradient(90deg, var(--mantine-primary-color-4), var(--mantine-primary-color-8))",
+                            }}
+                          />
+                        </Stack>
                       )}
 
                       {/* Mostrar fechas del evento (multi-día o single) */}
@@ -1958,9 +1979,30 @@ const Landing = () => {
                                 style={{ maxWidth: "100%", maxHeight: 120, objectFit: "contain", marginBottom: 8 }} 
                               />
                             ) : (
-                              <Title order={1} style={{ lineHeight: 1.05 }}>
-                                {event.eventName || "Encuentro de afiliados"}
-                              </Title>
+                              <Stack gap={10} align="center">
+                                <Title
+                                  order={1}
+                                  style={{
+                                    lineHeight: 1.08,
+                                    fontSize: "clamp(2rem, 3vw, 2.6rem)",
+                                    fontWeight: 800,
+                                    letterSpacing: "-0.02em",
+                                    color: "var(--mantine-primary-color-9)",
+                                    textShadow: "0 2px 20px rgba(255,255,255,0.65)",
+                                  }}
+                                >
+                                  {event.eventName || "Encuentro de afiliados"}
+                                </Title>
+                                <Box
+                                  style={{
+                                    width: 64,
+                                    height: 5,
+                                    borderRadius: 999,
+                                    background:
+                                      "linear-gradient(90deg, var(--mantine-primary-color-4), var(--mantine-primary-color-8))",
+                                  }}
+                                />
+                              </Stack>
                             )}
 
                             {/* Mostrar fechas del evento (multi-día o single) */}
