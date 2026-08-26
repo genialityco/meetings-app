@@ -1610,6 +1610,7 @@ function parseFirestoreTimestamp(input) {
             if (nitNorm && eventId) {
               const companyDoc = { nitNorm, updatedAt: new Date() };
               if (toSave.company_razonSocial) companyDoc.razonSocial = String(toSave.company_razonSocial).trim();
+              if (toSave.descripcion) companyDoc.descripcion = String(toSave.descripcion).trim();
               if (newCompanyLogoUrl) companyDoc.logoUrl = newCompanyLogoUrl;
               await setDoc(doc(db, "events", eventId, "companies", nitNorm), companyDoc, { merge: true });
             }
