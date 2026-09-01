@@ -188,6 +188,10 @@ export interface Company {
   descripcion?: string;
   logoUrl?: string | null;
   fixedTable?: string | null;
+  /** Agenda compartida: ningún representante de la empresa puede tener 2 citas
+   *  a la misma hora, sin necesidad de tener mesa fija asignada (a diferencia
+   *  de `fixedTable`, que también unifica la mesa física). */
+  sharedAgenda?: boolean;
   createdAt?: any;
   updatedAt?: any;
 }

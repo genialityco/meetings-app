@@ -13,6 +13,7 @@ import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
 import { Company, Product, EventPolicies, DEFAULT_POLICIES, MeetingContext, StandVisit } from "./types";
 import { resolveCheckInDay, isCheckedInOnDay } from "../../utils/eventDays";
+import { isVendedor } from "../../utils/attendeeRole";
 import { showNotification } from "@mantine/notifications";
 import {
   computeAvailableSlots,
@@ -350,6 +351,20 @@ export function useCompanyData(
   // es siempre un representante de `company` (la página desde la que se
   // pide); la mesa fija puede venir del propio representante o, si no la
   // tiene, de la empresa.
+  // Si `company` tiene "agenda compartida" activa, una cita de cualquiera de
+  // sus representantes VENDEDORES bloquea el horario para todo el equipo
+  // comercial (sin necesidad de mesa fija); si no, el bloqueo sigue siendo
+  // solo por persona. Se filtra por rol vendedor para no atar el calendario
+  // de un compañero registrado como comprador bajo el mismo companyId.
+  const resolveReceiverGroupIds = useCallback(
+    (receiverId: string): string[] => {
+      if (!company?.sharedAgenda) return [receiverId];
+      const ids = representatives.filter((r) => isVendedor(r.tipoAsistente)).map((r) => r.id);
+      return ids.includes(receiverId) ? ids : [receiverId];
+    },
+    [company, representatives],
+  );
+
   const prepareSlotSelectionForRequest = useCallback(
     async (receiverId: string, dateOverride?: string) => {
       if (!eventId || !uid) return;
@@ -365,6 +380,7 @@ export function useCompanyData(
           receiverId,
           selectedDate: dateOverride,
           receiverFixedTable,
+          receiverGroupIds: resolveReceiverGroupIds(receiverId),
         });
         if (!dateOverride) setSelectedDate(eventDayISO);
         setAvailableSlots(slots);
@@ -373,7 +389,7 @@ export function useCompanyData(
         setPrepareSlotSelectionLoading(false);
       }
     },
-    [eventId, uid, eventConfig, policies, company, representatives],
+    [eventId, uid, eventConfig, policies, company, representatives, resolveReceiverGroupIds],
   );
 
   const requestMeetingWithSlotPicker = useCallback(
@@ -537,6 +553,7 @@ export function useCompanyData(
           receiverId,
           slot,
           context: finalContext,
+          receiverGroupIds: resolveReceiverGroupIds(receiverId),
         });
 
         await notifyMeetingConfirmed({
@@ -570,7 +587,7 @@ export function useCompanyData(
         setConfirmLoading(false);
       }
     },
-    [pendingMeetingRequest, eventId, uid, eventConfig, policies, eventName, checkRoleMeetingLimit, checkContactMeetingLimit],
+    [pendingMeetingRequest, eventId, uid, eventConfig, policies, eventName, checkRoleMeetingLimit, checkContactMeetingLimit, resolveReceiverGroupIds],
   );
 
   const groupedSlots = useMemo(() => {

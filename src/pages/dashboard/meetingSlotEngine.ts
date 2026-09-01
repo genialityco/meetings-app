@@ -18,7 +18,7 @@ import { db } from "../../firebase/firebaseConfig";
 import { AgendaSlot, Assistant, EventPolicies, MeetingContext } from "./types";
 import { sendWhatsAppMessage as sendWhatsAppAPI } from "../../utils/whatsappService";
 import { showNotification } from "@mantine/notifications";
-import { normalizeTipoAsistente } from "../../utils/attendeeRole";
+import { normalizeTipoAsistente, isVendedor } from "../../utils/attendeeRole";
 
 export function parseISODate(dateStr: string): Date {
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -297,6 +297,11 @@ export interface ComputeAvailableSlotsParams {
   selectedDate?: string;
   /** Mesa fija de la empresa del receptor (o null/undefined si no tiene). Ya resuelta por el caller. */
   receiverFixedTable?: string | null;
+  /** Uids de TODOS los representantes de la empresa del receptor, cuando esa
+   *  empresa tiene "agenda compartida" activa (`companies/{nit}.sharedAgenda`) —
+   *  una reunión aceptada de cualquiera de ellos bloquea el horario para todo
+   *  el grupo. Ya resuelto por el caller; si se omite se usa solo [receiverId]. */
+  receiverGroupIds?: string[];
 }
 
 export interface ComputeAvailableSlotsResult {
@@ -313,7 +318,10 @@ export interface ComputeAvailableSlotsResult {
 export async function computeAvailableSlots(
   params: ComputeAvailableSlotsParams,
 ): Promise<ComputeAvailableSlotsResult> {
-  const { eventId, eventConfig, requesterId, receiverId, selectedDate, receiverFixedTable } = params;
+  const { eventId, eventConfig, requesterId, receiverId, selectedDate, receiverFixedTable, receiverGroupIds } = params;
+
+  const groupIds = receiverGroupIds && receiverGroupIds.length > 0 ? receiverGroupIds : [receiverId];
+  const occupancyParticipants = Array.from(new Set([requesterId, ...groupIds]));
 
   // Soporte multi-día: usar eventDates si existe, sino eventDate
   const eventDates = eventConfig.eventDates || [eventConfig.eventDate];
@@ -344,7 +352,7 @@ export async function computeAvailableSlots(
       query(
         collection(db, "events", eventId, "meetings"),
         where("status", "==", "accepted"),
-        where("participants", "array-contains-any", [requesterId, receiverId]),
+        where("participants", "array-contains-any", occupancyParticipants),
         where("meetingDate", "==", eventDayISO),
       ),
     );
@@ -353,7 +361,7 @@ export async function computeAvailableSlots(
       query(
         collection(db, "events", eventId, "meetings"),
         where("status", "==", "accepted"),
-        where("participants", "array-contains-any", [requesterId, receiverId]),
+        where("participants", "array-contains-any", occupancyParticipants),
       ),
     );
   }
@@ -487,6 +495,11 @@ export interface CreateConfirmedMeetingParams {
   receiverId: string;
   slot: any;
   context?: MeetingContext;
+  /** Ver `ComputeAvailableSlotsParams.receiverGroupIds` — cuando se pasa, se
+   *  crea/valida un lock por cada representante del grupo (no solo receiverId)
+   *  para que la reserva sea excluyente para toda la empresa, no solo para la
+   *  persona puntual que recibe la reunión. */
+  receiverGroupIds?: string[];
 }
 
 export interface CreateConfirmedMeetingResult {
@@ -503,7 +516,8 @@ export interface CreateConfirmedMeetingResult {
 export async function createConfirmedMeeting(
   params: CreateConfirmedMeetingParams,
 ): Promise<CreateConfirmedMeetingResult> {
-  const { eventId, eventConfig, requesterId, receiverId, slot, context } = params;
+  const { eventId, eventConfig, requesterId, receiverId, slot, context, receiverGroupIds } = params;
+  const groupIds = receiverGroupIds && receiverGroupIds.length > 0 ? receiverGroupIds : [receiverId];
 
   const hmToMinutes = (hm: string) => {
     const [h, m] = hm.split(":").map(Number);
@@ -575,13 +589,13 @@ export async function createConfirmedMeeting(
     const end = slot.endTime;
 
     const reqLockRef = doc(db, "locks", lockId(requesterId, eventDateISO, start, end));
-    const recLockRef = doc(db, "locks", lockId(receiverId, eventDateISO, start, end));
+    const recLockRefs = groupIds.map((gid) => doc(db, "locks", lockId(gid, eventDateISO, start, end)));
 
     const reqLockSnap = await tx.get(reqLockRef);
-    const recLockSnap = await tx.get(recLockRef);
+    const recLockSnaps = await Promise.all(recLockRefs.map((ref) => tx.get(ref)));
 
     if (reqLockSnap.exists()) throw new Error("Requester already has a meeting in this time slot");
-    if (recLockSnap.exists()) throw new Error("Receiver already has a meeting in this time slot");
+    if (recLockSnaps.some((s) => s.exists())) throw new Error("Receiver already has a meeting in this time slot");
 
     tx.set(reqLockRef, {
       eventId,
@@ -592,14 +606,16 @@ export async function createConfirmedMeeting(
       end,
       createdAt: new Date(),
     });
-    tx.set(recLockRef, {
-      eventId,
-      userId: receiverId,
-      meetingId: meetingRef.id,
-      date: eventDateISO,
-      start,
-      end,
-      createdAt: new Date(),
+    recLockRefs.forEach((ref, i) => {
+      tx.set(ref, {
+        eventId,
+        userId: groupIds[i],
+        meetingId: meetingRef.id,
+        date: eventDateISO,
+        start,
+        end,
+        createdAt: new Date(),
+      });
     });
 
     const meetingData: any = {
@@ -615,7 +631,7 @@ export async function createConfirmedMeeting(
       startMinutes: hmToMinutes(start),
       endMinutes: hmToMinutes(end),
       slotId: slot.id,
-      lockIds: [reqLockRef.id, recLockRef.id],
+      lockIds: [reqLockRef.id, ...recLockRefs.map((r) => r.id)],
       updatedAt: new Date(),
       checkInStatus: standbyRequired ? (reqCheckedIn && recCheckedIn ? "ready" : "standby") : "ready",
     };
@@ -1071,7 +1087,15 @@ export async function pickAvailableCompanyAdvisor(
   // Mesa fija de la empresa (fallback cuando el asesor no tiene una propia),
   // igual que en resolveFixedTableForReceiver / prepareSlotSelectionForRequest.
   const companySnap = await getDoc(doc(db, "events", eventId, "companies", companyNit));
-  const companyFixedTable = companySnap.exists() ? (companySnap.data()?.fixedTable || null) : null;
+  const companyData = companySnap.exists() ? companySnap.data() : null;
+  const companyFixedTable = companyData?.fixedTable || null;
+  // Agenda compartida: si la empresa la tiene activa, todos los asesores
+  // VENDEDORES compiten por el mismo horario, sin necesidad de mesa fija
+  // (se filtra por rol para no atar el calendario de un compañero comprador
+  // registrado bajo el mismo NIT).
+  const receiverGroupIds = companyData?.sharedAgenda
+    ? advisors.filter((a) => isVendedor(a.tipoAsistente)).map((a) => a.id)
+    : undefined;
 
   const counts = await Promise.all(
     advisors.map(async (advisor) => ({
@@ -1090,6 +1114,7 @@ export async function pickAvailableCompanyAdvisor(
         requesterId,
         receiverId: advisor.id,
         receiverFixedTable: advisor.fixedTable || companyFixedTable || null,
+        receiverGroupIds,
       });
       if (slots && slots.length > 0) {
         return { receiverId: advisor.id, receiverPhone: advisor.telefono || "", slots, eventDayISO };

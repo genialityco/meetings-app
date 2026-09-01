@@ -16,7 +16,7 @@ import {
 import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
 import { Assistant, Meeting, Notification, Company, EventPolicies, DEFAULT_POLICIES, MeetingContext } from "./types";
-import { normalizeTipoAsistente } from "../../utils/attendeeRole";
+import { normalizeTipoAsistente, isVendedor } from "../../utils/attendeeRole";
 import { showNotification, notifications as mantineNotifications } from "@mantine/notifications";
 import { serverTimestamp } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
@@ -1021,6 +1021,7 @@ export function useDashboardData(eventId?: string) {
         receiverId: assistantId,
         slot,
         context: finalContext,
+        receiverGroupIds: resolveReceiverGroupIds(assistantId),
       });
 
       await notifyMeetingConfirmed({
@@ -1547,6 +1548,22 @@ export function useDashboardData(eventId?: string) {
     return receiverCompany?.fixedTable || null;
   };
 
+  // Si la empresa del receptor tiene "agenda compartida" activa, devuelve los
+  // uids de sus representantes VENDEDORES (para que una cita de cualquiera
+  // bloquee el horario para todo el equipo comercial); si no, solo [receiverId].
+  // Se filtra por rol vendedor para no atar el calendario de un compañero
+  // registrado como comprador bajo el mismo companyId (mismo NIT, rol distinto).
+  const resolveReceiverGroupIds = (receiverId: string): string[] => {
+    const receiver = assistants.find((a: Assistant) => a.id === receiverId);
+    const receiverCompanyId = receiver?.companyId;
+    const receiverCompany = companies.find((c: Company) => c.nitNorm === receiverCompanyId);
+    if (!receiverCompany?.sharedAgenda || !receiverCompanyId) return [receiverId];
+    const teammates = assistants
+      .filter((a: Assistant) => a.companyId === receiverCompanyId && isVendedor(a.tipoAsistente))
+      .map((a) => a.id);
+    return teammates.includes(receiverId) ? teammates : [receiverId];
+  };
+
   // Seleccionar slots disponibles para aceptar/reagendar reuniones
   const prepareSlotSelection = async (meetingId: string, isEdit = false, selectedDate?: string) => {
     setPrepareSlotSelectionLoading(true);
@@ -1571,6 +1588,7 @@ export function useDashboardData(eventId?: string) {
       if (!eventId) throw new Error("Event ID is required");
 
       const receiverFixedTable = resolveFixedTableForReceiver(receiverId);
+      const receiverGroupIds = resolveReceiverGroupIds(receiverId);
       const { slots, eventDayISO } = await computeAvailableSlots({
         eventId,
         eventConfig,
@@ -1579,6 +1597,7 @@ export function useDashboardData(eventId?: string) {
         receiverId,
         selectedDate,
         receiverFixedTable,
+        receiverGroupIds,
       });
 
       if (!selectedDate) {
@@ -1601,6 +1620,7 @@ export function useDashboardData(eventId?: string) {
       setMeetingToEdit(null);
 
       const receiverFixedTable = resolveFixedTableForReceiver(receiverId);
+      const receiverGroupIds = resolveReceiverGroupIds(receiverId);
       const { slots, eventDayISO } = await computeAvailableSlots({
         eventId,
         eventConfig,
@@ -1609,6 +1629,7 @@ export function useDashboardData(eventId?: string) {
         receiverId,
         selectedDate,
         receiverFixedTable,
+        receiverGroupIds,
       });
 
       if (!selectedDate) {
@@ -1857,7 +1878,8 @@ export function useDashboardData(eventId?: string) {
           }
         }
 
-        // d) Crea locks por persona+franja
+        // d) Crea locks por persona+franja (uno por cada representante de la
+        // empresa del receptor, si tiene "agenda compartida" activa)
         const start = slot.startTime;
         const end = slot.endTime;
 
@@ -1866,20 +1888,19 @@ export function useDashboardData(eventId?: string) {
           "locks",
           lockId(eventId, requesterId, eventDateISO, start, end),
         );
-        const recLockRef = doc(
-          db,
-          "locks",
-          lockId(eventId, receiverId, eventDateISO, start, end),
+        const receiverGroupIds = resolveReceiverGroupIds(receiverId);
+        const recLockRefs = receiverGroupIds.map((gid) =>
+          doc(db, "locks", lockId(eventId, gid, eventDateISO, start, end)),
         );
 
         // Check if locks already exist, then create them
         const reqLockSnap = await tx.get(reqLockRef);
-        const recLockSnap = await tx.get(recLockRef);
+        const recLockSnaps = await Promise.all(recLockRefs.map((ref) => tx.get(ref)));
 
         if (reqLockSnap.exists()) {
           throw new Error("Requester already has a meeting in this time slot");
         }
-        if (recLockSnap.exists()) {
+        if (recLockSnaps.some((s) => s.exists())) {
           throw new Error("Receiver already has a meeting in this time slot");
         }
 
@@ -1892,14 +1913,16 @@ export function useDashboardData(eventId?: string) {
           end,
           createdAt: new Date(),
         });
-        tx.set(recLockRef, {
-          eventId,
-          userId: receiverId,
-          meetingId,
-          date: eventDateISO,
-          start,
-          end,
-          createdAt: new Date(),
+        recLockRefs.forEach((ref, i) => {
+          tx.set(ref, {
+            eventId,
+            userId: receiverGroupIds[i],
+            meetingId,
+            date: eventDateISO,
+            start,
+            end,
+            createdAt: new Date(),
+          });
         });
 
         // e) Actualiza meeting con datos normalizados y referencias para futuras ediciones
@@ -1910,7 +1933,7 @@ export function useDashboardData(eventId?: string) {
           startMinutes: hmToMinutes(start),
           endMinutes: hmToMinutes(end),
           slotId: slot.id,
-          lockIds: [reqLockRef.id, recLockRef.id],
+          lockIds: [reqLockRef.id, ...recLockRefs.map((r) => r.id)],
           updatedAt: new Date(),
         };
         if (!isEdit) {

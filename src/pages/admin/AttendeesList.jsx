@@ -28,7 +28,7 @@ const getEventTableFields = (event, entityType = "users") => {
     // Campos por defecto para empresas si no están configurados
     defaultFields = [
       { name: "logoUrl", label: "Logo", type: "image" },
-      { name: "nit", label: "NIT", type: "text" },
+      { name: "nitNorm", label: "NIT", type: "text" },
       { name: "razonSocial", label: "Razón Social", type: "text" },
       { name: "descripcion", label: "Descripción", type: "richtext" },
       { name: "custom_por_favor_indique_el_tama_2641", label: "Tamaño empresa", type: "text" },
@@ -196,6 +196,18 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
   const [editCompanyModalOpen, setEditCompanyModalOpen] = useState(false);
   const [companyToEdit, setCompanyToEdit] = useState(null);
 
+  // Campos del paso "empresa" del formulario de registro (mismo criterio que
+  // Landing.jsx: el paso que incluye "company_nit"), para que "Nuevo asistente"
+  // muestre una única sección de empresa (con la etiqueta/campos reales
+  // configurados para este evento, ej. "NIF" en vez de "NIT") en lugar de
+  // duplicar campos sueltos + un bloque fijo desconectado.
+  const companyStepFields = useMemo(() => {
+    const steps = event?.config?.registrationForm?.steps || [];
+    const companyStep = steps.find((s) => (s.fields || []).includes("company_nit"));
+    if (companyStep) return companyStep.fields || [];
+    return ["company_nit", "company_razonSocial", "descripcion"];
+  }, [event?.config?.registrationForm]);
+
   // Mesas sin asignar (+ la mesa actual de la empresa en edición, para no
   // desaparecer del selector) — usadas por el dropdown "Mesa asignada" del
   // modal de edición de empresa.
@@ -220,6 +232,11 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
     () => [
       ...companyFields,
       { name: "fixedTable", label: "Mesa asignada", type: "select", options: companyTableOptions },
+      {
+        name: "sharedAgenda",
+        label: "Agenda compartida (una sola cita a la vez para toda la empresa, sin necesidad de mesa fija)",
+        type: "checkbox",
+      },
     ],
     [companyFields, companyTableOptions],
   );
@@ -228,6 +245,7 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
 
   // Estado para búsqueda de asistentes (ID, nombre, cédula, correo, empresa, etc.)
   const [searchId, setSearchId] = useState("");
+  const [searchCompany, setSearchCompany] = useState("");
 
   // Estado para regeneración de vectores
   const [regeneratingVector, setRegeneratingVector] = useState(null);
@@ -1149,6 +1167,19 @@ function parseFirestoreTimestamp(input) {
     });
   }, [attendees, searchId, fields]);
 
+  // Filtrar empresas por NIT/ID, razón social o cualquier campo configurado del evento
+  const filteredCompanies = useMemo(() => {
+    const term = searchCompany.trim().toLowerCase();
+    if (!term) return companies;
+    return companies.filter((c) => {
+      if (c.id.toLowerCase().includes(term)) return true;
+      return companyFields.some((f) => {
+        const val = getDisplayValue(c, f);
+        return String(val ?? "").toLowerCase().includes(term);
+      });
+    });
+  }, [companies, searchCompany, companyFields]);
+
   // Función para regenerar vectores de un usuario
   const handleRegenerateUserVector = async (userId) => {
     setRegeneratingVector(userId);
@@ -1394,10 +1425,37 @@ function parseFirestoreTimestamp(input) {
             </Group>
           </Group>
 
+          {/* Campo de búsqueda de empresas */}
+          <Group mb="md">
+            <TextInput
+              placeholder="Buscar por razón social, NIT, ID..."
+              value={searchCompany}
+              onChange={(e) => setSearchCompany(e.target.value)}
+              leftSection={<IconSearch size={16} />}
+              rightSection={
+                searchCompany ? (
+                  <IconX
+                    size={16}
+                    style={{ cursor: "pointer" }}
+                    onClick={() => setSearchCompany("")}
+                  />
+                ) : null
+              }
+              style={{ width: 300 }}
+            />
+            {searchCompany && (
+              <Text size="sm" c="dimmed">
+                Mostrando {filteredCompanies.length} de {companies.length} empresas
+              </Text>
+            )}
+          </Group>
+
           {loading ? (
             <Loader />
           ) : companies.length === 0 ? (
             <Text>No hay empresas registradas para este evento.</Text>
+          ) : filteredCompanies.length === 0 ? (
+            <Text>No se encontraron empresas que coincidan con la búsqueda.</Text>
           ) : (
             <Table.ScrollContainer>
               <Table>
@@ -1413,7 +1471,7 @@ function parseFirestoreTimestamp(input) {
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
-                  {companies.map((c) => (
+                  {filteredCompanies.map((c) => (
                     <Table.Tr key={c.id}>
                       {companyFields
                         .filter((f) => shownCompanyFields.includes(f.name))
@@ -1563,6 +1621,7 @@ function parseFirestoreTimestamp(input) {
         onClose={() => setEditModalOpen(false)}
         attendee={attendeeToEdit}
         fields={fields}
+        companyStepFields={companyStepFields}
         eventId={event?.id}
         onSave={async (updated) => {
           const isNewAttendee = !updated.id;
