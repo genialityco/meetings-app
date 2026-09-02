@@ -75,13 +75,44 @@ export default function BadgePage() {
     return BADGE_HEIGHTS[badgeHeightKey]?.height ?? null;
   }, [badgeHeightKey, customBadgeHeight]);
 
-  // Padding/espaciado interno proporcional al ancho configurado: los valores fijos
-  // (pensados para una tarjeta de ~100mm) dejaban muy poco espacio útil al contenido
-  // en escarapelas pequeñas, obligando a encogerlo de más para que quepa.
+  // Escarapelas de alto fijo y pequeño (stickers de impresora térmica tipo SAT) no
+  // dejan espacio para el nombre/empresa/cargo a tamaño normal + un QR grande: si se
+  // dejan los tamaños/paddings pensados para una tarjeta grande, el ajuste automático
+  // (contentScale más abajo) termina encogiendo TODO -incluido el QR- muy por debajo de
+  // lo legible/escaneable, saliendo chico y borroso al imprimir. En modo compacto usamos
+  // texto y márgenes más chicos para dejarle al QR el espacio que necesita.
   const effectiveWidthMm = badgeWidthMm ?? 100;
-  const paddingMm = Math.min(9, Math.max(2, effectiveWidthMm * 0.08));
-  const gapMm = Math.min(5, Math.max(1.2, effectiveWidthMm * 0.025));
-  const qrBoxPaddingMm = Math.min(4, Math.max(1.5, effectiveWidthMm * 0.03));
+  const isCompactBadge = badgeHeightMm !== null && badgeHeightMm <= 70;
+
+  const paddingMm = isCompactBadge
+    ? Math.min(3, Math.max(1, effectiveWidthMm * 0.03))
+    : Math.min(9, Math.max(2, effectiveWidthMm * 0.08));
+  const gapMm = isCompactBadge
+    ? Math.min(1.5, Math.max(0.5, effectiveWidthMm * 0.01))
+    : Math.min(5, Math.max(1.2, effectiveWidthMm * 0.025));
+  const qrBoxPaddingMm = isCompactBadge
+    ? Math.min(1.2, Math.max(0.5, effectiveWidthMm * 0.008))
+    : Math.min(4, Math.max(1.5, effectiveWidthMm * 0.03));
+
+  // Tamaños de texto explícitos (en vez de los pasos discretos order/size de Mantine)
+  // para poder aplicarles un +10% parejo por igual en ambos modos.
+  const TEXT_SIZE_BOOST = 1.1;
+  // +10% y luego +15% adicionales (compuestos) solo para empresa y cargo, que se veían chicos.
+  const EMPRESA_CARGO_EXTRA_BOOST = 1.1 * 1.15;
+  // +15% adicional solo para el nombre.
+  const NAME_EXTRA_BOOST = 1.15;
+  const nameOrder = isCompactBadge ? 4 : 3;
+  const nameFz = (isCompactBadge ? 18 : 22) * TEXT_SIZE_BOOST * NAME_EXTRA_BOOST;
+  const empresaFz = (isCompactBadge ? 16 : 18) * TEXT_SIZE_BOOST * EMPRESA_CARGO_EXTRA_BOOST;
+  const cargoFz = (isCompactBadge ? 16 : 14) * TEXT_SIZE_BOOST * EMPRESA_CARGO_EXTRA_BOOST;
+
+  // Tamaño del QR proporcional al espacio disponible (en vez de un ancho fijo en px
+  // pensado para escarapelas grandes): en escarapelas de alto fijo, que ocupe casi todo
+  // el espacio que quede después del nombre/cargo, para aprovechar el papel real
+  // (7x5cm) en vez de quedar chico con márgenes grandes sin usar.
+  const qrDisplayMm = badgeHeightMm
+    ? Math.max(18, Math.min(effectiveWidthMm * 0.92, badgeHeightMm * 0.92))
+    : Math.min(60, effectiveWidthMm * 0.6);
 
   // Escala aplicada al contenido para que quepa dentro del tamaño configurado
   // (en vez de recortarse con overflow: hidden cuando el contenido natural es más grande).
@@ -125,7 +156,10 @@ export default function BadgePage() {
         // El QR codifica solo el uid del asistente (no un enlace): así el check-in
         // se hace siempre desde el escáner en el panel de CheckInTab.jsx, en vez
         // de navegar a otra página al abrir la cámara nativa del teléfono.
-        const qrUrl = await QRCode.toDataURL(userId, { width: 250, margin: 2 });
+        // Resolución alta (muy por encima del tamaño en pantalla) para que, al escalar
+        // hacia el tamaño físico real de impresión (mm), no se vea borroso/pixelado
+        // en impresoras de escarapelas/etiquetas de baja resolución (p. ej. térmicas).
+        const qrUrl = await QRCode.toDataURL(userId, { width: 600, margin: 2 });
         setQrCodeUrl(qrUrl);
       } catch (e) {
         console.error("Error loading badge data", e);
@@ -349,16 +383,16 @@ export default function BadgePage() {
               />
             )}
 
-            <Title order={3} ta="center">{user.nombre}</Title>
-            <Text size="lg" fw={500} c="dimmed" ta="center">{user.empresa}</Text>
-            {user.cargo && <Text size="sm" c="dimmed" ta="center">{user.cargo}</Text>}
+            <Title order={nameOrder} fz={nameFz} tt="uppercase" ta="center" style={{ whiteSpace: "nowrap" }}>{user.nombre}</Title>
+            <Text fz={empresaFz} fw={700} tt="uppercase" c="dimmed" ta="center" style={{ whiteSpace: "nowrap" }}>{user.empresa}</Text>
+            {user.cargo && <Text fz={cargoFz} fw={700} tt="uppercase" c="dimmed" ta="center" style={{ whiteSpace: "nowrap" }}>{user.cargo}</Text>}
 
             <Box style={{ background: "white", borderRadius: "12px", border: "1px solid #eee", maxWidth: "100%", padding: `${qrBoxPaddingMm}mm` }}>
               {qrCodeUrl && (
                 <img
                   src={qrCodeUrl}
                   alt="QR Check-in"
-                  style={{ display: 'block', margin: '0 auto', maxWidth: '100%', width: 180, height: 'auto' }}
+                  style={{ display: 'block', margin: '0 auto', maxWidth: '100%', width: `${qrDisplayMm}mm`, height: 'auto' }}
                 />
               )}
             </Box>
