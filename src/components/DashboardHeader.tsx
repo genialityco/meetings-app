@@ -60,6 +60,9 @@ const normalizeNit = (v = "") => String(v || "").replace(/\D/g, "");
 
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
 
+// Campos que no deben poder editarse desde el perfil del asistente
+const HIDDEN_EDIT_FIELDS = new Set(["tipoAsistente"]);
+
 const DashboardHeader = ({
   eventImage,
   dashboardLogo,
@@ -219,7 +222,12 @@ const DashboardHeader = ({
 
       // "company_nit" es solo el nombre del campo del formulario (paso de
       // empresa); el dato persistido en el asistente vive únicamente en companyId.
-      const nitNorm = normalizeNit(dataToUpdate.company_nit);
+      // El campo NIT solo llega en dataToUpdate si el usuario lo editó; si no,
+      // usamos el companyId ya existente para poder sincronizar el doc de la
+      // empresa aunque solo se hayan cambiado otros campos (razón social, etc.).
+      const nitNorm = normalizeNit(
+        dataToUpdate.company_nit || dataToUpdate.companyId || currentUser?.data?.companyId
+      );
       if (nitNorm) {
         dataToUpdate.companyId = nitNorm;
       }
@@ -342,6 +350,8 @@ const DashboardHeader = ({
       if (!field) return null;
       // Skip consent field in edit
       if (field.name === CONSENTIMIENTO_FIELD_NAME) return null;
+      // Campos que el asistente no puede modificar (p. ej. tipo de asistente)
+      if (HIDDEN_EDIT_FIELDS.has(field.name)) return null;
 
       // Photo
       if (field.name === "photoURL" || field.type === "photo") {
@@ -717,7 +727,8 @@ const DashboardHeader = ({
                   (f: any) =>
                     !photoFields.includes(f) &&
                     !companyFields.includes(f) &&
-                    f.name !== CONSENTIMIENTO_FIELD_NAME
+                    f.name !== CONSENTIMIENTO_FIELD_NAME &&
+                    !HIDDEN_EDIT_FIELDS.has(f.name)
                 );
 
                 // Agrupar campos restantes por step
