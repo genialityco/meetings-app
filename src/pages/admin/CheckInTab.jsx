@@ -17,6 +17,7 @@ import { db, storage } from "../../firebase/firebaseConfig";
 import * as XLSX from "xlsx";
 import QrScannerModal from "../../components/QrScannerModal";
 import AttendeeScanReviewModal from "../../components/AttendeeScanReviewModal";
+import BadgePage from "../dashboard/BadgePage";
 import { useAttendeeScanFlow } from "../../hooks/useAttendeeScanFlow";
 import { getEventDayKeys, resolveCheckInDay, isCheckedInOnDay, formatDayLabel } from "../../utils/eventDays";
 
@@ -29,7 +30,7 @@ const BASIC_FIELDS = [
   { key: "tipoAsistente", label: "Tipo" },
 ];
 
-function AttendeeRow({ a, event, updating, onToggle, onEdit, checkedInToday, checkInTimeToday }) {
+function AttendeeRow({ a, event, updating, onToggle, onEdit, onOpenBadge, checkedInToday, checkInTimeToday }) {
   const [expanded, setExpanded] = useState(false);
   const [editingField, setEditingField] = useState(null);
   const [editValue, setEditValue] = useState("");
@@ -136,7 +137,7 @@ function AttendeeRow({ a, event, updating, onToggle, onEdit, checkedInToday, che
             radius="xl"
             variant="light"
             color="gray"
-            onClick={() => window.open(`/badge/${event?.id}/${a.id}?print=1`, "_blank")}
+            onClick={() => onOpenBadge(a)}
             title="Ver / imprimir credencial"
           >
             <IconId size={18} />
@@ -253,6 +254,7 @@ export default function CheckInTab({ event }) {
   const [editValues, setEditValues] = useState({});
   const [editErrors, setEditErrors] = useState({});
   const [savingEditAttendee, setSavingEditAttendee] = useState(false);
+  const [badgeModalAttendee, setBadgeModalAttendee] = useState(null);
 
   const dayOptions = useMemo(() => getEventDayKeys(event?.config), [event?.config]);
   const [selectedDay, setSelectedDay] = useState(() => resolveCheckInDay(event?.config));
@@ -653,6 +655,14 @@ export default function CheckInTab({ event }) {
     ? attendees.find((a) => a.id === attendeeScan.reviewing.attendee.id) || attendeeScan.reviewing.attendee
     : null;
 
+  // Mismo criterio que reviewingAttendee: el modal de credencial puede quedar abierto
+  // un rato, así que se resuelve contra la versión viva de attendees para que el botón
+  // "Imprimir y marcar check-in" siempre vea el estado de check-in real (y no reintente
+  // un toggle sobre una instantánea vieja si el admin hace doble clic).
+  const liveBadgeModalAttendee = badgeModalAttendee
+    ? attendees.find((a) => a.id === badgeModalAttendee.id) || badgeModalAttendee
+    : null;
+
   const exportToExcel = () => {
     const dayColumns = dayOptions.length > 0 ? dayOptions : [selectedDay];
     const wsData = [
@@ -758,6 +768,7 @@ export default function CheckInTab({ event }) {
                   updating={updating}
                   onToggle={handleToggle}
                   onEdit={startEditAttendee}
+                  onOpenBadge={setBadgeModalAttendee}
                   checkedInToday={isCheckedInOnDay(a, selectedDay)}
                   checkInTimeToday={a.checkIns?.[selectedDay]}
                 />
@@ -775,6 +786,7 @@ export default function CheckInTab({ event }) {
                   updating={updating}
                   onToggle={handleToggle}
                   onEdit={startEditAttendee}
+                  onOpenBadge={setBadgeModalAttendee}
                   checkedInToday={isCheckedInOnDay(a, selectedDay)}
                   checkInTimeToday={a.checkIns?.[selectedDay]}
                 />
@@ -824,6 +836,31 @@ export default function CheckInTab({ event }) {
             </Button>
           </Group>
         </Stack>
+      </Modal>
+
+      <Modal
+        opened={!!badgeModalAttendee}
+        onClose={() => setBadgeModalAttendee(null)}
+        title="Credencial del asistente"
+        fullScreen
+      >
+        {liveBadgeModalAttendee && (
+          <BadgePage
+            embedded
+            eventIdProp={event?.id}
+            userIdProp={liveBadgeModalAttendee.id}
+            userProp={liveBadgeModalAttendee}
+            eventProp={event}
+            printModeProp
+            printButtonLabel="Imprimir y marcar check-in"
+            onPrintClick={() => {
+              window.print();
+              if (!isCheckedInOnDay(liveBadgeModalAttendee, selectedDay)) {
+                handleToggle(liveBadgeModalAttendee);
+              }
+            }}
+          />
+        )}
       </Modal>
     </Stack>
   );

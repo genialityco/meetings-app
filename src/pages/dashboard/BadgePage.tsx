@@ -32,18 +32,50 @@ const BADGE_HEIGHTS: Record<string, { label: string; height: number }> = {
   custom: { label: "Personalizado", height: 0 },
 };
 
-export default function BadgePage() {
-  const { eventId, userId } = useParams();
+interface BadgePageProps {
+  // Props opcionales para uso "embebido" (p. ej. dentro de un Modal en CheckInTab.jsx):
+  // cuando se pasan user/event ya cargados, la página se salta el fetch propio y el
+  // getDoc de Firestore. Esto evita el costo de montar la app completa (y su init de
+  // Firebase Auth/UserContext) que ocurría al cargar esta ruta dentro de un <iframe>
+  // -y que además terminaba cerrando la sesión del admin, porque UserContext vuelve a
+  // correr su lógica de auth anónima compartiendo el mismo Firebase Auth del dominio.
+  eventIdProp?: string;
+  userIdProp?: string;
+  userProp?: any;
+  eventProp?: any;
+  printModeProp?: boolean;
+  // true cuando se renderiza dentro de otra página (no como su propia ruta): oculta el
+  // botón "Ir al evento" (no aplica en ese contexto) y acota la impresión a la tarjeta,
+  // aunque el resto del documento (la página que la contiene) siga en el DOM.
+  embedded?: boolean;
+  onPrintClick?: () => void;
+  printButtonLabel?: string;
+}
+
+export default function BadgePage({
+  eventIdProp,
+  userIdProp,
+  userProp,
+  eventProp,
+  printModeProp,
+  embedded = false,
+  onPrintClick,
+  printButtonLabel = "Imprimir",
+}: BadgePageProps = {}) {
+  const params = useParams();
+  const eventId = eventIdProp ?? params.eventId;
+  const userId = userIdProp ?? params.userId;
   // La vista de impresión (tamaños de escarapela/hoja, sin logo por defecto) es una
   // herramienta operativa del check-in, no algo que el asistente deba ver desde su
   // dashboard: solo se activa llegando con ?print=1 (ver botón "Ver credencial" en
   // CheckInTab.jsx). Sin ese parámetro, el asistente ve su escarapela completa tal cual.
   const [searchParams] = useSearchParams();
-  const printMode = searchParams.get("print") === "1";
+  const printMode = printModeProp ?? searchParams.get("print") === "1";
+  const hasPreloadedData = !!(userProp && eventProp);
 
-  const [user, setUser] = useState<any>(null);
-  const [event, setEvent] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(userProp ?? null);
+  const [event, setEvent] = useState<any>(eventProp ?? null);
+  const [loading, setLoading] = useState(!hasPreloadedData);
   const [qrCodeUrl, setQrCodeUrl] = useState<string>("");
   const [showEventHeader, setShowEventHeader] = useState(!printMode);
   const [pageSizeKey, setPageSizeKey] = useState<string>(printMode ? "custom" : "carta");
@@ -114,6 +146,14 @@ export default function BadgePage() {
     ? Math.max(18, Math.min(effectiveWidthMm * 0.92, badgeHeightMm * 0.92))
     : Math.min(60, effectiveWidthMm * 0.6);
 
+  // La escarapela se renderiza a su tamaño físico real (p. ej. 70x50mm ~ 264x189px):
+  // dentro del modal grande de CheckInTab.jsx eso se ve perdido/diminuto. Para esa vista
+  // (embebida) la agrandamos SOLO visualmente en pantalla -nunca en la impresión real,
+  // que debe seguir midiendo lo configurado- reservando además el espacio ya agrandado
+  // en el layout para que no se solape con el texto/botones de abajo.
+  const PREVIEW_ZOOM = 2;
+  const applyPreviewZoom = embedded && !!badgeWidthMm;
+
   // Escala aplicada al contenido para que quepa dentro del tamaño configurado
   // (en vez de recortarse con overflow: hidden cuando el contenido natural es más grande).
   const fitRef = useRef<HTMLDivElement>(null);
@@ -141,17 +181,24 @@ export default function BadgePage() {
   }, [badgeWidthMm, badgeHeightMm, showEventHeader, user, event, qrCodeUrl]);
 
   useEffect(() => {
-    if (!eventId || !userId) return;
+    if (!userId) return;
 
     const loadData = async () => {
       try {
-        const [userSnap, eventSnap] = await Promise.all([
-          getDoc(doc(db, "users", userId)),
-          getDoc(doc(db, "events", eventId))
-        ]);
+        // Cuando ya nos pasaron user/event como props (uso embebido, p. ej. desde el
+        // Modal de CheckInTab.jsx) no hace falta volver a leerlos de Firestore: ya son
+        // datos frescos (attendees se actualiza en tiempo real ahí), y saltarse el
+        // round-trip es justamente lo que hace que el modal cargue rápido.
+        if (!hasPreloadedData) {
+          if (!eventId) return;
+          const [userSnap, eventSnap] = await Promise.all([
+            getDoc(doc(db, "users", userId)),
+            getDoc(doc(db, "events", eventId))
+          ]);
 
-        if (userSnap.exists()) setUser(userSnap.data());
-        if (eventSnap.exists()) setEvent(eventSnap.data());
+          if (userSnap.exists()) setUser(userSnap.data());
+          if (eventSnap.exists()) setEvent(eventSnap.data());
+        }
 
         // El QR codifica solo el uid del asistente (no un enlace): así el check-in
         // se hace siempre desde el escáner en el panel de CheckInTab.jsx, en vez
@@ -169,11 +216,11 @@ export default function BadgePage() {
     };
 
     loadData();
-  }, [eventId, userId]);
+  }, [eventId, userId, hasPreloadedData]);
 
   if (loading) {
     return (
-      <Center style={{ minHeight: "100vh", background: "#f8f9fa" }}>
+      <Center style={{ minHeight: embedded ? 200 : "100vh", background: "#f8f9fa" }}>
         <Loader size="xl" type="bars" />
       </Center>
     );
@@ -181,14 +228,14 @@ export default function BadgePage() {
 
   if (!user) {
     return (
-      <Center style={{ minHeight: "100vh", background: "#f8f9fa" }}>
+      <Center style={{ minHeight: embedded ? 200 : "100vh", background: "#f8f9fa" }}>
         <Title order={3} c="dimmed">No se encontró la escarapela.</Title>
       </Center>
     );
   }
 
   return (
-    <Box id="badge-print-root" style={{ minHeight: "100vh", background: "#f8f9fa", padding: "20px" }}>
+    <Box id="badge-print-root" style={{ minHeight: embedded ? "auto" : "100vh", background: "#f8f9fa", padding: "20px" }}>
       <style>{`
         #badge-print-area {
           ${badgeWidthMm ? `width: ${badgeWidthMm}mm;` : `width: 100%;`}
@@ -220,6 +267,21 @@ export default function BadgePage() {
             box-shadow: none !important;
             border-color: transparent !important;
           }
+          ${embedded ? `
+          /* Embebido (p. ej. dentro del Modal de CheckInTab.jsx): el resto de la página
+             (la lista de asistentes, potencialmente larga) sigue en el DOM detrás del
+             modal. "visibility:hidden" no alcanza -no saca los elementos del flujo del
+             documento, así que el navegador igual pagina todo ese alto vacío (decenas de
+             páginas en blanco)-, hay que sacar la app del layout con display:none. El
+             modal se renderiza en un portal fuera de #root, así que queda intacto. */
+          #root { display: none !important; }
+          .mantine-Modal-header, .mantine-Modal-close, .mantine-Overlay-root { display: none !important; }
+          .mantine-Modal-content { box-shadow: none !important; }
+          ` : ""}
+          /* El zoom de la vista previa es solo para pantalla: la impresión real siempre
+             debe salir al tamaño físico configurado, nunca agrandada. */
+          .badge-preview-zoom-wrap { width: auto !important; height: auto !important; display: block !important; }
+          .badge-preview-zoom-inner { transform: none !important; display: block !important; }
         }
       `}</style>
       <Container id="badge-print-container" size="md" py="md">
@@ -338,6 +400,20 @@ export default function BadgePage() {
         )}
 
         <Center>
+        <div
+          className={applyPreviewZoom ? "badge-preview-zoom-wrap" : undefined}
+          style={applyPreviewZoom ? {
+            width: `${(badgeWidthMm as number) * PREVIEW_ZOOM}mm`,
+            height: badgeHeightMm ? `${badgeHeightMm * PREVIEW_ZOOM}mm` : undefined,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: badgeHeightMm ? "center" : "flex-start",
+          } : undefined}
+        >
+        <div
+          className={applyPreviewZoom ? "badge-preview-zoom-inner" : undefined}
+          style={applyPreviewZoom ? { transform: `scale(${PREVIEW_ZOOM})`, transformOrigin: "center", display: "inline-block" } : undefined}
+        >
         <Paper
           id="badge-print-area"
           shadow="xl"
@@ -399,33 +475,39 @@ export default function BadgePage() {
           </Stack>
           </div>
         </Paper>
+        </div>
+        </div>
         </Center>
 
         <Stack gap="sm" mt="lg" className="no-print" style={{ maxWidth: 360, marginInline: "auto" }}>
-          <Text size="xs" c="dimmed" ta="center">
-            Presenta este código QR en la entrada del evento para realizar tu check-in.
-          </Text>
+          {!embedded && (
+            <Text size="xs" c="dimmed" ta="center">
+              Presenta este código QR en la entrada del evento para realizar tu check-in.
+            </Text>
+          )}
 
           <Group grow>
-            <Button
-              component={Link}
-              to={`/event/${eventId}`}
-              variant="outline"
-              radius="md"
-              color={event?.config?.primaryColor || "teal"}
-              rightSection={<IconArrowRight size={16} />}
-            >
-              Ir al evento
-            </Button>
+            {!embedded && (
+              <Button
+                component={Link}
+                to={`/event/${eventId}`}
+                variant="outline"
+                radius="md"
+                color={event?.config?.primaryColor || "teal"}
+                rightSection={<IconArrowRight size={16} />}
+              >
+                Ir al evento
+              </Button>
+            )}
 
             {printMode && (
               <Button
                 radius="md"
                 color={event?.config?.primaryColor || "teal"}
                 leftSection={<IconPrinter size={16} />}
-                onClick={() => window.print()}
+                onClick={onPrintClick ?? (() => window.print())}
               >
-                Imprimir
+                {printButtonLabel}
               </Button>
             )}
           </Group>
