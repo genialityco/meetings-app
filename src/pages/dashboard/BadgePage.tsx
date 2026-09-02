@@ -38,13 +38,13 @@ export default function BadgePage() {
   const [event, setEvent] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [qrCodeUrl, setQrCodeUrl] = useState<string>("");
-  const [showEventHeader, setShowEventHeader] = useState(true);
-  const [pageSizeKey, setPageSizeKey] = useState<string>("carta");
-  const [customWidth, setCustomWidth] = useState<number>(216);
-  const [customHeight, setCustomHeight] = useState<number>(279);
-  const [badgeSizeKey, setBadgeSizeKey] = useState<string>("mediana");
+  const [showEventHeader, setShowEventHeader] = useState(false);
+  const [pageSizeKey, setPageSizeKey] = useState<string>("custom");
+  const [customWidth, setCustomWidth] = useState<number>(75);
+  const [customHeight, setCustomHeight] = useState<number>(50);
+  const [badgeSizeKey, setBadgeSizeKey] = useState<string>("pequena");
   const [customBadgeWidth, setCustomBadgeWidth] = useState<number>(100);
-  const [badgeHeightKey, setBadgeHeightKey] = useState<string>("auto");
+  const [badgeHeightKey, setBadgeHeightKey] = useState<string>("pequena");
   const [customBadgeHeight, setCustomBadgeHeight] = useState<number>(50);
 
   const pageSize = useMemo(() => {
@@ -310,7 +310,7 @@ export default function BadgePage() {
             id="badge-fit-content"
             style={{ width: "100%", height: badgeHeightMm ? "100%" : "auto" }}
           >
-          <Stack align="center" gap={`${gapMm}mm`}>
+          <Stack align="center" gap={`${gapMm}mm`} style={{ width: "85%", marginInline: "auto" }}>
             {showEventHeader && (event?.config?.landingTitleImage ? (
               <img
                 src={event.config.landingTitleImage}
