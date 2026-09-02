@@ -166,13 +166,18 @@ export default function BadgePage() {
         @media print {
           .no-print { display: none !important; }
           html, body { margin: 0 !important; padding: 0 !important; background: white !important; }
-          #badge-print-root { min-height: 0 !important; padding: 0 !important; }
+          #badge-print-root { min-height: 0 !important; padding: 0 !important; background: white !important; }
           #badge-print-container { padding: 0 !important; margin: 0 !important; max-width: none !important; }
           #badge-print-area {
             margin: 0 auto !important;
             page-break-after: avoid;
             page-break-inside: avoid;
+            background: white !important;
+          }
+          /* Sin bordes, sombras ni acentos de color al imprimir: solo texto y el QR sobre blanco */
+          #badge-print-area, #badge-print-area * {
             box-shadow: none !important;
+            border-color: transparent !important;
           }
         }
       `}</style>

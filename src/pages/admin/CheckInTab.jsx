@@ -563,6 +563,7 @@ export default function CheckInTab({ event }) {
     const term = search.toLowerCase().trim();
     if (!term) return attendees;
     return attendees.filter((a) =>
+      a.id.toLowerCase().includes(term) ||
       (a.nombre || "").toLowerCase().includes(term) ||
       (a.empresa || "").toLowerCase().includes(term) ||
       (a.correo || "").toLowerCase().includes(term) ||
