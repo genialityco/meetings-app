@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, useSearchParams, Link } from "react-router-dom";
 import { Container, Paper, Title, Text, Center, Loader, Avatar, Stack, Box, Button, Switch, Group, Select, NumberInput, Divider, SimpleGrid } from "@mantine/core";
 import { IconArrowRight, IconPrinter, IconAdjustments, IconRuler2, IconFileText } from "@tabler/icons-react";
 import { doc, getDoc } from "firebase/firestore";
@@ -34,17 +34,24 @@ const BADGE_HEIGHTS: Record<string, { label: string; height: number }> = {
 
 export default function BadgePage() {
   const { eventId, userId } = useParams();
+  // La vista de impresión (tamaños de escarapela/hoja, sin logo por defecto) es una
+  // herramienta operativa del check-in, no algo que el asistente deba ver desde su
+  // dashboard: solo se activa llegando con ?print=1 (ver botón "Ver credencial" en
+  // CheckInTab.jsx). Sin ese parámetro, el asistente ve su escarapela completa tal cual.
+  const [searchParams] = useSearchParams();
+  const printMode = searchParams.get("print") === "1";
+
   const [user, setUser] = useState<any>(null);
   const [event, setEvent] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [qrCodeUrl, setQrCodeUrl] = useState<string>("");
-  const [showEventHeader, setShowEventHeader] = useState(false);
-  const [pageSizeKey, setPageSizeKey] = useState<string>("custom");
-  const [customWidth, setCustomWidth] = useState<number>(75);
-  const [customHeight, setCustomHeight] = useState<number>(50);
-  const [badgeSizeKey, setBadgeSizeKey] = useState<string>("pequena");
+  const [showEventHeader, setShowEventHeader] = useState(!printMode);
+  const [pageSizeKey, setPageSizeKey] = useState<string>(printMode ? "custom" : "carta");
+  const [customWidth, setCustomWidth] = useState<number>(printMode ? 75 : 216);
+  const [customHeight, setCustomHeight] = useState<number>(printMode ? 50 : 279);
+  const [badgeSizeKey, setBadgeSizeKey] = useState<string>(printMode ? "pequena" : "completa");
   const [customBadgeWidth, setCustomBadgeWidth] = useState<number>(100);
-  const [badgeHeightKey, setBadgeHeightKey] = useState<string>("pequena");
+  const [badgeHeightKey, setBadgeHeightKey] = useState<string>(printMode ? "pequena" : "auto");
   const [customBadgeHeight, setCustomBadgeHeight] = useState<number>(50);
 
   const pageSize = useMemo(() => {
@@ -182,115 +189,119 @@ export default function BadgePage() {
         }
       `}</style>
       <Container id="badge-print-container" size="md" py="md">
-        <Paper withBorder radius="lg" p="lg" mb="xl" className="no-print">
-          <Group justify="space-between" mb="md" wrap="wrap" gap="sm">
-            <Group gap="xs">
-              <IconAdjustments size={20} />
-              <Title order={4}>Configurar credencial</Title>
-            </Group>
-            <Switch
-              label="Incluir logo y título del evento"
-              checked={showEventHeader}
-              onChange={(e) => setShowEventHeader(e.currentTarget.checked)}
-            />
-          </Group>
-
-          <Divider mb="lg" />
-
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xl" verticalSpacing="lg">
-            <Stack gap="xs">
-              <Group gap={6} wrap="nowrap">
-                <IconRuler2 size={16} />
-                <Text fw={600} size="sm">Tamaño de la escarapela</Text>
+        {printMode && (
+          <Paper withBorder radius="lg" p="lg" mb="xl" className="no-print">
+            <Group justify="space-between" mb="md" wrap="wrap" gap="sm">
+              <Group gap="xs">
+                <IconAdjustments size={20} />
+                <Title order={4}>Configurar credencial</Title>
               </Group>
-
-              <Group gap="xs" grow wrap="nowrap">
-                <Select
-                  label="Ancho"
-                  data={Object.entries(BADGE_SIZES).map(([value, { label }]) => ({ value, label }))}
-                  value={badgeSizeKey}
-                  onChange={(value) => value && setBadgeSizeKey(value)}
-                  allowDeselect={false}
-                />
-                {badgeSizeKey === "custom" && (
-                  <NumberInput
-                    label="Ancho (mm)"
-                    value={customBadgeWidth}
-                    onChange={(value) => setCustomBadgeWidth(Number(value) || 0)}
-                    min={30}
-                    max={300}
-                  />
-                )}
-              </Group>
-
-              <Group gap="xs" grow wrap="nowrap">
-                <Select
-                  label="Alto"
-                  description="Fijo para stickers, o automático"
-                  data={Object.entries(BADGE_HEIGHTS).map(([value, { label }]) => ({ value, label }))}
-                  value={badgeHeightKey}
-                  onChange={(value) => value && setBadgeHeightKey(value)}
-                  allowDeselect={false}
-                />
-                {badgeHeightKey === "custom" && (
-                  <NumberInput
-                    label="Alto (mm)"
-                    value={customBadgeHeight}
-                    onChange={(value) => setCustomBadgeHeight(Number(value) || 0)}
-                    min={20}
-                    max={300}
-                  />
-                )}
-              </Group>
-            </Stack>
-
-            <Stack gap="xs">
-              <Group gap={6} wrap="nowrap">
-                <IconFileText size={16} />
-                <Text fw={600} size="sm">Tamaño de la hoja</Text>
-              </Group>
-
-              <Select
-                label="Papel"
-                data={Object.entries(PAGE_SIZES).map(([value, { label }]) => ({ value, label }))}
-                value={pageSizeKey}
-                onChange={(value) => value && setPageSizeKey(value)}
-                allowDeselect={false}
+              <Switch
+                label="Incluir logo y título del evento"
+                checked={showEventHeader}
+                onChange={(e) => setShowEventHeader(e.currentTarget.checked)}
               />
-              {pageSizeKey === "custom" && (
-                <Group gap="xs" grow wrap="nowrap">
-                  <NumberInput
-                    label="Ancho (mm)"
-                    value={customWidth}
-                    onChange={(value) => setCustomWidth(Number(value) || 0)}
-                    min={20}
-                    max={500}
-                  />
-                  <NumberInput
-                    label="Alto (mm)"
-                    value={customHeight}
-                    onChange={(value) => setCustomHeight(Number(value) || 0)}
-                    min={20}
-                    max={500}
-                  />
-                </Group>
-              )}
-            </Stack>
-          </SimpleGrid>
-        </Paper>
+            </Group>
 
-        <Text
-          size="xs"
-          fw={700}
-          tt="uppercase"
-          c="dimmed"
-          ta="center"
-          mb="sm"
-          className="no-print"
-          style={{ letterSpacing: 1 }}
-        >
-          Vista previa
-        </Text>
+            <Divider mb="lg" />
+
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xl" verticalSpacing="lg">
+              <Stack gap="xs">
+                <Group gap={6} wrap="nowrap">
+                  <IconRuler2 size={16} />
+                  <Text fw={600} size="sm">Tamaño de la escarapela</Text>
+                </Group>
+
+                <Group gap="xs" grow wrap="nowrap">
+                  <Select
+                    label="Ancho"
+                    data={Object.entries(BADGE_SIZES).map(([value, { label }]) => ({ value, label }))}
+                    value={badgeSizeKey}
+                    onChange={(value) => value && setBadgeSizeKey(value)}
+                    allowDeselect={false}
+                  />
+                  {badgeSizeKey === "custom" && (
+                    <NumberInput
+                      label="Ancho (mm)"
+                      value={customBadgeWidth}
+                      onChange={(value) => setCustomBadgeWidth(Number(value) || 0)}
+                      min={30}
+                      max={300}
+                    />
+                  )}
+                </Group>
+
+                <Group gap="xs" grow wrap="nowrap">
+                  <Select
+                    label="Alto"
+                    description="Fijo para stickers, o automático"
+                    data={Object.entries(BADGE_HEIGHTS).map(([value, { label }]) => ({ value, label }))}
+                    value={badgeHeightKey}
+                    onChange={(value) => value && setBadgeHeightKey(value)}
+                    allowDeselect={false}
+                  />
+                  {badgeHeightKey === "custom" && (
+                    <NumberInput
+                      label="Alto (mm)"
+                      value={customBadgeHeight}
+                      onChange={(value) => setCustomBadgeHeight(Number(value) || 0)}
+                      min={20}
+                      max={300}
+                    />
+                  )}
+                </Group>
+              </Stack>
+
+              <Stack gap="xs">
+                <Group gap={6} wrap="nowrap">
+                  <IconFileText size={16} />
+                  <Text fw={600} size="sm">Tamaño de la hoja</Text>
+                </Group>
+
+                <Select
+                  label="Papel"
+                  data={Object.entries(PAGE_SIZES).map(([value, { label }]) => ({ value, label }))}
+                  value={pageSizeKey}
+                  onChange={(value) => value && setPageSizeKey(value)}
+                  allowDeselect={false}
+                />
+                {pageSizeKey === "custom" && (
+                  <Group gap="xs" grow wrap="nowrap">
+                    <NumberInput
+                      label="Ancho (mm)"
+                      value={customWidth}
+                      onChange={(value) => setCustomWidth(Number(value) || 0)}
+                      min={20}
+                      max={500}
+                    />
+                    <NumberInput
+                      label="Alto (mm)"
+                      value={customHeight}
+                      onChange={(value) => setCustomHeight(Number(value) || 0)}
+                      min={20}
+                      max={500}
+                    />
+                  </Group>
+                )}
+              </Stack>
+            </SimpleGrid>
+          </Paper>
+        )}
+
+        {printMode && (
+          <Text
+            size="xs"
+            fw={700}
+            tt="uppercase"
+            c="dimmed"
+            ta="center"
+            mb="sm"
+            className="no-print"
+            style={{ letterSpacing: 1 }}
+          >
+            Vista previa
+          </Text>
+        )}
 
         <Center>
         <Paper
@@ -373,14 +384,16 @@ export default function BadgePage() {
               Ir al evento
             </Button>
 
-            <Button
-              radius="md"
-              color={event?.config?.primaryColor || "teal"}
-              leftSection={<IconPrinter size={16} />}
-              onClick={() => window.print()}
-            >
-              Imprimir
-            </Button>
+            {printMode && (
+              <Button
+                radius="md"
+                color={event?.config?.primaryColor || "teal"}
+                leftSection={<IconPrinter size={16} />}
+                onClick={() => window.print()}
+              >
+                Imprimir
+              </Button>
+            )}
           </Group>
         </Stack>
       </Container>

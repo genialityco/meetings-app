@@ -136,7 +136,7 @@ function AttendeeRow({ a, event, updating, onToggle, onEdit, checkedInToday, che
             radius="xl"
             variant="light"
             color="gray"
-            onClick={() => window.open(`/badge/${event?.id}/${a.id}`, "_blank")}
+            onClick={() => window.open(`/badge/${event?.id}/${a.id}?print=1`, "_blank")}
             title="Ver / imprimir credencial"
           >
             <IconId size={18} />
