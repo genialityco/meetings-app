@@ -1937,6 +1937,19 @@ const MatrixPage = () => {
   ];
   const isMultiDay = eventDates.length > 1;
 
+  // Contador de citas (reuniones aceptadas) por día, para el selector de día y el resumen del día activo
+  const meetingsPerDay = useMemo(() => {
+    const counts = {};
+    meetings.forEach((m) => {
+      if (m.status !== "accepted") return;
+      const date = m.meetingDate || selectedDate;
+      if (!date) return;
+      counts[date] = (counts[date] || 0) + 1;
+    });
+    return counts;
+  }, [meetings, selectedDate]);
+  const citasDelDia = selectedDate ? meetingsPerDay[selectedDate] || 0 : 0;
+
   return (
     <Container fluid>
       <Title order={2} mt="md" mb="md" align="center">
@@ -1945,18 +1958,27 @@ const MatrixPage = () => {
 
       {/* Selector de día para eventos multi-día */}
       {isMultiDay && (
-        <Flex justify="center" mb="md">
+        <Flex justify="center" align="flex-end" gap="sm" mb="md">
           <Select
             label="Seleccionar día"
             placeholder="Escoge un día"
             data={eventDates.map((date) => ({
               value: date,
-              label: formatDate(date),
+              label: `${formatDate(date)} — ${meetingsPerDay[date] || 0} citas`,
             }))}
             value={selectedDate}
             onChange={setSelectedDate}
-            style={{ width: "100%", maxWidth: 280 }}
+            style={{ width: "100%", maxWidth: 320 }}
           />
+        </Flex>
+      )}
+
+      {selectedDate && (
+        <Flex justify="center" mb="md">
+          <Badge size="lg" variant="light" color="teal">
+            {citasDelDia} {citasDelDia === 1 ? "cita" : "citas"} el{" "}
+            {formatDate(selectedDate)}
+          </Badge>
         </Flex>
       )}
 
