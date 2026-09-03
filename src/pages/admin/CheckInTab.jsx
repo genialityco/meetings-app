@@ -20,6 +20,7 @@ import AttendeeScanReviewModal from "../../components/AttendeeScanReviewModal";
 import BadgePage from "../dashboard/BadgePage";
 import { useAttendeeScanFlow } from "../../hooks/useAttendeeScanFlow";
 import { getEventDayKeys, resolveCheckInDay, isCheckedInOnDay, formatDayLabel } from "../../utils/eventDays";
+import { parseAttendeeQrUrl } from "../../utils/qrScan";
 
 // Campos básicos siempre visibles
 const BASIC_FIELDS = [
@@ -562,8 +563,20 @@ export default function CheckInTab({ event }) {
   }, [event?.id]);
 
   const filtered = useMemo(() => {
-    const term = search.toLowerCase().trim();
-    if (!term) return attendees;
+    const raw = search.trim();
+    if (!raw) return attendees;
+
+    // Un lector de QR físico (no la cámara in-app) "escribe" el texto decodificado
+    // donde esté el foco -típicamente este buscador- sin pasar por parseAttendeeQrUrl.
+    // La escarapela ahora codifica un link (ver BadgePage.tsx), así que si lo que llegó
+    // acá matchea ese patrón, se busca exacto por el uid extraído en vez de tratar el
+    // link completo como texto libre (que no matchea nada y solo se ve el link pegado).
+    const parsedQr = parseAttendeeQrUrl(raw);
+    if (parsedQr) {
+      return attendees.filter((a) => a.id === parsedQr.userId);
+    }
+
+    const term = raw.toLowerCase();
     // String(...) en vez de `x || ""`: algunos registros (importados desde Excel, p. ej.)
     // tienen telefono/cedula guardados como número en vez de texto -"truthy", así que
     // `|| ""` no los cubre- y number.toLowerCase() no existe, tumbando la página apenas
