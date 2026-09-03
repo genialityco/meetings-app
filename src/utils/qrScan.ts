@@ -1,10 +1,13 @@
 /**
  * Extrae {eventId, userId} de un texto de QR escaneado. La credencial actual
- * (BadgePage.tsx) codifica solo el uid del asistente como texto plano (no un
- * enlace) — por eso eventId viene null en ese caso, y el llamador debe validar
- * el evento comparando contra su propia lista de asistentes. Se conservan los
- * patrones de enlace (/admin/event/:eventId/checkin/:userId, /badge/:eventId/:userId)
- * para credenciales ya impresas antes de este cambio.
+ * (BadgePage.tsx) codifica un link a la página de "visita de perfil" del asistente
+ * (la empresa si tiene una asociada, si no su propia escarapela) con el uid como
+ * query param `visitante` — así, escaneada con la cámara nativa de un celular abre
+ * esa página, pero el escáner del admin (este parser) sigue pudiendo sacar el uid
+ * para hacer la búsqueda/check-in normal. Se conservan los patrones de enlace viejos
+ * (/admin/event/:eventId/checkin/:userId, /badge/:eventId/:userId) y el uid como
+ * texto plano sin link (eventId null, el llamador valida el evento) para credenciales
+ * ya impresas antes de estos cambios.
  */
 export function parseAttendeeQrUrl(text: string): { eventId: string | null; userId: string } | null {
   if (!text) return null;
@@ -17,6 +20,10 @@ export function parseAttendeeQrUrl(text: string): { eventId: string | null; user
     if (match) {
       return { eventId: decodeURIComponent(match[1]), userId: decodeURIComponent(match[2]) };
     }
+  }
+  const companyVisitMatch = text.match(/\/dashboard\/([^/]+)\/company\/[^/?#]+\?[^#]*\bvisitante=([^&#]+)/);
+  if (companyVisitMatch) {
+    return { eventId: decodeURIComponent(companyVisitMatch[1]), userId: decodeURIComponent(companyVisitMatch[2]) };
   }
   const trimmed = text.trim();
   if (/^[A-Za-z0-9_-]{10,64}$/.test(trimmed)) {

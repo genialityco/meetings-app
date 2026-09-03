@@ -189,6 +189,7 @@ export default function BadgePage({
         // Modal de CheckInTab.jsx) no hace falta volver a leerlos de Firestore: ya son
         // datos frescos (attendees se actualiza en tiempo real ahí), y saltarse el
         // round-trip es justamente lo que hace que el modal cargue rápido.
+        let userData = userProp;
         if (!hasPreloadedData) {
           if (!eventId) return;
           const [userSnap, eventSnap] = await Promise.all([
@@ -196,17 +197,28 @@ export default function BadgePage({
             getDoc(doc(db, "events", eventId))
           ]);
 
-          if (userSnap.exists()) setUser(userSnap.data());
+          if (userSnap.exists()) { userData = userSnap.data(); setUser(userData); }
           if (eventSnap.exists()) setEvent(eventSnap.data());
         }
 
-        // El QR codifica solo el uid del asistente (no un enlace): así el check-in
-        // se hace siempre desde el escáner en el panel de CheckInTab.jsx, en vez
-        // de navegar a otra página al abrir la cámara nativa del teléfono.
-        // Resolución alta (muy por encima del tamaño en pantalla) para que, al escalar
-        // hacia el tamaño físico real de impresión (mm), no se vea borroso/pixelado
-        // en impresoras de escarapelas/etiquetas de baja resolución (p. ej. térmicas).
-        const qrUrl = await QRCode.toDataURL(userId, { width: 600, margin: 2 });
+        // El QR codifica un link de "visita de perfil": a la página pública de la
+        // empresa del asistente (o a su propia escarapela si no tiene empresa
+        // asociada), con el uid como query param `visitante`. Escaneado con la
+        // cámara nativa de un celular (cualquier asistente curioso, o el staff por
+        // error) abre esa página; escaneado con el escáner del admin (que lee el
+        // texto crudo del QR, no navega) sigue permitiendo la búsqueda/check-in
+        // normal -ver parseAttendeeQrUrl en utils/qrScan.ts, que sabe extraer el uid
+        // de este patrón. Resolución alta (muy por encima del tamaño en pantalla)
+        // para que, al escalar hacia el tamaño físico real de impresión (mm), no se
+        // vea borroso/pixelado en impresoras de escarapelas/etiquetas de baja
+        // resolución (p. ej. térmicas).
+        const companyId = userData?.companyId;
+        const qrPayload = eventId
+          ? companyId
+            ? `${window.location.origin}/dashboard/${eventId}/company/${encodeURIComponent(companyId)}?visitante=${encodeURIComponent(userId)}`
+            : `${window.location.origin}/badge/${eventId}/${encodeURIComponent(userId)}`
+          : userId;
+        const qrUrl = await QRCode.toDataURL(qrPayload, { width: 600, margin: 2 });
         setQrCodeUrl(qrUrl);
       } catch (e) {
         console.error("Error loading badge data", e);
