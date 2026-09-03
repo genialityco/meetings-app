@@ -64,6 +64,7 @@ import RaffleQrModal from "./RaffleQrModal";
 import { getTableLabel } from "./meetingSlotEngine";
 import { Meeting, ParticipantInfo, EventPolicies } from "./types";
 import { normalizeTipoAsistente } from "../../utils/attendeeRole";
+import { isCheckedInOnDay, resolveCheckInDay } from "../../utils/eventDays";
 
 interface SurveyField {
   name: string;
@@ -491,6 +492,21 @@ export default function MeetingsTab({
                           <Badge color="yellow" variant="light" size="xs" mt="xs">
                             {getCheckInMissingLabel(meeting)}
                           </Badge>
+                        )}
+                        {/* Para reuniones ya confirmadas (no standby): que el asistente pueda
+                            ver de un vistazo si la contraparte ya llegó al evento -el standby
+                            ya tiene su propio badge de check-in faltante arriba, este es para
+                            el resto de las reuniones agendadas/aceptadas. */}
+                        {!isStandby && participant && (meeting as any).meetingDate && (
+                          isCheckedInOnDay(participant, resolveCheckInDay(eventConfig, (meeting as any).meetingDate)) ? (
+                            <Badge color="green" variant="light" size="xs" mt="xs">
+                              ✓ Ya hizo check-in
+                            </Badge>
+                          ) : (
+                            <Badge color="gray" variant="outline" size="xs" mt="xs">
+                              Aún no ha hecho check-in
+                            </Badge>
+                          )
                         )}
                         {advisorInfo && (
                           <Badge color="blue" variant="light" size="xs" mt="xs">

@@ -23,6 +23,7 @@ import {
   getDoc,
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
+import { isCheckedInOnDay, resolveCheckInDay } from "../../utils/eventDays";
 
 const statusColors = {
   accepted: "green",
@@ -103,8 +104,8 @@ const MeetingsListModal = ({ opened, onClose, event, setGlobalMessage }) => {
         participantsData: (meeting.participants || []).map((pid) => {
           const u = usersById[pid];
           return u
-            ? { id: pid, nombre: u.nombre, empresa: u.empresa, avatar: u.photoURL }
-            : { id: pid, nombre: "Desconocido", empresa: "" };
+            ? { id: pid, nombre: u.nombre, empresa: u.empresa, avatar: u.photoURL, checkIns: u.checkIns }
+            : { id: pid, nombre: "Desconocido", empresa: "", checkIns: null };
         }),
       }));
 
@@ -258,26 +259,44 @@ const MeetingsListModal = ({ opened, onClose, event, setGlobalMessage }) => {
                 </Table.Td>
                 <Table.Td>
                   <Stack gap={4}>
-                    {m.participantsData?.map((p) => (
-                      <Group key={p.id} gap={8}>
-                        <Avatar
-                          size={26}
-                          radius="xl"
-                          src={p.avatar}
-                          alt={p.nombre}
-                        >
-                          {p.nombre?.[0] || "?"}
-                        </Avatar>
-                        <div>
-                          <Text size="sm" fw={500}>
-                            {p.nombre}
-                          </Text>
-                          <Text size="xs" c="dimmed">
-                            {p.empresa}
-                          </Text>
-                        </div>
-                      </Group>
-                    ))}
+                    {m.participantsData?.map((p) => {
+                      // Check-in del día de ESTA reunión (no necesariamente "hoy"): con
+                      // eventos multi-día, si la reunión es de mañana no tiene sentido
+                      // mostrarla como "sin check-in" comparando contra el día de hoy.
+                      const checkInDay = resolveCheckInDay(event?.config, m.meetingDate);
+                      const checkedIn = isCheckedInOnDay(p, checkInDay);
+                      return (
+                        <Group key={p.id} gap={8} wrap="nowrap">
+                          <Avatar
+                            size={26}
+                            radius="xl"
+                            src={p.avatar}
+                            alt={p.nombre}
+                          >
+                            {p.nombre?.[0] || "?"}
+                          </Avatar>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <Text size="sm" fw={500}>
+                              {p.nombre}
+                            </Text>
+                            <Text size="xs" c="dimmed">
+                              {p.empresa}
+                            </Text>
+                          </div>
+                          {p.checkIns !== null && (
+                            checkedIn ? (
+                              <Badge color="green" variant="light" size="xs">
+                                ✓ Check-in
+                              </Badge>
+                            ) : (
+                              <Badge color="gray" variant="outline" size="xs">
+                                Sin check-in
+                              </Badge>
+                            )
+                          )}
+                        </Group>
+                      );
+                    })}
                   </Stack>
                 </Table.Td>
                 <Table.Td>

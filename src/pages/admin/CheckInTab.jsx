@@ -564,12 +564,16 @@ export default function CheckInTab({ event }) {
   const filtered = useMemo(() => {
     const term = search.toLowerCase().trim();
     if (!term) return attendees;
+    // String(...) en vez de `x || ""`: algunos registros (importados desde Excel, p. ej.)
+    // tienen telefono/cedula guardados como número en vez de texto -"truthy", así que
+    // `|| ""` no los cubre- y number.toLowerCase() no existe, tumbando la página apenas
+    // se escribe algo en el buscador.
     return attendees.filter((a) =>
-      a.id.toLowerCase().includes(term) ||
-      (a.nombre || "").toLowerCase().includes(term) ||
-      (a.empresa || "").toLowerCase().includes(term) ||
-      (a.correo || "").toLowerCase().includes(term) ||
-      (a.telefono || "").toLowerCase().includes(term)
+      String(a.id || "").toLowerCase().includes(term) ||
+      String(a.nombre || "").toLowerCase().includes(term) ||
+      String(a.empresa || "").toLowerCase().includes(term) ||
+      String(a.correo || "").toLowerCase().includes(term) ||
+      String(a.telefono || "").toLowerCase().includes(term)
     );
   }, [attendees, search]);
 

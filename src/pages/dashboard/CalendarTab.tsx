@@ -41,6 +41,7 @@ import { DEFAULT_SURVEY_FIELDS } from "../admin/ConfigureSurveyModal";
 import OptimisticCheckbox from "../../components/OptimisticCheckbox";
 import RaffleQrModal from "./RaffleQrModal";
 import { normalizeTipoAsistente } from "../../utils/attendeeRole";
+import { isCheckedInOnDay, resolveCheckInDay } from "../../utils/eventDays";
 
 interface CalendarTabProps {
   acceptedMeetings: any[];
@@ -850,6 +851,17 @@ export default function CalendarTab({
                       <Text size="sm" c="dimmed">
                         {participant.empresa}
                       </Text>
+                      {selectedMeeting.type === "accepted" && selectedMeeting.meetingDate && (
+                        isCheckedInOnDay(participant, resolveCheckInDay(eventConfig, selectedMeeting.meetingDate)) ? (
+                          <Badge color="green" variant="light" size="xs" mt={4}>
+                            ✓ Ya hizo check-in
+                          </Badge>
+                        ) : (
+                          <Badge color="gray" variant="outline" size="xs" mt={4}>
+                            Aún no ha hecho check-in
+                          </Badge>
+                        )
+                      )}
                     </div>
                   </Group>
 
