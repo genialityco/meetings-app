@@ -23,7 +23,7 @@ createRoot(document.getElementById("root")).render(
       <AdminAuthProvider>
       <MantineProvider theme={theme}>
         <ModalsProvider>
-          <Notifications position="top-center" />
+          <Notifications position="top-center" limit={3} />
           <App />
         </ModalsProvider>
       </MantineProvider>

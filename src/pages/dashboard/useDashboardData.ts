@@ -362,23 +362,37 @@ export function useDashboardData(eventId?: string) {
       where("userId", "==", uid),
       orderBy("timestamp", "desc"),
     );
+    // El snapshot inicial trae TODAS las notificaciones sin leer que ya existían en
+    // Firestore (potencialmente varias, acumuladas de días previos del evento) -esas
+    // no deben mostrarse como toast, solo alimentar la lista/campanita. Si se tostean
+    // igual que las nuevas, cada vez que el asistente recarga o reabre el dashboard
+    // (shownToastIds vive solo en memoria, se reinicia) revive y dispara de nuevo TODAS
+    // esas notificaciones viejas de golpe -el efecto "de reguero" reportado. Solo se
+    // tostean los docChanges tipo "added" de snapshots POSTERIORES al primero, o sea,
+    // notificaciones que llegan de verdad en tiempo real mientras el asistente ya está
+    // con el dashboard abierto.
+    let isFirstSnapshot = true;
     return onSnapshot(q, (snap) => {
       const nots = snap.docs.map(
         (d) => ({ id: d.id, ...d.data() }) as Notification,
       );
 
-      // Mostrar toast solo para notificaciones no leídas que no se hayan mostrado aún
-      nots.forEach((n) => {
-        if (!n.read && !shownToastIds.current.has(n.id)) {
-          shownToastIds.current.add(n.id);
-          showNotification({
-            title: n.title,
-            message: n.message,
-            color: "teal",
-            autoClose: 6000,
-          });
-        }
-      });
+      if (!isFirstSnapshot) {
+        snap.docChanges().forEach((change) => {
+          if (change.type !== "added") return;
+          const n = { id: change.doc.id, ...change.doc.data() } as Notification;
+          if (!n.read && !shownToastIds.current.has(n.id)) {
+            shownToastIds.current.add(n.id);
+            showNotification({
+              title: n.title,
+              message: n.message,
+              color: "teal",
+              autoClose: 6000,
+            });
+          }
+        });
+      }
+      isFirstSnapshot = false;
 
       setNotifications(nots);
     });
