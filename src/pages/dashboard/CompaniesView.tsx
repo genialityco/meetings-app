@@ -20,6 +20,7 @@ import {
   useMantineTheme,
   rem,
   Loader,
+  Tooltip,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import { useState, useMemo, useEffect } from "react";
@@ -44,6 +45,7 @@ import {
 import type { Assistant, Company, EventPolicies, MeetingContext } from "./types";
 import MeetingRequestModal from "./MeetingRequestModal";
 import { getTableLabel } from "./meetingSlotEngine";
+import { isCheckedInOnDay, resolveCheckInDay } from "../../utils/eventDays";
 
 const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
 
@@ -149,6 +151,10 @@ export default function CompaniesView({
   const [hasSearchedVector, setHasSearchedVector] = useState(false);
 
   const myUid = currentUser?.uid;
+
+  // Día de check-in vigente ("hoy" si es un día válido del evento, si no el primero),
+  // para el indicador de presencia en la lista de representantes.
+  const checkInDay = resolveCheckInDay(eventConfig, null);
 
   // Efecto para hacer scroll y resaltar la card cuando viene de notificación
   useEffect(() => {
@@ -763,7 +769,7 @@ export default function CompaniesView({
                                   >
                                     {(a.nombre || "A")[0]?.toUpperCase()}
                                   </Avatar>
-                                  <Box style={{ minWidth: 0 }}>
+                                  <Box style={{ minWidth: 0, flex: 1 }}>
                                     <Text size="sm" fw={600} lineClamp={1}>
                                       {a.nombre || "Sin nombre"}
                                     </Text>
@@ -771,6 +777,16 @@ export default function CompaniesView({
                                       {a.cargo || "Representante"}
                                     </Text>
                                   </Box>
+                                  {/* Indicador de presencia: solo se marca cuando SÍ hizo
+                                      check-in, para no ensuciar la lista con un badge
+                                      negativo en cada representante ausente. */}
+                                  {isCheckedInOnDay(a, checkInDay) && (
+                                    <Tooltip label="Hizo check-in, está en el evento" withArrow>
+                                      <ThemeIcon size={16} radius="xl" color="green" variant="filled" style={{ flexShrink: 0 }}>
+                                        <IconCircleCheck size={11} />
+                                      </ThemeIcon>
+                                    </Tooltip>
+                                  )}
                                 </Group>
                               </UnstyledButton>
                             );
