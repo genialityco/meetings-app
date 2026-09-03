@@ -1394,35 +1394,16 @@ const Landing = () => {
   }, [event.backgroundImage, event.backgroundMobileImage, isMobile]);
 
   if (userLoading) return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg, rgba(107, 107, 107, 0.7), rgba(203, 206, 204, 1) 100%)" }}>
-      <style>{`
-        @keyframes magnetic-pulse {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.3; transform: scale(0.85); }
-        }
-        .magnetic-letter {
-          display: inline-block;
-          color: #fff;
-          font-size: 2.8rem;
-          font-weight: 900;
-          letter-spacing: 0.18em;
-          animation: magnetic-pulse 1.4s ease-in-out infinite;
-        }
-        .magnetic-letter:nth-child(1) { animation-delay: 0s; }
-        .magnetic-letter:nth-child(2) { animation-delay: 0.1s; }
-        .magnetic-letter:nth-child(3) { animation-delay: 0.2s; }
-        .magnetic-letter:nth-child(4) { animation-delay: 0.3s; }
-        .magnetic-letter:nth-child(5) { animation-delay: 0.4s; }
-        .magnetic-letter:nth-child(6) { animation-delay: 0.5s; }
-        .magnetic-letter:nth-child(7) { animation-delay: 0.6s; }
-        .magnetic-letter:nth-child(8) { animation-delay: 0.7s; }
-      `}</style>
-      <div>
-        {"MAGNETIC".split("").map((l, i) => (
-          <span key={i} className="magnetic-letter">{l}</span>
-        ))}
-      </div>
-    </div>
+    <div
+      style={{
+        minHeight: "100vh",
+        backgroundColor: "#0d0d0f",
+        backgroundImage: "url('/splash-magnetic.jpg')",
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+      }}
+    />
   );
 
   if (!eventId) {

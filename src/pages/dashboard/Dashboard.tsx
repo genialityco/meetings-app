@@ -50,7 +50,20 @@ function formatDate(dateString?: string) {
 export default function Dashboard() {
   const { eventId } = useParams();
   const dashboard = useDashboardData(eventId);
-  const { currentUser, updateUser } = useContext(UserContext);
+  const { currentUser, updateUser, userLoading } = useContext(UserContext);
+
+  useEffect(() => {
+    // Cuando la sesión se cierra o se vence (el token de Firebase Auth se invalida y
+    // UserContext recupera con una sesión anónima nueva sin ficha asociada, o la ficha
+    // de asistente ya no existe), currentUser.data queda vacío. Antes eso dejaba a la
+    // persona viendo un dashboard en blanco/roto en vez de mandarla a iniciar sesión de
+    // nuevo -se espera a que termine de resolver el estado de auth (userLoading) para no
+    // disparar esto en falso durante la carga inicial.
+    if (!eventId || userLoading) return;
+    if (!currentUser?.data) {
+      window.location.assign(`/event/${eventId}`);
+    }
+  }, [eventId, userLoading, currentUser]);
 
   const [welcomeModalOpened, setWelcomeModalOpened] = useState(false);
   const [welcomePhone, setWelcomePhone] = useState("");
