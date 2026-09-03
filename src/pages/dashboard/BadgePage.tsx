@@ -262,10 +262,15 @@ export default function BadgePage({
             page-break-inside: avoid;
             background: white !important;
           }
-          /* Sin bordes, sombras ni acentos de color al imprimir: solo texto y el QR sobre blanco */
+          /* Sin bordes, sombras ni acentos de color al imprimir: solo texto y el QR sobre blanco.
+             No basta con border-color: transparent -algunos drivers de impresión (escarapelas
+             térmicas, o con "gráficos de fondo" desactivado) no respetan el canal alfa y pintan
+             "transparent" como negro sólido en vez de blanco- así que además se pone el ancho
+             del borde en 0 para que no haya nada que pintar. */
           #badge-print-area, #badge-print-area * {
             box-shadow: none !important;
             border-color: transparent !important;
+            border-width: 0 !important;
           }
           ${embedded ? `
           /* Embebido (p. ej. dentro del Modal de CheckInTab.jsx): el resto de la página
