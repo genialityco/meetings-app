@@ -68,6 +68,14 @@ import { getEventDayKeys, formatDayLabel } from "../utils/eventDays";
 
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
 
+// Registro público del evento: solo Colombia y Venezuela habilitados en el selector de
+// código de país (a diferencia del panel admin -ModalEditAttendee.jsx/AttendeesList.jsx-
+// que sigue usando el listado completo de COUNTRY_CODES para poder corregir el dato de
+// cualquier asistente).
+const LANDING_COUNTRY_CODES = COUNTRY_CODES.filter(
+  (c) => c.value === "co" || c.value === "ve",
+);
+
 // ---- helpers ----
 const uploadProfilePicture = async (file, uid) => {
   const storageRef = ref(storage, `profilePictures/${uid}/${file.name}`);
@@ -235,7 +243,12 @@ const Landing = () => {
   // PDF document fields state: { [fieldName]: File }
   const [pdfFiles, setPdfFiles] = useState({});
 
-  const defaultIso2 = useMemo(() => detectDefaultIso2(), []);
+  // Si el navegador detecta un país fuera de Colombia/Venezuela (los únicos habilitados
+  // en este formulario), cae a Colombia en vez de dejar el selector sin valor válido.
+  const defaultIso2 = useMemo(() => {
+    const detected = detectDefaultIso2();
+    return LANDING_COUNTRY_CODES.some((c) => c.value === detected) ? detected : "co";
+  }, []);
 
   // AI description improvement state
   const [improvingDescription, setImprovingDescription] = useState(false);
@@ -1280,7 +1293,7 @@ const Landing = () => {
               </Text>
               <Group gap={6} align="flex-start" wrap="nowrap">
                 <Select
-                  data={COUNTRY_CODES}
+                  data={LANDING_COUNTRY_CODES}
                   value={iso2}
                   onChange={(newIso2) => {
                     if (!newIso2) return;
