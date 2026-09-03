@@ -5,21 +5,6 @@ import { IconArrowRight, IconPrinter, IconAdjustments, IconRuler2, IconFileText 
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import QRCode from "qrcode";
-import type { CSSProperties } from "react";
-
-// Nombre/empresa/cargo: en vez de una sola línea sin wrap (que forzaba a encoger TODO
-// el contenido -QR incluido- cuando el texto era largo), se permite hasta 2 líneas y de
-// ahí en más se corta con "..." -salvedad para casos extremos como nombres/empresas de
-// 80+ caracteres que ningún tamaño de fuente razonable dejaría legible en una escarapela.
-const CLAMP_2_LINES: CSSProperties = {
-  display: "-webkit-box",
-  WebkitLineClamp: 2,
-  WebkitBoxOrient: "vertical",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  wordBreak: "break-word",
-  whiteSpace: "normal",
-};
 
 // Tamaños de página (papel) en milímetros
 const PAGE_SIZES: Record<string, { label: string; width: number; height: number }> = {
@@ -154,15 +139,11 @@ export default function BadgePage({
   const cargoFz = (isCompactBadge ? 16 : 14) * TEXT_SIZE_BOOST * EMPRESA_CARGO_EXTRA_BOOST;
 
   // Tamaño del QR proporcional al espacio disponible (en vez de un ancho fijo en px
-  // pensado para escarapelas grandes). En escarapelas de alto fijo el QR es de tamaño
-  // FIJO -no se encoge junto con el texto, ver flexShrink:0 más abajo-, así que se le
-  // reserva como mucho la mitad del alto de la escarapela: así el nombre/empresa/cargo
-  // (hasta 2 líneas cada uno, ver CLAMP_2_LINES) siempre tienen espacio real. La fórmula
-  // anterior le daba al QR hasta el 92% del alto -dejando casi nada para el texto- y
-  // terminaba encogiendo todo (QR incluido) para cualquier asistente, no solo los de
-  // nombres/cargos largos.
+  // pensado para escarapelas grandes): en escarapelas de alto fijo, que ocupe casi todo
+  // el espacio que quede después del nombre/cargo, para aprovechar el papel real
+  // (7x5cm) en vez de quedar chico con márgenes grandes sin usar.
   const qrDisplayMm = badgeHeightMm
-    ? Math.max(18, Math.min(effectiveWidthMm * 0.75, badgeHeightMm * 0.5))
+    ? Math.max(18, Math.min(effectiveWidthMm * 0.92, badgeHeightMm * 0.92))
     : Math.min(60, effectiveWidthMm * 0.6);
 
   // La escarapela se renderiza a su tamaño físico real (p. ej. 70x50mm ~ 264x189px):
@@ -450,54 +431,44 @@ export default function BadgePage({
             borderTop: `8px solid ${event?.config?.primaryColor || '#10b981'}`
           }}
         >
-          <Stack align="center" gap={`${gapMm}mm`} style={{ width: "85%", marginInline: "auto", height: badgeHeightMm ? "100%" : "auto" }}>
-            <div
-              ref={fitRef}
-              id="badge-fit-content"
-              style={{
-                width: "100%",
-                overflow: "hidden",
-                ...(badgeHeightMm ? { flex: "1 1 0%", minHeight: 0 } : { height: "auto" }),
-              }}
-            >
-            <Stack align="center" gap={`${gapMm}mm`} style={{ width: "100%" }}>
-              {showEventHeader && (event?.config?.landingTitleImage ? (
-                <img
-                  src={event.config.landingTitleImage}
-                  alt="Event Logo"
-                  style={{ maxHeight: 80, maxWidth: "100%", objectFit: "contain" }}
-                />
-              ) : event?.eventImage ? (
-                <img
-                  src={event.eventImage}
-                  alt="Event Logo"
-                  style={{ maxHeight: 80, maxWidth: "100%", objectFit: "contain", borderRadius: 8 }}
-                />
-              ) : null)}
+          <div
+            ref={fitRef}
+            id="badge-fit-content"
+            style={{ width: "100%", height: badgeHeightMm ? "100%" : "auto" }}
+          >
+          <Stack align="center" gap={`${gapMm}mm`} style={{ width: "85%", marginInline: "auto" }}>
+            {showEventHeader && (event?.config?.landingTitleImage ? (
+              <img
+                src={event.config.landingTitleImage}
+                alt="Event Logo"
+                style={{ maxHeight: 80, maxWidth: "100%", objectFit: "contain" }}
+              />
+            ) : event?.eventImage ? (
+              <img
+                src={event.eventImage}
+                alt="Event Logo"
+                style={{ maxHeight: 80, maxWidth: "100%", objectFit: "contain", borderRadius: 8 }}
+              />
+            ) : null)}
 
-              {showEventHeader && (
-                <Title order={2} ta="center">{event?.eventName || "Evento"}</Title>
-              )}
+            {showEventHeader && (
+              <Title order={2} ta="center">{event?.eventName || "Evento"}</Title>
+            )}
 
-              {user.photoURL && (
-                <Avatar
-                  src={user.photoURL}
-                  size={120}
-                  radius={120}
-                  color="teal"
-                />
-              )}
+            {user.photoURL && (
+              <Avatar
+                src={user.photoURL}
+                size={120}
+                radius={120}
+                color="teal"
+              />
+            )}
 
-              <Title order={nameOrder} fz={nameFz} tt="uppercase" ta="center" style={CLAMP_2_LINES}>{user.nombre}</Title>
-              <Text fz={empresaFz} fw={700} tt="uppercase" c="dimmed" ta="center" style={CLAMP_2_LINES}>{user.empresa}</Text>
-              {user.cargo && <Text fz={cargoFz} fw={700} tt="uppercase" c="dimmed" ta="center" style={CLAMP_2_LINES}>{user.cargo}</Text>}
-            </Stack>
-            </div>
+            <Title order={nameOrder} fz={nameFz} tt="uppercase" ta="center" style={{ whiteSpace: "nowrap" }}>{user.nombre}</Title>
+            <Text fz={empresaFz} fw={700} tt="uppercase" c="dimmed" ta="center" style={{ whiteSpace: "nowrap" }}>{user.empresa}</Text>
+            {user.cargo && <Text fz={cargoFz} fw={700} tt="uppercase" c="dimmed" ta="center" style={{ whiteSpace: "nowrap" }}>{user.cargo}</Text>}
 
-            {/* Fuera del bloque que se auto-encoge (fitRef): el QR siempre sale al tamaño
-                configurado (qrDisplayMm), sin importar cuánto texto tenga que ceder espacio
-                arriba -flexShrink:0 evita que la fila flex lo comprima. */}
-            <Box style={{ background: "white", borderRadius: "12px", border: "1px solid #eee", maxWidth: "100%", padding: `${qrBoxPaddingMm}mm`, flexShrink: 0 }}>
+            <Box style={{ background: "white", borderRadius: "12px", border: "1px solid #eee", maxWidth: "100%", padding: `${qrBoxPaddingMm}mm` }}>
               {qrCodeUrl && (
                 <img
                   src={qrCodeUrl}
@@ -507,6 +478,7 @@ export default function BadgePage({
               )}
             </Box>
           </Stack>
+          </div>
         </Paper>
         </div>
         </div>
