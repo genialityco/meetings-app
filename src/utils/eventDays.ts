@@ -24,6 +24,14 @@ export function isCheckedInOnDay(attendee: any, day: string | null | undefined):
   return !!attendee?.checkIns?.[day];
 }
 
+/** Un día queda "bloqueado" para editar (solo consulta) si ya pasó respecto a hoy.
+ * El día único de eventos sin fechas nunca se bloquea. */
+export function isPastCheckInDay(day: string | null | undefined): boolean {
+  if (!day || day === DEFAULT_CHECKIN_DAY) return false;
+  const today = new Date().toISOString().slice(0, 10);
+  return day < today;
+}
+
 export function formatDayLabel(day: string, index: number): string {
   if (day === DEFAULT_CHECKIN_DAY) return "Día único";
   const parts = day.split("-").map(Number);

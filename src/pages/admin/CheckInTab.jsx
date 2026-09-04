@@ -19,7 +19,7 @@ import QrScannerModal from "../../components/QrScannerModal";
 import AttendeeScanReviewModal from "../../components/AttendeeScanReviewModal";
 import BadgePage from "../dashboard/BadgePage";
 import { useAttendeeScanFlow } from "../../hooks/useAttendeeScanFlow";
-import { getEventDayKeys, resolveCheckInDay, isCheckedInOnDay, formatDayLabel } from "../../utils/eventDays";
+import { getEventDayKeys, resolveCheckInDay, isCheckedInOnDay, isPastCheckInDay, formatDayLabel } from "../../utils/eventDays";
 import { parseAttendeeQrUrl } from "../../utils/qrScan";
 
 // Campos básicos siempre visibles
@@ -31,7 +31,7 @@ const BASIC_FIELDS = [
   { key: "tipoAsistente", label: "Tipo" },
 ];
 
-function AttendeeRow({ a, event, updating, onToggle, onEdit, onOpenBadge, checkedInToday, checkInTimeToday }) {
+function AttendeeRow({ a, event, updating, onToggle, onEdit, onOpenBadge, checkedInToday, checkInTimeToday, locked }) {
   const [expanded, setExpanded] = useState(false);
   const [editingField, setEditingField] = useState(null);
   const [editValue, setEditValue] = useState("");
@@ -176,8 +176,9 @@ function AttendeeRow({ a, event, updating, onToggle, onEdit, onOpenBadge, checke
             variant={checkedInToday ? "filled" : "light"}
             color={checkedInToday ? "green" : "blue"}
             loading={updating === a.id}
+            disabled={locked}
             onClick={() => onToggle(a)}
-            title={checkedInToday ? "Revertir check-in" : "Confirmar asistencia"}
+            title={locked ? "Día pasado: check-in bloqueado" : (checkedInToday ? "Revertir check-in" : "Confirmar asistencia")}
           >
             <IconCheck size={18} />
           </ActionIcon>
@@ -259,6 +260,7 @@ export default function CheckInTab({ event }) {
 
   const dayOptions = useMemo(() => getEventDayKeys(event?.config), [event?.config]);
   const [selectedDay, setSelectedDay] = useState(() => resolveCheckInDay(event?.config));
+  const isLockedDay = isPastCheckInDay(selectedDay);
 
   const isValidEmail = (v = "") => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim());
   const validateField = (field, value) => {
@@ -594,6 +596,10 @@ export default function CheckInTab({ event }) {
   const notCheckedIn = filtered.filter((a) => !isCheckedInOnDay(a, selectedDay));
 
   const handleToggle = async (attendee) => {
+    if (isPastCheckInDay(selectedDay)) {
+      showNotification({ title: "Día bloqueado", message: "No se puede modificar el check-in de un día que ya pasó.", color: "red" });
+      return;
+    }
     setUpdating(attendee.id);
     try {
       const newValue = !isCheckedInOnDay(attendee, selectedDay);
@@ -648,6 +654,9 @@ export default function CheckInTab({ event }) {
     lookup: async (userId, scannedEventId) => {
       if (event?.id && scannedEventId && scannedEventId !== event.id) {
         return { error: "Esta credencial pertenece a otro evento." };
+      }
+      if (isLockedDay) {
+        return { error: "El día seleccionado ya pasó. Cambia al día actual para hacer check-in." };
       }
       const attendee = attendees.find((a) => a.id === userId);
       if (!attendee) {
@@ -734,7 +743,17 @@ export default function CheckInTab({ event }) {
           <Badge color="green" variant="light">{checkedIn.length} presentes</Badge>
           <Badge color="gray" variant="light">{notCheckedIn.length} pendientes</Badge>
           <Badge color="blue" variant="light">{filtered.length} total</Badge>
-          <Button size="xs" variant="outline" leftSection={<IconQrcode size={14} />} onClick={() => attendeeScan.setScannerOpened(true)}>
+          {isLockedDay && (
+            <Badge color="orange" variant="light">Día pasado: solo consulta</Badge>
+          )}
+          <Button
+            size="xs"
+            variant="outline"
+            leftSection={<IconQrcode size={14} />}
+            disabled={isLockedDay}
+            title={isLockedDay ? "Cambia al día actual para escanear check-in" : undefined}
+            onClick={() => attendeeScan.setScannerOpened(true)}
+          >
             Escanear QR
           </Button>
           <Button size="xs" variant="outline" leftSection={<IconDownload size={14} />} onClick={exportToExcel} color="green">
@@ -788,6 +807,7 @@ export default function CheckInTab({ event }) {
                   onOpenBadge={setBadgeModalAttendee}
                   checkedInToday={isCheckedInOnDay(a, selectedDay)}
                   checkInTimeToday={a.checkIns?.[selectedDay]}
+                  locked={isLockedDay}
                 />
               ))}
             </>
@@ -806,6 +826,7 @@ export default function CheckInTab({ event }) {
                   onOpenBadge={setBadgeModalAttendee}
                   checkedInToday={isCheckedInOnDay(a, selectedDay)}
                   checkInTimeToday={a.checkIns?.[selectedDay]}
+                  locked={isLockedDay}
                 />
               ))}
             </>
