@@ -97,7 +97,26 @@ export default function QrScannerModal({
                 <Loader size="sm" />
               </Center>
             )}
-            <div id={elementId} style={{ width: "100%" }} />
+            {/* maxWidth también atado a dvh: si no, en horizontal (o cualquier viewport
+                bajo) el video se dimensiona solo por el ancho del modal, queda más alto
+                que la pantalla, y el modal lo recorta con scroll interno -ocultando el
+                hint y parte de la cámara sin ningún indicio de que hay que scrollear. */}
+            <div
+              style={{
+                width: "100%",
+                maxWidth: "min(320px, 62dvh)",
+                aspectRatio: "1 / 1",
+                margin: "0 auto",
+                overflow: "hidden",
+                borderRadius: "var(--mantine-radius-md)",
+                background: "#000",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <div id={elementId} style={{ width: "100%" }} />
+            </div>
             <Text size="xs" c="dimmed" ta="center">
               {hint}
             </Text>
