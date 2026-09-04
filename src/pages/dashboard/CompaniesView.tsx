@@ -239,6 +239,11 @@ export default function CompaniesView({
         // Cualquier miembro de la empresa cuenta como "asesor" para la solicitud
         // dirigida a la empresa, sin importar su tipoAsistente (ver getCompanyAdvisors).
         hasAdvisor: asistentes.length > 0,
+        // Empresas con al menos un representante que ya hizo check-in (cualquier
+        // día) se muestran primero, para priorizar a quienes ya están en el evento.
+        hasCheckedIn: asistentes.some(
+          (a) => a.checkIns && Object.keys(a.checkIns).length > 0
+        ),
         similarity: undefined as number | undefined,
       };
     });
@@ -337,29 +342,35 @@ export default function CompaniesView({
   const filtered = useMemo(() => {
     const t = searchTerm.trim().toLowerCase();
     
+    // Empresas con check-in primero; dentro de cada grupo, por afinidad promedio.
+    const byCheckInThenAffinity = (a: any, b: any) => {
+      if (a.hasCheckedIn !== b.hasCheckedIn) return a.hasCheckedIn ? -1 : 1;
+      const avgAffinityA = a.asistentes.length > 0
+        ? a.asistentes.reduce((sum: number, assistant: any) => sum + (affinityScores[assistant.id] || 0), 0) / a.asistentes.length
+        : 0;
+      const avgAffinityB = b.asistentes.length > 0
+        ? b.asistentes.reduce((sum: number, assistant: any) => sum + (affinityScores[assistant.id] || 0), 0) / b.asistentes.length
+        : 0;
+      return avgAffinityB - avgAffinityA;
+    };
+
     if (!t) {
       let results = [...companiesDataFiltered];
-      results.sort((a, b) => {
-        const avgAffinityA = a.asistentes.length > 0
-          ? a.asistentes.reduce((sum, assistant) => sum + (affinityScores[assistant.id] || 0), 0) / a.asistentes.length
-          : 0;
-        const avgAffinityB = b.asistentes.length > 0
-          ? b.asistentes.reduce((sum, assistant) => sum + (affinityScores[assistant.id] || 0), 0) / b.asistentes.length
-          : 0;
-        return avgAffinityB - avgAffinityA;
-      });
+      results.sort(byCheckInThenAffinity);
       return results;
     }
 
-    const exactMatches = companiesDataFiltered.filter(
-      (c) =>
-        c.empresa.toLowerCase().includes(t) ||
-        c.nit.includes(t) ||
-        c.asistentes.some((a) =>
-          (a.nombre || "").toLowerCase().includes(t) ||
-          (a.cargo || "").toLowerCase().includes(t)
-        )
-    );
+    const exactMatches = companiesDataFiltered
+      .filter(
+        (c) =>
+          c.empresa.toLowerCase().includes(t) ||
+          c.nit.includes(t) ||
+          c.asistentes.some((a) =>
+            (a.nombre || "").toLowerCase().includes(t) ||
+            (a.cargo || "").toLowerCase().includes(t)
+          )
+      )
+      .sort(byCheckInThenAffinity);
 
     let semanticMatches: any[] = [];
     if (vectorResults.length > 0) {
