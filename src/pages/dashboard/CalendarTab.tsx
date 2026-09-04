@@ -146,8 +146,11 @@ export default function CalendarTab({
   const eventDates = [...new Set(eventConfig?.eventDates || (eventConfig?.eventDate ? [eventConfig.eventDate] : []))];
   const isMultiDay = eventDates.length > 1;
 
-  // Usar la fecha seleccionada o la primera fecha disponible
-  const currentDate = selectedDate || eventDates[0] || "";
+  // Usar la fecha seleccionada, o si no hay ninguna, el día actual del evento (si hoy es
+  // uno de sus días) y si no la primera fecha disponible.
+  const today = new Date().toISOString().slice(0, 10);
+  const defaultDate = eventDates.includes(today) ? today : eventDates[0] || "";
+  const currentDate = selectedDate || defaultDate;
 
   // Cargar slots bloqueados del usuario
   const loadBlockedSlots = useCallback(async () => {
@@ -580,7 +583,7 @@ export default function CalendarTab({
                       value: date,
                       label: formatDateShort(date),
                     }))}
-                    value={selectedDate || eventDates[0]}
+                    value={currentDate}
                     onChange={setSelectedDate}
                   />
                 ) : (
@@ -589,7 +592,7 @@ export default function CalendarTab({
                       value: date,
                       label: formatDateShort(date),
                     }))}
-                    value={selectedDate || eventDates[0]}
+                    value={currentDate}
                     onChange={setSelectedDate}
                     style={{ width: 200 }}
                   />
