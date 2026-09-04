@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback, memo } from "react";
 import {
   Stack, TextInput, Text, Group, Badge, Avatar,
-  ActionIcon, Loader, Box, ScrollArea, Divider,
+  ActionIcon, Loader, Box, Divider,
   Collapse, Paper, SimpleGrid, Button, Modal,
   Textarea, Select, Checkbox, FileInput, SegmentedControl,
 } from "@mantine/core";
+import { Virtuoso } from "react-virtuoso";
 import {
   IconSearch, IconX, IconCheck, IconUserCheck,
   IconChevronDown, IconChevronUp, IconEdit, IconDeviceFloppy, IconDownload,
@@ -31,7 +32,7 @@ const BASIC_FIELDS = [
   { key: "tipoAsistente", label: "Tipo" },
 ];
 
-function AttendeeRow({ a, event, updating, onToggle, onEdit, onOpenBadge, checkedInToday, checkInTimeToday, locked }) {
+const AttendeeRow = memo(function AttendeeRow({ a, event, isUpdating, onToggle, onEdit, onOpenBadge, checkedInToday, checkInTimeToday, locked }) {
   const [expanded, setExpanded] = useState(false);
   const [editingField, setEditingField] = useState(null);
   const [editValue, setEditValue] = useState("");
@@ -175,7 +176,7 @@ function AttendeeRow({ a, event, updating, onToggle, onEdit, onOpenBadge, checke
             radius="xl"
             variant={checkedInToday ? "filled" : "light"}
             color={checkedInToday ? "green" : "blue"}
-            loading={updating === a.id}
+            loading={isUpdating}
             disabled={locked}
             onClick={() => onToggle(a)}
             title={locked ? "Día pasado: check-in bloqueado" : (checkedInToday ? "Revertir check-in" : "Confirmar asistencia")}
@@ -241,7 +242,7 @@ function AttendeeRow({ a, event, updating, onToggle, onEdit, onOpenBadge, checke
       </Collapse>
     </Paper>
   );
-}
+});
 
 export default function CheckInTab({ event }) {
   const [attendees, setAttendees] = useState([]);
@@ -324,11 +325,11 @@ export default function CheckInTab({ event }) {
     setNewUserErrors({});
   };
 
-  const startEditAttendee = (attendee) => {
+  const startEditAttendee = useCallback((attendee) => {
     setEditingAttendee(attendee);
     setEditValues({ ...attendee });
     setEditErrors({});
-  };
+  }, []);
 
   const getEditValue = (fieldName) => getFieldValue(editValues, fieldName);
   const setEditValueField = (fieldName, value) => setFieldValue(setEditValues, fieldName, value);
@@ -558,7 +559,22 @@ export default function CheckInTab({ event }) {
     setLoading(true);
     const q = query(collection(db, "users"), where("eventId", "==", event.id));
     const unsub = onSnapshot(q, (snap) => {
-      setAttendees(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      // Con ~500 asistentes, reconstruir el array completo (snap.docs.map(...)) en cada
+      // cambio le da un objeto NUEVO a cada asistente en cada snapshot -incluso a los que
+      // no cambiaron-, lo que rompe cualquier memo() y fuerza el re-render de las 500 filas
+      // por cada check-in individual. Aplicando solo los docChanges, los asistentes que no
+      // cambiaron mantienen la misma referencia entre renders.
+      setAttendees((prev) => {
+        const byId = new Map(prev.map((a) => [a.id, a]));
+        snap.docChanges().forEach((change) => {
+          if (change.type === "removed") {
+            byId.delete(change.doc.id);
+          } else {
+            byId.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
+          }
+        });
+        return Array.from(byId.values());
+      });
       setLoading(false);
     });
     return () => unsub();
@@ -595,7 +611,7 @@ export default function CheckInTab({ event }) {
   const checkedIn = filtered.filter((a) => isCheckedInOnDay(a, selectedDay));
   const notCheckedIn = filtered.filter((a) => !isCheckedInOnDay(a, selectedDay));
 
-  const handleToggle = async (attendee) => {
+  const handleToggle = useCallback(async (attendee) => {
     if (isPastCheckInDay(selectedDay)) {
       showNotification({ title: "Día bloqueado", message: "No se puede modificar el check-in de un día que ya pasó.", color: "red" });
       return;
@@ -648,7 +664,7 @@ export default function CheckInTab({ event }) {
     } finally {
       setUpdating(null);
     }
-  };
+  }, [selectedDay, event]);
 
   const attendeeScan = useAttendeeScanFlow({
     lookup: async (userId, scannedEventId) => {
@@ -793,42 +809,55 @@ export default function CheckInTab({ event }) {
         </Text>
       ) : (
         <Box px="md" pt="sm">
+          {/* Con ~500 asistentes, montar una fila real por asistente (aunque esté colapsada)
+              es lo que cuelga la página en un celular: son miles de nodos DOM de una. Virtuoso
+              solo monta las filas visibles + un margen de scroll; useWindowScroll hace que
+              siga siendo la página completa la que se desplaza (no una cajita con su propio
+              scroll), para no romper el buscador con position:sticky de arriba. */}
           {notCheckedIn.length > 0 && (
             <>
               <Divider label={<Text size="xs" fw={600} c="dimmed">Pendientes ({notCheckedIn.length})</Text>} labelPosition="left" mb="xs" />
-              {notCheckedIn.map((a) => (
-                <AttendeeRow
-                  key={a.id}
-                  a={a}
-                  event={event}
-                  updating={updating}
-                  onToggle={handleToggle}
-                  onEdit={startEditAttendee}
-                  onOpenBadge={setBadgeModalAttendee}
-                  checkedInToday={isCheckedInOnDay(a, selectedDay)}
-                  checkInTimeToday={a.checkIns?.[selectedDay]}
-                  locked={isLockedDay}
-                />
-              ))}
+              <Virtuoso
+                useWindowScroll
+                data={notCheckedIn}
+                computeItemKey={(_index, a) => a.id}
+                itemContent={(_index, a) => (
+                  <AttendeeRow
+                    a={a}
+                    event={event}
+                    isUpdating={updating === a.id}
+                    onToggle={handleToggle}
+                    onEdit={startEditAttendee}
+                    onOpenBadge={setBadgeModalAttendee}
+                    checkedInToday={isCheckedInOnDay(a, selectedDay)}
+                    checkInTimeToday={a.checkIns?.[selectedDay]}
+                    locked={isLockedDay}
+                  />
+                )}
+              />
             </>
           )}
           {checkedIn.length > 0 && (
             <>
               <Divider label={<Text size="xs" fw={600} c="green">Presentes ({checkedIn.length})</Text>} labelPosition="left" mb="xs" mt={notCheckedIn.length > 0 ? "md" : 0} />
-              {checkedIn.map((a) => (
-                <AttendeeRow
-                  key={a.id}
-                  a={a}
-                  event={event}
-                  updating={updating}
-                  onToggle={handleToggle}
-                  onEdit={startEditAttendee}
-                  onOpenBadge={setBadgeModalAttendee}
-                  checkedInToday={isCheckedInOnDay(a, selectedDay)}
-                  checkInTimeToday={a.checkIns?.[selectedDay]}
-                  locked={isLockedDay}
-                />
-              ))}
+              <Virtuoso
+                useWindowScroll
+                data={checkedIn}
+                computeItemKey={(_index, a) => a.id}
+                itemContent={(_index, a) => (
+                  <AttendeeRow
+                    a={a}
+                    event={event}
+                    isUpdating={updating === a.id}
+                    onToggle={handleToggle}
+                    onEdit={startEditAttendee}
+                    onOpenBadge={setBadgeModalAttendee}
+                    checkedInToday={isCheckedInOnDay(a, selectedDay)}
+                    checkInTimeToday={a.checkIns?.[selectedDay]}
+                    locked={isLockedDay}
+                  />
+                )}
+              />
             </>
           )}
         </Box>
