@@ -840,7 +840,12 @@ export async function notifyCompanyAdvisors(params: {
   companyNit: string;
   excludeUids: string[];
   policies: EventPolicies;
-  whatsappBuilder: (advisor: Assistant) => { phone: string; message: string; metadata?: any } | null;
+  whatsappBuilder: (advisor: Assistant) => {
+    phone: string;
+    message: string;
+    metadata?: any;
+    fallbackInfo?: { enabled: boolean; email: string; subject: string; logoUrl?: string };
+  } | null;
   dashboardNotif: { title: string; message: string; type: string };
 }): Promise<void> {
   const { eventId, companyNit, excludeUids, policies, whatsappBuilder, dashboardNotif } = params;
@@ -852,10 +857,17 @@ export async function notifyCompanyAdvisors(params: {
       if (policies.whatsappNotificationsEnabled !== false) {
         const built = whatsappBuilder(advisor);
         if (built?.phone) {
+          console.log(
+            "[meetingSlotEngine] notifyCompanyAdvisors: enviando a asesor",
+            advisor.id,
+            "fallbackInfo:",
+            built.fallbackInfo,
+          );
           await sendWhatsAppAPI({
             apiVersion: policies.whatsappApiVersion || "v1",
             phone: built.phone.replace(/[^\d]/g, ""),
             message: built.message,
+            fallbackInfo: built.fallbackInfo,
             metadata: built.metadata,
           });
         }
@@ -902,15 +914,18 @@ export interface CreateMeetingRequestDocParams {
 export async function createMeetingRequestDoc(
   params: CreateMeetingRequestDocParams,
 ): Promise<{ meetingId: string }> {
-  const { eventId, requesterId, advisorId, advisorPhone, companyNit, context, policies, eventName } = params;
+  const { eventId, requesterId, advisorId, advisorPhone, companyNit, context, policies, eventName, dashboardLogo } = params;
+  const fallbackEnabled = policies.fallbackEmailOnWaFailure ?? false;
 
   if (!advisorId && !companyNit) {
     throw new Error("Se requiere advisorId o companyNit");
   }
 
+  let receiverData: any = null;
   if (advisorId) {
     const receiverSnap = await getDoc(doc(db, "users", advisorId));
     if (!receiverSnap.exists()) throw new Error("Receiver not found");
+    receiverData = receiverSnap.data();
   }
 
   const effectiveCompanyNit = companyNit || context?.companyId || null;
@@ -964,10 +979,21 @@ export async function createMeetingRequestDoc(
       `🔗 Ir al evento: \n${landingUrl}`;
 
     if (policies.whatsappNotificationsEnabled !== false && advisorPhone) {
+      const fallbackInfo = {
+        enabled: fallbackEnabled,
+        email: receiverData?.correo || "",
+        subject: `Nueva solicitud de reunión - ${eventName || "Evento"}`,
+        logoUrl: dashboardLogo || "",
+      };
+      console.log(
+        "[meetingSlotEngine] createMeetingRequestDoc (advisorId): fallbackInfo a enviar:",
+        fallbackInfo,
+      );
       await sendWhatsAppAPI({
         apiVersion: whatsappApiVersion,
         phone: advisorPhone.replace(/[^\d]/g, ""),
         message: whatsappApiVersion === "v2" ? (context?.contextNote || "Sin mensaje adicional") : message,
+        fallbackInfo,
         metadata: {
           eventName: eventName || "Evento",
           requesterName,
@@ -1005,6 +1031,12 @@ export async function createMeetingRequestDoc(
         whatsappBuilder: (advisor) => ({
           phone: advisor.telefono || "",
           message: `${requesterName || "Alguien"} solicitó una reunión con tu compañero de empresa.`,
+          fallbackInfo: {
+            enabled: fallbackEnabled,
+            email: advisor.correo || "",
+            subject: `Nueva solicitud de reunión - ${eventName || "Evento"}`,
+            logoUrl: dashboardLogo || "",
+          },
         }),
         dashboardNotif: {
           title: "Nueva solicitud de reunión",
@@ -1034,10 +1066,19 @@ export async function createMeetingRequestDoc(
               `\n*Cualquier asesor de tu empresa puede aceptarla (el primero se la queda):*\n` +
               `✅ *Aceptar:* \n${acceptUrl}\n\n` +
               `🔗 Ir al evento: \n${landingUrl}`,
+        fallbackInfo: {
+          enabled: fallbackEnabled,
+          email: advisor.correo || "",
+          subject: `Nueva solicitud de reunión - ${eventName || "Evento"}`,
+          logoUrl: dashboardLogo || "",
+        },
         metadata: {
           eventName: eventName || "Evento",
           requesterName,
           requesterCompany,
+          requesterPosition: requester?.cargo || "",
+          requesterEmail: requester?.correo || "",
+          requesterPhone: requester?.telefono || "",
           acceptUrl: acceptPath,
           cancelUrl: rejectPath,
           contextNote: context?.contextNote,

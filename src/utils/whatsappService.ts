@@ -149,7 +149,13 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
         cancelUrl: cleanCancelUrl,
       };
 
+      console.log(
+        "[whatsappService] sendWhatsAppMessage v2 - fallbackInfo recibido:",
+        options.fallbackInfo,
+      );
+
       if (options.fallbackInfo?.enabled && options.fallbackInfo.email) {
+        console.log("[whatsappService] Fallback de email ACTIVADO para:", options.fallbackInfo.email);
         const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
         const emailAcceptUrl = `${baseUrl}/${cleanAcceptUrl}`;
         const emailCancelUrl = `${baseUrl}/${cleanCancelUrl}`;
@@ -182,7 +188,16 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
         payload.fallbackEmail = options.fallbackInfo.email;
         payload.fallbackSubject = options.fallbackInfo.subject;
         payload.fallbackHtml = buildEmailHtml(options.fallbackInfo.subject, contentHtml, options.fallbackInfo.logoUrl);
+      } else {
+        console.log(
+          "[whatsappService] Fallback de email NO activado (fallbackInfo ausente, enabled=false, o sin email). No se enviará correo de respaldo si el WhatsApp falla.",
+        );
       }
+
+      console.log("[whatsappService] send-meeting-request payload:", {
+        ...payload,
+        fallbackHtml: payload.fallbackHtml ? `[${payload.fallbackHtml.length} chars]` : undefined,
+      });
 
       const response = await fetch(`${API_V2_URL}/api/send-meeting-request`, {
         method: "POST",
@@ -193,11 +208,12 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
       isSuccess = response.ok;
       try {
         const responseData = await response.clone().json();
+        console.log("[whatsappService] send-meeting-request response:", response.status, responseData);
         if (responseData && (responseData.success === false || responseData.error)) {
           isSuccess = false;
         }
       } catch (e) {
-        // Ignorar error de parsing
+        console.log("[whatsappService] send-meeting-request response (no-JSON):", response.status, await response.clone().text());
       }
     } else {
       // API V1: Simple (default)
@@ -206,6 +222,8 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
         phone: fullPhone,
         message: message,
       };
+
+      console.log("[whatsappService] v1 no soporta email de respaldo. payload:", payload);
 
       const response = await fetch(API_V1_URL, {
         method: "POST",
@@ -216,21 +234,22 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
       isSuccess = response.ok;
       try {
         const responseData = await response.clone().json();
+        console.log("[whatsappService] v1 send response:", response.status, responseData);
         if (responseData && (responseData.success === false || responseData.error)) {
           isSuccess = false;
         }
       } catch (e) {
-        // Ignorar
+        console.log("[whatsappService] v1 send response (no-JSON):", response.status, await response.clone().text());
       }
     }
 
     if (!isSuccess) {
-      console.error("Error sending WhatsApp message, fallback handled by backend if V2");
+      console.error("[whatsappService] Error sending WhatsApp message, fallback handled by backend if V2");
     }
 
     return isSuccess;
   } catch (error) {
-    console.error("Error sending WhatsApp message:", error);
+    console.error("[whatsappService] Error sending WhatsApp message:", error);
     return false;
   }
 }
@@ -310,7 +329,11 @@ export async function sendMeetingConfirmation(options: {
       payload.fallbackEmail = fallbackInfo.email;
       payload.fallbackSubject = fallbackInfo.subject;
       payload.fallbackHtml = buildEmailHtml(fallbackInfo.subject, contentHtml, fallbackInfo.logoUrl);
+    } else {
+      console.log("[whatsappService] send-meeting-confirmation: fallback de email NO activado. fallbackInfo:", fallbackInfo);
     }
+
+    console.log("[whatsappService] send-meeting-confirmation payload (email:", payload.fallbackEmail, "):", payload);
 
     const response = await fetch(`${API_V2_URL}/api/send-meeting-confirmation`, {
       method: "POST",
@@ -321,15 +344,16 @@ export async function sendMeetingConfirmation(options: {
     let isSuccess = response.ok;
     try {
       const responseData = await response.clone().json();
+      console.log("[whatsappService] send-meeting-confirmation response:", response.status, responseData);
       if (responseData && (responseData.success === false || responseData.error)) {
         isSuccess = false;
       }
     } catch (e) {
-      // Ignorar
+      console.log("[whatsappService] send-meeting-confirmation response (no-JSON):", response.status, await response.clone().text());
     }
 
     if (!isSuccess) {
-      console.error("Error sending meeting confirmation");
+      console.error("[whatsappService] Error sending meeting confirmation");
       return false;
     }
 
@@ -396,7 +420,11 @@ export async function sendMeetingCancellation(options: {
       payload.fallbackEmail = fallbackInfo.email;
       payload.fallbackSubject = fallbackInfo.subject;
       payload.fallbackHtml = buildEmailHtml(fallbackInfo.subject, contentHtml, fallbackInfo.logoUrl);
+    } else {
+      console.log("[whatsappService] send-meeting-cancelled: fallback de email NO activado. fallbackInfo:", fallbackInfo);
     }
+
+    console.log("[whatsappService] send-meeting-cancelled payload (email:", payload.fallbackEmail, "):", payload);
 
     const response = await fetch(`${API_V2_URL}/api/send-meeting-cancelled`, {
       method: "POST",
@@ -407,15 +435,16 @@ export async function sendMeetingCancellation(options: {
     let isSuccess = response.ok;
     try {
       const responseData = await response.clone().json();
+      console.log("[whatsappService] send-meeting-cancelled response:", response.status, responseData);
       if (responseData && (responseData.success === false || responseData.error)) {
         isSuccess = false;
       }
     } catch (e) {
-      // Ignorar
+      console.log("[whatsappService] send-meeting-cancelled response (no-JSON):", response.status, await response.clone().text());
     }
 
     if (!isSuccess) {
-      console.error("Error sending meeting cancellation");
+      console.error("[whatsappService] Error sending meeting cancellation");
       return false;
     }
 
@@ -473,7 +502,11 @@ export async function sendMeetingRejection(options: {
       payload.fallbackEmail = fallbackInfo.email;
       payload.fallbackSubject = fallbackInfo.subject;
       payload.fallbackHtml = buildEmailHtml(fallbackInfo.subject, contentHtml, fallbackInfo.logoUrl);
+    } else {
+      console.log("[whatsappService] send-meeting-rejection: fallback de email NO activado. fallbackInfo:", fallbackInfo);
     }
+
+    console.log("[whatsappService] send-meeting-rejection payload (email:", payload.fallbackEmail, "):", payload);
 
     const response = await fetch(`${API_V2_URL}/api/send-meeting-rejection`, {
       method: "POST",
@@ -484,15 +517,16 @@ export async function sendMeetingRejection(options: {
     let isSuccess = response.ok;
     try {
       const responseData = await response.clone().json();
+      console.log("[whatsappService] send-meeting-rejection response:", response.status, responseData);
       if (responseData && (responseData.success === false || responseData.error)) {
         isSuccess = false;
       }
     } catch (e) {
-      // Ignorar
+      console.log("[whatsappService] send-meeting-rejection response (no-JSON):", response.status, await response.clone().text());
     }
 
     if (!isSuccess) {
-      console.error("Error sending meeting rejection");
+      console.error("[whatsappService] Error sending meeting rejection");
       return false;
     }
 
@@ -569,7 +603,11 @@ export async function sendWelcomeNotification(options: {
       payload.fallbackEmail = fallbackInfo.email;
       payload.fallbackSubject = fallbackInfo.subject;
       payload.fallbackHtml = buildEmailHtml(fallbackInfo.subject, contentHtml, fallbackInfo.logoUrl);
+    } else {
+      console.log("[whatsappService] send-welcome: fallback de email NO activado. fallbackInfo:", fallbackInfo);
     }
+
+    console.log("[whatsappService] send-welcome payload (sendEmail:", payload.sendEmail, "fallbackEmail:", payload.fallbackEmail, "):", payload);
 
     const response = await fetch(`${API_V2_URL}/api/send-welcome`, {
       method: "POST",
@@ -580,15 +618,16 @@ export async function sendWelcomeNotification(options: {
     let isSuccess = response.ok;
     try {
       const responseData = await response.clone().json();
+      console.log("[whatsappService] send-welcome response:", response.status, responseData);
       if (responseData && (responseData.success === false || responseData.error)) {
         isSuccess = false;
       }
     } catch (e) {
-      // Ignorar
+      console.log("[whatsappService] send-welcome response (no-JSON):", response.status, await response.clone().text());
     }
 
     if (!isSuccess) {
-      console.error("Error sending welcome notification");
+      console.error("[whatsappService] Error sending welcome notification");
       return false;
     }
 
