@@ -1332,6 +1332,30 @@ const Landing = () => {
           );
         }
 
+        if (field.name === "correo" || field.name === "email") {
+          return (
+            <TextInput
+              key={field.name}
+              label={field.label}
+              placeholder={field.placeholder || field.label}
+              value={getValueForField(field.name)}
+              onChange={(e) => {
+                // Normalizar a minúscula al tipear: evita duplicados por
+                // "Juan@Gmail.com" vs "juan@gmail.com" y que el login por
+                // correo (que sí compara en minúscula) no encuentre al usuario.
+                const lower = e.target.value.toLowerCase();
+                handleDynamicChange(field.name, lower);
+                const error = validateField(field, lower);
+                setFormErrors((prev) => ({ ...prev, [field.name]: error }));
+              }}
+              required={field.required}
+              error={fieldError}
+              radius="md"
+              autoCapitalize="none"
+            />
+          );
+        }
+
         return (
           <TextInput
             key={field.name}
@@ -1665,11 +1689,12 @@ const Landing = () => {
                           label="Correo electrónico"
                           placeholder="tu@empresa.com"
                           value={loginEmail}
-                          onChange={(e) => setLoginEmail(e.target.value)}
+                          onChange={(e) => setLoginEmail(e.target.value.toLowerCase())}
                           onKeyDown={(e) => e.key === "Enter" && handleLogin()}
                           required
                           radius="md"
                           size="md"
+                          autoCapitalize="none"
                         />
 
                         {loginError ? (
@@ -2144,13 +2169,14 @@ const Landing = () => {
                               label="Correo electrónico"
                               placeholder="tu@empresa.com"
                               value={loginEmail}
-                              onChange={(e) => setLoginEmail(e.target.value)}
+                              onChange={(e) => setLoginEmail(e.target.value.toLowerCase())}
                               onKeyDown={(e) =>
                                 e.key === "Enter" && handleLogin()
                               }
                               required
                               radius="md"
                               size="md"
+                              autoCapitalize="none"
                             />
 
                             {loginError ? (
