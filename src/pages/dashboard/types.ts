@@ -192,6 +192,10 @@ export interface Company {
    *  a la misma hora, sin necesidad de tener mesa fija asignada (a diferencia
    *  de `fixedTable`, que también unifica la mesa física). */
   sharedAgenda?: boolean;
+  /** País de la empresa (p. ej. "Colombia"/"Venezuela"). Hoy solo se puebla para
+   *  eventos binacionales vía inferencia del código de teléfono de sus
+   *  representantes; no es un campo de registro estándar. */
+  pais?: string;
   createdAt?: any;
   updatedAt?: any;
 }

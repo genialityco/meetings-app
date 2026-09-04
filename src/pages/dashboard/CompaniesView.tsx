@@ -21,6 +21,7 @@ import {
   rem,
   Loader,
   Tooltip,
+  Select,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import { useState, useMemo, useEffect } from "react";
@@ -140,6 +141,7 @@ export default function CompaniesView({
   const [selectedAssistantPerCompany, setSelectedAssistantPerCompany] =
     useState<Record<string, string | null>>({});
   const [searchTerm, setSearchTerm] = useState("");
+  const [countryFilter, setCountryFilter] = useState<string | null>(null);
   const [modalOpened, setModalOpened] = useState(false);
   const [selectedMeeting, setSelectedMeeting] = useState<{ assistant: Assistant; companyNit: string } | null>(null);
   const [companyModalOpened, setCompanyModalOpened] = useState(false);
@@ -232,6 +234,7 @@ export default function CompaniesView({
         empresa,
         logoUrl: companyDoc?.logoUrl || null,
         fixedTable: companyDoc?.fixedTable || null,
+        pais: companyDoc?.pais || null,
         asistentes,
         // Cualquier miembro de la empresa cuenta como "asesor" para la solicitud
         // dirigida a la empresa, sin importar su tipoAsistente (ver getCompanyAdvisors).
@@ -240,6 +243,22 @@ export default function CompaniesView({
       };
     });
   }, [filteredAssistants, companiesByNit, policies.groupByRazonSocial]);
+
+  // Países presentes entre las empresas del evento (hoy solo se puebla vía
+  // backfill/inferencia para eventos binacionales); si ninguna empresa tiene
+  // país asignado, no hay nada que filtrar y el selector no se muestra.
+  const availableCountries = useMemo(() => {
+    const set = new Set<string>();
+    companiesData.forEach((c) => {
+      if (c.pais) set.add(c.pais);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
+  }, [companiesData]);
+
+  const companiesDataFiltered = useMemo(() => {
+    if (!countryFilter) return companiesData;
+    return companiesData.filter((c) => c.pais === countryFilter);
+  }, [companiesData, countryFilter]);
 
   // Reunión aceptada ya existente con cada empresa (por NIT o razón social),
   // para el badge "Reunión hh:mm" de la tarjeta.
@@ -319,7 +338,7 @@ export default function CompaniesView({
     const t = searchTerm.trim().toLowerCase();
     
     if (!t) {
-      let results = [...companiesData];
+      let results = [...companiesDataFiltered];
       results.sort((a, b) => {
         const avgAffinityA = a.asistentes.length > 0
           ? a.asistentes.reduce((sum, assistant) => sum + (affinityScores[assistant.id] || 0), 0) / a.asistentes.length
@@ -332,7 +351,7 @@ export default function CompaniesView({
       return results;
     }
 
-    const exactMatches = companiesData.filter(
+    const exactMatches = companiesDataFiltered.filter(
       (c) =>
         c.empresa.toLowerCase().includes(t) ||
         c.nit.includes(t) ||
@@ -348,7 +367,7 @@ export default function CompaniesView({
       
       semanticMatches = vectorResults
         .map((v) => {
-          const found = companiesData.find((c) => c.nit === v.nitNorm || c.nit === v.id);
+          const found = companiesDataFiltered.find((c) => c.nit === v.nitNorm || c.nit === v.id);
           if (found) {
             return {
               ...found,
@@ -364,7 +383,7 @@ export default function CompaniesView({
     }
 
     return [...exactMatches, ...semanticMatches];
-  }, [companiesData, searchTerm, vectorResults, affinityScores]);
+  }, [companiesDataFiltered, searchTerm, vectorResults, affinityScores]);
 
   const handleOpenModal = async (assistant: Assistant, companyNit: string) => {
     // Con "sin aceptación" (requester_picks), se salta el modal de mensaje: se
@@ -541,12 +560,23 @@ export default function CompaniesView({
             radius="md"
             style={{ flex: 1 }}
           />
+          {availableCountries.length > 0 && (
+            <Select
+              placeholder="Todos los países"
+              data={availableCountries}
+              value={countryFilter}
+              onChange={setCountryFilter}
+              clearable
+              radius="md"
+              style={{ width: 200 }}
+            />
+          )}
         </Group>
       </Paper>
 
       <Grid gutter="sm">
         {filtered.length > 0 ? (
-          filtered.map(({ nit, nitLookup, empresa, logoUrl, fixedTable, asistentes, hasAdvisor, _similarity, _isSemantic }: any) => {
+          filtered.map(({ nit, nitLookup, empresa, logoUrl, fixedTable, pais, asistentes, hasAdvisor, _similarity, _isSemantic }: any) => {
             const companyKey = nit; // clave estable
             const selectedId = selectedAssistantPerCompany[companyKey];
 
@@ -702,6 +732,12 @@ export default function CompaniesView({
                       {fixedTable && (
                         <Badge variant="light" color="green" radius="xl">
                           {getTableLabel(fixedTable, eventConfig?.tableNames)}
+                        </Badge>
+                      )}
+
+                      {pais && (
+                        <Badge variant="light" color="gray" radius="xl">
+                          {pais}
                         </Badge>
                       )}
 
