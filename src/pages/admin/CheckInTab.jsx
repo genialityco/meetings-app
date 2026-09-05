@@ -813,53 +813,51 @@ export default function CheckInTab({ event }) {
               es lo que cuelga la página en un celular: son miles de nodos DOM de una. Virtuoso
               solo monta las filas visibles + un margen de scroll; useWindowScroll hace que
               siga siendo la página completa la que se desplaza (no una cajita con su propio
-              scroll), para no romper el buscador con position:sticky de arriba. */}
-          {notCheckedIn.length > 0 && (
-            <>
-              <Divider label={<Text size="xs" fw={600} c="dimmed">Pendientes ({notCheckedIn.length})</Text>} labelPosition="left" mb="xs" />
-              <Virtuoso
-                useWindowScroll
-                data={notCheckedIn}
-                computeItemKey={(_index, a) => a.id}
-                itemContent={(_index, a) => (
-                  <AttendeeRow
-                    a={a}
-                    event={event}
-                    isUpdating={updating === a.id}
-                    onToggle={handleToggle}
-                    onEdit={startEditAttendee}
-                    onOpenBadge={setBadgeModalAttendee}
-                    checkedInToday={isCheckedInOnDay(a, selectedDay)}
-                    checkInTimeToday={a.checkIns?.[selectedDay]}
-                    locked={isLockedDay}
-                  />
-                )}
+              scroll), para no romper el buscador con position:sticky de arriba.
+              Las dos listas se mantienen SIEMPRE montadas (aunque estén vacías) en vez de
+              condicionar el <Virtuoso> a `length > 0`: al hacer check-in, un asistente salta
+              de "Pendientes" a "Presentes", y si esa segunda lista todavía no existía, montar
+              un Virtuoso nuevo con useWindowScroll no siempre mide bien el viewport de una,
+              dejando la fila invisible hasta el próximo resize/scroll (p.ej. cambiar de día y
+              volver). Con ambas listas ya montadas, mover un ítem es solo un cambio de `data`. */}
+          <Divider label={<Text size="xs" fw={600} c="dimmed">Pendientes ({notCheckedIn.length})</Text>} labelPosition="left" mb="xs" />
+          <Virtuoso
+            useWindowScroll
+            data={notCheckedIn}
+            computeItemKey={(_index, a) => a.id}
+            itemContent={(_index, a) => (
+              <AttendeeRow
+                a={a}
+                event={event}
+                isUpdating={updating === a.id}
+                onToggle={handleToggle}
+                onEdit={startEditAttendee}
+                onOpenBadge={setBadgeModalAttendee}
+                checkedInToday={isCheckedInOnDay(a, selectedDay)}
+                checkInTimeToday={a.checkIns?.[selectedDay]}
+                locked={isLockedDay}
               />
-            </>
-          )}
-          {checkedIn.length > 0 && (
-            <>
-              <Divider label={<Text size="xs" fw={600} c="green">Presentes ({checkedIn.length})</Text>} labelPosition="left" mb="xs" mt={notCheckedIn.length > 0 ? "md" : 0} />
-              <Virtuoso
-                useWindowScroll
-                data={checkedIn}
-                computeItemKey={(_index, a) => a.id}
-                itemContent={(_index, a) => (
-                  <AttendeeRow
-                    a={a}
-                    event={event}
-                    isUpdating={updating === a.id}
-                    onToggle={handleToggle}
-                    onEdit={startEditAttendee}
-                    onOpenBadge={setBadgeModalAttendee}
-                    checkedInToday={isCheckedInOnDay(a, selectedDay)}
-                    checkInTimeToday={a.checkIns?.[selectedDay]}
-                    locked={isLockedDay}
-                  />
-                )}
+            )}
+          />
+          <Divider label={<Text size="xs" fw={600} c="green">Presentes ({checkedIn.length})</Text>} labelPosition="left" mb="xs" mt="md" />
+          <Virtuoso
+            useWindowScroll
+            data={checkedIn}
+            computeItemKey={(_index, a) => a.id}
+            itemContent={(_index, a) => (
+              <AttendeeRow
+                a={a}
+                event={event}
+                isUpdating={updating === a.id}
+                onToggle={handleToggle}
+                onEdit={startEditAttendee}
+                onOpenBadge={setBadgeModalAttendee}
+                checkedInToday={isCheckedInOnDay(a, selectedDay)}
+                checkInTimeToday={a.checkIns?.[selectedDay]}
+                locked={isLockedDay}
               />
-            </>
-          )}
+            )}
+          />
         </Box>
       )}
 
