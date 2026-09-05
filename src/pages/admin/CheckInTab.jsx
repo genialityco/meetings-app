@@ -473,11 +473,17 @@ export default function CheckInTab({ event }) {
     setCreatingUser(true);
     try {
       if (correoValue) {
+        // Un mismo correo puede estar registrado en OTROS eventos de forma
+        // independiente (ver Landing.jsx); solo es duplicado si ya existe
+        // dentro de este mismo evento.
         const usersRef = collection(db, "users");
         const q = query(usersRef, where("correo", "==", correoValue.trim().toLowerCase()));
         const querySnapshot = await getDocs(q);
-        if (!querySnapshot.empty) {
-          setNewUserErrors((prev) => ({ ...prev, correo: "Ya existe un usuario con este correo." }));
+        const duplicateInThisEvent = querySnapshot.docs.some(
+          (docSnap) => docSnap.data()?.eventId === event?.id
+        );
+        if (duplicateInThisEvent) {
+          setNewUserErrors((prev) => ({ ...prev, correo: "Ya existe un usuario con este correo en este evento." }));
           setCreatingUser(false);
           return;
         }
