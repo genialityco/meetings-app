@@ -382,7 +382,12 @@ export function useCompanyData(
           receiverFixedTable,
           receiverGroupIds: resolveReceiverGroupIds(receiverId),
         });
-        if (!dateOverride) setSelectedDate(eventDayISO);
+        // Siempre reflejar el día resultante en el estado: si no se paso
+        // dateOverride (primera apertura del modal) se usa el día resuelto por
+        // computeAvailableSlots; si se paso uno explicito (el usuario cambio de
+        // día en el selector), hay que confirmarlo igual, o el <Select> del
+        // modal (controlado por selectedDate) rebota de vuelta al día anterior.
+        setSelectedDate(dateOverride || eventDayISO);
         setAvailableSlots(slots);
         setSlotModalOpened(true);
       } finally {

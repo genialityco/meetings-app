@@ -1630,9 +1630,12 @@ export function useDashboardData(eventId?: string) {
         receiverGroupIds,
       });
 
-      if (!selectedDate) {
-        setSelectedDate(eventDayISO);
-      }
+      // Siempre reflejar el día resultante en el estado (aunque ya venga en el
+      // parámetro `selectedDate`): el <Select> del modal está controlado por
+      // este estado, así que si solo se asignara cuando faltaba, cambiar de
+      // día mediante ese selector rebotaría de vuelta al día anterior (mismo
+      // bug que había en useCompanyData.ts para la vista de empresa).
+      setSelectedDate(selectedDate || eventDayISO);
       setAvailableSlots(slots);
       setSlotModalOpened(true);
     } finally {
@@ -1662,9 +1665,12 @@ export function useDashboardData(eventId?: string) {
         receiverGroupIds,
       });
 
-      if (!selectedDate) {
-        setSelectedDate(eventDayISO);
-      }
+      // Siempre reflejar el día resultante en el estado (aunque ya venga en el
+      // parámetro `selectedDate`): el <Select> del modal está controlado por
+      // este estado, así que si solo se asignara cuando faltaba, cambiar de
+      // día mediante ese selector rebotaría de vuelta al día anterior (mismo
+      // bug que había en useCompanyData.ts para la vista de empresa).
+      setSelectedDate(selectedDate || eventDayISO);
       setAvailableSlots(slots);
       setSlotModalOpened(true);
     } finally {
