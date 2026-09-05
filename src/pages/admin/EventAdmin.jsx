@@ -140,6 +140,9 @@ const EventAdmin = () => {
   const [meetingsCountLoading, setMeetingsCountLoading] = useState(false);
   const [waRemindersModalOpened, setWaRemindersModalOpened] = useState(false);
 
+  const [whatsappClickStats, setWhatsappClickStats] = useState(null);
+  const [whatsappClickStatsLoading, setWhatsappClickStatsLoading] = useState(false);
+
   useEffect(() => {
     fetchEvent();
   }, [eventId]);
@@ -183,6 +186,7 @@ const EventAdmin = () => {
   useEffect(() => {
     if (!eventId) return;
     fetchMeetingsCounts();
+    fetchWhatsappClickStats();
 
     const fetchAttendees = async () => {
       setAttendeesLoading(true);
@@ -927,6 +931,19 @@ const EventAdmin = () => {
     setMeetingsCountLoading(false);
   };
 
+  const fetchWhatsappClickStats = async () => {
+    if (!eventId) return;
+    setWhatsappClickStatsLoading(true);
+    try {
+      const snap = await getDoc(doc(db, "events", eventId, "analytics", "whatsappClicks"));
+      setWhatsappClickStats(snap.exists() ? snap.data() : { total: 0 });
+    } catch (e) {
+      console.log(e);
+      setWhatsappClickStats({ total: 0 });
+    }
+    setWhatsappClickStatsLoading(false);
+  };
+
   // Buscar reuniones con usuarios inexistentes
   const checkOrphanedMeetings = async () => {
     setCheckingOrphans(true);
@@ -1548,6 +1565,57 @@ const EventAdmin = () => {
                 Realizadas
               </Text>
               <Title order={3}>{meetingsCounts.realizadas}</Title>
+            </Card>
+          </SimpleGrid>
+        )}
+      </Card>
+
+      <Card withBorder shadow="sm" radius="md" p="lg" mt="md">
+        <Group justify="space-between" mb="xs" wrap="wrap">
+          <Title order={5}>Clics en botón de WhatsApp</Title>
+          <Button
+            size="xs"
+            variant="subtle"
+            onClick={fetchWhatsappClickStats}
+            loading={whatsappClickStatsLoading}
+          >
+            Actualizar
+          </Button>
+        </Group>
+
+        {whatsappClickStatsLoading ? (
+          <Loader size="sm" />
+        ) : (
+          <SimpleGrid cols={{ base: 2, sm: 5 }} spacing="md">
+            <Card withBorder radius="md" p="md">
+              <Text c="dimmed" size="sm">
+                Total
+              </Text>
+              <Title order={3}>{whatsappClickStats?.total || 0}</Title>
+            </Card>
+            <Card withBorder radius="md" p="md">
+              <Text c="dimmed" size="sm">
+                Agenda
+              </Text>
+              <Title order={3}>{whatsappClickStats?.calendar_tab || 0}</Title>
+            </Card>
+            <Card withBorder radius="md" p="md">
+              <Text c="dimmed" size="sm">
+                Mis reuniones
+              </Text>
+              <Title order={3}>{whatsappClickStats?.meetings_tab || 0}</Title>
+            </Card>
+            <Card withBorder radius="md" p="md">
+              <Text c="dimmed" size="sm">
+                Solicitudes recibidas
+              </Text>
+              <Title order={3}>{whatsappClickStats?.meeting_requester || 0}</Title>
+            </Card>
+            <Card withBorder radius="md" p="md">
+              <Text c="dimmed" size="sm">
+                Solicitudes pendientes
+              </Text>
+              <Title order={3}>{whatsappClickStats?.pending_requests_section || 0}</Title>
             </Card>
           </SimpleGrid>
         )}

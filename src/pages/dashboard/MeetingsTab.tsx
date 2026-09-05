@@ -58,6 +58,7 @@ import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
 import { showNotification } from "@mantine/notifications";
 import { trackEvent } from "../../utils/analytics";
+import { logWhatsAppClick } from "../../utils/eventStats";
 import { DEFAULT_SURVEY_FIELDS } from "../../pages/admin/ConfigureSurveyModal";
 import OptimisticCheckbox from "../../components/OptimisticCheckbox";
 import RaffleQrModal from "./RaffleQrModal";
@@ -672,7 +673,14 @@ export default function MeetingsTab({
                             radius="md"
                             color="green"
                             leftSection={<IconBrandWhatsapp size={14} />}
-                            onClick={() => sendWhatsAppMessage(participant)}
+                            onClick={() => {
+                              trackEvent({
+                                name: "whatsapp_sent",
+                                params: { recipient_type: "meetings_tab" },
+                              });
+                              logWhatsAppClick(eventId, "meetings_tab");
+                              sendWhatsAppMessage(participant);
+                            }}
                           >
                             WhatsApp
                           </Button>

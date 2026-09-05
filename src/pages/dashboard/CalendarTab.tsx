@@ -42,6 +42,8 @@ import OptimisticCheckbox from "../../components/OptimisticCheckbox";
 import RaffleQrModal from "./RaffleQrModal";
 import { normalizeTipoAsistente } from "../../utils/attendeeRole";
 import { isCheckedInOnDay, resolveCheckInDay } from "../../utils/eventDays";
+import { trackEvent } from "../../utils/analytics";
+import { logWhatsAppClick } from "../../utils/eventStats";
 
 interface CalendarTabProps {
   acceptedMeetings: any[];
@@ -979,7 +981,14 @@ export default function CalendarTab({
                         radius="md"
                         color="green"
                         leftSection={<IconBrandWhatsapp size={14} />}
-                        onClick={() => sendWhatsAppMessage(participant)}
+                        onClick={() => {
+                          trackEvent({
+                            name: "whatsapp_sent",
+                            params: { recipient_type: "calendar_tab" },
+                          });
+                          logWhatsAppClick(eventId, "calendar_tab");
+                          sendWhatsAppMessage(participant);
+                        }}
                       >
                         WhatsApp
                       </Button>

@@ -37,6 +37,7 @@ import {
 } from "@tabler/icons-react";
 import { Assistant, Meeting } from "./types";
 import { trackEvent } from "../../utils/analytics";
+import { logWhatsAppClick } from "../../utils/eventStats";
 
 interface RequestsTabProps {
   pendingRequests: Meeting[];
@@ -320,6 +321,7 @@ export default function RequestsTab({
                                   recipient_type: "meeting_requester",
                                 },
                               });
+                              logWhatsAppClick(request.eventId, "meeting_requester");
                               sendWhatsAppMessage(requester as Assistant);
                             }}
                           >

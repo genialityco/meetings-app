@@ -3,6 +3,8 @@ import { CheckIcon } from "@mantine/core";
 import { BiX } from "react-icons/bi";
 import { FaWhatsapp } from "react-icons/fa";
 import { useState } from "react";
+import { trackEvent } from "../../utils/analytics";
+import { logWhatsAppClick } from "../../utils/eventStats";
 
 export default function PendingRequestsSection({
   pendingRequests,
@@ -72,7 +74,14 @@ export default function PendingRequestsSection({
                               size="sm"
                               variant="light"
                               color="teal"
-                              onClick={() => sendWhatsAppMessage(requester)}
+                              onClick={() => {
+                                trackEvent({
+                                  name: "whatsapp_sent",
+                                  params: { recipient_type: "pending_requests_section" },
+                                });
+                                logWhatsAppClick(req.eventId, "pending_requests_section");
+                                sendWhatsAppMessage(requester);
+                              }}
                             >
                               <FaWhatsapp size={18} />
                             </ActionIcon>

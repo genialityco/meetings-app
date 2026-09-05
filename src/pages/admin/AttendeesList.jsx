@@ -1650,6 +1650,17 @@ function parseFirestoreTimestamp(input) {
           const nitNorm = String(toSave.companyId || "").replace(/\D/g, "");
           if (toSave.companyId) toSave.companyId = nitNorm;
 
+          // Landing.jsx (registro público) siempre deriva 'empresa' de la razón
+          // social al guardar; este modal no lo hacía, dejando asistentes creados
+          // o editados por un admin (ej. vendedores asignados manualmente) con
+          // companyId/company_razonSocial pero sin 'empresa', que es el campo que
+          // leen las vistas del dashboard (aparecían como "Sin empresa"/"Empresa").
+          if (toSave.company_razonSocial) {
+            toSave.empresa = String(toSave.company_razonSocial).trim();
+          } else if (nitNorm && !toSave.empresa) {
+            toSave.empresa = nitNorm;
+          }
+
           try {
             // Subir el logo de empresa elegido en el formulario de registro,
             // aunque el campo no esté habilitado en formFields para este evento.

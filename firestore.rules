@@ -61,6 +61,12 @@ service cloud.firestore {
         allow read: if true;
         allow write: if request.auth != null;
       }
+      // Contadores de uso (ej. clics en el botón de WhatsApp) que cualquier
+      // asistente autenticado puede incrementar al usar la funcionalidad.
+      match /analytics/{doc} {
+        allow read: if true;
+        allow write: if request.auth != null;
+      }
 
       // Resto de subcolecciones del evento: solo owners o super-admin
       match /{subcollection}/{document=**} {
