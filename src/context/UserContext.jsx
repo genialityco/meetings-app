@@ -182,16 +182,20 @@ export const UserProvider = ({ children }) => {
   };
 
   const logout = async () => {
+    if (userSnapshotUnsub.current) {
+      userSnapshotUnsub.current();
+      userSnapshotUnsub.current = null;
+    }
+    // Limpiar el estado local primero: si signOut() falla (red inestable,
+    // navegador in-app de WhatsApp/Instagram con storage restringido, etc.)
+    // no debe dejar currentUser apuntando al uid/documento de otro evento,
+    // porque un registro posterior lo sobrescribiría (ver Landing.jsx).
+    setCurrentUser(null);
+    localStorage.removeItem("currentUser");
+    localStorage.removeItem("manualLogin");
+    setManualLogin(false);
     try {
-      if (userSnapshotUnsub.current) {
-        userSnapshotUnsub.current();
-        userSnapshotUnsub.current = null;
-      }
       await signOut(auth);
-      setCurrentUser(null);
-      localStorage.removeItem("currentUser");
-      localStorage.removeItem("manualLogin");
-      setManualLogin(false);
     } catch (error) {
       console.error("Error signing out:", error);
     }

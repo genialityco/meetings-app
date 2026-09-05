@@ -657,6 +657,27 @@ const Landing = () => {
       const uid = currentUser?.uid;
       const isNewUser = !currentUser?.data?.createdAt;
 
+      // Guarda de seguridad: uid puede seguir apuntando al documento de OTRO
+      // evento si el logout() del useEffect de detección de evento no llegó
+      // a completarse a tiempo (red inestable, navegador in-app, etc.).
+      // Escribir aquí encima sobrescribiría el registro de ese otro evento
+      // en vez de crear uno independiente. Abortamos y forzamos una sesión
+      // nueva en lugar de arriesgar el dato del otro evento.
+      if (currentUser?.data?.eventId && currentUser.data.eventId !== eventId) {
+        console.warn(
+          "handleSubmit abortado: currentUser pertenece a otro evento",
+          currentUser.data.eventId,
+          "!==",
+          eventId,
+        );
+        await logout();
+        alert(
+          "Tu sesión estaba asociada a otro evento. Se reinició tu sesión, por favor completa el formulario nuevamente.",
+        );
+        setSaving(false);
+        return;
+      }
+
       let dataToUpdate = Object.fromEntries(
         Object.entries({
           ...formValues,
@@ -919,6 +940,7 @@ const Landing = () => {
     formValues,
     navigate,
     updateUser,
+    logout,
     eventId,
     validateForm,
     companyStepFields,
