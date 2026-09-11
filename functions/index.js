@@ -3,7 +3,7 @@ import { onRequest } from "firebase-functions/v2/https";
 import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
-import { defineSecret } from "firebase-functions/params";
+import { defineSecret, defineString } from "firebase-functions/params";
 
 initializeApp();
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
@@ -12,6 +12,13 @@ const DEFAULT_AI_MODEL = defineSecret("DEFAULT_AI_MODEL");
 const WHATSAPP_API_V1 = defineSecret("WHATSAPP_API_V1");
 const WHATSAPP_API_V2 = defineSecret("WHATSAPP_API_V2");
 const WHATSAPP_ACCOUNT_ID = defineSecret("WHATSAPP_ACCOUNT_ID");
+// Secreto compartido para autenticar el webhook de la encuesta.
+// Se define como parámetro (no como secret) con un valor por defecto, de modo
+// que funcione aunque no se configure nada. Para sobreescribirlo: definir la
+// variable de entorno SURVEY_WEBHOOK_SECRET o pasar --set-env-vars al desplegar.
+const SURVEY_WEBHOOK_SECRET = defineString("SURVEY_WEBHOOK_SECRET", {
+  default: "geniality-encuesta-webhook",
+});
 
 // Configuración: Campos a utilizar para generar el vector de afinidad (vector)
 const VECTOR_FIELDS = ['descripcion'];
@@ -4319,6 +4326,162 @@ export const generateAttendeeId = onRequest(
     } catch (error) {
       console.error("generateAttendeeId error:", error);
       return res.status(500).send({ error: "Internal error", details: error.message });
+    }
+  }
+);
+
+// ============================================================================
+// ENCUESTA "VALOR DE NEGOCIO" (webhook de WhatsApp -> Firestore)
+// ============================================================================
+
+// Respuestas válidas de la encuesta y su texto legible por defecto.
+const VALOR_NEGOCIO_RESPUESTAS = {
+  menos_100M: "Menos de $100 millones",
+  "100M_500M": "Entre $100 y $500 millones",
+  "500M_1000M": "Entre $500 millones y $1.000 millones",
+  "1000M_5000M": "Entre $1.000 millones y $5.000 millones",
+  mas_5000M: "Más de $5.000 millones",
+};
+
+/**
+ * guardarRespuestaEncuesta
+ *
+ * Webhook llamado por la API de WhatsApp (v2) cuando un asistente responde
+ * la encuesta de "valor de negocio" que se envía desde el panel admin
+ * (endpoint /api/send-encuesta-valor-negocio).
+ *
+ * POST body: {
+ *   eventId: string,
+ *   phone: string,        // número que respondió (con o sin código de país)
+ *   answer: "menos_100M" | "100M_500M" | "mas_500M",
+ *   answerText?: string,  // texto del botón seleccionado
+ *   wamid?: string,       // id del mensaje de WhatsApp (idempotencia)
+ *   timestamp?: string    // epoch en segundos (formato Meta)
+ * }
+ *
+ * Guarda la respuesta en el documento del usuario de ese evento, en el
+ * campo `encuestaValorNegocio`.
+ */
+export const guardarRespuestaEncuesta = onRequest(
+  {
+    region: "us-central1",
+    memory: "256MiB",
+  },
+  async (req, res) => {
+    const origin = req.headers.origin || "*";
+    res.set({
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "POST,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type,Authorization,x-webhook-secret",
+    });
+
+    if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+    if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
+
+    // Auth por header compartido (usa el valor por defecto si no se configuró otro).
+    const expectedSecret = SURVEY_WEBHOOK_SECRET.value();
+    if (expectedSecret && req.get("x-webhook-secret") !== expectedSecret) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const { eventId, phone, answer, answerText, wamid, timestamp } = req.body || {};
+
+    if (!eventId || !phone || !answer) {
+      res.status(400).json({ error: "Faltan campos: eventId, phone, answer" });
+      return;
+    }
+    if (!VALOR_NEGOCIO_RESPUESTAS[answer]) {
+      res.status(400).json({ error: `answer inválido: ${answer}` });
+      return;
+    }
+
+    const db = getFirestore();
+
+    // Fecha del mensaje (Meta envía epoch en segundos como string).
+    const receivedAt = timestamp ? new Date(Number(timestamp) * 1000) : new Date();
+
+    // Normalizar el teléfono recibido a solo dígitos (incluye indicativo).
+    const phoneDigits = String(phone).replace(/\D/g, "");
+    if (phoneDigits.length < 7) {
+      res.status(400).json({ error: `phone inválido: ${phone}` });
+      return;
+    }
+    // Compara dos teléfonos tolerando presencia/ausencia del indicativo.
+    const phoneMatches = (stored) => {
+      const s = String(stored || "").replace(/\D/g, "");
+      if (s.length < 7) return false;
+      return (
+        s === phoneDigits ||
+        s.endsWith(phoneDigits) ||
+        phoneDigits.endsWith(s) ||
+        s.slice(-10) === phoneDigits.slice(-10)
+      );
+    };
+
+    try {
+      // 1) Idempotencia: si ya procesamos este wamid, no repetimos.
+      if (wamid) {
+        const seenRef = db.collection("encuestaValorNegocioWamids").doc(String(wamid));
+        const isNew = await db.runTransaction(async (tx) => {
+          const snap = await tx.get(seenRef);
+          if (snap.exists) return false;
+          tx.set(seenRef, {
+            eventId: String(eventId),
+            phone: phoneDigits,
+            answer,
+            createdAt: FieldValue.serverTimestamp(),
+          });
+          return true;
+        });
+        if (!isNew) {
+          res.status(200).json({ ok: true, duplicated: true });
+          return;
+        }
+      }
+
+      // 2) Buscar el usuario de ese evento cuyo teléfono coincida.
+      const usersSnap = await db
+        .collection("users")
+        .where("eventId", "==", String(eventId))
+        .get();
+
+      const userDoc = usersSnap.docs.find((d) => {
+        const data = d.data();
+        return (
+          phoneMatches(data.telefono) ||
+          phoneMatches(data.celular) ||
+          phoneMatches(data.phone)
+        );
+      });
+
+      if (!userDoc) {
+        console.warn(
+          `guardarRespuestaEncuesta: usuario no encontrado (evento ${eventId}, tel ...${phoneDigits.slice(-4)})`
+        );
+        res.status(404).json({ error: "Usuario no encontrado para ese evento y teléfono" });
+        return;
+      }
+
+      // 3) Guardar la respuesta en el usuario del evento.
+      await userDoc.ref.update({
+        encuestaValorNegocio: {
+          answer,
+          answerText: answerText ?? VALOR_NEGOCIO_RESPUESTAS[answer],
+          phone: phoneDigits,
+          wamid: wamid ?? null,
+          receivedAt,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+      });
+
+      console.log(
+        `guardarRespuestaEncuesta: respuesta "${answer}" guardada para usuario ${userDoc.id} (evento ${eventId})`
+      );
+      res.status(200).json({ ok: true, userId: userDoc.id });
+    } catch (err) {
+      console.error("guardarRespuestaEncuesta error:", err);
+      res.status(500).json({ error: "internal" });
     }
   }
 );
