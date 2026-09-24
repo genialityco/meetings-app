@@ -290,6 +290,7 @@ export default function TabsPanel({
       {topView === "companies" && (
         <CompaniesView
           filteredAssistants={dashboard.filteredAssistants}
+          allAssistants={dashboard.assistants}
           companies={dashboard.companies}
           policies={policies}
           acceptedMeetings={dashboard.acceptedMeetings}

@@ -47,6 +47,7 @@ import type { Assistant, Company, EventPolicies, MeetingContext } from "./types"
 import MeetingRequestModal from "./MeetingRequestModal";
 import { getTableLabel } from "./meetingSlotEngine";
 import { isCheckedInOnDay, resolveCheckInDay } from "../../utils/eventDays";
+import { normalizeTipoAsistente } from "../../utils/attendeeRole";
 
 const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
 
@@ -90,6 +91,8 @@ function meetingBadgeLabel(m: any, eventConfig: any): string {
 
 interface CompaniesViewProps {
   filteredAssistants: Assistant[];
+  // Lista sin filtrar (rol/interés): solo para reconstruir la tarjeta de la propia empresa.
+  allAssistants?: Assistant[];
   companies: Company[];
   policies: EventPolicies;
   eventConfig?: any;
@@ -116,6 +119,7 @@ interface CompaniesViewProps {
 
 export default function CompaniesView({
   filteredAssistants,
+  allAssistants,
   companies,
   policies,
   eventConfig,
@@ -188,11 +192,56 @@ export default function CompaniesView({
     return map;
   }, [companies]);
 
+  // filteredAssistants excluye al propio usuario y aplica el filtro de visibilidad por
+  // rol (es la lista de "los demás"); aquí se reconstruye MI empresa para que la vea
+  // tal como la ven quienes la descubren. Con discoveryMode "by_role" esos son los de
+  // rol opuesto al mío, que no ven a los representantes de SU propio rol: mis colegas
+  // del mismo rol (y los sin rol) sí aparecen; los de rol opuesto al mío no.
+  // Se ordena por createdAt (mismo orden que useDashboardData) para que el
+  // representante que se muestra por defecto en la tarjeta sea el mismo.
+  const assistantsWithMe = useMemo(() => {
+    const me = currentUser?.data;
+    if (!myUid || !me) return filteredAssistants;
+
+    const companyKeyOf = (a: any) =>
+      policies.groupByRazonSocial
+        ? a.company_razonSocial || a.empresa || a.companyId
+        : a.companyId;
+    const myKey = companyKeyOf(me);
+    // Sin empresa no hay tarjeta que mostrar (evita una tarjeta "Sin empresa" propia).
+    if (!myKey) return filteredAssistants;
+
+    const myTipo = normalizeTipoAsistente(me.tipoAsistente);
+    const viewerTipo =
+      myTipo === "comprador" ? "vendedor" : myTipo === "vendedor" ? "comprador" : "";
+    const hiddenFromViewers = (a: any) =>
+      policies.discoveryMode === "by_role" &&
+      !!viewerTipo &&
+      normalizeTipoAsistente(a.tipoAsistente) === viewerTipo;
+
+    const teammates = (allAssistants ?? filteredAssistants).filter(
+      (a) => companyKeyOf(a) === myKey && !hiddenFromViewers(a),
+    );
+    const others = filteredAssistants.filter((a) => companyKeyOf(a) !== myKey);
+
+    const createdMs = (a: any): number => {
+      const c = a?.createdAt;
+      if (!c) return Infinity;
+      const ms = c.toMillis ? c.toMillis() : new Date(c).getTime();
+      return Number.isNaN(ms) ? Infinity : ms;
+    };
+    return [...others, ...teammates, { ...me, id: myUid } as Assistant].sort((a, b) => {
+      const x = createdMs(a);
+      const y = createdMs(b);
+      return x === y ? 0 : x < y ? -1 : 1;
+    });
+  }, [filteredAssistants, allAssistants, currentUser, myUid, policies.groupByRazonSocial, policies.discoveryMode]);
+
   // Agrupar asistentes por empresa
   const companiesData = useMemo(() => {
     const grouped = new Map<string, Assistant[]>();
 
-    filteredAssistants.forEach((assistant) => {
+    assistantsWithMe.forEach((assistant) => {
       let companyKey = assistant.companyId;
       
       if (policies.groupByRazonSocial) {
@@ -239,6 +288,9 @@ export default function CompaniesView({
         // Cualquier miembro de la empresa cuenta como "asesor" para la solicitud
         // dirigida a la empresa, sin importar su tipoAsistente (ver getCompanyAdvisors).
         hasAdvisor: asistentes.length > 0,
+        // Empresa del propio usuario: se fija primero en la lista para que la encuentre
+        // sin buscarla (sin ninguna marca especial en la tarjeta).
+        mine: asistentes.some((a) => a.id === myUid),
         // Empresas con al menos un representante que ya hizo check-in (cualquier
         // día) se muestran primero, para priorizar a quienes ya están en el evento.
         hasCheckedIn: asistentes.some(
@@ -247,7 +299,7 @@ export default function CompaniesView({
         similarity: undefined as number | undefined,
       };
     });
-  }, [filteredAssistants, companiesByNit, policies.groupByRazonSocial]);
+  }, [assistantsWithMe, companiesByNit, policies.groupByRazonSocial, myUid]);
 
   // Países presentes entre las empresas del evento (hoy solo se puebla vía
   // backfill/inferencia para eventos binacionales); si ninguna empresa tiene
@@ -342,8 +394,9 @@ export default function CompaniesView({
   const filtered = useMemo(() => {
     const t = searchTerm.trim().toLowerCase();
     
-    // Empresas con check-in primero; dentro de cada grupo, por afinidad promedio.
+    // Mi empresa primero; luego las empresas con check-in; dentro de cada grupo, por afinidad promedio.
     const byCheckInThenAffinity = (a: any, b: any) => {
+      if (a.mine !== b.mine) return a.mine ? -1 : 1;
       if (a.hasCheckedIn !== b.hasCheckedIn) return a.hasCheckedIn ? -1 : 1;
       const avgAffinityA = a.asistentes.length > 0
         ? a.asistentes.reduce((sum: number, assistant: any) => sum + (affinityScores[assistant.id] || 0), 0) / a.asistentes.length
@@ -789,6 +842,7 @@ export default function CompaniesView({
                         <Stack gap={8} pr="xs">
                           {asistentes.map((a) => {
                             const active = selectedAssistant?.id === a.id;
+                            const rol = normalizeTipoAsistente(a.tipoAsistente);
 
                             return (
                               <UnstyledButton
@@ -820,9 +874,17 @@ export default function CompaniesView({
                                     <Text size="sm" fw={600} lineClamp={1}>
                                       {a.nombre || "Sin nombre"}
                                     </Text>
-                                    <Text size="xs" c="dimmed" lineClamp={1}>
-                                      {a.cargo || "Representante"}
-                                    </Text>
+                                    {/* Rol discreto: el cargo se trunca solo, el rol siempre queda visible */}
+                                    <Group gap={4} wrap="nowrap">
+                                      <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>
+                                        {a.cargo || "Representante"}
+                                      </Text>
+                                      {rol && (
+                                        <Text size="xs" c="dimmed" style={{ flexShrink: 0, opacity: 0.7 }}>
+                                          · {rol === "vendedor" ? "Vendedor" : "Comprador"}
+                                        </Text>
+                                      )}
+                                    </Group>
                                   </Box>
                                   {/* Indicador de presencia: solo se marca cuando SÍ hizo
                                       check-in, para no ensuciar la lista con un badge

@@ -531,13 +531,15 @@ export function useDashboardData(eventId?: string) {
       );
     }
 
-    // Filtro por discoveryMode: "by_role" muestra solo roles opuestos, "all" muestra todos
-    if (policies.discoveryMode === "by_role" && currentUser?.data?.tipoAsistente) {
-      const tipoField = formFields.find((f) => f.name === "tipoAsistente")?.name;
-      if (tipoField) {
-        const myTipo = normalizeTipoAsistente(currentUser?.data?.tipoAsistente);
+    // Filtro por discoveryMode: "by_role" muestra solo roles opuestos, "all" muestra todos.
+    // tipoAsistente se lee directo del usuario: no depende de que el campo esté en
+    // formFields (con el rol forzado por política el campo no se agrega al formulario, y
+    // antes eso hacía que el filtro se saltara por completo).
+    if (policies.discoveryMode === "by_role") {
+      const myTipo = normalizeTipoAsistente(currentUser?.data?.tipoAsistente);
+      if (myTipo) {
         filtered = filtered.filter(
-          (a) => normalizeTipoAsistente(a[tipoField]) !== myTipo,
+          (a) => normalizeTipoAsistente(a.tipoAsistente) !== myTipo,
         );
       }
     }
@@ -559,7 +561,7 @@ export function useDashboardData(eventId?: string) {
     });
 
     setFilteredAssistants(filtered);
-  }, [assistants, interestFilter, formFields, policies.discoveryMode, companies]);
+  }, [assistants, interestFilter, formFields, policies.discoveryMode, currentUser?.data?.tipoAsistente, companies]);
 
   // 6. Solicitudes enviadas por usuario actual (pendientes + rechazadas)
   useEffect(() => {

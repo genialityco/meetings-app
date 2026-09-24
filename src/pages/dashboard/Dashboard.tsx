@@ -7,6 +7,9 @@ import { buildEventTheme } from "../../theme.js";
 
 import TabsPanel from "./TabsPanel";
 import AvatarModal from "./AvatarModal";
+import WelcomeSellerMessage from "./WelcomeSellerMessage";
+import WelcomeBuyerMessage from "./WelcomeBuyerMessage";
+import { isVendedor } from "../../utils/attendeeRole";
 import SlotModal from "./SlotModal";
 import ConfirmModal from "./ConfirmModal";
 import MeetingConfirmationGuard from "./MeetingConfirmationGuard";
@@ -15,8 +18,7 @@ import { UserContext } from "../../context/UserContext";
 import DashboardHeader from "../../components/DashboardHeader";
 import type { Notification, NotificationType } from "./types";
 import { DEFAULT_POLICIES } from "./types";
-import { Modal, Text, Button, TextInput, Stack, Group, Loader, List, ThemeIcon } from "@mantine/core";
-import { IconBuildings, IconCalendarEvent } from "@tabler/icons-react";
+import { Modal, Text, Button, TextInput, Stack, Group, Loader } from "@mantine/core";
 
 const NOTIF_NAV_MAP: Record<string, { view: string; tab?: string }> = {
   meeting_request: { view: "activity", tab: "solicitudes" },
@@ -78,6 +80,12 @@ export default function Dashboard() {
   const companiesTabEnabled =
     dashboard.policies?.uiViewsEnabled?.companies ??
     DEFAULT_POLICIES.uiViewsEnabled.companies;
+
+  // El pop-up de bienvenida tiene mensaje propio para vendedores; solo tiene sentido
+  // con roleMode "buyer_seller" (en modo abierto el rol no distingue nada).
+  const isSellerWelcome =
+    dashboard.policies?.roleMode === "buyer_seller" &&
+    isVendedor(currentUser?.data?.tipoAsistente);
 
   useEffect(() => {
     // Si el usuario acaba de registrarse, no ha visto el popup, y la política está habilitada
@@ -302,40 +310,27 @@ export default function Dashboard() {
         withCloseButton={false}
         closeOnClickOutside={false}
         closeOnEscape={false}
-        title="¡Bienvenido al Evento!"
+        title={isSellerWelcome ? "¡Tu registro está completo! 🎉" : "¡Bienvenido al evento! 🎉"}
         centered
+        size="xl"
         radius="md"
         overlayProps={{ blur: 3 }}
       >
         <Stack gap="md">
-          <Text size="sm">
-            ¡Hola <b>{currentUser?.data?.nombre}</b>! Nos alegra tenerte aquí.
-          </Text>
-          <List spacing="xs" size="sm" center>
-            {companiesTabEnabled && (
-              <List.Item
-                icon={
-                  <ThemeIcon color="blue" size={22} radius="xl">
-                    <IconBuildings size={14} />
-                  </ThemeIcon>
-                }
-              >
-                En el tab <b>Empresas</b> puedes buscar asistentes y empresas para solicitar reuniones.
-              </List.Item>
-            )}
-            <List.Item
-              icon={
-                <ThemeIcon color="blue" size={22} radius="xl">
-                  <IconCalendarEvent size={14} />
-                </ThemeIcon>
-              }
-            >
-              En el tab <b>Mis reuniones</b> verás tus reuniones agendadas y solicitudes.
-            </List.Item>
-          </List>
-          <Text size="sm">
-            Revisa tu WhatsApp y correo electrónico para verificar si te llegó el mensaje de bienvenida. Si no lo has recibido, por favor <b>corrige tu teléfono o tu correo</b> a continuación. Así garantizamos que recibirás todas tus notificaciones de reuniones.
-          </Text>
+          {isSellerWelcome ? (
+            <>
+              <WelcomeSellerMessage />
+              <Text size="sm">
+                Revisa tu WhatsApp y correo electrónico para verificar si te llegó el mensaje de bienvenida. Si no lo has recibido, por favor <b>corrige tu teléfono o tu correo</b> a continuación. Así garantizamos que recibirás todas tus notificaciones de reuniones.
+              </Text>
+            </>
+          ) : (
+            // El texto de comprador ya incluye el aviso de verificar WhatsApp/correo.
+            <WelcomeBuyerMessage
+              nombre={currentUser?.data?.nombre}
+              companiesTabEnabled={companiesTabEnabled}
+            />
+          )}
           <TextInput
             label="Número de WhatsApp"
             placeholder="Ej: +573001234567"

@@ -134,6 +134,12 @@ const getValue = (a, fieldName) => {
   if (fieldName === "nit") {
     return a.nit || a.nitNorm || a.id || "";
   }
+  if (fieldName === "company_nit") {
+    // El registro público (Landing.jsx) no persiste company_nit en el asistente:
+    // el NIT vive únicamente en companyId. Solo los docs editados desde el modal
+    // admin o los legados pueden traer company_nit, por eso queda de respaldo.
+    return a.companyId || a.company_nit || "";
+  }
   if (fieldName === "aceptaTratamiento") {
     const val = a.aceptaTratamiento;
     if (val === true || val === "true" || val === 1) return "Sí";
@@ -474,6 +480,17 @@ function parseFirestoreTimestamp(input) {
         />
       ) : (
         <Text size="sm" c="dimmed">Sin imagen</Text>
+      );
+    }
+
+    // El NIT del asistente se lee de companyId y además sincroniza el documento
+    // de empresa, por lo que se edita desde el modal "Editar", no en línea
+    // (una edición en línea solo escribiría company_nit, que la tabla ya no usa).
+    if (entityType === "users" && field.name === "company_nit") {
+      return (
+        <Text size="sm" style={{ padding: "4px 8px" }}>
+          {value || "-"}
+        </Text>
       );
     }
 
