@@ -17,3 +17,18 @@ export function isVendedor(value: unknown): boolean {
 export function isComprador(value: unknown): boolean {
   return normalizeTipoAsistente(value) === "comprador";
 }
+
+// Rol que la política del evento impone a todo registro público (oculta el
+// selector "Tipo de asistente"), o null si el asistente elige libremente.
+// El modal admin solo ofrece estas políticas con roleMode "buyer_seller".
+// Si por datos antiguos vinieran ambas activas, prevalece comprador.
+export function getForcedRegistrationRole(
+  policies?: {
+    forceBuyerRoleOnRegistration?: boolean;
+    forceSellerRoleOnRegistration?: boolean;
+  } | null,
+): TipoAsistente | null {
+  if (policies?.forceBuyerRoleOnRegistration === true) return "comprador";
+  if (policies?.forceSellerRoleOnRegistration === true) return "vendedor";
+  return null;
+}

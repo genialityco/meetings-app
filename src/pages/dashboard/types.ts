@@ -100,6 +100,8 @@ export interface EventPolicies {
   sellerRedirectToProducts?: boolean;
   /** Oculta el selector "Tipo de asistente" en el formulario público y fuerza todo registro como "Comprador" (los vendedores se asignan manualmente desde el panel admin) */
   forceBuyerRoleOnRegistration?: boolean;
+  /** Análoga a forceBuyerRoleOnRegistration pero fuerza "Vendedor". Mutuamente excluyente con la de comprador (el modal admin impide activar ambas; si llegaran ambas, prevalece comprador) */
+  forceSellerRoleOnRegistration?: boolean;
   /** Campos visibles en las tarjetas del dashboard (configuración independiente por vista) */
   cardFieldsConfig?: {
     attendeeCard: string[];
@@ -233,6 +235,7 @@ export const DEFAULT_POLICIES: EventPolicies = {
   schedulingMode: "manual",
   sellerRedirectToProducts: false,
   forceBuyerRoleOnRegistration: false,
+  forceSellerRoleOnRegistration: false,
   cardFieldsConfig: {
     attendeeCard: ["empresa", "cargo", "correo", "descripcion", "interesPrincipal", "necesidad"],
     companyCard: ["cargo", "correo", "interesPrincipal", "necesidad"],

@@ -57,6 +57,7 @@ export default function EventPoliciesModal({
   const [schedulingMode, setSchedulingMode] = useState<EventPolicies["schedulingMode"]>("manual");
   const [sellerRedirectToProducts, setSellerRedirectToProducts] = useState(false);
   const [forceBuyerRoleOnRegistration, setForceBuyerRoleOnRegistration] = useState(false);
+  const [forceSellerRoleOnRegistration, setForceSellerRoleOnRegistration] = useState(false);
   const [uiViews, setUiViews] = useState(DEFAULT_POLICIES.uiViewsEnabled);
   const [viewsOrder, setViewsOrder] = useState<string[]>(DEFAULT_POLICIES.viewsOrder ?? ALL_VIEW_KEYS);
   const [attendeeCardFields, setAttendeeCardFields] = useState<string[]>(
@@ -105,6 +106,10 @@ export default function EventPoliciesModal({
     setSchedulingMode(p.schedulingMode ?? "manual");
     setSellerRedirectToProducts(p.sellerRedirectToProducts ?? false);
     setForceBuyerRoleOnRegistration(p.forceBuyerRoleOnRegistration ?? false);
+    // Si por datos antiguos vinieran ambas, prevalece comprador (igual que en el registro)
+    setForceSellerRoleOnRegistration(
+      !p.forceBuyerRoleOnRegistration && (p.forceSellerRoleOnRegistration ?? false)
+    );
     setUiViews(p.uiViewsEnabled ?? DEFAULT_POLICIES.uiViewsEnabled);
     // Normalizar: respetar el orden guardado y anexar vistas nuevas al final
     const savedOrder: string[] = p.viewsOrder ?? DEFAULT_POLICIES.viewsOrder ?? ALL_VIEW_KEYS;
@@ -235,6 +240,7 @@ export default function EventPoliciesModal({
               schedulingMode,
               sellerRedirectToProducts,
               forceBuyerRoleOnRegistration,
+              forceSellerRoleOnRegistration,
               cardFieldsConfig: {
                 attendeeCard: attendeeCardFields,
                 companyCard: companyCardFields,
@@ -351,7 +357,24 @@ export default function EventPoliciesModal({
             label="Forzar todo registro público como 'Comprador'"
             description="Oculta el selector 'Tipo de asistente' en el formulario de registro (solo queda el consentimiento de tratamiento de datos) y asigna 'Comprador' automáticamente. Los vendedores deben asignarse manualmente desde el listado de asistentes."
             checked={forceBuyerRoleOnRegistration}
-            onChange={(e) => setForceBuyerRoleOnRegistration(e.currentTarget.checked)}
+            onChange={(e) => {
+              const checked = e.currentTarget.checked;
+              setForceBuyerRoleOnRegistration(checked);
+              if (checked) setForceSellerRoleOnRegistration(false);
+            }}
+          />
+        )}
+
+        {roleMode === "buyer_seller" && (
+          <Switch
+            label="Forzar todo registro público como 'Vendedor'"
+            description="Oculta el selector 'Tipo de asistente' en el formulario de registro y asigna 'Vendedor' automáticamente. Los compradores deben asignarse manualmente desde el listado de asistentes. No se puede combinar con 'Comprador'."
+            checked={forceSellerRoleOnRegistration}
+            onChange={(e) => {
+              const checked = e.currentTarget.checked;
+              setForceSellerRoleOnRegistration(checked);
+              if (checked) setForceBuyerRoleOnRegistration(false);
+            }}
           />
         )}
 

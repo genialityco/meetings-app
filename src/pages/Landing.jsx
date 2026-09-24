@@ -65,6 +65,7 @@ import {
 } from "../utils/phoneUtils";
 import { sendWelcomeNotification } from "../utils/whatsappService";
 import { getEventDayKeys, formatDayLabel } from "../utils/eventDays";
+import { getForcedRegistrationRole } from "../utils/attendeeRole";
 
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
 
@@ -304,8 +305,8 @@ const Landing = () => {
     return map;
   }, [event?.config?.formFields]);
 
-  // Política: fuerza tipoAsistente="comprador" y oculta el selector en el formulario
-  const forceBuyerRole = event?.config?.policies?.forceBuyerRoleOnRegistration === true;
+  // Política: fuerza tipoAsistente ("comprador" o "vendedor") y oculta el selector en el formulario
+  const forcedRole = getForcedRegistrationRole(event?.config?.policies);
 
   const registrationForm = event?.config?.registrationForm || null;
   const steps =
@@ -336,8 +337,8 @@ const Landing = () => {
   const validateForm = useCallback(() => {
     const errors = {};
     (event?.config?.formFields || []).forEach((field) => {
-      // Ignorar validación de tipoAsistente si el evento es de Networking o se fuerza el rol comprador
-      if ((event?.eventType === "Networking" || forceBuyerRole) && field.name === "tipoAsistente") return;
+      // Ignorar validación de tipoAsistente si el evento es de Networking o se fuerza el rol
+      if ((event?.eventType === "Networking" || forcedRole) && field.name === "tipoAsistente") return;
 
       if (!isFieldVisible(field)) return;
 
@@ -368,14 +369,14 @@ const Landing = () => {
 
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
-  }, [event?.config?.formFields, event?.eventType, forceBuyerRole, formValues, getValueForField, isFieldVisible, pdfFiles]);
+  }, [event?.config?.formFields, event?.eventType, forcedRole, formValues, getValueForField, isFieldVisible, pdfFiles]);
 
   const validateStep = useCallback(
     (fieldNames = []) => {
       const errors = {};
       fieldNames.forEach((name) => {
-        // Ignorar validación de tipoAsistente si el evento es de Networking o se fuerza el rol comprador
-        if ((event?.eventType === "Networking" || forceBuyerRole) && name === "tipoAsistente") return;
+        // Ignorar validación de tipoAsistente si el evento es de Networking o se fuerza el rol
+        if ((event?.eventType === "Networking" || forcedRole) && name === "tipoAsistente") return;
 
         const def = fieldsByName.get(name);
         if (!def) return;
@@ -416,7 +417,7 @@ const Landing = () => {
       formValues,
       pdfFiles,
       event?.eventType,
-      forceBuyerRole,
+      forcedRole,
     ],
   );
 
@@ -447,11 +448,14 @@ const Landing = () => {
               ...prev,
               tipoAsistente: "Asistente",
             }));
-          } else if (eventData.config?.policies?.forceBuyerRoleOnRegistration === true) {
-            setFormValues((prev) => ({
-              ...prev,
-              tipoAsistente: "comprador",
-            }));
+          } else {
+            const roleForced = getForcedRegistrationRole(eventData.config?.policies);
+            if (roleForced) {
+              setFormValues((prev) => ({
+                ...prev,
+                tipoAsistente: roleForced,
+              }));
+            }
           }
         }
       },
@@ -482,15 +486,15 @@ const Landing = () => {
         ...currentUser.data,
         ...(event?.eventType === "Networking"
           ? { tipoAsistente: "Asistente" }
-          : forceBuyerRole
-            ? { tipoAsistente: "comprador" }
+          : forcedRole
+            ? { tipoAsistente: forcedRole }
             : {}),
       }));
       if (currentUser.data.photoURL) {
         setProfilePicPreview(currentUser.data.photoURL);
       }
     }
-  }, [currentUser, event?.eventType, forceBuyerRole]);
+  }, [currentUser, event?.eventType, forcedRole]);
 
   useEffect(() => {
     if (currentUser?.data?.photoURL) {
@@ -606,7 +610,7 @@ const Landing = () => {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            tipoAsistente: event?.eventType === "Networking" ? "Asistente" : (forceBuyerRole ? "comprador" : formValues.tipoAsistente),
+            tipoAsistente: event?.eventType === "Networking" ? "Asistente" : (forcedRole || formValues.tipoAsistente),
             interesPrincipal: formValues.interesPrincipal,
             necesidad: formValues.necesidad,
             cargo: formValues.cargo,
@@ -638,7 +642,7 @@ const Landing = () => {
     } finally {
       setImprovingDescription(false);
     }
-  }, [formValues, editor, event?.eventType, forceBuyerRole]);
+  }, [formValues, editor, event?.eventType, forcedRole]);
 
   const handleSubmit = useCallback(async () => {
     console.log("Iniciando handleSubmit...");
@@ -681,8 +685,8 @@ const Landing = () => {
       let dataToUpdate = Object.fromEntries(
         Object.entries({
           ...formValues,
-          // Si es networking forzamos tipoAsistente a 'Asistente'; si la política está activa, a 'comprador'
-          tipoAsistente: event?.eventType === "Networking" ? "Asistente" : (forceBuyerRole ? "comprador" : formValues.tipoAsistente),
+          // Si es networking forzamos tipoAsistente a 'Asistente'; si la política está activa, a 'comprador' o 'vendedor'
+          tipoAsistente: event?.eventType === "Networking" ? "Asistente" : (forcedRole || formValues.tipoAsistente),
           correo: String(formValues["correo"] || "")
             .toLowerCase()
             .trim(),
@@ -947,13 +951,13 @@ const Landing = () => {
     companyLogoFile,
     pdfFiles,
     event?.eventType,
-    forceBuyerRole,
+    forcedRole,
   ]);
 
   const renderFieldsForNames = useCallback(
     (names = []) => {
       return names.map((name) => {
-        if ((event?.eventType === "Networking" || forceBuyerRole) && name === "tipoAsistente") {
+        if ((event?.eventType === "Networking" || forcedRole) && name === "tipoAsistente") {
           return null;
         }
         
@@ -1051,7 +1055,7 @@ const Landing = () => {
                     size="lg"
                     onClick={handleImproveDescription}
                     loading={improvingDescription}
-                    disabled={improvingDescription || (event?.eventType !== "Networking" && !forceBuyerRole && !formValues.tipoAsistente)}
+                    disabled={improvingDescription || (event?.eventType !== "Networking" && !forcedRole && !formValues.tipoAsistente)}
                   >
                     <IconSparkles size={18} />
                   </ActionIcon>
@@ -1060,7 +1064,7 @@ const Landing = () => {
               <RichTextEditor editor={editor}>
                 <RichTextEditor.Content />
               </RichTextEditor>
-              {event?.eventType !== "Networking" && !forceBuyerRole && !formValues.tipoAsistente && (
+              {event?.eventType !== "Networking" && !forcedRole && !formValues.tipoAsistente && (
                 <Text size="xs" c="dimmed" mt="xs">
                   💡 Completa el campo "Tipo de asistente" para usar la IA
                 </Text>
@@ -1414,7 +1418,7 @@ const Landing = () => {
       formValues,
       defaultIso2,
       event?.eventType,
-      forceBuyerRole,
+      forcedRole,
     ],
   );
 

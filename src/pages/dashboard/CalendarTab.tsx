@@ -824,17 +824,26 @@ export default function CalendarTab({
         radius="md"
       >
         {selectedMeeting && (() => {
-          const participant = getOtherParticipant(selectedMeeting);
+          // selectedMeeting es una foto tomada al hacer click (handleMeetingClick)
+          // y nunca se vuelve a sincronizar sola. Sin esto, marcar el checkbox de
+          // "Reunión realizada" sí persiste en Firestore, pero como el modal sigue
+          // leyendo el objeto viejo (completed sigue en false ahí), el checkbox
+          // optimista rebota de vuelta apenas termina la escritura (mismo patrón
+          // que reviewingAttendee resuelve en CheckInTab.jsx). allMeetings ya se
+          // recalcula en tiempo real, así que se resuelve la version viva contra
+          // esa lista por id.
+          const liveMeeting = allMeetings.find((m) => m.id === selectedMeeting.id) || selectedMeeting;
+          const participant = getOtherParticipant(liveMeeting);
           return (
             <Stack gap="md">
               {/* Estado */}
               <Group justify="center">
                 <Badge
-                  color={getStatusColor(selectedMeeting.type)}
+                  color={getStatusColor(liveMeeting.type)}
                   variant="filled"
                   size="lg"
                 >
-                  {getStatusLabel(selectedMeeting.type)}
+                  {getStatusLabel(liveMeeting.type)}
                 </Badge>
               </Group>
 
@@ -856,8 +865,8 @@ export default function CalendarTab({
                       <Text size="sm" c="dimmed">
                         {participant.empresa}
                       </Text>
-                      {selectedMeeting.type === "accepted" && selectedMeeting.meetingDate && (
-                        isCheckedInOnDay(participant, resolveCheckInDay(eventConfig, selectedMeeting.meetingDate)) ? (
+                      {liveMeeting.type === "accepted" && liveMeeting.meetingDate && (
+                        isCheckedInOnDay(participant, resolveCheckInDay(eventConfig, liveMeeting.meetingDate)) ? (
                           <Badge color="green" variant="light" size="xs" mt={4}>
                             ✓ Ya hizo check-in
                           </Badge>
@@ -899,30 +908,30 @@ export default function CalendarTab({
 
               {/* Información de la reunión */}
               <Stack gap="xs">
-                {selectedMeeting.meetingDate && (
+                {liveMeeting.meetingDate && (
                   <InfoRow
                     icon={<IconCalendar size={14} />}
                     label="Día"
-                    value={formatDate(selectedMeeting.meetingDate)}
+                    value={formatDate(liveMeeting.meetingDate)}
                   />
                 )}
                 <InfoRow
                   icon={<IconClock size={14} />}
                   label="Horario"
-                  value={selectedMeeting.timeSlot || "Por asignar"}
+                  value={liveMeeting.timeSlot || "Por asignar"}
                 />
                 <InfoRow
                   icon={<IconTable size={14} />}
                   label="Mesa"
                   value={
-                    selectedMeeting.tableAssigned
-                      ? String(selectedMeeting.tableAssigned)
+                    liveMeeting.tableAssigned
+                      ? String(liveMeeting.tableAssigned)
                       : "Por asignar"
                   }
                 />
               </Stack>
 
-              {selectedMeeting.contextNote && (
+              {liveMeeting.contextNote && (
                 <>
                   <Divider />
                   <Box>
@@ -930,36 +939,36 @@ export default function CalendarTab({
                       Mensaje:
                     </Text>
                     <Paper withBorder p="sm" bg="gray.0">
-                      <Text size="sm">{selectedMeeting.contextNote}</Text>
+                      <Text size="sm">{liveMeeting.contextNote}</Text>
                     </Paper>
                   </Box>
                 </>
               )}
 
               {/* Action buttons — only for accepted meetings */}
-              {selectedMeeting.type === "accepted" && participant && (
+              {liveMeeting.type === "accepted" && participant && (
                 <>
                   <Divider />
                   <OptimisticCheckbox
                     size="sm"
                     color="green"
                     label="Reunión realizada"
-                    checked={!!selectedMeeting.completed}
+                    checked={!!liveMeeting.completed}
                     onChange={(_e, newValue) =>
-                      toggleMeetingCompleted(selectedMeeting, newValue)
+                      toggleMeetingCompleted(liveMeeting, newValue)
                     }
                   />
                   {!surveyBlocked && (
                     <Button
-                      variant={surveyExists(selectedMeeting.id) ? "light" : "filled"}
+                      variant={surveyExists(liveMeeting.id) ? "light" : "filled"}
                       color="violet"
                       size="compact-sm"
                       radius="md"
                       fullWidth
                       leftSection={<IconClipboardCheck size={14} />}
-                      onClick={() => handleOpenSurvey(selectedMeeting)}
+                      onClick={() => handleOpenSurvey(liveMeeting)}
                     >
-                      {surveyExists(selectedMeeting.id) ? "Ver/editar encuesta" : "Llenar encuesta"}
+                      {surveyExists(liveMeeting.id) ? "Ver/editar encuesta" : "Llenar encuesta"}
                     </Button>
                   )}
                   <Group grow gap="xs">
@@ -995,14 +1004,14 @@ export default function CalendarTab({
                     )}
                   </Group>
                   {policies?.raffleEnabled &&
-                    selectedMeeting.checkInStatus !== "standby" &&
+                    liveMeeting.checkInStatus !== "standby" &&
                     myRole === "vendedor" &&
                     eventId && (
                       <Group grow gap="xs">
                         <RaffleQrModal
                           eventId={eventId}
-                          meetingId={selectedMeeting.id}
-                          claimed={!!selectedMeeting.raffleClaimed}
+                          meetingId={liveMeeting.id}
+                          claimed={!!liveMeeting.raffleClaimed}
                         />
                       </Group>
                     )}
@@ -1014,12 +1023,12 @@ export default function CalendarTab({
                       color="red"
                       fullWidth
                       leftSection={<IconX size={14} />}
-                      loading={cancellingId === selectedMeeting.id}
+                      loading={cancellingId === liveMeeting.id}
                       onClick={async () => {
                         if (!window.confirm("¿Seguro que deseas cancelar esta reunión?")) return;
-                        setCancellingId(selectedMeeting.id);
+                        setCancellingId(liveMeeting.id);
                         try {
-                          await cancelMeeting(selectedMeeting);
+                          await cancelMeeting(liveMeeting);
                           setModalOpened(false);
                         } catch { /* handled upstream */ }
                         finally { setCancellingId(null); }
