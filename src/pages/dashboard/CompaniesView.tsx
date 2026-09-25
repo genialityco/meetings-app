@@ -48,7 +48,8 @@ import type { Assistant, Company, EventPolicies, MeetingContext } from "./types"
 import MeetingRequestModal from "./MeetingRequestModal";
 import { getTableLabel } from "./meetingSlotEngine";
 import { isCheckedInOnDay, resolveCheckInDay } from "../../utils/eventDays";
-import { normalizeTipoAsistente } from "../../utils/attendeeRole";
+import { normalizeTipoAsistente, canDiscoverAttendee } from "../../utils/attendeeRole";
+import { getFieldLabel } from "../../utils/attendeeFields";
 
 const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
 
@@ -195,9 +196,9 @@ export default function CompaniesView({
 
   // filteredAssistants excluye al propio usuario y aplica el filtro de visibilidad por
   // rol (es la lista de "los demás"); aquí se reconstruye MI empresa para que la vea
-  // tal como la ven quienes la descubren. Con discoveryMode "by_role" esos son los de
-  // rol opuesto al mío, que no ven a los representantes de SU propio rol: mis colegas
-  // del mismo rol (y los sin rol) sí aparecen; los de rol opuesto al mío no.
+  // tal como la ven quienes la descubren (según discoveryMode). P. ej. con "by_role"
+  // esos son los de rol opuesto al mío, que no ven a los representantes de SU propio
+  // rol: mis colegas del mismo rol (y los sin rol) sí aparecen; los de rol opuesto no.
   // Se ordena por createdAt (mismo orden que useDashboardData) para que el
   // representante que se muestra por defecto en la tarjeta sea el mismo.
   const assistantsWithMe = useMemo(() => {
@@ -212,13 +213,13 @@ export default function CompaniesView({
     // Sin empresa no hay tarjeta que mostrar (evita una tarjeta "Sin empresa" propia).
     if (!myKey) return filteredAssistants;
 
+    // Roles que pueden descubrirme; un colega se muestra si al menos uno de ellos lo ve.
     const myTipo = normalizeTipoAsistente(me.tipoAsistente);
-    const viewerTipo =
-      myTipo === "comprador" ? "vendedor" : myTipo === "vendedor" ? "comprador" : "";
+    const viewerTipos = (["comprador", "vendedor"] as const).filter((r) =>
+      canDiscoverAttendee(policies.discoveryMode, r, myTipo),
+    );
     const hiddenFromViewers = (a: any) =>
-      policies.discoveryMode === "by_role" &&
-      !!viewerTipo &&
-      normalizeTipoAsistente(a.tipoAsistente) === viewerTipo;
+      !viewerTipos.some((r) => canDiscoverAttendee(policies.discoveryMode, r, a.tipoAsistente));
 
     const teammates = (allAssistants ?? filteredAssistants).filter(
       (a) => companyKeyOf(a) === myKey && !hiddenFromViewers(a),
@@ -927,7 +928,9 @@ export default function CompaniesView({
                         const allowed = fieldDef.showWhen.value as string[];
                         if (!parentValue || !allowed.includes(parentValue)) return null;
                       }
-                      const label = fieldDef?.label || fieldName;
+                      const label = fieldDef
+                        ? getFieldLabel(fieldDef, selectedAssistant?.tipoAsistente)
+                        : fieldName;
                       const Icon = FIELD_ICONS[fieldName] || IconFileDescription;
                       const value = formatFieldValue(fieldName, selectedAssistant);
                       return (

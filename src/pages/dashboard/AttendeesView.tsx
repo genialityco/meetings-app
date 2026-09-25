@@ -43,6 +43,7 @@ import type { Assistant, EventPolicies } from "./types";
 import { useNavigate, useParams } from "react-router-dom";
 import MeetingRequestModal from "./MeetingRequestModal";
 import { normalizeTipoAsistente, isVendedor, isComprador } from "../../utils/attendeeRole";
+import { getFieldLabel } from "../../utils/attendeeFields";
 
 interface MeetingContext {
   contextNote?: string;
@@ -718,7 +719,9 @@ export default function AttendeesView({
                         if (!parentValue || !allowed.includes(parentValue))
                           return null;
                       }
-                      const label = fieldDef?.label || fieldName;
+                      const label = fieldDef
+                        ? getFieldLabel(fieldDef, assistant.tipoAsistente)
+                        : fieldName;
 
                       // Campos PDF: mostrar botón de descarga
                       if (fieldDef?.type === "pdf") {

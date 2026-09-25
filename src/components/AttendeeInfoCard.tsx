@@ -1,5 +1,5 @@
 import { Avatar, Box, Divider, SimpleGrid, Stack, Text } from "@mantine/core";
-import { splitAttendeeFields } from "../utils/attendeeFields";
+import { splitAttendeeFields, getFieldLabel } from "../utils/attendeeFields";
 
 interface AttendeeInfoCardProps {
   attendee: any;
@@ -37,7 +37,7 @@ export default function AttendeeInfoCard({ attendee, formFields = [] }: Attendee
 
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
         {basicFields.map((f: any) => (
-          <FieldValue key={f.name} label={f.label || f.name} value={attendee?.[f.name]} />
+          <FieldValue key={f.name} label={getFieldLabel(f, attendee?.tipoAsistente)} value={attendee?.[f.name]} />
         ))}
       </SimpleGrid>
 
@@ -49,7 +49,7 @@ export default function AttendeeInfoCard({ attendee, formFields = [] }: Attendee
           />
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
             {additionalFields.map((f: any) => (
-              <FieldValue key={f.name} label={f.label || f.name} value={attendee?.[f.name]} />
+              <FieldValue key={f.name} label={getFieldLabel(f, attendee?.tipoAsistente)} value={attendee?.[f.name]} />
             ))}
           </SimpleGrid>
         </>

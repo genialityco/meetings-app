@@ -1,3 +1,23 @@
+import { normalizeTipoAsistente } from "./attendeeRole";
+
+/**
+ * Etiqueta de un campo del formulario según el rol del asistente. Cada campo de
+ * config.formFields puede traer `labelByRole: { comprador?, vendedor? }` (se configura
+ * en ConfigureFieldsModal); si el rol no tiene etiqueta propia se usa `label`.
+ */
+export function getFieldLabel(field: any, tipoAsistente?: unknown): string {
+  if (!field) return "";
+  const tipo = normalizeTipoAsistente(tipoAsistente);
+  const byRole = tipo ? String(field.labelByRole?.[tipo] ?? "").trim() : "";
+  return byRole || field.label || field.name || "";
+}
+
+/** Devuelve el campo con `label` ya resuelto para el rol (útil para mapear listas completas). */
+export function withRoleLabel<T extends { label?: string }>(field: T, tipoAsistente?: unknown): T {
+  if (!field || !(field as any).labelByRole) return field;
+  return { ...field, label: getFieldLabel(field, tipoAsistente) };
+}
+
 export const BASIC_ATTENDEE_FIELDS = [
   { name: "nombre", label: "Nombre" },
   { name: "cargo", label: "Cargo" },

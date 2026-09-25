@@ -29,6 +29,7 @@ import { useMediaQuery } from "@mantine/hooks";
 import { IconEdit, IconLogout, IconChevronDown, IconPackage, IconBuilding, IconCheck, IconUserCheck, IconQrcode, IconScan } from "@tabler/icons-react";
 import { UserContext } from "../context/UserContext";
 import { isComprador as isCompradorRole } from "../utils/attendeeRole";
+import { withRoleLabel } from "../utils/attendeeFields";
 import { resolveCheckInDay, isCheckedInOnDay, getEventDayKeys, formatDayLabel } from "../utils/eventDays";
 import { parseStandVisitQrUrl } from "../utils/qrScan";
 import QrScannerModal from "./QrScannerModal";
@@ -406,8 +407,10 @@ const DashboardHeader = ({
 
   // Render a single form field based on its type
   const renderField = useCallback(
-    (field: any) => {
-      if (!field) return null;
+    (rawField: any) => {
+      if (!rawField) return null;
+      // Etiqueta según el rol del propio asistente (labelByRole)
+      const field = withRoleLabel(rawField, data?.tipoAsistente);
       // Skip consent field in edit
       if (field.name === CONSENTIMIENTO_FIELD_NAME) return null;
       // Campos que el asistente no puede modificar (p. ej. tipo de asistente)

@@ -36,11 +36,12 @@ Firestore rules (`firestore.rules`) key pattern: most collections are world-read
 Configurable per event via admin panel (`EventPoliciesModal.tsx`). Interface + defaults live in `EventPolicies` / `DEFAULT_POLICIES` in `src/pages/dashboard/types.ts` — that file is the source of truth; the list below is a summary:
 - `roleMode`: "open" | "buyer_seller" — who can meet whom
 - `tableMode`: "pool" | "fixed" — table assignment (pool=auto, fixed=company-assigned)
-- `discoveryMode`: "all" | "by_role" — directory visibility
+- `discoveryMode`: "all" | "by_role" | "sellers_see_all" — directory visibility (`sellers_see_all`: sellers see everyone, buyers see only sellers). Rules live in `canDiscoverAttendee` (`src/utils/attendeeRole.ts`)
 - `schedulingMode`: "manual" | "requester_picks"
 - `sellerRedirectToProducts`, `cardFieldsConfig`, `uiViewsEnabled` — as before
 - `forceBuyerRoleOnRegistration` (only relevant when `roleMode: "buyer_seller"`) — public registration form (`Landing.jsx`) hides the "Tipo de asistente" selector and forces every registration to `tipoAsistente: "comprador"`; sellers must be assigned manually afterward (e.g. `ModalEditAttendee.jsx`) since they no longer self-select "vendedor" at signup
 - `forceSellerRoleOnRegistration` — mirror of the above forcing `tipoAsistente: "vendedor"` (buyers assigned manually). Mutually exclusive with the buyer toggle (the modal switches enforce it; if both are ever set, buyer wins). Landing resolves the forced role via `getForcedRegistrationRole` in `src/utils/attendeeRole.ts`
+- `roleUrlParamEnabled`, `roleUrlParamName` (default `"rol"`), `roleUrlParamValues: { comprador, vendedor }` — force the registration role from a URL query param (e.g. `/event/:id?rol=vendedor`); a valid param value takes precedence over the two global force toggles
 - `viewsOrder`: string[] — order of dashboard tabs (`chatbot`, `matches`, `attendees`, `companies`, `products`, `activity`, `survey`); enabled views missing from the array render last
 - `whatsappApiVersion`: "v1" | "v2", `whatsappNotificationsEnabled`, `fallbackEmailOnWaFailure` — WhatsApp notification behavior
 - `autoReassignOnCancel` — auto-reassign slot when a meeting is cancelled
@@ -56,6 +57,8 @@ Configurable per event via admin panel (`EventPoliciesModal.tsx`). Interface + d
 - `standVisitsEnabled`, `standVisitAllowSellerScan` — stand-visit registration via QR (see below)
 
 Some newer per-event toggles (e.g. `cancelMeetingDisabled`, read in `CalendarTab.tsx`/`EventPoliciesModal.tsx`) are set directly on the policies object without yet being formalized in the `EventPolicies` interface — check `EventPoliciesModal.tsx` for the full current set of admin-configurable toggles rather than relying solely on the type.
+
+Form fields (`event.config.formFields[]`) may carry `labelByRole: { comprador?, vendedor? }` (edited in `ConfigureFieldsModal.tsx`); resolve display labels with `getFieldLabel`/`withRoleLabel` from `src/utils/attendeeFields.ts` instead of reading `field.label` directly.
 
 ### Key Directories
 

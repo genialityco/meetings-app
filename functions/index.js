@@ -1232,6 +1232,9 @@ Mensaje del usuario: "${message.replace(/"/g, '\\"')}"${profileText}`;
       if (shouldFilterByRole && userTipo) {
         if (userTipo === "vendedor") desiredOpposite = "comprador";
         else if (userTipo === "comprador") desiredOpposite = "vendedor";
+      } else if (eventPolicies.discoveryMode === "sellers_see_all" && userTipo === "comprador") {
+        // Compradores solo ven vendedores; los vendedores ven a todos (sin filtro)
+        desiredOpposite = "vendedor";
       }
 
       const results = { 

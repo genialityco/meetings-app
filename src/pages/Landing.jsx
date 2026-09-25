@@ -36,7 +36,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
 import Placeholder from "@tiptap/extension-placeholder";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   doc,
   onSnapshot,
@@ -67,6 +67,7 @@ import {
 import { sendWelcomeNotification } from "../utils/whatsappService";
 import { getEventDayKeys, formatDayLabel } from "../utils/eventDays";
 import { getForcedRegistrationRole } from "../utils/attendeeRole";
+import { withRoleLabel } from "../utils/attendeeFields";
 
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
 
@@ -210,6 +211,7 @@ const validateField = (field, value) => {
 const Landing = () => {
   const navigate = useNavigate();
   const { eventId } = useParams();
+  const [searchParams] = useSearchParams();
   const { userLoading, loginByEmail, currentUser, updateUser, logout } =
     useContext(UserContext);
 
@@ -304,14 +306,22 @@ const Landing = () => {
     [formValues],
   );
 
+  // Política: fuerza tipoAsistente ("comprador" o "vendedor") y oculta el selector en el
+  // formulario. Puede venir del forzado global o del parámetro de URL (roleUrlParamEnabled).
+  const forcedRole = getForcedRegistrationRole(event?.config?.policies, searchParams);
+
+  // Campos del formulario con la etiqueta resuelta según el rol (labelByRole)
+  const roleForLabels = forcedRole || formValues.tipoAsistente;
+  const formFields = useMemo(
+    () => (event?.config?.formFields || []).map((f) => withRoleLabel(f, roleForLabels)),
+    [event?.config?.formFields, roleForLabels],
+  );
+
   const fieldsByName = useMemo(() => {
     const map = new Map();
-    (event?.config?.formFields || []).forEach((f) => map.set(f.name, f));
+    formFields.forEach((f) => map.set(f.name, f));
     return map;
-  }, [event?.config?.formFields]);
-
-  // Política: fuerza tipoAsistente ("comprador" o "vendedor") y oculta el selector en el formulario
-  const forcedRole = getForcedRegistrationRole(event?.config?.policies);
+  }, [formFields]);
 
   const registrationForm = event?.config?.registrationForm || null;
   const steps =
@@ -361,7 +371,7 @@ const Landing = () => {
 
   const validateForm = useCallback(() => {
     const errors = {};
-    (event?.config?.formFields || []).forEach((field) => {
+    formFields.forEach((field) => {
       // Ignorar validación de tipoAsistente si el evento es de Networking o se fuerza el rol
       if ((event?.eventType === "Networking" || forcedRole) && field.name === "tipoAsistente") return;
 
@@ -402,7 +412,7 @@ const Landing = () => {
 
     setFormErrors(errors);
     return errors;
-  }, [event?.config?.formFields, event?.eventType, forcedRole, formValues, getValueForField, isFieldVisible, pdfFiles, companyLogoFile, companyLogoPreview]);
+  }, [formFields, event?.eventType, forcedRole, formValues, getValueForField, isFieldVisible, pdfFiles, companyLogoFile, companyLogoPreview]);
 
   const validateStep = useCallback(
     (fieldNames = []) => {
@@ -493,14 +503,6 @@ const Landing = () => {
               ...prev,
               tipoAsistente: "Asistente",
             }));
-          } else {
-            const roleForced = getForcedRegistrationRole(eventData.config?.policies);
-            if (roleForced) {
-              setFormValues((prev) => ({
-                ...prev,
-                tipoAsistente: roleForced,
-              }));
-            }
           }
         }
       },
@@ -508,6 +510,14 @@ const Landing = () => {
     );
     return () => unsubscribe();
   }, [eventId]);
+
+  // Rol forzado (política global o parámetro de URL): se refleja en el formulario
+  useEffect(() => {
+    if (event?.eventType === "Networking" || !forcedRole) return;
+    setFormValues((prev) =>
+      prev.tipoAsistente === forcedRole ? prev : { ...prev, tipoAsistente: forcedRole },
+    );
+  }, [forcedRole, event?.eventType]);
 
   useEffect(() => {
     if (currentUser?.data) {
@@ -1505,8 +1515,8 @@ const Landing = () => {
 
   const renderDynamicFormFields = useCallback(() => {
     if (!Array.isArray(event?.config?.formFields)) return null;
-    return renderFieldsForNames(event.config.formFields.map((f) => f.name));
-  }, [event?.config?.formFields, renderFieldsForNames]);
+    return renderFieldsForNames(formFields.map((f) => f.name));
+  }, [event?.config?.formFields, formFields, renderFieldsForNames]);
 
   const eventTheme = useMemo(
     () => buildEventTheme(event.config?.primaryColor),

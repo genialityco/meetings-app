@@ -94,7 +94,8 @@ export interface AgendaSlot {
 export interface EventPolicies {
   roleMode: "buyer_seller" | "open";
   tableMode: "pool" | "fixed";
-  discoveryMode: "all" | "by_role";
+  /** "all" = todos ven a todos; "by_role" = solo roles opuestos; "sellers_see_all" = vendedores ven a todos, compradores solo a vendedores (ver canDiscoverAttendee) */
+  discoveryMode: "all" | "by_role" | "sellers_see_all";
   schedulingMode: "manual" | "requester_picks";
   /** Redirige vendedores a "Mis productos" en su primer ingreso y oculta ese tab a compradores */
   sellerRedirectToProducts?: boolean;
@@ -102,6 +103,12 @@ export interface EventPolicies {
   forceBuyerRoleOnRegistration?: boolean;
   /** Análoga a forceBuyerRoleOnRegistration pero fuerza "Vendedor". Mutuamente excluyente con la de comprador (el modal admin impide activar ambas; si llegaran ambas, prevalece comprador) */
   forceSellerRoleOnRegistration?: boolean;
+  /** Permite forzar el rol del registro con un parámetro de URL (p. ej. /event/:id?rol=vendedor). Prevalece sobre los forzados globales (ver getForcedRegistrationRole) */
+  roleUrlParamEnabled?: boolean;
+  /** Nombre del parámetro de URL (por defecto "rol") */
+  roleUrlParamName?: string;
+  /** Valor del parámetro que representa cada rol (por defecto "comprador"/"vendedor") */
+  roleUrlParamValues?: { comprador?: string; vendedor?: string } | null;
   /** Campos visibles en las tarjetas del dashboard (configuración independiente por vista) */
   cardFieldsConfig?: {
     attendeeCard: string[];
@@ -236,6 +243,9 @@ export const DEFAULT_POLICIES: EventPolicies = {
   sellerRedirectToProducts: false,
   forceBuyerRoleOnRegistration: false,
   forceSellerRoleOnRegistration: false,
+  roleUrlParamEnabled: false,
+  roleUrlParamName: "rol",
+  roleUrlParamValues: { comprador: "comprador", vendedor: "vendedor" },
   cardFieldsConfig: {
     attendeeCard: ["empresa", "cargo", "correo", "descripcion", "interesPrincipal", "necesidad"],
     companyCard: ["cargo", "correo", "interesPrincipal", "necesidad"],

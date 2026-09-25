@@ -13,13 +13,16 @@ import {
   Loader,
   ActionIcon,
   NumberInput,
+  TextInput,
+  CopyButton,
+  Tooltip,
 } from "@mantine/core";
-import { IconArrowUp, IconArrowDown } from "@tabler/icons-react";
+import { IconArrowUp, IconArrowDown, IconCopy, IconCheck } from "@tabler/icons-react";
 import { doc, setDoc, collection, getDocs, query, where, writeBatch } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { DEFAULT_POLICIES } from "../dashboard/types";
 import type { EventPolicies, Company } from "../dashboard/types";
-import { normalizeTipoAsistente } from "../../utils/attendeeRole";
+import { normalizeTipoAsistente, DEFAULT_ROLE_URL_PARAM_NAME } from "../../utils/attendeeRole";
 
 /** Etiquetas legibles de cada vista del dashboard (para configurar su orden) */
 const VIEW_LABELS: Record<string, string> = {
@@ -58,6 +61,10 @@ export default function EventPoliciesModal({
   const [sellerRedirectToProducts, setSellerRedirectToProducts] = useState(false);
   const [forceBuyerRoleOnRegistration, setForceBuyerRoleOnRegistration] = useState(false);
   const [forceSellerRoleOnRegistration, setForceSellerRoleOnRegistration] = useState(false);
+  const [roleUrlParamEnabled, setRoleUrlParamEnabled] = useState(false);
+  const [roleUrlParamName, setRoleUrlParamName] = useState(DEFAULT_ROLE_URL_PARAM_NAME);
+  const [roleUrlParamComprador, setRoleUrlParamComprador] = useState("comprador");
+  const [roleUrlParamVendedor, setRoleUrlParamVendedor] = useState("vendedor");
   const [uiViews, setUiViews] = useState(DEFAULT_POLICIES.uiViewsEnabled);
   const [viewsOrder, setViewsOrder] = useState<string[]>(DEFAULT_POLICIES.viewsOrder ?? ALL_VIEW_KEYS);
   const [attendeeCardFields, setAttendeeCardFields] = useState<string[]>(
@@ -110,6 +117,10 @@ export default function EventPoliciesModal({
     setForceSellerRoleOnRegistration(
       !p.forceBuyerRoleOnRegistration && (p.forceSellerRoleOnRegistration ?? false)
     );
+    setRoleUrlParamEnabled(p.roleUrlParamEnabled ?? false);
+    setRoleUrlParamName(p.roleUrlParamName || DEFAULT_ROLE_URL_PARAM_NAME);
+    setRoleUrlParamComprador(p.roleUrlParamValues?.comprador || "comprador");
+    setRoleUrlParamVendedor(p.roleUrlParamValues?.vendedor || "vendedor");
     setUiViews(p.uiViewsEnabled ?? DEFAULT_POLICIES.uiViewsEnabled);
     // Normalizar: respetar el orden guardado y anexar vistas nuevas al final
     const savedOrder: string[] = p.viewsOrder ?? DEFAULT_POLICIES.viewsOrder ?? ALL_VIEW_KEYS;
@@ -224,8 +235,20 @@ export default function EventPoliciesModal({
     });
   };
 
+  // Enlaces de registro por rol (política roleUrlParamEnabled)
+  const buildRoleRegistrationUrl = (value: string) => {
+    const param = roleUrlParamName.trim() || DEFAULT_ROLE_URL_PARAM_NAME;
+    return `${window.location.origin}/event/${event?.id}?${encodeURIComponent(param)}=${encodeURIComponent(value.trim())}`;
+  };
+  const roleUrlValuesClash =
+    roleUrlParamComprador.trim().toLowerCase() === roleUrlParamVendedor.trim().toLowerCase();
+
   const handleSave = async () => {
     if (!event?.id) return;
+    if (roleUrlParamEnabled && roleUrlValuesClash) {
+      setGlobalMessage("Los valores del parámetro de URL para comprador y vendedor deben ser distintos.");
+      return;
+    }
     setSaving(true);
     try {
       // Guardar políticas en evento
@@ -241,6 +264,12 @@ export default function EventPoliciesModal({
               sellerRedirectToProducts,
               forceBuyerRoleOnRegistration,
               forceSellerRoleOnRegistration,
+              roleUrlParamEnabled,
+              roleUrlParamName: roleUrlParamName.trim() || DEFAULT_ROLE_URL_PARAM_NAME,
+              roleUrlParamValues: {
+                comprador: roleUrlParamComprador.trim() || "comprador",
+                vendedor: roleUrlParamVendedor.trim() || "vendedor",
+              },
               cardFieldsConfig: {
                 attendeeCard: attendeeCardFields,
                 companyCard: companyCardFields,
@@ -378,6 +407,64 @@ export default function EventPoliciesModal({
           />
         )}
 
+        {roleMode === "buyer_seller" && (
+          <Paper p="md" withBorder>
+            <Switch
+              label="Forzar rol del registro con parámetro en la URL"
+              description="Permite compartir enlaces de registro que asignan el rol automáticamente y ocultan el selector 'Tipo de asistente'. Si el enlace trae un valor válido, prevalece sobre los forzados de arriba; sin parámetro (o con un valor no reconocido) aplica el comportamiento normal."
+              checked={roleUrlParamEnabled}
+              onChange={(e) => setRoleUrlParamEnabled(e.currentTarget.checked)}
+            />
+            {roleUrlParamEnabled && (
+              <Stack gap="xs" mt="sm">
+                <TextInput
+                  label="Nombre del parámetro"
+                  description="Ej: 'rol' genera enlaces como ?rol=vendedor"
+                  value={roleUrlParamName}
+                  onChange={(e) => setRoleUrlParamName(e.currentTarget.value.replace(/[^a-zA-Z0-9_-]/g, ""))}
+                  placeholder={DEFAULT_ROLE_URL_PARAM_NAME}
+                />
+                <Group grow>
+                  <TextInput
+                    label="Valor para Comprador"
+                    value={roleUrlParamComprador}
+                    onChange={(e) => setRoleUrlParamComprador(e.currentTarget.value)}
+                    placeholder="comprador"
+                  />
+                  <TextInput
+                    label="Valor para Vendedor"
+                    value={roleUrlParamVendedor}
+                    onChange={(e) => setRoleUrlParamVendedor(e.currentTarget.value)}
+                    placeholder="vendedor"
+                    error={roleUrlValuesClash ? "Debe ser distinto al de comprador" : undefined}
+                  />
+                </Group>
+                {[
+                  { label: "Enlace compradores", value: roleUrlParamComprador || "comprador" },
+                  { label: "Enlace vendedores", value: roleUrlParamVendedor || "vendedor" },
+                ].map(({ label, value }) => {
+                  const url = buildRoleRegistrationUrl(value);
+                  return (
+                    <Group key={label} gap="xs" wrap="nowrap">
+                      <Text size="xs" fw={600} style={{ minWidth: 120 }}>{label}:</Text>
+                      <Text size="xs" c="dimmed" style={{ wordBreak: "break-all", flex: 1 }}>{url}</Text>
+                      <CopyButton value={url}>
+                        {({ copied, copy }) => (
+                          <Tooltip label={copied ? "Copiado" : "Copiar"}>
+                            <ActionIcon size="sm" variant="subtle" color={copied ? "teal" : "gray"} onClick={copy}>
+                              {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+                            </ActionIcon>
+                          </Tooltip>
+                        )}
+                      </CopyButton>
+                    </Group>
+                  );
+                })}
+              </Stack>
+            )}
+          </Paper>
+        )}
+
         <Select
           label="Modo de mesas"
           description="Cómo se asignan las mesas al confirmar reuniones"
@@ -452,6 +539,7 @@ export default function EventPoliciesModal({
           data={[
             { value: "all", label: "Todos ven a todos" },
             { value: "by_role", label: "Solo roles opuestos (compradores ven vendedores y viceversa)" },
+            { value: "sellers_see_all", label: "Vendedores ven a todos; compradores solo ven vendedores" },
           ]}
           value={discoveryMode}
           onChange={(v) => setDiscoveryMode((v as EventPolicies["discoveryMode"]) ?? "all")}

@@ -40,6 +40,7 @@ import type { Product } from "./types";
 import type { CompanyRepresentative } from "./useCompanyData";
 import SlotModal from "./SlotModal";
 import { getTableLabel } from "./meetingSlotEngine";
+import { getFieldLabel } from "../../utils/attendeeFields";
 
 const FIELD_ICONS: Record<string, any> = {
   empresa: IconBuildingStore,
@@ -351,7 +352,9 @@ export default function CompanyLanding() {
                       const allowed = fieldDef.showWhen.value as string[];
                       if (!parentValue || !allowed.includes(parentValue)) return null;
                     }
-                    const label = fieldDef?.label || fieldName;
+                    const label = fieldDef
+                      ? getFieldLabel(fieldDef, representatives[0]?.tipoAsistente)
+                      : fieldName;
                     const Icon = FIELD_ICONS[fieldName] || IconFileDescription;
                     const value = formatFieldValue(fieldName, representatives[0]);
                     return (

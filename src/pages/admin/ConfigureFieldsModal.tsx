@@ -279,6 +279,8 @@ function SortableFieldItem({
   onUpdateShowWhen,
   onUpdateValidationType,
   onUpdateMaxLength,
+  onUpdateLabelByRole,
+  showRoleLabels,
 }: {
   field: any;
   allFields: any[];
@@ -289,6 +291,8 @@ function SortableFieldItem({
   onUpdateShowWhen: (name: string, showWhen: any) => void;
   onUpdateValidationType: (name: string, presetKey: string) => void;
   onUpdateMaxLength: (name: string, value: number | null) => void;
+  onUpdateLabelByRole: (name: string, labelByRole: { comprador?: string; vendedor?: string } | null) => void;
+  showRoleLabels: boolean;
 }) {
   const {
     attributes,
@@ -318,6 +322,7 @@ function SortableFieldItem({
   );
 
   const hasShowWhen = !!field.showWhen;
+  const hasLabelByRole = !!field.labelByRole;
   const parentField = hasShowWhen
     ? allFields.find((f: any) => f.name === field.showWhen?.field)
     : null;
@@ -426,6 +431,49 @@ function SortableFieldItem({
           <Text size="xs" c="red">
             (Obligatorio)
           </Text>
+        )}
+        {showRoleLabels && (
+          <Switch
+            size="xs"
+            label="Etiqueta por rol"
+            checked={hasLabelByRole}
+            onChange={(e) =>
+              onUpdateLabelByRole(
+                field.name,
+                e.currentTarget.checked ? { comprador: "", vendedor: "" } : null,
+              )
+            }
+          />
+        )}
+        {hasLabelByRole && (
+          <>
+            <TextInput
+              size="xs"
+              label="Etiqueta comprador"
+              value={field.labelByRole?.comprador || ""}
+              onChange={(e) =>
+                onUpdateLabelByRole(field.name, {
+                  ...field.labelByRole,
+                  comprador: e.currentTarget.value,
+                })
+              }
+              placeholder={field.label || "Igual a la etiqueta general"}
+              style={{ width: 170 }}
+            />
+            <TextInput
+              size="xs"
+              label="Etiqueta vendedor"
+              value={field.labelByRole?.vendedor || ""}
+              onChange={(e) =>
+                onUpdateLabelByRole(field.name, {
+                  ...field.labelByRole,
+                  vendedor: e.currentTarget.value,
+                })
+              }
+              placeholder={field.label || "Igual a la etiqueta general"}
+              style={{ width: 170 }}
+            />
+          </>
         )}
         {selectFields.length > 0 && (
           <Switch
@@ -700,6 +748,24 @@ export default function ConfigureFieldsModal({
     );
   };
 
+  // Etiqueta distinta según el rol del asistente (comprador/vendedor); null la elimina
+  const handleUpdateLabelByRole = (
+    fieldName: string,
+    labelByRole: { comprador?: string; vendedor?: string } | null,
+  ) => {
+    setFields((prev) =>
+      prev.map((f) => {
+        if (f.name !== fieldName) return f;
+        if (labelByRole === null) {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { labelByRole: _removed, ...rest } = f;
+          return rest;
+        }
+        return { ...f, labelByRole };
+      }),
+    );
+  };
+
   const handleDeleteCustomField = (fieldName: string) => {
     setFields(
       fields
@@ -813,6 +879,17 @@ export default function ConfigureFieldsModal({
         }
 
         const field: any = base && base.validation ? { ...f, validation } : { ...f };
+
+        // Etiquetas por rol: guardar solo las que tengan texto
+        if (field.labelByRole) {
+          const cleaned = Object.fromEntries(
+            Object.entries(field.labelByRole)
+              .map(([k, v]) => [k, String(v ?? "").trim()])
+              .filter(([, v]) => v),
+          );
+          if (Object.keys(cleaned).length) field.labelByRole = cleaned;
+          else delete field.labelByRole;
+        }
 
         // Normalizar opciones: value debe ser igual a label
         if (field.options && Array.isArray(field.options)) {
@@ -1169,6 +1246,13 @@ export default function ConfigureFieldsModal({
         <Text mb={6}>
           Orden global de campos (consentimiento siempre último):
         </Text>
+        {event?.eventType !== "Networking" && (
+          <Text size="xs" c="dimmed" mb={6}>
+            Activa "Etiqueta por rol" en un campo para mostrar un texto distinto a
+            compradores y vendedores (en el registro y en el dashboard). Si dejas
+            una vacía se usa la etiqueta general.
+          </Text>
+        )}
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -1195,6 +1279,8 @@ export default function ConfigureFieldsModal({
                     onUpdateShowWhen={handleUpdateShowWhen}
                     onUpdateValidationType={handleUpdateValidationType}
                     onUpdateMaxLength={handleUpdateMaxLength}
+                    onUpdateLabelByRole={handleUpdateLabelByRole}
+                    showRoleLabels={event?.eventType !== "Networking"}
                   />
                   );
                 })}

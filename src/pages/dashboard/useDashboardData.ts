@@ -16,7 +16,7 @@ import {
 import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
 import { Assistant, Meeting, Notification, Company, EventPolicies, DEFAULT_POLICIES, MeetingContext } from "./types";
-import { normalizeTipoAsistente, isVendedor } from "../../utils/attendeeRole";
+import { normalizeTipoAsistente, isVendedor, canDiscoverAttendee } from "../../utils/attendeeRole";
 import { getEventDayKeys } from "../../utils/eventDays";
 import { showNotification, notifications as mantineNotifications } from "@mantine/notifications";
 import { serverTimestamp } from "firebase/firestore";
@@ -531,15 +531,17 @@ export function useDashboardData(eventId?: string) {
       );
     }
 
-    // Filtro por discoveryMode: "by_role" muestra solo roles opuestos, "all" muestra todos.
+    // Filtro por discoveryMode (reglas en canDiscoverAttendee): "by_role" muestra solo
+    // roles opuestos, "sellers_see_all" deja a vendedores ver a todos y a compradores
+    // solo vendedores, "all" muestra todos.
     // tipoAsistente se lee directo del usuario: no depende de que el campo esté en
     // formFields (con el rol forzado por política el campo no se agrega al formulario, y
     // antes eso hacía que el filtro se saltara por completo).
-    if (policies.discoveryMode === "by_role") {
+    if (policies.discoveryMode && policies.discoveryMode !== "all") {
       const myTipo = normalizeTipoAsistente(currentUser?.data?.tipoAsistente);
       if (myTipo) {
-        filtered = filtered.filter(
-          (a) => normalizeTipoAsistente(a.tipoAsistente) !== myTipo,
+        filtered = filtered.filter((a) =>
+          canDiscoverAttendee(policies.discoveryMode, myTipo, a.tipoAsistente),
         );
       }
     }
