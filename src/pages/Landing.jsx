@@ -229,6 +229,8 @@ const Landing = () => {
   const [profilePicPreview, setProfilePicPreview] = useState(null);
   const [saving, setSaving] = useState(false);
   const [formErrors, setFormErrors] = useState({});
+  // Mensaje mostrado debajo del botón de registro cuando no se pudo enviar
+  const [submitError, setSubmitError] = useState("");
 
   // Stepper state
   const [activeStep, setActiveStep] = useState(0);
@@ -334,6 +336,26 @@ const Landing = () => {
     [getValueForField],
   );
 
+  // Resume en un solo mensaje qué campos impidieron el registro
+  const buildMissingFieldsMessage = useCallback(
+    (errors) => {
+      const names = Object.keys(errors).filter((n) => errors[n]);
+      if (names.length === 0) return "";
+      const labels = names
+        .filter((n) => n !== CONSENTIMIENTO_FIELD_NAME)
+        .map((n) => fieldsByName.get(n)?.label || n);
+      const parts = [];
+      if (labels.length) {
+        parts.push(`Revisa los campos marcados en rojo: ${labels.join(", ")}.`);
+      }
+      if (errors[CONSENTIMIENTO_FIELD_NAME]) {
+        parts.push(errors[CONSENTIMIENTO_FIELD_NAME]);
+      }
+      return parts.join(" ");
+    },
+    [fieldsByName],
+  );
+
   const validateForm = useCallback(() => {
     const errors = {};
     (event?.config?.formFields || []).forEach((field) => {
@@ -355,6 +377,14 @@ const Landing = () => {
         value = "selected";
       }
 
+      // El logo vive fuera de formValues (companyLogoFile), o ya existe en la empresa (preview)
+      if (
+        (field.name === "company_logo" || field.type === "file") &&
+        (companyLogoFile || companyLogoPreview)
+      ) {
+        value = "selected";
+      }
+
       const error = validateField(field, value);
       if (error) errors[field.name] = error;
     });
@@ -368,8 +398,8 @@ const Landing = () => {
     console.log("VALORES DEL FORMULARIO:", formValues);
 
     setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  }, [event?.config?.formFields, event?.eventType, forcedRole, formValues, getValueForField, isFieldVisible, pdfFiles]);
+    return errors;
+  }, [event?.config?.formFields, event?.eventType, forcedRole, formValues, getValueForField, isFieldVisible, pdfFiles, companyLogoFile, companyLogoPreview]);
 
   const validateStep = useCallback(
     (fieldNames = []) => {
@@ -395,6 +425,13 @@ const Landing = () => {
           value = "selected";
         }
 
+        if (
+          (def.name === "company_logo" || def.type === "file") &&
+          (companyLogoFile || companyLogoPreview)
+        ) {
+          value = "selected";
+        }
+
         const err = validateField(def, value);
         if (err) errors[def.name] = err;
       });
@@ -406,9 +443,14 @@ const Landing = () => {
       }
 
       setFormErrors((prev) => ({ ...prev, ...errors }));
-      return Object.keys(errors).length === 0;
+      const errorCount = Object.keys(errors).length;
+      setSubmitError(errorCount ? buildMissingFieldsMessage(errors) : "");
+      return errorCount === 0;
     },
     [
+      buildMissingFieldsMessage,
+      companyLogoFile,
+      companyLogoPreview,
       fieldsByName,
       getValueForField,
       isFieldVisible,
@@ -646,8 +688,20 @@ const Landing = () => {
 
   const handleSubmit = useCallback(async () => {
     console.log("Iniciando handleSubmit...");
-    if (!validateForm()) {
+    setSubmitError("");
+    const validationErrors = validateForm();
+    if (Object.keys(validationErrors).length > 0) {
       console.warn("Validación falló. Abortando submit.");
+      setSubmitError(buildMissingFieldsMessage(validationErrors));
+      // En modo stepper, llevar al usuario al primer paso con un campo con error
+      if (steps) {
+        const firstErrorStep = steps.findIndex((st) =>
+          (st.fields || []).some((f) => validationErrors[f]),
+        );
+        if (firstErrorStep >= 0 && firstErrorStep !== activeStep) {
+          setActiveStep(firstErrorStep);
+        }
+      }
       return;
     }
     console.log("Validación exitosa. Guardando...");
@@ -715,7 +769,13 @@ const Landing = () => {
           });
 
           if (duplicateFound) {
-            alert("⚠️ Este correo ya está registrado para este evento.");
+            setSubmitError(
+              "Este correo ya está registrado para este evento. Ingresa desde la pestaña de ingreso o usa otro correo.",
+            );
+            setFormErrors((prev) => ({
+              ...prev,
+              correo: "Este correo ya está registrado para este evento.",
+            }));
             setSaving(false);
             return;
           }
@@ -936,10 +996,16 @@ const Landing = () => {
       navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
     } catch (error) {
       console.error("Error en el guardado:", error);
+      setSubmitError(
+        "No pudimos completar tu registro por un error de conexión o del servidor. Intenta de nuevo en unos segundos.",
+      );
     } finally {
       setSaving(false);
     }
   }, [
+    buildMissingFieldsMessage,
+    steps,
+    activeStep,
     currentUser,
     formValues,
     navigate,
@@ -977,6 +1043,7 @@ const Landing = () => {
                 }
                 accept="image/png,image/jpeg"
                 inputProps={{ capture: "user" }}
+                required={field.required ?? true}
                 value={null}
                 onChange={(file) => {
                   setPhotoUploadError("");
@@ -1238,7 +1305,7 @@ const Landing = () => {
           return (
             <Box key={field.name}>
               <FileInput
-                label={field.label || "Logo de empresa (opcional)"}
+                label={field.label || "Logo de empresa"}
                 placeholder={field.placeholder || "Subir logo"}
                 accept="image/png,image/jpeg,image/webp"
                 value={companyLogoFile}
@@ -1247,7 +1314,11 @@ const Landing = () => {
                   setCompanyLogoPreview(
                     file ? URL.createObjectURL(file) : null,
                   );
+                  setFormErrors((prev) => ({ ...prev, [field.name]: null }));
                 }}
+                clearable
+                required={field.required ?? true}
+                error={fieldError}
                 radius="md"
               />
 
@@ -1281,10 +1352,11 @@ const Landing = () => {
                 placeholder={field.placeholder || "Selecciona un PDF"}
                 accept="application/pdf"
                 value={currentFile}
-                onChange={(file) =>
-                  setPdfFiles((prev) => ({ ...prev, [field.name]: file }))
-                }
-                required={field.required}
+                onChange={(file) => {
+                  setPdfFiles((prev) => ({ ...prev, [field.name]: file }));
+                  setFormErrors((prev) => ({ ...prev, [field.name]: null }));
+                }}
+                required={field.required ?? true}
                 error={fieldError}
                 radius="md"
               />
@@ -1493,6 +1565,13 @@ const Landing = () => {
       </Container>
     );
   }
+
+  // Error general justo debajo del botón de registro
+  const submitErrorAlert = submitError ? (
+    <Alert color="red" variant="light" radius="md" mt="xs">
+      {submitError}
+    </Alert>
+  ) : null;
 
   // ========= estilos reutilizables tabs =========
   const tabBaseStyle = (active) => ({
@@ -1884,6 +1963,7 @@ const Landing = () => {
                                   </Button>
                                 )}
                               </Group>
+                              {submitErrorAlert}
                             </>
                           ) : (
                             <>
@@ -1934,6 +2014,7 @@ const Landing = () => {
                                     : "Registrarme"}
                                 </Button>
                               </Group>
+                              {submitErrorAlert}
                             </>
                           )}
                         </Stack>
@@ -2380,6 +2461,7 @@ const Landing = () => {
                                       </Button>
                                     )}
                                   </Group>
+                                  {submitErrorAlert}
                                 </>
                               ) : (
                                 <>
@@ -2438,6 +2520,7 @@ const Landing = () => {
                                         : "Registrarme"}
                                     </Button>
                                   </Group>
+                                  {submitErrorAlert}
                                 </>
                               )}
                             </Stack>
