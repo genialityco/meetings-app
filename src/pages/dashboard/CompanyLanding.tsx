@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Container,
@@ -32,6 +32,7 @@ import {
   IconBulb,
   IconId,
   IconUsers,
+  IconPencil,
 } from "@tabler/icons-react";
 import { useCompanyData } from "./useCompanyData";
 import { DEFAULT_POLICIES } from "./types";
@@ -101,7 +102,30 @@ export default function CompanyLanding() {
 
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [requestMessage, setRequestMessage] = useState("");
+
+  // Clic en las etiquetas "N representantes" / "N productos": scroll a la sección
+  // y parpadeo breve (3 veces) de sus tarjetas para resaltarlas.
+  const repsSectionRef = useRef<HTMLDivElement>(null);
+  const productsSectionRef = useRef<HTMLDivElement>(null);
+  const [flashSection, setFlashSection] = useState<"reps" | "products" | null>(null);
+  const flashTimers = useRef<number[]>([]);
+  useEffect(() => () => flashTimers.current.forEach(clearTimeout), []);
+
+  const goToSection = (section: "reps" | "products") => {
+    const el = (section === "reps" ? repsSectionRef : productsSectionRef).current;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    flashTimers.current.forEach(clearTimeout);
+    setFlashSection(null);
+    // Arranca el parpadeo cuando el scroll ya casi llegó, y lo limpia al terminar (3 × 0.6s)
+    flashTimers.current = [
+      window.setTimeout(() => setFlashSection(section), 400),
+      window.setTimeout(() => setFlashSection(null), 400 + 1900),
+    ];
+  };
   const myUid = currentUser?.uid;
+  // El asistente está viendo la página de su propia empresa
+  const isMyCompany = !!companyNit && currentUser?.data?.companyId === companyNit;
 
   const allowImageUpload = eventConfig?.policies?.allowProductImageUpload !== false;
   // Cualquier miembro de la empresa cuenta como "asesor", sin importar su tipoAsistente.
@@ -216,6 +240,17 @@ export default function CompanyLanding() {
 
   return (
     <MantineProvider theme={eventTheme}>
+      <style>
+        {`
+          @keyframes company-section-flash {
+            0%, 100% { box-shadow: 0 0 0 0 transparent; background-color: var(--mantine-color-body); }
+            50% { box-shadow: 0 0 0 3px var(--mantine-primary-color-filled); background-color: var(--mantine-primary-color-light); }
+          }
+          .company-section-flash {
+            animation: company-section-flash 0.6s ease-in-out 3;
+          }
+        `}
+      </style>
       <Container size="lg" py="md">
         <Stack gap="lg">
           {/* Back button + event branding */}
@@ -258,17 +293,40 @@ export default function CompanyLanding() {
               )}
               <Stack gap={4} style={{ minWidth: 0 }}>
                 <Title order={3}>{company.razonSocial}</Title>
+                {isMyCompany && (
+                  <Button
+                    variant="light"
+                    size="compact-sm"
+                    leftSection={<IconPencil size={14} />}
+                    onClick={() => navigate(`/dashboard/${eventId}/my-company?editProfile=1`)}
+                    style={{ alignSelf: "flex-start" }}
+                  >
+                    Editar mi empresa
+                  </Button>
+                )}
                 <Text size="sm" c="dimmed">
                   NIT: {company.nitNorm}
                 </Text>
                 <Group gap="sm" mt="xs">
-                  <Badge variant="light" size="sm">
+                  <Badge
+                    variant="light"
+                    size="sm"
+                    role={representatives.length > 0 ? "button" : undefined}
+                    onClick={representatives.length > 0 ? () => goToSection("reps") : undefined}
+                    style={{ cursor: representatives.length > 0 ? "pointer" : undefined }}
+                  >
                     {representatives.length}{" "}
                     {representatives.length === 1
                       ? "representante"
                       : "representantes"}
                   </Badge>
-                  <Badge variant="light" size="sm">
+                  <Badge
+                    variant="light"
+                    size="sm"
+                    role={products.length > 0 ? "button" : undefined}
+                    onClick={products.length > 0 ? () => goToSection("products") : undefined}
+                    style={{ cursor: products.length > 0 ? "pointer" : undefined }}
+                  >
                     {products.length}{" "}
                     {products.length === 1 ? "producto" : "productos"}
                   </Badge>
@@ -330,20 +388,28 @@ export default function CompanyLanding() {
           {/* Representatives section */}
           {representatives.length > 0 && (
             <>
-              <Divider
-                label={
-                  <Group gap={6}>
-                    <IconBriefcase size={16} />
-                    <Text fw={600}>Representantes</Text>
-                  </Group>
-                }
-              />
+              <Box ref={repsSectionRef} style={{ scrollMarginTop: 16 }}>
+                <Divider
+                  label={
+                    <Group gap={6}>
+                      <IconBriefcase size={16} />
+                      <Text fw={600}>Representantes</Text>
+                    </Group>
+                  }
+                />
+              </Box>
               <Grid gutter="sm">
                 {representatives.map((rep) => {
                   const isSelf = rep.id === myUid;
                   return (
                     <Grid.Col key={rep.id} span={{ base: 12, sm: 6 }}>
-                      <Card withBorder radius="md" p="sm" style={{ height: "100%" }}>
+                      <Card
+                        withBorder
+                        radius="md"
+                        p="sm"
+                        style={{ height: "100%" }}
+                        className={flashSection === "reps" ? "company-section-flash" : undefined}
+                      >
                         <Group gap="sm" wrap="nowrap" align="flex-start">
                           <Avatar
                             src={rep.photoURL}
@@ -440,14 +506,16 @@ export default function CompanyLanding() {
           {/* Products section */}
           {products.length > 0 && (
             <>
-              <Divider
-                label={
-                  <Group gap={6}>
-                    <IconBuildingStore size={16} />
-                    <Text fw={600}>Productos</Text>
-                  </Group>
-                }
-              />
+              <Box ref={productsSectionRef} style={{ scrollMarginTop: 16 }}>
+                <Divider
+                  label={
+                    <Group gap={6}>
+                      <IconBuildingStore size={16} />
+                      <Text fw={600}>Productos</Text>
+                    </Group>
+                  }
+                />
+              </Box>
               <Grid gutter="sm">
                 {products.map((p) => {
                   const isMine = !!myUid && p.ownerUserId === myUid;
@@ -460,6 +528,7 @@ export default function CompanyLanding() {
                         padding="sm"
                         shadow="sm"
                         style={{ height: "100%", overflow: "hidden", display: "flex", flexDirection: "column" }}
+                        className={flashSection === "products" ? "company-section-flash" : undefined}
                       >
                         {allowImageUpload && p.imageUrl ? (
                           <>

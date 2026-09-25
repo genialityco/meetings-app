@@ -101,26 +101,23 @@ export function useCompanyData(
     })();
   }, [eventId]);
 
-  // 2. Company doc
+  // 2. Company doc (real-time: refleja al instante lo editado en "Editar perfil")
   useEffect(() => {
     if (!eventId || !companyNit) {
       setLoading(false);
       return;
     }
-    (async () => {
-      try {
-        const snap = await getDoc(
-          doc(db, "events", eventId, "companies", companyNit),
-        );
-        if (snap.exists()) {
-          setCompany({ nitNorm: snap.id, ...snap.data() } as Company);
-        }
-      } catch (error) {
-        console.error("Error fetching company doc:", error);
-      } finally {
+    return onSnapshot(
+      doc(db, "events", eventId, "companies", companyNit),
+      (snap) => {
+        setCompany(snap.exists() ? ({ nitNorm: snap.id, ...snap.data() } as Company) : null);
         setLoading(false);
-      }
-    })();
+      },
+      (error) => {
+        console.error("Error fetching company doc:", error);
+        setLoading(false);
+      },
+    );
   }, [eventId, companyNit]);
 
   // 3. Products (real-time, filtered client-side)

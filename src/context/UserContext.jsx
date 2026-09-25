@@ -45,8 +45,7 @@ export const UserProvider = ({ children }) => {
         });
       },
       (error) => {
-        // permission-denied ocurre en sesiones manuales sin Firebase Auth
-        // En ese caso simplemente no actualizamos en tiempo real (los datos del localStorage siguen vigentes)
+        // Si las reglas llegaran a negar la lectura, seguimos con los datos del localStorage
         if (error.code === "permission-denied") {
           console.warn("onSnapshot users: sin permisos (sesión manual sin auth). Usando datos locales.");
         } else {
@@ -59,9 +58,18 @@ export const UserProvider = ({ children }) => {
   useEffect(() => {
     if (manualLogin) {
       setUserLoading(false);
-      // En sesiones manuales no hay Firebase Auth, así que no podemos usar onSnapshot
-      // (las reglas de Firestore requieren auth). Los datos se mantienen desde localStorage.
-      return;
+      // Sesión manual restaurada desde localStorage (recarga / pestaña nueva): igual
+      // escuchamos el doc del usuario (users es de lectura pública en las reglas), para
+      // que los cambios de perfil/empresa hechos en otra pestaña, dispositivo o por un
+      // admin se reflejen sin recargar.
+      const storedUid = JSON.parse(localStorage.getItem("currentUser") || "null")?.uid;
+      if (storedUid) subscribeToUserDoc(storedUid);
+      return () => {
+        if (userSnapshotUnsub.current) {
+          userSnapshotUnsub.current();
+          userSnapshotUnsub.current = null;
+        }
+      };
     }
 
     let pendingAnonTimer = null;
@@ -173,12 +181,13 @@ export const UserProvider = ({ children }) => {
       Object.entries(data).filter(([, v]) => v !== undefined)
     );
     await setDoc(doc(db, "users", uid), cleanData, { merge: true });
-    const updatedUser = {
-      ...currentUser,
-      data: { ...currentUser.data, ...cleanData },
-    };
-    setCurrentUser(updatedUser);
-    localStorage.setItem("currentUser", JSON.stringify(updatedUser));
+    // Actualización funcional: no pisar cambios que ya llegaron por el onSnapshot
+    setCurrentUser((prev) => {
+      if (!prev || prev.uid !== uid) return prev;
+      const updatedUser = { ...prev, data: { ...prev.data, ...cleanData } };
+      localStorage.setItem("currentUser", JSON.stringify(updatedUser));
+      return updatedUser;
+    });
   };
 
   const logout = async () => {

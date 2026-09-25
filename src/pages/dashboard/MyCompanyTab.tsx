@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import {
   Group,
   Stack,
@@ -33,6 +33,7 @@ import {
   IconQrcode,
   IconScan,
   IconDownload,
+  IconPencil,
 } from "@tabler/icons-react";
 import { db } from "../../firebase/firebaseConfig";
 import { useCompanyData } from "./useCompanyData";
@@ -62,6 +63,17 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
   } = useCompanyData(eventId, companyNit, { subscribeToVisits: true });
 
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  // Abre el modal "Editar perfil" de DashboardHeader (formulario de registro, incluye logo de la empresa)
+  const [, setSearchParams] = useSearchParams();
+  const openProfileEditor = () =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("editProfile", "1");
+        return next;
+      },
+      { replace: true },
+    );
   const [exportingVisits, setExportingVisits] = useState(false);
   const myUid = currentUser?.uid;
 
@@ -255,8 +267,19 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
               {(company.razonSocial || "E")[0]?.toUpperCase()}
             </Avatar>
           )}
-          <Stack gap={4} style={{ minWidth: 0 }}>
-            <Title order={3}>{company.razonSocial}</Title>
+          <Stack gap={4} style={{ minWidth: 0, flex: 1 }}>
+            <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
+              <Title order={3}>{company.razonSocial}</Title>
+              <Button
+                variant="light"
+                size="compact-sm"
+                leftSection={<IconPencil size={14} />}
+                onClick={openProfileEditor}
+                style={{ flexShrink: 0 }}
+              >
+                Editar empresa
+              </Button>
+            </Group>
             <Text size="sm" c="dimmed">
               NIT: {company.nitNorm}
               {company.fixedTable && (

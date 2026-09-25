@@ -2,6 +2,7 @@
 import { useEffect, useState, useContext, useCallback, useMemo } from "react";
 import {
   TextInput,
+  Textarea,
   Button,
   Paper,
   Title,
@@ -278,6 +279,8 @@ const Landing = () => {
       }),
     ],
     content: "",
+    // Alto mínimo ~3 líneas para que se note que caben varias líneas de texto
+    editorProps: { attributes: { style: "min-height: 72px" } },
     onUpdate: ({ editor }) => {
       const htmlContent = editor.getHTML();
       const plainText = stripHtmlTags(htmlContent);
@@ -1454,9 +1457,15 @@ const Landing = () => {
           );
         }
 
+        // Campos de texto tipo "descripción" se muestran como área de texto
+        // (2+ líneas visibles) para invitar a escribir más detalle
+        const isLongText = /descrip/i.test(`${field.name} ${field.label || ""}`);
+        const TextComponent = isLongText ? Textarea : TextInput;
+
         return (
-          <TextInput
+          <TextComponent
             key={field.name}
+            {...(isLongText ? { autosize: true, minRows: 2, maxRows: 6 } : {})}
             label={field.label}
             placeholder={field.placeholder || field.label}
             value={getValueForField(field.name)}

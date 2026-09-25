@@ -36,6 +36,7 @@ import {
   IconBulb,
   IconUsers,
   IconBuildingStore,
+  IconBuilding,
   IconFileDescription,
   IconPhone,
   IconSparkles,
@@ -289,7 +290,7 @@ export default function CompaniesView({
         // dirigida a la empresa, sin importar su tipoAsistente (ver getCompanyAdvisors).
         hasAdvisor: asistentes.length > 0,
         // Empresa del propio usuario: se fija primero en la lista para que la encuentre
-        // sin buscarla (sin ninguna marca especial en la tarjeta).
+        // sin buscarla, con la etiqueta verde "Mi empresa".
         mine: asistentes.some((a) => a.id === myUid),
         // Empresas con al menos un representante que ya hizo check-in (cualquier
         // día) se muestran primero, para priorizar a quienes ya están en el evento.
@@ -640,7 +641,7 @@ export default function CompaniesView({
 
       <Grid gutter="sm">
         {filtered.length > 0 ? (
-          filtered.map(({ nit, nitLookup, empresa, logoUrl, fixedTable, pais, asistentes, hasAdvisor, _similarity, _isSemantic }: any) => {
+          filtered.map(({ nit, nitLookup, empresa, logoUrl, fixedTable, pais, asistentes, hasAdvisor, mine, _similarity, _isSemantic }: any) => {
             const companyKey = nit; // clave estable
             const selectedId = selectedAssistantPerCompany[companyKey];
 
@@ -771,6 +772,17 @@ export default function CompaniesView({
                     </Stack>
 
                     <Stack gap={6} align="flex-end" style={{ flex: "1 1 50%" }}>
+                      {mine && (
+                        <Badge
+                          variant="filled"
+                          color="green"
+                          radius="xl"
+                          leftSection={<IconBuilding size={12} />}
+                        >
+                          Mi empresa
+                        </Badge>
+                      )}
+
                       <Badge
                         variant="light"
                         color={theme.primaryColor}

@@ -1,5 +1,5 @@
 import { useState, useContext, useEffect, useCallback } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   Group,
   Avatar,
@@ -35,6 +35,7 @@ import QrScannerModal from "./QrScannerModal";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { doc, setDoc, getDoc } from "firebase/firestore";
 import { storage, db } from "../firebase/firebaseConfig";
+import { uploadCompanyLogo } from "../utils/companyStorage";
 import { showNotification } from "@mantine/notifications";
 import NotificationsMenu from "../pages/dashboard/NotificationsMenu";
 
@@ -60,8 +61,12 @@ const normalizeNit = (v = "") => String(v || "").replace(/\D/g, "");
 
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
 
-// Campos que no deben poder editarse desde el perfil del asistente
-const HIDDEN_EDIT_FIELDS = new Set(["tipoAsistente"]);
+// Campos del registro que no deben poder editarse desde el perfil del asistente
+// (bloqueados = ni se muestran). company_nit: cambiarlo movería al asistente a otra empresa;
+// correo: es el dato con el que el asistente ingresa al evento.
+const HIDDEN_EDIT_FIELDS = new Set(["tipoAsistente", "company_nit", "correo", "email"]);
+
+const isLogoField = (f: any) => f?.name === "company_logo" || f?.type === "file";
 
 const DashboardHeader = ({
   eventImage,
@@ -94,6 +99,23 @@ const DashboardHeader = ({
     "idle" | "ready" | "uploading" | "done" | "error"
   >("idle");
   const [photoUploadError, setPhotoUploadError] = useState("");
+
+  // Logo de la empresa (vive en events/{eventId}/companies/{nit}, no en el usuario)
+  const [companyLogoFile, setCompanyLogoFile] = useState<File | null>(null);
+  const [companyLogoUrl, setCompanyLogoUrl] = useState<string | null>(null);
+  const [companyLogoPreview, setCompanyLogoPreview] = useState<string | null>(null);
+
+  // ?editProfile=1 abre este modal (p. ej. desde "Editar empresa" en Mi empresa o
+  // desde la página pública de la propia empresa)
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get("editProfile") === "1" && currentUser?.data) {
+      setEditModalOpened(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete("editProfile");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams, currentUser?.data]);
 
   // Escáner in-app del QR fijo del stand (evita depender de la cámara nativa,
   // que puede abrir un navegador sin la sesión del asistente)
@@ -146,7 +168,9 @@ const DashboardHeader = ({
     }
   }, [uid, currentUser?.data?.attendeeId, policies?.attendeeIdEnabled]);
 
-  // Sync edit data when modal opens
+  // Cargar los datos solo al ABRIR el modal: currentUser se actualiza en tiempo
+  // real (onSnapshot) y re-sincronizar con el modal abierto borraría lo que el
+  // asistente está escribiendo.
   useEffect(() => {
     if (editModalOpened && currentUser?.data) {
       setEditData({ ...currentUser.data });
@@ -154,7 +178,28 @@ const DashboardHeader = ({
       setPhotoUploadStatus(currentUser.data.photoURL ? "done" : "idle");
       setPhotoUploadError("");
     }
-  }, [editModalOpened, currentUser]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editModalOpened]);
+
+  // Cargar el logo actual de la empresa al abrir el modal
+  useEffect(() => {
+    if (!editModalOpened) return;
+    setCompanyLogoFile(null);
+    const evId = currentUser?.data?.eventId;
+    const nit = currentUser?.data?.companyId;
+    if (!evId || !nit) {
+      setCompanyLogoUrl(null);
+      setCompanyLogoPreview(null);
+      return;
+    }
+    getDoc(doc(db, "events", evId, "companies", nit))
+      .then((snap) => {
+        const url = snap.exists() ? snap.data()?.logoUrl || null : null;
+        setCompanyLogoUrl(url);
+        setCompanyLogoPreview(url);
+      })
+      .catch(() => {});
+  }, [editModalOpened, currentUser?.data?.eventId, currentUser?.data?.companyId]);
 
   const handleChange = useCallback((fieldName: string, value: any) => {
     if (fieldName.startsWith("contacto.")) {
@@ -267,7 +312,9 @@ const DashboardHeader = ({
         const companyStep = steps.find((s: any) =>
           (s.fields || []).includes("company_nit")
         );
-        const companyFieldNames: string[] = companyStep?.fields || ["company_nit", "company_razonSocial"];
+        // Mismo criterio que el registro (Landing.jsx): sin paso de empresa se
+        // sincronizan razón social y descripción.
+        const companyFieldNames: string[] = companyStep?.fields || ["company_nit", "company_razonSocial", "descripcion"];
 
         const companyDoc: any = { nitNorm, updatedAt: new Date() };
         for (const fieldName of companyFieldNames) {
@@ -281,6 +328,19 @@ const DashboardHeader = ({
             } else {
               companyDoc[fieldName] = val;
             }
+          }
+        }
+
+        if (companyLogoFile) {
+          try {
+            companyDoc.logoUrl = await uploadCompanyLogo(eventId, nitNorm, companyLogoFile);
+          } catch (e) {
+            console.error("Error subiendo logo de empresa:", e);
+            showNotification({
+              title: "Logo no actualizado",
+              message: "No se pudo subir el logo de la empresa. El resto de tus datos sí se guardó.",
+              color: "orange",
+            });
           }
         }
 
@@ -336,7 +396,7 @@ const DashboardHeader = ({
     } finally {
       setSaving(false);
     }
-  }, [uid, editData, updateUser, currentUser, eventConfig]);
+  }, [uid, editData, updateUser, currentUser, eventConfig, companyLogoFile]);
 
 
   const handleLogout = useCallback(() => {
@@ -470,9 +530,36 @@ const DashboardHeader = ({
         );
       }
 
-      // company_logo / file type — skip in edit modal (logo se edita en registro)
-      if (field.name === "company_logo" || field.type === "file") {
-        return null;
+      // Logo de la empresa
+      if (isLogoField(field)) {
+        return (
+          <Box key={field.name}>
+            <FileInput
+              label={field.label || "Logo de empresa"}
+              placeholder={companyLogoPreview ? "Cambiar logo" : "Subir logo"}
+              accept="image/png,image/jpeg,image/webp"
+              value={companyLogoFile}
+              clearable
+              onChange={(file: File | null) => {
+                setCompanyLogoFile(file);
+                setCompanyLogoPreview(file ? URL.createObjectURL(file) : companyLogoUrl);
+              }}
+            />
+            {companyLogoPreview && (
+              <Image
+                src={companyLogoPreview}
+                alt="Logo de la empresa"
+                w={110}
+                h={110}
+                fit="contain"
+                radius="md"
+                mt={8}
+                p={6}
+                style={{ border: "1px solid var(--mantine-color-gray-3)" }}
+              />
+            )}
+          </Box>
+        );
       }
 
       // company_nit — normalize on change
@@ -498,7 +585,7 @@ const DashboardHeader = ({
         />
       );
     },
-    [getFieldValue, handleChange, profilePicPreview, photoUploadStatus, photoUploadError, data],
+    [getFieldValue, handleChange, profilePicPreview, photoUploadStatus, photoUploadError, data, companyLogoFile, companyLogoPreview, companyLogoUrl],
   );
 
   const checkedIn = isCheckedInOnDay(currentUser?.data, resolveCheckInDay(eventConfig));
@@ -719,7 +806,10 @@ const DashboardHeader = ({
                 const companyStepTitle = companyStep?.title || "Datos de empresa";
 
                 const companyFields = formFields.filter(
-                  (f: any) => companyFieldNames.has(f.name) && !photoFields.includes(f)
+                  (f: any) =>
+                    companyFieldNames.has(f.name) &&
+                    !photoFields.includes(f) &&
+                    !HIDDEN_EDIT_FIELDS.has(f.name)
                 );
 
                 // El resto son campos personales/networking (agrupados por step si hay steps)
@@ -820,6 +910,8 @@ const DashboardHeader = ({
                                 span={
                                   field.type === "textarea" ||
                                   field.type === "richtext" ||
+                                  field.name === "descripcion" ||
+                                  isLogoField(field) ||
                                   field.type === "multiselect" ||
                                   field.type === "eventDays"
                                     ? 12
@@ -849,14 +941,7 @@ const DashboardHeader = ({
                       onChange={(e) => handleChange("nombre", e.target.value)}
                     />
                   </Grid.Col>
-                  <Grid.Col span={6}>
-                    <TextInput
-                      label="Correo"
-                      value={editData.correo || ""}
-                      onChange={(e) => handleChange("correo", e.target.value)}
-                    />
-                  </Grid.Col>
-                  <Grid.Col span={6}>
+                  <Grid.Col span={12}>
                     <TextInput
                       label="Teléfono"
                       value={editData.telefono || ""}
