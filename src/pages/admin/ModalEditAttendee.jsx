@@ -11,7 +11,7 @@ import {
   isPhoneField,
 } from "../../utils/phoneUtils";
 
-const normalizeNit = (v = "") => String(v || "").replace(/\D/g, "");
+const normalizeNit = (v = "") => String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 
 // Definiciones por defecto para el identificador de empresa y la razón
 // social, usadas cuando el evento no los tiene configurados explícitamente
@@ -192,7 +192,8 @@ const ModalEditAttendee = ({
     }
 
     // Identificador de empresa (NIT/NIF/etc, según cómo lo haya etiquetado
-    // el evento): normaliza a solo números y dispara el autocompletado.
+    // el evento): normaliza a alfanumérico en mayúsculas (sin guiones u otros
+    // símbolos) y dispara el autocompletado.
     // Solo al crear (agrupado en la sección Empresa) — al editar un asistente
     // existente se deja como campo de texto plano, para no sobreescribir sus
     // datos de empresa ya guardados con los de otra empresa por accidente.
@@ -201,7 +202,7 @@ const ModalEditAttendee = ({
         <TextInput
           key={f.name}
           label={f.label}
-          placeholder={f.placeholder || "Solo números"}
+          placeholder={f.placeholder || "Letras y números, sin guion"}
           value={values.company_nit || ""}
           onChange={(e) => handleChange("company_nit", normalizeNit(e.target.value))}
           onBlur={handleCompanyNitBlur}

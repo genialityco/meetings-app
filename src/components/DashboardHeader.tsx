@@ -58,7 +58,7 @@ const uploadProfilePicture = async (file: File, uid: string) => {
   return await getDownloadURL(storageRef);
 };
 
-const normalizeNit = (v = "") => String(v || "").replace(/\D/g, "");
+const normalizeNit = (v = "") => String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
 

@@ -23,7 +23,7 @@ import { UserContext } from "../context/UserContext";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../firebase/firebaseConfig";
 
-const normalizeNit = (v = "") => String(v || "").replace(/\D/g, "");
+const normalizeNit = (v = "") => String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 
 // --- Subir imagen a Firebase Storage ---
 const uploadProfilePicture = async (file: File, uid: string) => {

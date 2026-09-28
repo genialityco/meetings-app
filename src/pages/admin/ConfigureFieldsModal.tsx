@@ -76,11 +76,11 @@ const AVAILABLE_FIELDS = [
   // CAMPOS EMPRESA (para autocompletar por NIT en la landing)
   {
     name: "company_nit",
-    label: "NIT (solo números)",
+    label: "NIT/NIF (letras y números)",
     type: "text",
     validation: {
-      pattern: /^[0-9]{5,15}$/,
-      errorMessage: "El NIT debe contener solo números (5 a 15 dígitos)",
+      pattern: /^[A-Z0-9]{5,15}$/,
+      errorMessage: "El NIT debe contener solo letras y números, sin guiones (5 a 15 caracteres)",
     },
   },
   {

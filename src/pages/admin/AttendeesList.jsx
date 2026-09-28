@@ -1664,7 +1664,7 @@ function parseFirestoreTimestamp(input) {
             if (toSave.aceptaTratamiento === undefined) toSave.aceptaTratamiento = true;
           }
 
-          const nitNorm = String(toSave.companyId || "").replace(/\D/g, "");
+          const nitNorm = String(toSave.companyId || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
           if (toSave.companyId) toSave.companyId = nitNorm;
 
           // Landing.jsx (registro público) siempre deriva 'empresa' de la razón

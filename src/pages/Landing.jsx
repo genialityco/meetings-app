@@ -97,7 +97,7 @@ const uploadPdfDocument = async (file, eventId, uid, fieldName) => {
 const isValidEmail = (v = "") =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim());
 
-const normalizeNit = (v = "") => String(v || "").replace(/\D/g, "");
+const normalizeNit = (v = "") => String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 
 const stripHtmlTags = (html) => {
   if (!html) return "";
@@ -1297,12 +1297,12 @@ const Landing = () => {
             <TextInput
               key={field.name}
               label={field.label}
-              placeholder={field.placeholder || "Solo números"}
+              placeholder={field.placeholder || "Letras y números, sin guion"}
               value={getValueForField(field.name)}
               onChange={(e) => {
-                const onlyDigits = normalizeNit(e.target.value);
-                handleDynamicChange(field.name, onlyDigits);
-                const error = validateField(field, onlyDigits);
+                const normalized = normalizeNit(e.target.value);
+                handleDynamicChange(field.name, normalized);
+                const error = validateField(field, normalized);
                 setFormErrors((prev) => ({ ...prev, [field.name]: error }));
               }}
               onBlur={lookupCompanyByNit}
