@@ -16,6 +16,20 @@ import { AdminAuthProvider } from "./context/AdminAuthContext.tsx";
 
 const theme = baseTheme;
 
+// Recuperación de chunks obsoletos: cuando alguien tiene la app abierta y sale un
+// deploy nuevo, el bundle ya cargado sigue referenciando hashes de archivos lazy
+// (p. ej. Dashboard-[hash].js) que Netlify ya no sirve; el fallback de SPA devuelve
+// index.html (text/html) en su lugar, lo que revienta el import() dinámico sin que
+// haya un Error Boundary que lo atrape, dejando la pantalla en blanco. Vite dispara
+// este evento en vez de solo rechazar la promesa; recargamos para traer el bundle
+// vigente. El flag evita un loop de recargas si el deploy en sí está roto.
+window.addEventListener("vite:preloadError", () => {
+  const key = "vitePreloadErrorReloaded";
+  if (sessionStorage.getItem(key)) return;
+  sessionStorage.setItem(key, "1");
+  window.location.reload();
+});
+
 createRoot(document.getElementById("root")).render(
   // <StrictMode>
   <UserProvider>
