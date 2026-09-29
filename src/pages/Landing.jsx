@@ -50,7 +50,11 @@ import {
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useMediaQuery } from "@mantine/hooks";
-import { IconSparkles, IconMapPin, IconArrowUpRight } from "@tabler/icons-react";
+import {
+  IconSparkles,
+  IconMapPin,
+  IconArrowUpRight,
+} from "@tabler/icons-react";
 
 import { db } from "../firebase/firebaseConfig";
 import { storage } from "../firebase/firebaseConfig";
@@ -89,7 +93,10 @@ const uploadProfilePicture = async (file, uid) => {
 
 const uploadPdfDocument = async (file, eventId, uid, fieldName) => {
   const ext = file.name.split(".").pop() || "pdf";
-  const storageRef = ref(storage, `brochures/${eventId}/${uid}/${fieldName}.${ext}`);
+  const storageRef = ref(
+    storage,
+    `brochures/${eventId}/${uid}/${fieldName}.${ext}`,
+  );
   await uploadBytes(storageRef, file);
   return getDownloadURL(storageRef);
 };
@@ -97,7 +104,10 @@ const uploadPdfDocument = async (file, eventId, uid, fieldName) => {
 const isValidEmail = (v = "") =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim());
 
-const normalizeNit = (v = "") => String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+const normalizeNit = (v = "") =>
+  String(v || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
 
 const stripHtmlTags = (html) => {
   if (!html) return "";
@@ -144,7 +154,9 @@ const validateField = (field, value) => {
 
   let checkValue = value;
   if (isPhone && value) {
-    const m = String(value).trim().match(/^(\+\d{1,4})\s?(.*)$/);
+    const m = String(value)
+      .trim()
+      .match(/^(\+\d{1,4})\s?(.*)$/);
     checkValue = m ? m[2].trim() : String(value).replace(/\D/g, "");
   }
 
@@ -173,7 +185,9 @@ const validateField = (field, value) => {
     return null;
   }
 
-  const valueToValidate = isPhone ? String(checkValue).trim() : String(value).trim();
+  const valueToValidate = isPhone
+    ? String(checkValue).trim()
+    : String(value).trim();
 
   if (validation?.minLength && valueToValidate.length < validation.minLength) {
     return (
@@ -253,7 +267,9 @@ const Landing = () => {
   // en este formulario), cae a Colombia en vez de dejar el selector sin valor válido.
   const defaultIso2 = useMemo(() => {
     const detected = detectDefaultIso2();
-    return LANDING_COUNTRY_CODES.some((c) => c.value === detected) ? detected : "co";
+    return LANDING_COUNTRY_CODES.some((c) => c.value === detected)
+      ? detected
+      : "co";
   }, []);
 
   // AI description improvement state
@@ -269,29 +285,32 @@ const Landing = () => {
     );
   }, [event?.config?.formFields]);
   // Editor tiptap
-  const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Underline,
-      Link,
-      Highlight,
-      TextAlign.configure({ types: ["heading", "paragraph"] }),
-      Placeholder.configure({
-        placeholder: configuredDescriptionPlaceholder,
-      }),
-    ],
-    content: "",
-    // Alto mínimo ~3 líneas para que se note que caben varias líneas de texto
-    editorProps: { attributes: { style: "min-height: 72px" } },
-    onUpdate: ({ editor }) => {
-      const htmlContent = editor.getHTML();
-      const plainText = stripHtmlTags(htmlContent);
-      setFormValues((prev) => ({
-        ...prev,
-        descripcion: plainText,
-      }));
+  const editor = useEditor(
+    {
+      extensions: [
+        StarterKit,
+        Underline,
+        Link,
+        Highlight,
+        TextAlign.configure({ types: ["heading", "paragraph"] }),
+        Placeholder.configure({
+          placeholder: configuredDescriptionPlaceholder,
+        }),
+      ],
+      content: "",
+      // Alto mínimo ~3 líneas para que se note que caben varias líneas de texto
+      editorProps: { attributes: { style: "min-height: 72px" } },
+      onUpdate: ({ editor }) => {
+        const htmlContent = editor.getHTML();
+        const plainText = stripHtmlTags(htmlContent);
+        setFormValues((prev) => ({
+          ...prev,
+          descripcion: plainText,
+        }));
+      },
     },
-  }, [configuredDescriptionPlaceholder]);
+    [configuredDescriptionPlaceholder],
+  );
 
   const getValueForField = useCallback(
     (fieldName) => {
@@ -308,12 +327,18 @@ const Landing = () => {
 
   // Política: fuerza tipoAsistente ("comprador" o "vendedor") y oculta el selector en el
   // formulario. Puede venir del forzado global o del parámetro de URL (roleUrlParamEnabled).
-  const forcedRole = getForcedRegistrationRole(event?.config?.policies, searchParams);
+  const forcedRole = getForcedRegistrationRole(
+    event?.config?.policies,
+    searchParams,
+  );
 
   // Campos del formulario con la etiqueta resuelta según el rol (labelByRole)
   const roleForLabels = forcedRole || formValues.tipoAsistente;
   const formFields = useMemo(
-    () => (event?.config?.formFields || []).map((f) => withRoleLabel(f, roleForLabels)),
+    () =>
+      (event?.config?.formFields || []).map((f) =>
+        withRoleLabel(f, roleForLabels),
+      ),
     [event?.config?.formFields, roleForLabels],
   );
 
@@ -373,7 +398,11 @@ const Landing = () => {
     const errors = {};
     formFields.forEach((field) => {
       // Ignorar validación de tipoAsistente si el evento es de Networking o se fuerza el rol
-      if ((event?.eventType === "Networking" || forcedRole) && field.name === "tipoAsistente") return;
+      if (
+        (event?.eventType === "Networking" || forcedRole) &&
+        field.name === "tipoAsistente"
+      )
+        return;
 
       if (!isFieldVisible(field)) return;
 
@@ -386,7 +415,10 @@ const Landing = () => {
         value = "selected";
       }
 
-      if (field.type === "pdf" && (pdfFiles[field.name] || formValues[field.name])) {
+      if (
+        field.type === "pdf" &&
+        (pdfFiles[field.name] || formValues[field.name])
+      ) {
         value = "selected";
       }
 
@@ -412,14 +444,28 @@ const Landing = () => {
 
     setFormErrors(errors);
     return errors;
-  }, [formFields, event?.eventType, forcedRole, formValues, getValueForField, isFieldVisible, pdfFiles, companyLogoFile, companyLogoPreview]);
+  }, [
+    formFields,
+    event?.eventType,
+    forcedRole,
+    formValues,
+    getValueForField,
+    isFieldVisible,
+    pdfFiles,
+    companyLogoFile,
+    companyLogoPreview,
+  ]);
 
   const validateStep = useCallback(
     (fieldNames = []) => {
       const errors = {};
       fieldNames.forEach((name) => {
         // Ignorar validación de tipoAsistente si el evento es de Networking o se fuerza el rol
-        if ((event?.eventType === "Networking" || forcedRole) && name === "tipoAsistente") return;
+        if (
+          (event?.eventType === "Networking" || forcedRole) &&
+          name === "tipoAsistente"
+        )
+          return;
 
         const def = fieldsByName.get(name);
         if (!def) return;
@@ -434,7 +480,10 @@ const Landing = () => {
           value = "selected";
         }
 
-        if (def.type === "pdf" && (pdfFiles[def.name] || formValues[def.name])) {
+        if (
+          def.type === "pdf" &&
+          (pdfFiles[def.name] || formValues[def.name])
+        ) {
           value = "selected";
         }
 
@@ -494,8 +543,10 @@ const Landing = () => {
         if (eventDoc.exists()) {
           const eventData = eventDoc.data();
           setEvent(eventData);
-          const isEventOpen = eventData.status === "abierto" || (eventData.config?.registrationEnabled ?? true);
-      setRegistrationEnabled(isEventOpen);
+          const isEventOpen =
+            eventData.status === "abierto" ||
+            (eventData.config?.registrationEnabled ?? true);
+          setRegistrationEnabled(isEventOpen);
           setActiveStep(0);
 
           if (eventData.eventType === "Networking") {
@@ -515,7 +566,9 @@ const Landing = () => {
   useEffect(() => {
     if (event?.eventType === "Networking" || !forcedRole) return;
     setFormValues((prev) =>
-      prev.tipoAsistente === forcedRole ? prev : { ...prev, tipoAsistente: forcedRole },
+      prev.tipoAsistente === forcedRole
+        ? prev
+        : { ...prev, tipoAsistente: forcedRole },
     );
   }, [forcedRole, event?.eventType]);
 
@@ -627,7 +680,7 @@ const Landing = () => {
       setLoginError("Por favor ingresa un correo válido.");
       return;
     }
-    
+
     // Track login attempt
     trackEvent({
       name: "login",
@@ -635,7 +688,7 @@ const Landing = () => {
         method: "email",
       },
     });
-    
+
     setLoginLoading(true);
     try {
       const result = await loginByEmail(loginEmail.trim(), eventId);
@@ -659,20 +712,23 @@ const Landing = () => {
     setImprovingDescription(true);
     try {
       const response = await fetch(
-        "https://improveuserdescription-6eaymlz5eq-uc.a.run.app" ,
-     
+        "https://improveuserdescription-6eaymlz5eq-uc.a.run.app",
+
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            tipoAsistente: event?.eventType === "Networking" ? "Asistente" : (forcedRole || formValues.tipoAsistente),
+            tipoAsistente:
+              event?.eventType === "Networking"
+                ? "Asistente"
+                : forcedRole || formValues.tipoAsistente,
             interesPrincipal: formValues.interesPrincipal,
             necesidad: formValues.necesidad,
             cargo: formValues.cargo,
             empresa: formValues.empresa || formValues.company_razonSocial,
             currentDescription: formValues.descripcion,
           }),
-        }
+        },
       );
 
       if (!response.ok) {
@@ -680,7 +736,7 @@ const Landing = () => {
       }
 
       const data = await response.json();
-      
+
       if (data.success && data.description) {
         // Actualizar el editor y el formValues
         if (editor) {
@@ -753,13 +809,16 @@ const Landing = () => {
         Object.entries({
           ...formValues,
           // Si es networking forzamos tipoAsistente a 'Asistente'; si la política está activa, a 'comprador' o 'vendedor'
-          tipoAsistente: event?.eventType === "Networking" ? "Asistente" : (forcedRole || formValues.tipoAsistente),
+          tipoAsistente:
+            event?.eventType === "Networking"
+              ? "Asistente"
+              : forcedRole || formValues.tipoAsistente,
           correo: String(formValues["correo"] || "")
             .toLowerCase()
             .trim(),
           eventId,
           updatedAt: new Date().toISOString(),
-        }).filter(([, v]) => v !== undefined)
+        }).filter(([, v]) => v !== undefined),
       );
       // company_nit es solo el nombre del campo del formulario (paso de empresa);
       // el dato persistido en el asistente vive únicamente en companyId (ver más abajo).
@@ -824,7 +883,12 @@ const Landing = () => {
       for (const [fieldName, pdfFile] of Object.entries(pdfFiles)) {
         if (pdfFile) {
           try {
-            const pdfUrl = await uploadPdfDocument(pdfFile, eventId, uid, fieldName);
+            const pdfUrl = await uploadPdfDocument(
+              pdfFile,
+              eventId,
+              uid,
+              fieldName,
+            );
             dataToUpdate[fieldName] = pdfUrl;
           } catch (e) {
             console.error(`Error subiendo PDF ${fieldName}:`, e);
@@ -833,7 +897,9 @@ const Landing = () => {
       }
 
       const nitNorm = normalizeNit(formValues.company_nit || "");
-      let razon = String(formValues.company_razonSocial || formValues.empresa || "").trim();
+      let razon = String(
+        formValues.company_razonSocial || formValues.empresa || "",
+      ).trim();
 
       if (eventId && nitNorm) {
         try {
@@ -854,7 +920,8 @@ const Landing = () => {
             }
           });
           if (razon) companyFieldData.razonSocial = razon;
-          if (formValues.descripcion) companyFieldData.descripcion = formValues.descripcion;
+          if (formValues.descripcion)
+            companyFieldData.descripcion = formValues.descripcion;
 
           if (!snap.exists()) {
             await setDoc(companyRef, {
@@ -890,7 +957,10 @@ const Landing = () => {
             }
           }
         } catch (e) {
-          console.warn("No se pudo guardar datos de empresa (sin permisos o sin NIT):", e);
+          console.warn(
+            "No se pudo guardar datos de empresa (sin permisos o sin NIT):",
+            e,
+          );
         }
 
         dataToUpdate.companyId = nitNorm;
@@ -909,14 +979,22 @@ const Landing = () => {
           const alreadyHasId = currentUser?.data?.attendeeId;
           if (!alreadyHasId) {
             const eventSnap = await getDoc(doc(db, "events", eventId));
-            const attendeeIdEnabled = eventSnap.exists() && eventSnap.data()?.config?.policies?.attendeeIdEnabled === true;
+            const attendeeIdEnabled =
+              eventSnap.exists() &&
+              eventSnap.data()?.config?.policies?.attendeeIdEnabled === true;
             if (attendeeIdEnabled) {
               // Contar usuarios existentes del evento para generar el número
               const usersSnap = await getDocs(
-                query(collection(db, "users"), where("eventId", "==", eventId))
+                query(collection(db, "users"), where("eventId", "==", eventId)),
               );
               const numero = usersSnap.size; // el usuario actual ya fue guardado, así que size >= 1
-              const tipo = (dataToUpdate.tipoAsistente || currentUser?.data?.tipoAsistente || "A").charAt(0).toUpperCase();
+              const tipo = (
+                dataToUpdate.tipoAsistente ||
+                currentUser?.data?.tipoAsistente ||
+                "A"
+              )
+                .charAt(0)
+                .toUpperCase();
               dataToUpdate.attendeeId = `${numero}${tipo}`;
             }
           }
@@ -926,7 +1004,7 @@ const Landing = () => {
       }
 
       await updateUser(uid, dataToUpdate);
-      
+
       // Track registration/update completion
       if (isNewUser) {
         trackEvent({
@@ -942,14 +1020,18 @@ const Landing = () => {
             const eventName = event?.eventName || "el evento";
 
             const badgeUrl = `badge/${eventId}/${uid}`;
-            
+
             // Format date for notification
             let formattedDate = "Por definir";
             let formattedTime = "Por definir";
-            
-            if (event?.config?.eventDates && event.config.eventDates.length > 0) {
+
+            if (
+              event?.config?.eventDates &&
+              event.config.eventDates.length > 0
+            ) {
               formattedDate = formatDate(event.config.eventDates[0]);
-              const firstDayConfig = event.config.dailyConfig?.[event.config.eventDates[0]];
+              const firstDayConfig =
+                event.config.dailyConfig?.[event.config.eventDates[0]];
               if (firstDayConfig?.startTime) {
                 formattedTime = formatTime(firstDayConfig.startTime);
               }
@@ -959,7 +1041,7 @@ const Landing = () => {
                 formattedTime = formatTime(event.config.eventStartTime);
               }
             }
-            
+
             // 1. Enviar a WhatsApp
             if (dataToUpdate.telefono) {
               await sendWelcomeNotification({
@@ -968,10 +1050,11 @@ const Landing = () => {
                 eventName: eventName,
                 eventId,
                 badgeUrl,
-                headerImageUrl: event?.eventImage || event?.config?.landingTitleImage,
+                headerImageUrl:
+                  event?.eventImage || event?.config?.landingTitleImage,
                 date: formattedDate,
                 time: formattedTime,
-                fallbackInfo: { enabled: false, email: "", subject: "" } // Evitar doble correo
+                fallbackInfo: { enabled: false, email: "", subject: "" }, // Evitar doble correo
               });
             }
 
@@ -983,18 +1066,22 @@ const Landing = () => {
                 eventName: eventName,
                 eventId,
                 badgeUrl,
-                headerImageUrl: event?.eventImage || event?.config?.landingTitleImage,
+                headerImageUrl:
+                  event?.eventImage || event?.config?.landingTitleImage,
                 date: formattedDate,
                 time: formattedTime,
                 fallbackInfo: {
                   enabled: true,
                   email: dataToUpdate.correo,
                   subject: `Bienvenido a ${eventName}`,
-                }
+                },
               });
             }
           } catch (err) {
-            console.error("No se pudo enviar la notificación de bienvenida:", err);
+            console.error(
+              "No se pudo enviar la notificación de bienvenida:",
+              err,
+            );
           }
         }
       } else {
@@ -1005,7 +1092,7 @@ const Landing = () => {
           },
         });
       }
-      
+
       navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
     } catch (error) {
       console.error("Error en el guardado:", error);
@@ -1036,10 +1123,13 @@ const Landing = () => {
   const renderFieldsForNames = useCallback(
     (names = []) => {
       return names.map((name) => {
-        if ((event?.eventType === "Networking" || forcedRole) && name === "tipoAsistente") {
+        if (
+          (event?.eventType === "Networking" || forcedRole) &&
+          name === "tipoAsistente"
+        ) {
           return null;
         }
-        
+
         const field = fieldsByName.get(name);
         if (!field) return null;
         if (!isFieldVisible(field)) return null;
@@ -1051,9 +1141,7 @@ const Landing = () => {
             <Box key={field.name}>
               <FileInput
                 label={field.label || "Foto de perfil"}
-                placeholder={
-                  field.placeholder || "Selecciona o toma una foto"
-                }
+                placeholder={field.placeholder || "Selecciona o toma una foto"}
                 accept="image/png,image/jpeg"
                 inputProps={{ capture: "user" }}
                 required={field.required ?? true}
@@ -1077,20 +1165,36 @@ const Landing = () => {
               />
 
               {profilePicPreview ? (
-                <div style={{ position: "relative", display: "inline-block", marginTop: 10 }}>
+                <div
+                  style={{
+                    position: "relative",
+                    display: "inline-block",
+                    marginTop: 10,
+                  }}
+                >
                   <img
                     src={profilePicPreview}
                     alt="Vista previa"
                     width={120}
                     height={120}
-                    style={{ borderRadius: "10px", display: "block", opacity: photoUploadStatus === "uploading" ? 0.4 : 1 }}
+                    style={{
+                      borderRadius: "10px",
+                      display: "block",
+                      opacity: photoUploadStatus === "uploading" ? 0.4 : 1,
+                    }}
                   />
                   {photoUploadStatus === "uploading" && (
-                    <div style={{
-                      position: "absolute", inset: 0,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      borderRadius: "10px", background: "rgba(255,255,255,0.5)",
-                    }}>
+                    <div
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        borderRadius: "10px",
+                        background: "rgba(255,255,255,0.5)",
+                      }}
+                    >
                       <Loader size="sm" />
                     </div>
                   )}
@@ -1135,7 +1239,12 @@ const Landing = () => {
                     size="lg"
                     onClick={handleImproveDescription}
                     loading={improvingDescription}
-                    disabled={improvingDescription || (event?.eventType !== "Networking" && !forcedRole && !formValues.tipoAsistente)}
+                    disabled={
+                      improvingDescription ||
+                      (event?.eventType !== "Networking" &&
+                        !forcedRole &&
+                        !formValues.tipoAsistente)
+                    }
                   >
                     <IconSparkles size={18} />
                   </ActionIcon>
@@ -1144,11 +1253,13 @@ const Landing = () => {
               <RichTextEditor editor={editor}>
                 <RichTextEditor.Content />
               </RichTextEditor>
-              {event?.eventType !== "Networking" && !forcedRole && !formValues.tipoAsistente && (
-                <Text size="xs" c="dimmed" mt="xs">
-                  💡 Completa el campo "Tipo de asistente" para usar la IA
-                </Text>
-              )}
+              {event?.eventType !== "Networking" &&
+                !forcedRole &&
+                !formValues.tipoAsistente && (
+                  <Text size="xs" c="dimmed" mt="xs">
+                    💡 Completa el campo "Tipo de asistente" para usar la IA
+                  </Text>
+                )}
               {fieldError && (
                 <Text c="red" size="sm" mt="xs">
                   {fieldError}
@@ -1258,10 +1369,7 @@ const Landing = () => {
               value={dayValue}
               onChange={(value) => {
                 handleDynamicChange(field.name, value);
-                const error = validateField(
-                  field,
-                  value?.length ? value : "",
-                );
+                const error = validateField(field, value?.length ? value : "");
                 setFormErrors((prev) => ({ ...prev, [field.name]: error }));
               }}
               required={field.required}
@@ -1387,10 +1495,11 @@ const Landing = () => {
 
         if (isPhoneField(field)) {
           const rawValue = getValueForField(field.name);
-          const { iso2, dialCode, number: phoneNumber } = parsePhoneValue(
-            rawValue,
-            defaultIso2,
-          );
+          const {
+            iso2,
+            dialCode,
+            number: phoneNumber,
+          } = parsePhoneValue(rawValue, defaultIso2);
 
           return (
             <Box key={field.name}>
@@ -1469,7 +1578,9 @@ const Landing = () => {
 
         // Campos de texto tipo "descripción" se muestran como área de texto
         // (2+ líneas visibles) para invitar a escribir más detalle
-        const isLongText = /descrip/i.test(`${field.name} ${field.label || ""}`);
+        const isLongText = /descrip/i.test(
+          `${field.name} ${field.label || ""}`,
+        );
         const TextComponent = isLongText ? Textarea : TextInput;
 
         return (
@@ -1547,18 +1658,19 @@ const Landing = () => {
     };
   }, [event.backgroundImage, event.backgroundMobileImage, isMobile]);
 
-  if (userLoading) return (
-    <div
-      style={{
-        minHeight: "100vh",
-        backgroundColor: "#0d0d0f",
-        backgroundImage: "url('/splash-magnetic.jpg')",
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        backgroundRepeat: "no-repeat",
-      }}
-    />
-  );
+  if (userLoading)
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          backgroundColor: "#0d0d0f",
+          backgroundImage: "url('/splash-magnetic.jpg')",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+        }}
+      />
+    );
 
   if (!eventId) {
     return (
@@ -1659,11 +1771,17 @@ const Landing = () => {
 
                     {/* Info */}
                     <Stack gap={4} ta="center" align="center">
-                      {event.config?.landingTitleType === 'image' && event.config?.landingTitleImage ? (
-                        <img 
-                          src={event.config.landingTitleImage} 
-                          alt={event.eventName || "Evento"} 
-                          style={{ maxWidth: "100%", maxHeight: 100, objectFit: "contain", marginBottom: 8 }} 
+                      {event.config?.landingTitleType === "image" &&
+                      event.config?.landingTitleImage ? (
+                        <img
+                          src={event.config.landingTitleImage}
+                          alt={event.eventName || "Evento"}
+                          style={{
+                            maxWidth: "100%",
+                            maxHeight: 100,
+                            objectFit: "contain",
+                            marginBottom: 8,
+                          }}
                         />
                       ) : (
                         <Stack gap={8} align="center">
@@ -1693,13 +1811,15 @@ const Landing = () => {
                       )}
 
                       {/* Mostrar fechas del evento (multi-día o single) */}
-                      {event?.config?.eventDates && event.config.eventDates.length > 0 ? (
+                      {event?.config?.eventDates &&
+                      event.config.eventDates.length > 0 ? (
                         <Stack gap="xs">
                           <Text c="dimmed" size="sm" fw={700}>
                             Fechas del evento:
                           </Text>
                           {event.config.eventDates.map((date, index) => {
-                            const dailyConfig = event.config.dailyConfig?.[date];
+                            const dailyConfig =
+                              event.config.dailyConfig?.[date];
                             return (
                               <Paper key={index} withBorder p="xs" radius="md">
                                 <Stack gap={4}>
@@ -1709,12 +1829,21 @@ const Landing = () => {
                                   {dailyConfig && (
                                     <Group justify="center" gap="xs">
                                       {dailyConfig.startTime && (
-                                        <Badge variant="light" size="sm" radius="md">
-                                          Inicio: {formatTime(dailyConfig.startTime)}
+                                        <Badge
+                                          variant="light"
+                                          size="sm"
+                                          radius="md"
+                                        >
+                                          Inicio:{" "}
+                                          {formatTime(dailyConfig.startTime)}
                                         </Badge>
                                       )}
                                       {dailyConfig.endTime && (
-                                        <Badge variant="light" size="sm" radius="md">
+                                        <Badge
+                                          variant="light"
+                                          size="sm"
+                                          radius="md"
+                                        >
                                           Fin: {formatTime(dailyConfig.endTime)}
                                         </Badge>
                                       )}
@@ -1737,7 +1866,8 @@ const Landing = () => {
                           <Group justify="center" gap="xs">
                             {event?.config?.eventStartTime ? (
                               <Badge variant="light" radius="md">
-                                Inicio: {formatTime(event?.config?.eventStartTime)}
+                                Inicio:{" "}
+                                {formatTime(event?.config?.eventStartTime)}
                               </Badge>
                             ) : null}
                             {event?.config?.eventEndTime ? (
@@ -1813,7 +1943,9 @@ const Landing = () => {
                           label="Correo electrónico"
                           placeholder="tu@empresa.com"
                           value={loginEmail}
-                          onChange={(e) => setLoginEmail(e.target.value.toLowerCase())}
+                          onChange={(e) =>
+                            setLoginEmail(e.target.value.toLowerCase())
+                          }
                           onKeyDown={(e) => e.key === "Enter" && handleLogin()}
                           required
                           radius="md"
@@ -1847,11 +1979,66 @@ const Landing = () => {
                         </Text>
                       ) : (
                         <Stack>
-                          <Text ta="center" c="dimmed">
-                            {currentUser?.data
-                              ? "Actualiza tu información antes de continuar."
-                              : "Completa el formulario para crear tu registro."}
-                          </Text>
+                          {currentUser?.data ? (
+                            <Text ta="center" c="dimmed">
+                              Actualiza tu información antes de continuar.
+                            </Text>
+                          ) : forcedRole === "vendedor" ? (
+                            <Stack gap="xs">
+                              <Text ta="center" c="dimmed" fw={700}>
+                                ¡Bienvenido, expositor!
+                              </Text>
+                              <Text ta="center" c="dimmed">
+                                Para agilizar tu registro en la rueda de
+                                negocios, hemos precargado algunos datos de
+                                empresas que ya se encuentran en nuestro
+                                sistema.
+                              </Text>
+                              <Text ta="center" c="dimmed">
+                                Ingresa el <b>NIT/RIF</b> de tu empresa y, al
+                                pasar al siguiente campo, se cargarán
+                                automáticamente los datos que tengamos
+                                disponibles.{" "}
+                                <b>
+                                  Revisa la información, completa los campos que
+                                  falten y actualiza cualquier dato que sea
+                                  necesario.
+                                </b>
+                              </Text>
+                              <Text ta="center" c="dimmed">
+                                Así podremos contar con la información correcta
+                                de tu empresa y facilitar las conexiones y
+                                reuniones durante la rueda de negocios.
+                              </Text>
+                            </Stack>
+                          ) : forcedRole === "comprador" ? (
+                            <Stack gap="xs">
+                              <Text ta="center" c="dimmed" fw={700}>
+                                ¡Bienvenido Empresaria/o a la rueda de negocios!
+                              </Text>
+                              <Text ta="center" c="dimmed">
+                                Estamos felices de contar contigo en este
+                                espacio de conexión y oportunidades de negocio.
+                              </Text>
+                              <Text ta="center" c="dimmed">
+                                Completa tus datos para crear tu perfil como
+                                asistente/comprador. Esta información nos
+                                permitirá identificar tus intereses, ayudarte a
+                                encontrar empresas y oportunidades relevantes, y
+                                facilitar las reuniones durante la rueda de
+                                negocios.
+                              </Text>
+                              <Text ta="center" c="dimmed">
+                                Procura completar la información con el mayor
+                                detalle posible para aprovechar mejor tus
+                                conexiones.
+                              </Text>
+                            </Stack>
+                          ) : (
+                            <Text ta="center" c="dimmed">
+                              Completa el formulario para crear tu registro.
+                            </Text>
+                          )}
 
                           {steps ? (
                             <>
@@ -1913,15 +2100,49 @@ const Landing = () => {
                                           }
                                         </Text>
                                       ) : null}
-                                      {Object.keys(formErrors).some(k => formErrors[k] && k !== CONSENTIMIENTO_FIELD_NAME && !(steps[activeStep]?.fields || []).includes(k)) && (
-                                        <Alert color="red" variant="light" title="Faltan datos en pasos anteriores" mt="md" radius="md">
-                                          <ul style={{ margin: 0, paddingLeft: 20 }}>
+                                      {Object.keys(formErrors).some(
+                                        (k) =>
+                                          formErrors[k] &&
+                                          k !== CONSENTIMIENTO_FIELD_NAME &&
+                                          !(
+                                            steps[activeStep]?.fields || []
+                                          ).includes(k),
+                                      ) && (
+                                        <Alert
+                                          color="red"
+                                          variant="light"
+                                          title="Faltan datos en pasos anteriores"
+                                          mt="md"
+                                          radius="md"
+                                        >
+                                          <ul
+                                            style={{
+                                              margin: 0,
+                                              paddingLeft: 20,
+                                            }}
+                                          >
                                             {Object.entries(formErrors)
-                                              .filter(([k, msg]) => msg && k !== CONSENTIMIENTO_FIELD_NAME && !(steps[activeStep]?.fields || []).includes(k))
+                                              .filter(
+                                                ([k, msg]) =>
+                                                  msg &&
+                                                  k !==
+                                                    CONSENTIMIENTO_FIELD_NAME &&
+                                                  !(
+                                                    steps[activeStep]?.fields ||
+                                                    []
+                                                  ).includes(k),
+                                              )
                                               .map(([key, msg], idx) => {
-                                                const label = fieldsByName.get(key)?.label || key;
+                                                const label =
+                                                  fieldsByName.get(key)
+                                                    ?.label || key;
                                                 return (
-                                                  <li key={idx}><Text size="sm"><strong>{label}:</strong> {msg}</Text></li>
+                                                  <li key={idx}>
+                                                    <Text size="sm">
+                                                      <strong>{label}:</strong>{" "}
+                                                      {msg}
+                                                    </Text>
+                                                  </li>
                                                 );
                                               })}
                                           </ul>
@@ -2084,7 +2305,7 @@ const Landing = () => {
                           alt="Encuentro"
                           style={{
                             width: "100%",
-                            height: "100%",                           
+                            height: "100%",
                             display: "block",
                           }}
                         />
@@ -2117,11 +2338,17 @@ const Landing = () => {
                           }}
                         >
                           <Stack gap={4}>
-                            {event.config?.landingTitleType === 'image' && event.config?.landingTitleImage ? (
-                              <img 
-                                src={event.config.landingTitleImage} 
-                                alt={event.eventName || "Evento"} 
-                                style={{ maxWidth: "100%", maxHeight: 120, objectFit: "contain", marginBottom: 8 }} 
+                            {event.config?.landingTitleType === "image" &&
+                            event.config?.landingTitleImage ? (
+                              <img
+                                src={event.config.landingTitleImage}
+                                alt={event.eventName || "Evento"}
+                                style={{
+                                  maxWidth: "100%",
+                                  maxHeight: 120,
+                                  objectFit: "contain",
+                                  marginBottom: 8,
+                                }}
                               />
                             ) : (
                               <Stack gap={10} align="center">
@@ -2133,7 +2360,8 @@ const Landing = () => {
                                     fontWeight: 800,
                                     letterSpacing: "-0.02em",
                                     color: "var(--mantine-primary-color-9)",
-                                    textShadow: "0 2px 20px rgba(255,255,255,0.65)",
+                                    textShadow:
+                                      "0 2px 20px rgba(255,255,255,0.65)",
                                   }}
                                 >
                                   {event.eventName || "Encuentro de afiliados"}
@@ -2151,15 +2379,22 @@ const Landing = () => {
                             )}
 
                             {/* Mostrar fechas del evento (multi-día o single) */}
-                            {event?.config?.eventDates && event.config.eventDates.length > 0 ? (
+                            {event?.config?.eventDates &&
+                            event.config.eventDates.length > 0 ? (
                               <Stack gap="xs">
                                 <Text c="dimmed" size="md" fw={700}>
                                   Fechas del evento:
                                 </Text>
                                 {event.config.eventDates.map((date, index) => {
-                                  const dailyConfig = event.config.dailyConfig?.[date];
+                                  const dailyConfig =
+                                    event.config.dailyConfig?.[date];
                                   return (
-                                    <Paper key={index} withBorder p="xs" radius="md">
+                                    <Paper
+                                      key={index}
+                                      withBorder
+                                      p="xs"
+                                      radius="md"
+                                    >
                                       <Stack gap={4}>
                                         <Text size="sm" fw={600}>
                                           {formatDate(date)}
@@ -2167,13 +2402,27 @@ const Landing = () => {
                                         {dailyConfig && (
                                           <Group justify="center" gap="xs">
                                             {dailyConfig.startTime && (
-                                              <Badge variant="light" size="sm" radius="md">
-                                                Inicio: {formatTime(dailyConfig.startTime)}
+                                              <Badge
+                                                variant="light"
+                                                size="sm"
+                                                radius="md"
+                                              >
+                                                Inicio:{" "}
+                                                {formatTime(
+                                                  dailyConfig.startTime,
+                                                )}
                                               </Badge>
                                             )}
                                             {dailyConfig.endTime && (
-                                              <Badge variant="light" size="sm" radius="md">
-                                                Fin: {formatTime(dailyConfig.endTime)}
+                                              <Badge
+                                                variant="light"
+                                                size="sm"
+                                                radius="md"
+                                              >
+                                                Fin:{" "}
+                                                {formatTime(
+                                                  dailyConfig.endTime,
+                                                )}
                                               </Badge>
                                             )}
                                           </Group>
@@ -2196,12 +2445,15 @@ const Landing = () => {
                                   {event?.config?.eventStartTime ? (
                                     <Badge variant="light" radius="md">
                                       Inicio:{" "}
-                                      {formatTime(event?.config?.eventStartTime)}
+                                      {formatTime(
+                                        event?.config?.eventStartTime,
+                                      )}
                                     </Badge>
                                   ) : null}
                                   {event?.config?.eventEndTime ? (
                                     <Badge variant="light" radius="md">
-                                      Fin: {formatTime(event?.config?.eventEndTime)}
+                                      Fin:{" "}
+                                      {formatTime(event?.config?.eventEndTime)}
                                     </Badge>
                                   ) : null}
                                 </Group>
@@ -2219,8 +2471,16 @@ const Landing = () => {
                                 }}
                               >
                                 <Stack gap={10} align="center">
-                                  <Group gap={10} wrap="nowrap" justify="center">
-                                    <ThemeIcon size={32} radius="xl" variant="light">
+                                  <Group
+                                    gap={10}
+                                    wrap="nowrap"
+                                    justify="center"
+                                  >
+                                    <ThemeIcon
+                                      size={32}
+                                      radius="xl"
+                                      variant="light"
+                                    >
                                       <IconMapPin size={18} />
                                     </ThemeIcon>
                                     <Text size="md" fw={700} ta="center">
@@ -2235,7 +2495,9 @@ const Landing = () => {
                                       rel="noopener noreferrer"
                                       size="sm"
                                       radius="xl"
-                                      rightSection={<IconArrowUpRight size={16} />}
+                                      rightSection={
+                                        <IconArrowUpRight size={16} />
+                                      }
                                     >
                                       Cómo llegar
                                     </Button>
@@ -2295,7 +2557,9 @@ const Landing = () => {
                               label="Correo electrónico"
                               placeholder="tu@empresa.com"
                               value={loginEmail}
-                              onChange={(e) => setLoginEmail(e.target.value.toLowerCase())}
+                              onChange={(e) =>
+                                setLoginEmail(e.target.value.toLowerCase())
+                              }
                               onKeyDown={(e) =>
                                 e.key === "Enter" && handleLogin()
                               }
@@ -2335,11 +2599,68 @@ const Landing = () => {
                         ) : (
                           <Box style={{ maxWidth: 860, margin: "0 auto" }}>
                             <Stack>
-                              <Text ta="center" c="dimmed">
-                                {currentUser?.data
-                                  ? "Actualiza tu información antes de continuar."
-                                  : "Completa el formulario para crear tu registro."}
-                              </Text>
+                              {currentUser?.data ? (
+                                <Text ta="center" c="dimmed">
+                                  Actualiza tu información antes de continuar.
+                                </Text>
+                              ) : forcedRole === "vendedor" ? (
+                                <Stack gap="xs">
+                                  <Text ta="center" c="dimmed" fw={700}>
+                                    ¡Bienvenido, expositor!
+                                  </Text>
+                                  <Text ta="center" c="dimmed">
+                                    Para agilizar tu registro en la rueda de
+                                    negocios, hemos precargado algunos datos de
+                                    empresas que ya se encuentran en nuestro
+                                    sistema.
+                                  </Text>
+                                  <Text ta="center" c="dimmed">
+                                    Ingresa el <b>NIT/RIF</b> de tu empresa y,
+                                    al pasar al siguiente campo, se cargarán
+                                    automáticamente los datos que tengamos
+                                    disponibles.{" "}
+                                    <b>
+                                      Revisa la información, completa los campos
+                                      que falten y actualiza cualquier dato que
+                                      sea necesario.
+                                    </b>
+                                  </Text>
+                                  <Text ta="center" c="dimmed">
+                                    Así podremos contar con la información
+                                    correcta de tu empresa y facilitar las
+                                    conexiones y reuniones durante la rueda de
+                                    negocios.
+                                  </Text>
+                                </Stack>
+                              ) : forcedRole === "comprador" ? (
+                                <Stack gap="xs">
+                                  <Text ta="center" c="dimmed" fw={700}>
+                                    ¡Bienvenido Empresaria/o a la rueda de negocios!
+                                  </Text>
+                                  <Text ta="center" c="dimmed">
+                                    Estamos felices de contar contigo en este
+                                    espacio de conexión y oportunidades de
+                                    negocio.
+                                  </Text>
+                                  <Text ta="center" c="dimmed">
+                                    Completa tus datos para crear tu perfil
+                                    como asistente/comprador. Esta información
+                                    nos permitirá identificar tus intereses,
+                                    ayudarte a encontrar empresas y
+                                    oportunidades relevantes, y facilitar las
+                                    reuniones durante la rueda de negocios.
+                                  </Text>
+                                  <Text ta="center" c="dimmed">
+                                    Procura completar la información con el
+                                    mayor detalle posible para aprovechar
+                                    mejor tus conexiones.
+                                  </Text>
+                                </Stack>
+                              ) : (
+                                <Text ta="center" c="dimmed">
+                                  Completa el formulario para crear tu registro.
+                                </Text>
+                              )}
 
                               {steps ? (
                                 <>
@@ -2411,15 +2732,51 @@ const Landing = () => {
                                               }
                                             </Text>
                                           ) : null}
-                                          {Object.keys(formErrors).some(k => formErrors[k] && k !== CONSENTIMIENTO_FIELD_NAME && !(steps[activeStep]?.fields || []).includes(k)) && (
-                                            <Alert color="red" variant="light" title="Faltan datos en pasos anteriores" mt="md" radius="md">
-                                              <ul style={{ margin: 0, paddingLeft: 20 }}>
+                                          {Object.keys(formErrors).some(
+                                            (k) =>
+                                              formErrors[k] &&
+                                              k !== CONSENTIMIENTO_FIELD_NAME &&
+                                              !(
+                                                steps[activeStep]?.fields || []
+                                              ).includes(k),
+                                          ) && (
+                                            <Alert
+                                              color="red"
+                                              variant="light"
+                                              title="Faltan datos en pasos anteriores"
+                                              mt="md"
+                                              radius="md"
+                                            >
+                                              <ul
+                                                style={{
+                                                  margin: 0,
+                                                  paddingLeft: 20,
+                                                }}
+                                              >
                                                 {Object.entries(formErrors)
-                                                  .filter(([k, msg]) => msg && k !== CONSENTIMIENTO_FIELD_NAME && !(steps[activeStep]?.fields || []).includes(k))
+                                                  .filter(
+                                                    ([k, msg]) =>
+                                                      msg &&
+                                                      k !==
+                                                        CONSENTIMIENTO_FIELD_NAME &&
+                                                      !(
+                                                        steps[activeStep]
+                                                          ?.fields || []
+                                                      ).includes(k),
+                                                  )
                                                   .map(([key, msg], idx) => {
-                                                    const label = fieldsByName.get(key)?.label || key;
+                                                    const label =
+                                                      fieldsByName.get(key)
+                                                        ?.label || key;
                                                     return (
-                                                      <li key={idx}><Text size="sm"><strong>{label}:</strong> {msg}</Text></li>
+                                                      <li key={idx}>
+                                                        <Text size="sm">
+                                                          <strong>
+                                                            {label}:
+                                                          </strong>{" "}
+                                                          {msg}
+                                                        </Text>
+                                                      </li>
                                                     );
                                                   })}
                                               </ul>
