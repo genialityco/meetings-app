@@ -54,6 +54,7 @@ import {
   IconSparkles,
   IconMapPin,
   IconArrowUpRight,
+  IconPhoto,
 } from "@tabler/icons-react";
 
 import { db } from "../firebase/firebaseConfig";
@@ -1427,7 +1428,9 @@ const Landing = () => {
             <Box key={field.name}>
               <FileInput
                 label={field.label || "Logo de empresa"}
-                placeholder={field.placeholder || "Subir logo"}
+                description="Imagen del logo (PNG, JPG o WEBP)"
+                placeholder="Toca para seleccionar una imagen"
+                leftSection={<IconPhoto size={18} stroke={1.5} />}
                 accept="image/png,image/jpeg,image/webp"
                 value={companyLogoFile}
                 onChange={(file) => {

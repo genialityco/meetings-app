@@ -277,6 +277,7 @@ function SortableFieldItem({
   handlePlaceholderChange,
   handleToggleRequired,
   onUpdateShowWhen,
+  onUpdateOptions,
   onUpdateValidationType,
   onUpdateMaxLength,
   onUpdateLabelByRole,
@@ -289,6 +290,7 @@ function SortableFieldItem({
   handlePlaceholderChange: (name: string, value: string) => void;
   handleToggleRequired: (name: string, value: boolean) => void;
   onUpdateShowWhen: (name: string, showWhen: any) => void;
+  onUpdateOptions: (name: string, rawText: string) => void;
   onUpdateValidationType: (name: string, presetKey: string) => void;
   onUpdateMaxLength: (name: string, value: number | null) => void;
   onUpdateLabelByRole: (name: string, labelByRole: { comprador?: string; vendedor?: string } | null) => void;
@@ -302,6 +304,13 @@ function SortableFieldItem({
     transition,
     isDragging,
   } = useSortable({ id: field.name });
+
+  // Texto crudo del textarea de opciones: se mantiene aparte de field.options
+  // (que ya viene trim/filtrado) para no perder líneas en blanco mientras se
+  // está escribiendo una opción nueva.
+  const [optionsText, setOptionsText] = useState(
+    (field.options || []).map((op: any) => op.label).join("\n"),
+  );
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -363,27 +372,41 @@ function SortableFieldItem({
             handleToggleRequired(field.name, e.currentTarget.checked)
           }
         />
-        <Text size="xs" c="dimmed">
-          {field.type === "checkbox"
-            ? "Checkbox"
-            : field.type === "select"
-              ? `Select: ${(field.options || []).map((op: any) => op.label).join(", ")}`
-              : field.type === "multiselect"
-                ? `Multi-select: ${(field.options || []).map((op: any) => op.label).join(", ")}`
-                : field.type === "eventDays"
-                  ? "Multi-select: días del evento (automático)"
-                  : field.type === "richtext"
-                    ? "RichText"
-                    : field.type === "pdf"
-                      ? "PDF"
-                      : field.type === "photo"
-                        ? "Foto"
-                        : field.type === "file"
-                          ? "Archivo"
-                          : field.type === "phone"
-                            ? "Teléfono"
-                            : "Texto"}
-        </Text>
+        {field.type === "select" || field.type === "multiselect" ? (
+          <Textarea
+            size="xs"
+            label={field.type === "select" ? "Opciones (una por línea)" : "Opciones multi-select (una por línea)"}
+            placeholder={"Opción 1\nOpción 2"}
+            autosize
+            minRows={2}
+            maxRows={8}
+            style={{ width: 220 }}
+            value={optionsText}
+            onChange={(e) => {
+              const raw = e.currentTarget.value;
+              setOptionsText(raw);
+              onUpdateOptions(field.name, raw);
+            }}
+          />
+        ) : (
+          <Text size="xs" c="dimmed">
+            {field.type === "checkbox"
+              ? "Checkbox"
+              : field.type === "eventDays"
+                ? "Multi-select: días del evento (automático)"
+                : field.type === "richtext"
+                  ? "RichText"
+                  : field.type === "pdf"
+                    ? "PDF"
+                    : field.type === "photo"
+                      ? "Foto"
+                      : field.type === "file"
+                        ? "Archivo"
+                        : field.type === "phone"
+                          ? "Teléfono"
+                          : "Texto"}
+          </Text>
+        )}
         {field.type === "text" && (
           <Select
             size="xs"
@@ -563,7 +586,7 @@ export default function ConfigureFieldsModal({
     "text" | "select" | "multiselect" | "checkbox" | "pdf"
   >("text");
   const [newSelectOptions, setNewSelectOptions] =
-    useState("Opción 1, Opción 2");
+    useState("Opción 1\nOpción 2");
   const [newIncludeOtro, setNewIncludeOtro] = useState(false);
 
   // Stepper editor UI (simple)
@@ -672,7 +695,7 @@ export default function ConfigureFieldsModal({
 
     if (newFieldType === "select" || newFieldType === "multiselect") {
       newField.options = newSelectOptions
-        .split(",")
+        .split("\n")
         .map((s) => s.trim())
         .filter(Boolean)
         .map((s) => ({
@@ -688,7 +711,7 @@ export default function ConfigureFieldsModal({
     setFields([...fields, newField]);
     setNewFieldLabel("");
     setNewFieldType("text");
-    setNewSelectOptions("Opción 1, Opción 2");
+    setNewSelectOptions("Opción 1\nOpción 2");
     setNewIncludeOtro(false);
   };
 
@@ -745,6 +768,20 @@ export default function ConfigureFieldsModal({
           validation: { ...(f.validation || {}), maxLength: value },
         };
       }),
+    );
+  };
+
+  // Opciones de un select/multiselect ya existente: una por línea (no por coma,
+  // para no partir nombres de opción que ya traigan una coma, ej. "Banca, finanzas
+  // y seguros" quedaría partido en dos opciones si se separara por coma).
+  const handleUpdateOptions = (fieldName: string, rawText: string) => {
+    const options = rawText
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => ({ value: s, label: s }));
+    setFields((prev) =>
+      prev.map((f) => (f.name !== fieldName ? f : { ...f, options })),
     );
   };
 
@@ -1188,11 +1225,14 @@ export default function ConfigureFieldsModal({
             size="xs"
           />
           {(newFieldType === "select" || newFieldType === "multiselect") && (
-            <TextInput
-              placeholder="Opciones separadas por coma"
+            <Textarea
+              placeholder={"Opciones, una por línea\nEj: Banca, finanzas y seguros"}
               value={newSelectOptions}
               onChange={(e) => setNewSelectOptions(e.currentTarget.value)}
               size="xs"
+              autosize
+              minRows={2}
+              maxRows={6}
               style={{ width: 240 }}
             />
           )}
@@ -1277,6 +1317,7 @@ export default function ConfigureFieldsModal({
                     handlePlaceholderChange={handlePlaceholderChange}
                     handleToggleRequired={handleToggleRequired}
                     onUpdateShowWhen={handleUpdateShowWhen}
+                    onUpdateOptions={handleUpdateOptions}
                     onUpdateValidationType={handleUpdateValidationType}
                     onUpdateMaxLength={handleUpdateMaxLength}
                     onUpdateLabelByRole={handleUpdateLabelByRole}

@@ -21,7 +21,7 @@ import {
 import { showNotification } from "@mantine/notifications";
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { IconSearch, IconX, IconFilterOff, IconBuildingStore, IconSparkles } from "@tabler/icons-react";
+import { IconSearch, IconX, IconFilterOff, IconBuildingStore, IconSparkles, IconPlus } from "@tabler/icons-react";
 import type { Product, Company, Assistant, MeetingContext } from "./types";
 import MeetingRequestModal from "./MeetingRequestModal";
 
@@ -602,6 +602,25 @@ export default function ProductsView({
         `}
       </style>
     <Stack gap="md">
+      {/* CTA para cargar productos propios, visible sin importar el rol: reusa el
+          flujo ya existente de "Mis productos" (MyProductsTab, ruta /my-products)
+          en vez de duplicar el modal de creación (título, descripción, categoría,
+          imagen) aquí. */}
+      <Paper withBorder radius="lg" p="sm">
+        <Group justify="space-between" wrap="wrap" gap="sm">
+          <Text size="sm" c="dimmed">
+            ¿Tienes productos o servicios para ofrecer? Cárgalos para que otros asistentes los encuentren aquí.
+          </Text>
+          <Button
+            leftSection={<IconPlus size={16} />}
+            radius="md"
+            onClick={() => navigate(`/dashboard/${eventId}/my-products`)}
+          >
+            Cargar mis productos
+          </Button>
+        </Group>
+      </Paper>
+
       {/* Filtros (responsive) */}
       <Paper withBorder radius="lg" p="sm">
         <Grid gutter="sm" align="center">

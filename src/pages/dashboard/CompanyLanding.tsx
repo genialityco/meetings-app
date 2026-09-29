@@ -136,12 +136,16 @@ export default function CompanyLanding() {
   const formFields = useMemo(() => eventConfig?.formFields || [], [eventConfig]);
   // "necesidad" siempre visible en esta vista de detalle (aunque la política
   // cardFieldsConfig.companyCard del evento no la incluya para la tarjeta
-  // compacta de CompaniesView).
+  // compacta de CompaniesView) — pero solo si el evento realmente tiene ese
+  // campo configurado; si no, forzarlo solo agrega un campo fantasma
+  // ("necesidad: No disponible") en eventos que nunca lo definieron.
   const cardFields = useMemo(() => {
     const cfg = eventConfig?.policies?.cardFieldsConfig;
     const configured = cfg?.companyCard || DEFAULT_POLICIES.cardFieldsConfig!.companyCard;
+    const hasNecesidadField = formFields.some((f: any) => f.name === "necesidad");
+    if (!hasNecesidadField) return configured;
     return configured.includes("necesidad") ? configured : [...configured, "necesidad"];
-  }, [eventConfig]);
+  }, [eventConfig, formFields]);
 
   const eventTheme = useMemo(
     () => buildEventTheme(eventConfig?.primaryColor),
