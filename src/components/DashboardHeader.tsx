@@ -63,9 +63,16 @@ const normalizeNit = (v = "") => String(v || "").toUpperCase().replace(/[^A-Z0-9
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
 
 // Campos del registro que no deben poder editarse desde el perfil del asistente
-// (bloqueados = ni se muestran). company_nit: cambiarlo movería al asistente a otra empresa;
-// correo: es el dato con el que el asistente ingresa al evento.
-const HIDDEN_EDIT_FIELDS = new Set(["tipoAsistente", "company_nit", "correo", "email"]);
+// (bloqueados = ni se muestran). company_nit: cambiarlo movería al asistente a otra empresa.
+// "correo"/"email" NO van aquí: se muestran de solo lectura en renderField (ver
+// READONLY_EDIT_FIELDS) en vez de ocultarse del todo, para que el asistente pueda
+// al menos verificar qué correo tiene registrado.
+const HIDDEN_EDIT_FIELDS = new Set(["tipoAsistente", "company_nit"]);
+
+// Campos que sí se muestran pero no se pueden modificar desde este modal: es el
+// dato con el que el asistente ingresa al evento (cambiarlo aquí podría dejarlo
+// sin poder volver a iniciar sesión).
+const READONLY_EDIT_FIELDS = new Set(["correo", "email"]);
 
 const isLogoField = (f: any) => f?.name === "company_logo" || f?.type === "file";
 
@@ -415,6 +422,19 @@ const DashboardHeader = ({
       if (field.name === CONSENTIMIENTO_FIELD_NAME) return null;
       // Campos que el asistente no puede modificar (p. ej. tipo de asistente)
       if (HIDDEN_EDIT_FIELDS.has(field.name)) return null;
+
+      // Correo: visible pero de solo lectura (es el dato de inicio de sesión)
+      if (READONLY_EDIT_FIELDS.has(field.name)) {
+        return (
+          <TextInput
+            key={field.name}
+            label={field.label || "Correo"}
+            value={getFieldValue(field.name)}
+            disabled
+            description="No se puede editar: es el correo con el que ingresas al evento."
+          />
+        );
+      }
 
       // Photo
       if (field.name === "photoURL" || field.type === "photo") {
