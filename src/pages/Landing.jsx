@@ -76,13 +76,9 @@ import { withRoleLabel } from "../utils/attendeeFields";
 
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
 
-// Registro público del evento: solo Colombia y Venezuela habilitados en el selector de
-// código de país (a diferencia del panel admin -ModalEditAttendee.jsx/AttendeesList.jsx-
-// que sigue usando el listado completo de COUNTRY_CODES para poder corregir el dato de
-// cualquier asistente).
-const LANDING_COUNTRY_CODES = COUNTRY_CODES.filter(
-  (c) => c.value === "co" || c.value === "ve",
-);
+// Selector de código de país del teléfono en el registro público: mismo listado
+// completo que usa el panel admin (ModalEditAttendee.jsx/AttendeesList.jsx).
+const LANDING_COUNTRY_CODES = COUNTRY_CODES;
 
 // ---- helpers ----
 const uploadProfilePicture = async (file, uid) => {
