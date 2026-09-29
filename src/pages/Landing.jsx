@@ -1985,8 +1985,8 @@ const Landing = () => {
                             </Text>
                           ) : forcedRole === "vendedor" ? (
                             <Stack gap="xs">
-                              <Text ta="center" c="dimmed" fw={700}>
-                                ¡Bienvenido, expositor!
+                              <Text ta="center" c="dimmed" fw={700} style={{ fontSize: "2em" }}>
+                                ¡Bienvenido, EXPOSITOR!
                               </Text>
                               <Text ta="center" c="dimmed">
                                 Para agilizar tu registro en la rueda de
@@ -2013,8 +2013,8 @@ const Landing = () => {
                             </Stack>
                           ) : forcedRole === "comprador" ? (
                             <Stack gap="xs">
-                              <Text ta="center" c="dimmed" fw={700}>
-                                ¡Bienvenido Empresaria/o a la rueda de negocios!
+                              <Text ta="center" c="dimmed" fw={700} style={{ fontSize: "2em" }}>
+                                ¡Bienvenido EMPRESARIA/O a la rueda de negocios!
                               </Text>
                               <Text ta="center" c="dimmed">
                                 Estamos felices de contar contigo en este
@@ -2605,8 +2605,8 @@ const Landing = () => {
                                 </Text>
                               ) : forcedRole === "vendedor" ? (
                                 <Stack gap="xs">
-                                  <Text ta="center" c="dimmed" fw={700}>
-                                    ¡Bienvenido, expositor!
+                                  <Text ta="center" c="dimmed" fw={700} style={{ fontSize: "2em" }}>
+                                    ¡Bienvenido, EXPOSITOR!
                                   </Text>
                                   <Text ta="center" c="dimmed">
                                     Para agilizar tu registro en la rueda de
@@ -2634,8 +2634,8 @@ const Landing = () => {
                                 </Stack>
                               ) : forcedRole === "comprador" ? (
                                 <Stack gap="xs">
-                                  <Text ta="center" c="dimmed" fw={700}>
-                                    ¡Bienvenido Empresaria/o a la rueda de negocios!
+                                  <Text ta="center" c="dimmed" fw={700} style={{ fontSize: "2em" }}>
+                                    ¡Bienvenido EMPRESARIA/O a la rueda de negocios!
                                   </Text>
                                   <Text ta="center" c="dimmed">
                                     Estamos felices de contar contigo en este
