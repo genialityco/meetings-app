@@ -583,7 +583,7 @@ export async function sendWelcomeNotification(options: {
       const contentHtml = `
         <p>Hola <strong>${name}</strong>,</p>
         <p>¡Bienvenido/a al evento <strong>${eventName}</strong>!</p>
-        <p>Tu número de WhatsApp no pudo recibir nuestro mensaje de bienvenida porque no existe o no está registrado.</p>
+        <p>Te dejamos también por aquí la confirmación de tu registro.</p>
         
         <div style="background-color: #eff6ff; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #bfdbfe;">
           <h3 style="margin-top: 0; color: #1e3a8a; font-size: 16px;">Detalles del evento:</h3>

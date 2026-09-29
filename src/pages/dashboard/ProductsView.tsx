@@ -68,6 +68,7 @@ export default function ProductsView({
   const [modalOpened, setModalOpened] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<{ product: Product; assistantId: string; assistantPhone: string } | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const [expandedDescriptions, setExpandedDescriptions] = useState<Set<string>>(new Set());
 
   const [vectorResults, setVectorResults] = useState<any[]>([]);
   const [isVectorSearching, setIsVectorSearching] = useState(false);
@@ -309,6 +310,18 @@ export default function ProductsView({
     // Verificar si esta card debe ser resaltada (usando el estado temporal)
     const isHighlighted = highlightedId === p.id;
 
+    const description = p.description || "Sin descripción.";
+    const isDescriptionExpanded = expandedDescriptions.has(p.id);
+    const toggleDescription = (e: any) => {
+      e.stopPropagation();
+      setExpandedDescriptions((prev) => {
+        const next = new Set(prev);
+        if (next.has(p.id)) next.delete(p.id);
+        else next.add(p.id);
+        return next;
+      });
+    };
+
     return (
       <Grid.Col
         key={p.id}
@@ -323,6 +336,8 @@ export default function ProductsView({
           shadow="sm"
           style={{
             height: "100%",
+            display: "flex",
+            flexDirection: "column",
             overflow: "hidden",
             position: "relative",
             border: isHighlighted ? "3px solid var(--mantine-color-teal-5)" : undefined,
@@ -388,11 +403,11 @@ export default function ProductsView({
           {allowImageUpload && p.imageUrl ? (
             <>
               <Card.Section>
-                <Box style={{ position: "relative" }}>
+                <Box style={{ position: "relative", aspectRatio: "1 / 1" }}>
                   <Image
                     src={p.imageUrl}
                     alt={p.title}
-                    height={140}
+                    style={{ width: "100%", height: "100%" }}
                     fit="cover"
                   />
                   {/* Overlay sutil para que se vea más “card premium” */}
@@ -425,7 +440,7 @@ export default function ProductsView({
                 </Box>
               </Card.Section>
 
-              <Stack gap={8} mt="sm" style={{ height: "calc(100% - 140px)" }}>
+              <Stack gap={8} mt="sm" style={{ flex: 1, minHeight: 0 }}>
                 {/* Título */}
                 <Title order={6} lineClamp={2} style={{ minWidth: 0 }}>
                   {p.title || "Producto"}
@@ -468,14 +483,27 @@ export default function ProductsView({
                 </Group>
 
                 {/* Descripción */}
-                <Text
-                  size="xs"
-                  c="dimmed"
-                  lineClamp={3}
-                  style={{ whiteSpace: "pre-wrap" }}
-                >
-                  {p.description || "Sin descripción."}
-                </Text>
+                <Box>
+                  <Text
+                    size="xs"
+                    c="dimmed"
+                    lineClamp={isDescriptionExpanded ? undefined : 3}
+                    style={{ whiteSpace: "pre-wrap" }}
+                  >
+                    {description}
+                  </Text>
+                  {description.length > 90 && (
+                    <Text
+                      size="xs"
+                      fw={600}
+                      c="blue"
+                      style={{ cursor: "pointer" }}
+                      onClick={toggleDescription}
+                    >
+                      {isDescriptionExpanded ? "Ver menos" : "Ver más"}
+                    </Text>
+                  )}
+                </Box>
 
                 <Divider my={2} mt="auto" />
 
@@ -544,14 +572,27 @@ export default function ProductsView({
               </Group>
 
               {/* Descripción */}
-              <Text
-                size="sm"
-                c="dimmed"
-                lineClamp={4}
-                style={{ whiteSpace: "pre-wrap", flex: 1 }}
-              >
-                {p.description || "Sin descripción."}
-              </Text>
+              <Box style={{ flex: 1, minHeight: 0 }}>
+                <Text
+                  size="sm"
+                  c="dimmed"
+                  lineClamp={isDescriptionExpanded ? undefined : 4}
+                  style={{ whiteSpace: "pre-wrap" }}
+                >
+                  {description}
+                </Text>
+                {description.length > 120 && (
+                  <Text
+                    size="xs"
+                    fw={600}
+                    c="blue"
+                    style={{ cursor: "pointer" }}
+                    onClick={toggleDescription}
+                  >
+                    {isDescriptionExpanded ? "Ver menos" : "Ver más"}
+                  </Text>
+                )}
+              </Box>
 
               <Divider my={2} mt="auto" />
 
@@ -616,7 +657,7 @@ export default function ProductsView({
             radius="md"
             onClick={() => navigate(`/dashboard/${eventId}/my-products`)}
           >
-            Cargar mis productos
+            Mis productos
           </Button>
         </Group>
       </Paper>

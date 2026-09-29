@@ -1,16 +1,16 @@
 import { useMemo, useState } from "react";
 import {
-  Card, Group, Title, Text, Button, Stack, Modal,
-  TextInput, Textarea, FileInput, Grid, Image, Badge,
-  Avatar, Box, Divider, Paper, useMantineTheme,
+  Card, Group, Title, Text, Button, Stack,
+  Grid, Image, Badge,
+  Box, Divider, Paper,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import {
   IconPlus,
   IconEdit,
   IconTrash,
-  IconPhoto,
 } from "@tabler/icons-react";
+import ProductEditModal from "./ProductEditModal";
 
 export default function MyProductsTab({
   products,
@@ -20,7 +20,6 @@ export default function MyProductsTab({
   deleteProduct,
   policies,
 }: any) {
-  const theme = useMantineTheme();
   const uid = currentUser?.uid;
 
   const allowImageUpload = policies?.allowProductImageUpload !== false;
@@ -32,49 +31,15 @@ export default function MyProductsTab({
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("");
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [saving, setSaving] = useState(false);
 
   const openCreate = () => {
     setEditing(null);
-    setTitle("");
-    setDescription("");
-    setCategory("");
-    setImageFile(null);
     setOpen(true);
   };
 
   const openEdit = (p: any) => {
     setEditing(p);
-    setTitle(p.title || "");
-    setDescription(p.description || "");
-    setCategory(p.category || "");
-    setImageFile(null);
     setOpen(true);
-  };
-
-  const onSave = async () => {
-    if (!title.trim()) return showNotification({ title: "Falta título", message: "Escribe un título.", color: "red" });
-    if (!description.trim()) return showNotification({ title: "Falta descripción", message: "Escribe una descripción.", color: "red" });
-
-    setSaving(true);
-    try {
-      if (editing) {
-        await updateProduct(editing.id, { title, description, category, imageFile });
-        showNotification({ title: "Actualizado", message: "Producto actualizado.", color: "teal" });
-      } else {
-        await createProduct({ title, description, category, imageFile });
-        showNotification({ title: "Creado", message: "Producto creado.", color: "teal" });
-      }
-      setOpen(false);
-    } catch {
-      showNotification({ title: "Error", message: "No se pudo guardar.", color: "red" });
-    } finally {
-      setSaving(false);
-    }
   };
 
   const onDelete = async (p: any) => {
@@ -201,31 +166,14 @@ export default function MyProductsTab({
         )}
       </Grid>
 
-      <Modal
+      <ProductEditModal
         opened={open}
         onClose={() => setOpen(false)}
-        title={editing ? "Editar producto" : "Crear producto"}
-        radius="lg"
-      >
-        <Stack>
-          <TextInput label="Título" value={title} onChange={(e) => setTitle(e.currentTarget.value)} required radius="md" />
-          <TextInput label="Categoría" placeholder="Ej: Tecnología, Alimentos, Servicios..." value={category} onChange={(e) => setCategory(e.currentTarget.value)} radius="md" />
-          <Textarea label="Descripción" value={description} onChange={(e) => setDescription(e.currentTarget.value)} minRows={4} required radius="md" />
-          {allowImageUpload && (
-            <FileInput
-              label="Imagen (opcional)"
-              value={imageFile}
-              onChange={setImageFile}
-              accept="image/png,image/jpeg,image/webp"
-              radius="md"
-            />
-          )}
-          <Group grow mt="sm">
-            <Button variant="default" radius="md" onClick={() => setOpen(false)}>Cancelar</Button>
-            <Button loading={saving} radius="md" onClick={onSave}>{editing ? "Guardar" : "Crear"}</Button>
-          </Group>
-        </Stack>
-      </Modal>
+        editing={editing}
+        createProduct={createProduct}
+        updateProduct={updateProduct}
+        allowImageUpload={allowImageUpload}
+      />
     </>
   );
 }

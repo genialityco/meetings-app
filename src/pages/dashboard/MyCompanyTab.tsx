@@ -34,6 +34,8 @@ import {
   IconScan,
   IconDownload,
   IconPencil,
+  IconPlus,
+  IconTrash,
 } from "@tabler/icons-react";
 import { db } from "../../firebase/firebaseConfig";
 import { useCompanyData } from "./useCompanyData";
@@ -41,13 +43,23 @@ import { getTableLabel } from "./meetingSlotEngine";
 import StandVisitQrModal from "./StandVisitQrModal";
 import QrScannerModal from "../../components/QrScannerModal";
 import AttendeeScanReviewModal from "../../components/AttendeeScanReviewModal";
+import ProductEditModal from "./ProductEditModal";
 import { useAttendeeScanFlow } from "../../hooks/useAttendeeScanFlow";
 import { splitAttendeeFields } from "../../utils/attendeeFields";
 import { normalizeTipoAsistente } from "../../utils/attendeeRole";
 import type { Product } from "./types";
 import type { CompanyRepresentative } from "./useCompanyData";
 
-export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker, sendMeetingRequest: dashboardSendMeetingRequest, eventConfig }: any) {
+export default function MyCompanyTab({
+  currentUser,
+  requestMeetingWithSlotPicker,
+  sendMeetingRequest: dashboardSendMeetingRequest,
+  eventConfig,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+  policies,
+}: any) {
   const { eventId } = useParams();
   const companyNit = currentUser?.data?.companyId;
 
@@ -76,6 +88,27 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
     );
   const [exportingVisits, setExportingVisits] = useState(false);
   const myUid = currentUser?.uid;
+
+  const allowImageUpload = policies?.allowProductImageUpload !== false;
+  const [productModalOpened, setProductModalOpened] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const openCreateProduct = () => {
+    setEditingProduct(null);
+    setProductModalOpened(true);
+  };
+  const openEditProduct = (p: Product) => {
+    setEditingProduct(p);
+    setProductModalOpened(true);
+  };
+  const handleDeleteProduct = async (p: Product) => {
+    if (!confirm("¿Eliminar este producto?")) return;
+    try {
+      await deleteProduct(p.id);
+      showNotification({ title: "Eliminado", message: "Producto eliminado.", color: "teal" });
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo eliminar.", color: "red" });
+    }
+  };
 
   // Label del rol contrario al propio, para el escaneo de visitantes (comprador <-> vendedor).
   // Sin tipoAsistente definido (p. ej. roleMode "open"), se usa un término neutro.
@@ -539,16 +572,32 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
       )}
 
       {/* Products section */}
-      {products.length > 0 && (
+      <Divider
+        label={
+          <Group gap={6}>
+            <IconBuildingStore size={16} />
+            <Text fw={600}>Productos</Text>
+          </Group>
+        }
+      />
+      <Group justify="flex-end">
+        <Button
+          size="compact-sm"
+          radius="md"
+          leftSection={<IconPlus size={14} />}
+          onClick={openCreateProduct}
+        >
+          Crear producto
+        </Button>
+      </Group>
+      {products.length === 0 ? (
+        <Paper withBorder radius="lg" p="lg">
+          <Text c="dimmed" ta="center">
+            Tu empresa aún no tiene productos registrados.
+          </Text>
+        </Paper>
+      ) : (
         <>
-          <Divider
-            label={
-              <Group gap={6}>
-                <IconBuildingStore size={16} />
-                <Text fw={600}>Productos</Text>
-              </Group>
-            }
-          />
           <Grid gutter="sm">
             {products.map((p) => {
               const isMine = !!myUid && p.ownerUserId === myUid;
@@ -612,18 +661,41 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
                         {p.description}
                       </Text>
                       <Divider my={2} />
-                      <Button
-                        mt="auto"
-                        size="compact-sm"
-                        radius="md"
-                        fullWidth
-                        variant={isMine ? "light" : "filled"}
-                        disabled={isMine || loadingId === key}
-                        loading={loadingId === key}
-                        onClick={() => handleProductMeeting(p)}
-                      >
-                        {isMine ? "Tu producto" : "Solicitar reunión"}
-                      </Button>
+                      {isMine ? (
+                        <Group grow gap="xs" mt="auto">
+                          <Button
+                            variant="light"
+                            size="compact-sm"
+                            radius="md"
+                            leftSection={<IconPencil size={14} />}
+                            onClick={() => openEditProduct(p)}
+                          >
+                            Editar
+                          </Button>
+                          <Button
+                            color="red"
+                            variant="light"
+                            size="compact-sm"
+                            radius="md"
+                            leftSection={<IconTrash size={14} />}
+                            onClick={() => handleDeleteProduct(p)}
+                          >
+                            Eliminar
+                          </Button>
+                        </Group>
+                      ) : (
+                        <Button
+                          mt="auto"
+                          size="compact-sm"
+                          radius="md"
+                          fullWidth
+                          disabled={loadingId === key}
+                          loading={loadingId === key}
+                          onClick={() => handleProductMeeting(p)}
+                        >
+                          Solicitar reunión
+                        </Button>
+                      )}
                     </Stack>
                   </Card>
                 </Grid.Col>
@@ -633,14 +705,14 @@ export default function MyCompanyTab({ currentUser, requestMeetingWithSlotPicker
         </>
       )}
 
-      {/* Empty state */}
-      {products.length === 0 && representatives.length === 0 && (
-        <Paper withBorder radius="lg" p="lg">
-          <Text c="dimmed" ta="center">
-            Tu empresa aún no tiene representantes ni productos registrados.
-          </Text>
-        </Paper>
-      )}
+      <ProductEditModal
+        opened={productModalOpened}
+        onClose={() => setProductModalOpened(false)}
+        editing={editingProduct}
+        createProduct={createProduct}
+        updateProduct={updateProduct}
+        allowImageUpload={allowImageUpload}
+      />
 
       <QrScannerModal
         opened={attendeeScan.scannerOpened}
