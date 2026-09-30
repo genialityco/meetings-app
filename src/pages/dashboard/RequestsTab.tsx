@@ -38,6 +38,7 @@ import {
 import { Assistant, Meeting } from "./types";
 import { trackEvent } from "../../utils/analytics";
 import { logWhatsAppClick } from "../../utils/eventStats";
+import { splitAttendeeFields, getFieldLabel } from "../../utils/attendeeFields";
 
 interface RequestsTabProps {
   pendingRequests: Meeting[];
@@ -47,12 +48,34 @@ interface RequestsTabProps {
   sentRequests: Meeting[];
   sentRejectedRequests: Meeting[];
   assistants: Assistant[];
+  formFields?: any[];
   updateMeetingStatus: (meetingId: string, status: string) => void;
   sendWhatsAppMessage: (participant: Assistant) => void;
   cancelSentMeeting: (meetingId: string, action: string) => void;
   prepareSlotSelection: (meetingId: string) => void;
   prepareSlotSelectionLoading?: boolean;
 }
+
+// Nombres ya mostrados en el header de la card (avatar + nombre + cargo/empresa) o que
+// no tiene sentido listar como fila suelta (logo, NIT). El resto de formFields del
+// evento (correo, teléfono, descripción, campos personalizados como sector/país...)
+// se listan dinámicamente en vez del set fijo que había antes.
+const REQUEST_CARD_SKIP_FIELDS = new Set([
+  "nombre",
+  "cargo",
+  "company_nit",
+  "company_logo",
+  "company_razonSocial",
+]);
+
+const FIELD_ICONS: Record<string, React.ReactNode> = {
+  empresa: <IconBuildingStore size={14} />,
+  correo: <IconMail size={14} />,
+  telefono: <IconPhone size={14} />,
+  descripcion: <IconFileDescription size={14} />,
+  interesPrincipal: <IconTargetArrow size={14} />,
+  necesidad: <IconBulb size={14} />,
+};
 
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
@@ -84,16 +107,26 @@ function InfoRow({
 function RequestCard({
   user,
   request,
+  formFields = [],
   actions,
   statusBadge,
 }: {
   user: Assistant | undefined;
   request: Meeting;
+  formFields?: any[];
   actions?: React.ReactNode;
   statusBadge?: React.ReactNode;
 }) {
   const theme = useMantineTheme();
   const navigate = useNavigate();
+
+  // Campos a mostrar como filas de info: los que el evento realmente tiene
+  // configurados (correo, teléfono, descripción, sector/país personalizados, etc.),
+  // en vez de un set fijo que para este tipo de evento ni existe (interés/necesidad).
+  const { basicFields, additionalFields } = splitAttendeeFields(formFields);
+  const infoFields = [...basicFields, ...additionalFields].filter(
+    (f: any) => !REQUEST_CARD_SKIP_FIELDS.has(f.name),
+  );
 
   if (!user) {
     return (
@@ -161,33 +194,21 @@ function RequestCard({
 
       <Divider my="sm" />
 
-      {/* Info rows */}
+      {/* Info rows: dinámicas según los formFields del evento */}
       <Stack gap={8} style={{ flex: 1 }}>
         <InfoRow
           icon={<IconBuildingStore size={14} />}
           label="Empresa"
           value={user.empresa}
         />
-        <InfoRow
-          icon={<IconMail size={14} />}
-          label="Correo"
-          value={user.correo}
-        />
-        <InfoRow
-          icon={<IconPhone size={14} />}
-          label="Teléfono"
-          value={user.telefono}
-        />
-        <InfoRow
-          icon={<IconTargetArrow size={14} />}
-          label="Interés"
-          value={user.interesPrincipal}
-        />
-        <InfoRow
-          icon={<IconBulb size={14} />}
-          label="Necesidad"
-          value={user.necesidad}
-        />
+        {infoFields.map((f: any) => (
+          <InfoRow
+            key={f.name}
+            icon={FIELD_ICONS[f.name] || <IconFileDescription size={14} />}
+            label={getFieldLabel(f, user.tipoAsistente)}
+            value={(user as any)[f.name]}
+          />
+        ))}
       </Stack>
 
       {request.contextNote && (
@@ -220,6 +241,7 @@ export default function RequestsTab({
   sentRejectedRequests = [],
   takenRequests,
   assistants,
+  formFields = [],
   updateMeetingStatus,
   sendWhatsAppMessage,
   cancelSentMeeting,
@@ -259,6 +281,7 @@ export default function RequestsTab({
                     <RequestCard
                       user={requester}
                       request={request}
+                      formFields={formFields}
                       statusBadge={
                         (request as any).isCompanyRequest ? (
                           <Badge color="blue" variant="light" radius="xl">
@@ -359,6 +382,7 @@ export default function RequestsTab({
                     <RequestCard
                       user={receiver}
                       request={request}
+                      formFields={formFields}
                       statusBadge={
                         <Badge
                           variant="light"
@@ -426,6 +450,7 @@ export default function RequestsTab({
                     <RequestCard
                       user={requester}
                       request={request}
+                      formFields={formFields}
                       statusBadge={
                         <Group gap="xs">
                         {request.meetingDate && (() => {
@@ -503,6 +528,7 @@ export default function RequestsTab({
                     <RequestCard
                       user={requester}
                       request={request}
+                      formFields={formFields}
                       statusBadge={
                         <Badge
                           variant="light"
@@ -547,6 +573,7 @@ export default function RequestsTab({
                   <RequestCard
                     user={requester}
                     request={request}
+                    formFields={formFields}
                     statusBadge={
                       <Badge variant="light" color="red" radius="md" size="sm">
                         Rechazaste la reunión
@@ -563,6 +590,7 @@ export default function RequestsTab({
                   <RequestCard
                     user={receiver}
                     request={request}
+                    formFields={formFields}
                     statusBadge={
                       <Badge variant="light" color="red" radius="md" size="sm">
                         Tu solicitud fue rechazada
