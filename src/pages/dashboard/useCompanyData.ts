@@ -25,6 +25,10 @@ import {
   createMeetingRequestDoc,
   pickAvailableCompanyAdvisor,
   getCompanyAdvisors,
+  createProductDoc,
+  updateProductDoc,
+  deleteProductDoc,
+  type ProductPayload,
 } from "./meetingSlotEngine";
 
 export type VisitLookupResult =
@@ -618,6 +622,23 @@ export function useCompanyData(
 
   const chosenSlotTableLabel = getTableLabel(chosenSlot?.tableNumber, eventConfig?.tableNames);
 
+  // CRUD de productos (compartido con useDashboardData.ts vía meetingSlotEngine.ts):
+  // permite editar/crear/eliminar productos propios desde CompanyLanding y Mi empresa.
+  const createProduct = async (payload: ProductPayload) => {
+    if (!uid || !eventId) throw new Error("Missing uid/eventId");
+    return createProductDoc({ eventId, uid, ownerData: currentUser?.data, payload });
+  };
+
+  const updateProduct = async (productId: string, payload: ProductPayload) => {
+    if (!uid || !eventId) throw new Error("Missing uid/eventId");
+    return updateProductDoc({ eventId, uid, productId, payload });
+  };
+
+  const deleteProduct = async (productId: string) => {
+    if (!eventId) throw new Error("Missing eventId");
+    return deleteProductDoc({ eventId, productId });
+  };
+
   return {
     company,
     products,
@@ -625,6 +646,9 @@ export function useCompanyData(
     visits,
     lookupAttendeeForVisit,
     confirmVisit,
+    createProduct,
+    updateProduct,
+    deleteProduct,
     eventConfig,
     eventName,
     eventImage,

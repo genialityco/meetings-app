@@ -1,29 +1,24 @@
 import {
   Grid,
-  Card,
   Group,
-  Avatar,
   Title,
   Text,
   Button,
   TextInput,
   Select,
   Badge,
-  Image,
   Stack,
-  Box,
   ActionIcon,
-  Divider,
   Paper,
-  ThemeIcon,
   Loader,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { IconSearch, IconX, IconFilterOff, IconBuildingStore, IconSparkles, IconPlus } from "@tabler/icons-react";
+import { IconSearch, IconX, IconFilterOff, IconSparkles, IconPlus } from "@tabler/icons-react";
 import type { Product, Company, Assistant, MeetingContext } from "./types";
 import MeetingRequestModal from "./MeetingRequestModal";
+import ProductCard from "./ProductCard";
 
 interface ProductsViewProps {
   products: Product[];
@@ -68,7 +63,6 @@ export default function ProductsView({
   const [modalOpened, setModalOpened] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<{ product: Product; assistantId: string; assistantPhone: string } | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
-  const [expandedDescriptions, setExpandedDescriptions] = useState<Set<string>>(new Set());
 
   const [vectorResults, setVectorResults] = useState<any[]>([]);
   const [isVectorSearching, setIsVectorSearching] = useState(false);
@@ -310,309 +304,40 @@ export default function ProductsView({
     // Verificar si esta card debe ser resaltada (usando el estado temporal)
     const isHighlighted = highlightedId === p.id;
 
-    const description = p.description || "Sin descripción.";
-    const isDescriptionExpanded = expandedDescriptions.has(p.id);
-    const toggleDescription = (e: any) => {
-      e.stopPropagation();
-      setExpandedDescriptions((prev) => {
-        const next = new Set(prev);
-        if (next.has(p.id)) next.delete(p.id);
-        else next.add(p.id);
-        return next;
-      });
-    };
-
     return (
       <Grid.Col
         key={p.id}
         // ✅ 2 columnas en mobile: base=6 (12-grid => 2 columnas)
         span={{ base: 6, sm: 4, md: 3, lg: 3 }}
       >
-        <Card
-          id={`product-card-${p.id}`}
-          withBorder
-          radius="lg"
-          padding="sm"
-          shadow="sm"
-          style={{
-            height: "100%",
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-            position: "relative",
-            border: isHighlighted ? "3px solid var(--mantine-color-teal-5)" : undefined,
-            boxShadow: isHighlighted ? "0 0 20px rgba(20, 184, 166, 0.4)" : undefined,
-            animation: isHighlighted ? "pulse 2s ease-in-out 3" : undefined,
+        <ProductCard
+          domId={`product-card-${p.id}`}
+          product={p}
+          allowImageUpload={allowImageUpload}
+          highlighted={isHighlighted}
+          matchScore={similarityScore}
+          company={{
+            logoUrl: companyDoc?.logoUrl,
+            name: p.ownerCompany || "Sin empresa",
+            onClick:
+              p.companyId && eventId
+                ? () => navigate(`/dashboard/${eventId}/company/${p.companyId}`)
+                : undefined,
           }}
-        >
-          {/* Badge de concordancia */}
-          {hasSimilarity && (
-            <Badge
-              variant="gradient"
-              gradient={{ from: 'blue', to: 'cyan', deg: 90 }}
-              size="sm"
+          footer={
+            <Button
+              size="compact-sm"
               radius="md"
-              style={{
-                position: "absolute",
-                top: 10,
-                right: 10,
-                zIndex: 2,
-              }}
+              fullWidth
+              variant={isDisabled ? "light" : "filled"}
+              onClick={() => handleOpenModal(p.ownerUserId, p.ownerPhone || "", p)}
+              disabled={isDisabled}
+              loading={loadingId === `${p.id}-${p.ownerUserId}`}
             >
-              {similarityScore}% match
-            </Badge>
-          )}
-
-          {/* Badge de afinidad del dueño */}
-          {/* {!hasSimilarity && p.ownerUserId && affinityScores[p.ownerUserId] && affinityScores[p.ownerUserId] > 0 && (
-            <Badge
-              variant="gradient"
-              gradient={{ from: 'teal', to: 'green', deg: 90 }}
-              size="xs"
-              radius="md"
-              style={{
-                position: "absolute",
-                top: 10,
-                right: 10,
-                zIndex: 2,
-              }}
-            >
-              {affinityScores[p.ownerUserId]}% afinidad
-            </Badge>
-          )} */}
-
-          {/* Badge NUEVO cuando está resaltado */}
-          {isHighlighted && (
-            <Badge
-              variant="filled"
-              color="teal"
-              size="lg"
-              radius="md"
-              style={{
-                position: "absolute",
-                top: 10,
-                left: 10,
-                zIndex: 3,
-                fontWeight: 700,
-              }}
-            >
-              ¡NUEVO!
-            </Badge>
-          )}
-
-          {allowImageUpload && p.imageUrl ? (
-            <>
-              <Card.Section>
-                <Box style={{ position: "relative", aspectRatio: "1 / 1" }}>
-                  <Image
-                    src={p.imageUrl}
-                    alt={p.title}
-                    style={{ width: "100%", height: "100%" }}
-                    fit="cover"
-                  />
-                  {/* Overlay sutil para que se vea más “card premium” */}
-                  <Box
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      background:
-                        "linear-gradient(180deg, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.35) 100%)",
-                      pointerEvents: "none",
-                    }}
-                  />
-                  {/* Badge de categoría arriba */}
-                  {p.category && (
-                    <Badge
-                      variant="filled"
-                      radius="md"
-                      size="sm"
-                      style={{
-                        position: "absolute",
-                        top: 10,
-                        left: 10,
-                        background: "rgba(0,0,0,0.55)",
-                        border: "1px solid rgba(255,255,255,0.18)",
-                      }}
-                    >
-                      {p.category}
-                    </Badge>
-                  )}
-                </Box>
-              </Card.Section>
-
-              <Stack gap={8} mt="sm" style={{ flex: 1, minHeight: 0 }}>
-                {/* Título */}
-                <Title order={6} lineClamp={2} style={{ minWidth: 0 }}>
-                  {p.title || "Producto"}
-                </Title>
-
-                {/* Empresa */}
-                <Group
-                  gap={8}
-                  wrap="nowrap"
-                  style={{ cursor: p.companyId ? "pointer" : undefined }}
-                  onClick={
-                    p.companyId && eventId
-                      ? () => navigate(`/dashboard/${eventId}/company/${p.companyId}`)
-                      : undefined
-                  }
-                >
-                  {companyDoc?.logoUrl ? (
-                    <Image
-                      src={companyDoc.logoUrl}
-                      alt={p.ownerCompany || ""}
-                      w={22}
-                      h={22}
-                      radius="sm"
-                      fit="contain"
-                    />
-                  ) : (
-                    <ThemeIcon variant="light" radius="md" size={22}>
-                      <IconBuildingStore size={14} />
-                    </ThemeIcon>
-                  )}
-                  <Text
-                    size="xs"
-                    fw={600}
-                    lineClamp={1}
-                    style={{ minWidth: 0 }}
-                    td={p.companyId ? "underline" : undefined}
-                  >
-                    {p.ownerCompany || "Sin empresa"}
-                  </Text>
-                </Group>
-
-                {/* Descripción */}
-                <Box>
-                  <Text
-                    size="xs"
-                    c="dimmed"
-                    lineClamp={isDescriptionExpanded ? undefined : 3}
-                    style={{ whiteSpace: "pre-wrap" }}
-                  >
-                    {description}
-                  </Text>
-                  {description.length > 90 && (
-                    <Text
-                      size="xs"
-                      fw={600}
-                      c="blue"
-                      style={{ cursor: "pointer" }}
-                      onClick={toggleDescription}
-                    >
-                      {isDescriptionExpanded ? "Ver menos" : "Ver más"}
-                    </Text>
-                  )}
-                </Box>
-
-                <Divider my={2} mt="auto" />
-
-                {/* CTA */}
-                <Button
-                  size="compact-sm"
-                  radius="md"
-                  fullWidth
-                  variant={isDisabled ? "light" : "filled"}
-                  onClick={() =>
-                    handleOpenModal(p.ownerUserId, p.ownerPhone || "", p)
-                  }
-                  disabled={isDisabled}
-                  loading={loadingId === `${p.id}-${p.ownerUserId}`}
-                >
-                  {ctaLabel}
-                </Button>
-              </Stack>
-            </>
-          ) : (
-            <Stack gap={8} style={{ height: "100%" }}>
-              {p.category && (
-                <Badge variant="light" size="xs" color="blue" radius="sm">
-                  {p.category}
-                </Badge>
-              )}
-              {/* Título */}
-              <Title order={5} lineClamp={2} style={{ minWidth: 0, lineHeight: 1.2 }}>
-                {p.title || "Producto"}
-              </Title>
-
-              {/* Empresa */}
-              <Group
-                gap={8}
-                wrap="nowrap"
-                style={{ cursor: p.companyId ? "pointer" : undefined }}
-                onClick={
-                  p.companyId && eventId
-                    ? () => navigate(`/dashboard/${eventId}/company/${p.companyId}`)
-                    : undefined
-                }
-              >
-                {companyDoc?.logoUrl ? (
-                  <Image
-                    src={companyDoc.logoUrl}
-                    alt={p.ownerCompany || ""}
-                    w={22}
-                    h={22}
-                    radius="sm"
-                    fit="contain"
-                  />
-                ) : (
-                  <ThemeIcon variant="light" radius="md" size={22}>
-                    <IconBuildingStore size={14} />
-                  </ThemeIcon>
-                )}
-                <Text
-                  size="xs"
-                  fw={600}
-                  lineClamp={1}
-                  style={{ minWidth: 0 }}
-                  td={p.companyId ? "underline" : undefined}
-                >
-                  {p.ownerCompany || "Sin empresa"}
-                </Text>
-              </Group>
-
-              {/* Descripción */}
-              <Box style={{ flex: 1, minHeight: 0 }}>
-                <Text
-                  size="sm"
-                  c="dimmed"
-                  lineClamp={isDescriptionExpanded ? undefined : 4}
-                  style={{ whiteSpace: "pre-wrap" }}
-                >
-                  {description}
-                </Text>
-                {description.length > 120 && (
-                  <Text
-                    size="xs"
-                    fw={600}
-                    c="blue"
-                    style={{ cursor: "pointer" }}
-                    onClick={toggleDescription}
-                  >
-                    {isDescriptionExpanded ? "Ver menos" : "Ver más"}
-                  </Text>
-                )}
-              </Box>
-
-              <Divider my={2} mt="auto" />
-
-              {/* CTA */}
-              <Button
-                size="compact-sm"
-                radius="md"
-                fullWidth
-                variant={isDisabled ? "light" : "filled"}
-                onClick={() =>
-                  handleOpenModal(p.ownerUserId, p.ownerPhone || "", p)
-                }
-                disabled={isDisabled}
-                loading={loadingId === `${p.id}-${p.ownerUserId}`}
-              >
-                {ctaLabel}
-              </Button>
-            </Stack>
-          )}
-        </Card>
+              {ctaLabel}
+            </Button>
+          }
+        />
       </Grid.Col>
     );
   };

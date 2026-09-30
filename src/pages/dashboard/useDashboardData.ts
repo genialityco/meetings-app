@@ -20,8 +20,6 @@ import { normalizeTipoAsistente, isVendedor, canDiscoverAttendee } from "../../u
 import { getEventDayKeys } from "../../utils/eventDays";
 import { showNotification, notifications as mantineNotifications } from "@mantine/notifications";
 import { serverTimestamp } from "firebase/firestore";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
-import { storage } from "../../firebase/firebaseConfig";
 import { sendWhatsAppMessage as sendWhatsAppAPI } from "../../utils/whatsappService";
 import { meetingAnalytics, profileAnalytics, trackError, trackEvent } from "../../utils/analytics";
 import {
@@ -39,6 +37,10 @@ import {
   pickAvailableCompanyAdvisor,
   notifyCompanyAdvisors,
   getCompanyAdvisors,
+  createProductDoc,
+  updateProductDoc,
+  deleteProductDoc,
+  type ProductPayload,
 } from "./meetingSlotEngine";
 
 type Product = {
@@ -215,20 +217,6 @@ async function sendMeetingRejectedWhatsapp(
       requesterCompany: rejectedByParticipant?.empresa || "",
     },
   });
-}
-
-async function uploadProductImage(
-  eventId: string,
-  ownerUserId: string,
-  productId: string,
-  file: File,
-) {
-  const storageRef = ref(
-    storage,
-    `eventProducts/${eventId}/${ownerUserId}/${productId}/${file.name}`,
-  );
-  await uploadBytes(storageRef, file);
-  return await getDownloadURL(storageRef);
 }
 
 export function useDashboardData(eventId?: string) {
@@ -2147,77 +2135,19 @@ export function useDashboardData(eventId?: string) {
     label: i,
   }));
 
-  const createProduct = async (payload: {
-    title: string;
-    description: string;
-    category?: string;
-    imageFile?: File | null;
-  }) => {
+  const createProduct = async (payload: ProductPayload) => {
     if (!uid || !eventId) throw new Error("Missing uid/eventId");
-
-    const owner = currentUser?.data || {};
-    const base: any = {
-      eventId,
-      ownerUserId: uid,
-      ownerName: owner.nombre || owner.name || "",
-      ownerCompany: owner.empresa || owner.company || "",
-      ownerPhone: owner.telefono || owner.contacto?.telefono || null,
-      companyId: owner.companyId || null,
-      title: payload.title.trim(),
-      description: payload.description.trim(),
-      category: payload.category?.trim() || "",
-      imageUrl: null,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    };
-
-    const docRef = await addDoc(
-      collection(db, "events", eventId, "products"),
-      base,
-    );
-
-    if (payload.imageFile) {
-      const url = await uploadProductImage(
-        eventId,
-        uid,
-        docRef.id,
-        payload.imageFile,
-      );
-      await updateDoc(docRef, { imageUrl: url, updatedAt: serverTimestamp() });
-    }
-
-    return docRef.id;
+    return createProductDoc({ eventId, uid, ownerData: currentUser?.data, payload });
   };
 
-  const updateProduct = async (
-    productId: string,
-    payload: { title: string; description: string; category?: string; imageFile?: File | null },
-  ) => {
+  const updateProduct = async (productId: string, payload: ProductPayload) => {
     if (!uid || !eventId) throw new Error("Missing uid/eventId");
-
-    const pRef = doc(db, "events", eventId, "products", productId);
-    const patch: any = {
-      title: payload.title.trim(),
-      description: payload.description.trim(),
-      category: payload.category?.trim() || "",
-      updatedAt: serverTimestamp(),
-    };
-
-    if (payload.imageFile) {
-      patch.imageUrl = await uploadProductImage(
-        eventId,
-        uid,
-        productId,
-        payload.imageFile,
-      );
-    }
-
-    await updateDoc(pRef, patch);
+    return updateProductDoc({ eventId, uid, productId, payload });
   };
 
   const deleteProduct = async (productId: string) => {
     if (!eventId) throw new Error("Missing eventId");
-    await deleteDoc(doc(db, "events", eventId, "products", productId));
+    return deleteProductDoc({ eventId, productId });
   };
 
   // Manejar cambio de fecha en el modal de slots

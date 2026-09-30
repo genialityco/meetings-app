@@ -33,12 +33,15 @@ import {
   IconId,
   IconUsers,
   IconPencil,
+  IconTrash,
 } from "@tabler/icons-react";
 import { useCompanyData } from "./useCompanyData";
 import { DEFAULT_POLICIES } from "./types";
 import type { Product } from "./types";
 import type { CompanyRepresentative } from "./useCompanyData";
 import SlotModal from "./SlotModal";
+import ProductEditModal from "./ProductEditModal";
+import ProductCard from "./ProductCard";
 import { getTableLabel } from "./meetingSlotEngine";
 import { getFieldLabel } from "../../utils/attendeeFields";
 
@@ -99,10 +102,28 @@ export default function CompanyLanding() {
     groupedSlots,
     tableOptions,
     chosenSlot,
+    createProduct,
+    updateProduct,
+    deleteProduct,
   } = useCompanyData(eventId, companyNit);
 
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [requestMessage, setRequestMessage] = useState("");
+  const [productModalOpened, setProductModalOpened] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const openEditProduct = (p: Product) => {
+    setEditingProduct(p);
+    setProductModalOpened(true);
+  };
+  const handleDeleteProduct = async (p: Product) => {
+    if (!confirm("¿Eliminar este producto?")) return;
+    try {
+      await deleteProduct(p.id);
+      showNotification({ title: "Eliminado", message: "Producto eliminado.", color: "teal" });
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo eliminar.", color: "red" });
+    }
+  };
 
   // Clic en las etiquetas "N representantes" / "N productos": scroll a la sección
   // y parpadeo breve (3 veces) de sus tarjetas para resaltarlas.
@@ -527,166 +548,88 @@ export default function CompanyLanding() {
                 {products.map((p) => {
                   const isMine = !!myUid && p.ownerUserId === myUid;
                   const key = `${p.id}-${p.ownerUserId}`;
+
+                  let footer: any;
+                  if (isMine) {
+                    footer = (
+                      <Group grow gap="xs">
+                        <Button
+                          variant="light"
+                          size="compact-sm"
+                          radius="md"
+                          leftSection={<IconPencil size={14} />}
+                          onClick={() => openEditProduct(p)}
+                        >
+                          Editar
+                        </Button>
+                        <Button
+                          color="red"
+                          variant="light"
+                          size="compact-sm"
+                          radius="md"
+                          leftSection={<IconTrash size={14} />}
+                          onClick={() => handleDeleteProduct(p)}
+                        >
+                          Eliminar
+                        </Button>
+                      </Group>
+                    );
+                  } else {
+                    const existingMeeting = userMeetings?.find((m) =>
+                      (m.participants || []).includes(p.ownerUserId)
+                    );
+                    const isPendingReceiver = existingMeeting?.status === "pending" && existingMeeting?.receiverId === myUid;
+                    const isPendingRequester = existingMeeting?.status === "pending" && existingMeeting?.requesterId === myUid;
+                    const isAccepted = existingMeeting?.status === "accepted";
+
+                    let buttonText = "Solicitar reunión";
+                    let buttonColor: any = undefined;
+                    let buttonVariant: any = "filled";
+                    let isDisabled = loadingId === key;
+                    let onClick = () => handleProductMeeting(p);
+
+                    if (isAccepted) {
+                      buttonText = "Reunión aceptada";
+                      buttonColor = "teal";
+                      isDisabled = true;
+                    } else if (isPendingReceiver) {
+                      buttonText = "Aceptar solicitud";
+                      buttonColor = "green";
+                      buttonVariant = "filled";
+                      onClick = (async () => {
+                        window.open(`/meeting-response/${eventId}/${existingMeeting.id}/accept`, "_blank");
+                      }) as any;
+                    } else if (isPendingRequester) {
+                      buttonText = "Solicitud pendiente";
+                      buttonColor = "yellow";
+                      buttonVariant = "light";
+                      isDisabled = true;
+                    }
+
+                    footer = (
+                      <Button
+                        size="compact-sm"
+                        radius="md"
+                        fullWidth
+                        variant={buttonVariant}
+                        color={buttonColor}
+                        disabled={isDisabled}
+                        loading={loadingId === key}
+                        onClick={onClick}
+                      >
+                        {buttonText}
+                      </Button>
+                    );
+                  }
+
                   return (
                     <Grid.Col key={p.id} span={6}>
-                      <Card
-                        withBorder
-                        radius="lg"
-                        padding="sm"
-                        shadow="sm"
-                        style={{ height: "100%", overflow: "hidden", display: "flex", flexDirection: "column" }}
+                      <ProductCard
+                        product={p}
+                        allowImageUpload={allowImageUpload}
+                        footer={footer}
                         className={flashSection === "products" ? "company-section-flash" : undefined}
-                      >
-                        {allowImageUpload && p.imageUrl ? (
-                          <>
-                            <Card.Section>
-                              <Box style={{ position: "relative" }}>
-                                <Image
-                                  src={p.imageUrl}
-                                  alt={p.title}
-                                  height={140}
-                                  fit="cover"
-                                />
-                                {p.category && (
-                                  <Badge
-                                    variant="filled"
-                                    radius="md"
-                                    size="sm"
-                                    style={{
-                                      position: "absolute",
-                                      top: 10,
-                                      left: 10,
-                                      background: "rgba(0,0,0,0.55)",
-                                      border: "1px solid rgba(255,255,255,0.18)",
-                                    }}
-                                  >
-                                    {p.category}
-                                  </Badge>
-                                )}
-                              </Box>
-                            </Card.Section>
-
-                            <Stack gap={8} mt="sm" style={{ flex: 1 }}>
-                              <Title order={6} lineClamp={2}>
-                                {p.title}
-                              </Title>
-                              <Text size="xs" c="dimmed" lineClamp={3} style={{ whiteSpace: "pre-wrap" }}>
-                                {p.description}
-                              </Text>
-                              <Divider my={2} mt="auto" />
-                              {(() => {
-                                const existingMeeting = userMeetings?.find(m => 
-                                  (m.participants || []).includes(p.ownerUserId)
-                                );
-                                const isPendingReceiver = existingMeeting?.status === "pending" && existingMeeting?.receiverId === myUid;
-                                const isPendingRequester = existingMeeting?.status === "pending" && existingMeeting?.requesterId === myUid;
-                                const isAccepted = existingMeeting?.status === "accepted";
-                                
-                                let buttonText = "Solicitar reunión";
-                                let buttonColor = undefined;
-                                let buttonVariant = isMine ? "light" : "filled";
-                                let isDisabled = isMine || loadingId === key;
-                                let onClick = () => handleProductMeeting(p);
-                                
-                                if (isMine) {
-                                  buttonText = "Tu producto";
-                                } else if (isAccepted) {
-                                  buttonText = "Reunión aceptada";
-                                  buttonColor = "teal";
-                                  isDisabled = true;
-                                } else if (isPendingReceiver) {
-                                  buttonText = "Aceptar solicitud";
-                                  buttonColor = "green";
-                                  buttonVariant = "filled";
-                                  onClick = async () => { window.open(`/meeting-response/${eventId}/${existingMeeting.id}/accept`, "_blank"); };
-                                } else if (isPendingRequester) {
-                                  buttonText = "Solicitud pendiente";
-                                  buttonColor = "yellow";
-                                  buttonVariant = "light";
-                                  isDisabled = true;
-                                }
-
-                                return (
-                                  <Button
-                                    size="compact-sm"
-                                    radius="md"
-                                    fullWidth
-                                    variant={buttonVariant}
-                                    color={buttonColor}
-                                    disabled={isDisabled}
-                                    loading={loadingId === key}
-                                    onClick={onClick}
-                                  >
-                                    {buttonText}
-                                  </Button>
-                                );
-                              })()}
-                            </Stack>
-                          </>
-                        ) : (
-                          <Stack gap={8} style={{ flex: 1 }}>
-                            {p.category && (
-                              <Badge variant="light" color="blue" size="xs" radius="sm">
-                                {p.category}
-                              </Badge>
-                            )}
-                            <Title order={5} lineClamp={2} style={{ lineHeight: 1.2 }}>
-                              {p.title}
-                            </Title>
-                            <Text size="sm" c="dimmed" lineClamp={4} style={{ whiteSpace: "pre-wrap", flex: 1 }}>
-                              {p.description}
-                            </Text>
-                            <Divider my={2} mt="auto" />
-                            {(() => {
-                              const existingMeeting = userMeetings?.find(m => 
-                                (m.participants || []).includes(p.ownerUserId)
-                              );
-                              const isPendingReceiver = existingMeeting?.status === "pending" && existingMeeting?.receiverId === myUid;
-                              const isPendingRequester = existingMeeting?.status === "pending" && existingMeeting?.requesterId === myUid;
-                              const isAccepted = existingMeeting?.status === "accepted";
-                              
-                              let buttonText = "Solicitar reunión";
-                              let buttonColor = undefined;
-                              let buttonVariant = isMine ? "light" : "filled";
-                              let isDisabled = isMine || loadingId === key;
-                              let onClick = () => handleProductMeeting(p);
-                              
-                              if (isMine) {
-                                buttonText = "Tu producto";
-                              } else if (isAccepted) {
-                                buttonText = "Reunión aceptada";
-                                buttonColor = "teal";
-                                isDisabled = true;
-                              } else if (isPendingReceiver) {
-                                buttonText = "Aceptar solicitud";
-                                buttonColor = "green";
-                                buttonVariant = "filled";
-                                onClick = async () => { window.open(`/meeting-response/${eventId}/${existingMeeting.id}/accept`, "_blank"); };
-                              } else if (isPendingRequester) {
-                                buttonText = "Solicitud pendiente";
-                                buttonColor = "yellow";
-                                buttonVariant = "light";
-                                isDisabled = true;
-                              }
-
-                              return (
-                                <Button
-                                  size="compact-sm"
-                                  radius="md"
-                                  fullWidth
-                                  variant={buttonVariant}
-                                  color={buttonColor}
-                                  disabled={isDisabled}
-                                  loading={loadingId === key}
-                                  onClick={onClick}
-                                >
-                                  {buttonText}
-                                </Button>
-                              );
-                            })()}
-                          </Stack>
-                        )}
-                      </Card>
+                      />
                     </Grid.Col>
                   );
                 })}
@@ -704,6 +647,15 @@ export default function CompanyLanding() {
           )}
         </Stack>
       </Container>
+
+      <ProductEditModal
+        opened={productModalOpened}
+        onClose={() => setProductModalOpened(false)}
+        editing={editingProduct}
+        createProduct={createProduct}
+        updateProduct={updateProduct}
+        allowImageUpload={allowImageUpload}
+      />
 
       <SlotModal
         opened={slotModalOpened}

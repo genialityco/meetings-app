@@ -13,8 +13,11 @@ import {
   runTransaction,
   addDoc,
   updateDoc,
+  deleteDoc,
+  serverTimestamp,
 } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { db, storage } from "../../firebase/firebaseConfig";
 import { AgendaSlot, Assistant, EventPolicies, MeetingContext } from "./types";
 import { sendWhatsAppMessage as sendWhatsAppAPI } from "../../utils/whatsappService";
 import { showNotification } from "@mantine/notifications";
@@ -31,6 +34,94 @@ export function getTableLabel(tableNumber: string | number | undefined, tableNam
   const idx = Number(tableNumber) - 1;
   const name = tableNames && idx >= 0 ? tableNames[idx] : undefined;
   return name || `Mesa ${tableNumber}`;
+}
+
+// ---- CRUD de productos, compartido entre useDashboardData.ts y useCompanyData.ts
+// (así "Mis productos", "Mi empresa" y CompanyLanding editan por igual, sin
+// duplicar la lógica de subida de imagen / escritura en Firestore) ----
+
+export interface ProductPayload {
+  title: string;
+  description: string;
+  category?: string;
+  imageFile?: File | null;
+}
+
+async function uploadProductImage(
+  eventId: string,
+  ownerUserId: string,
+  productId: string,
+  file: File,
+) {
+  const storageRef = ref(
+    storage,
+    `eventProducts/${eventId}/${ownerUserId}/${productId}/${file.name}`,
+  );
+  await uploadBytes(storageRef, file);
+  return await getDownloadURL(storageRef);
+}
+
+export async function createProductDoc(params: {
+  eventId: string;
+  uid: string;
+  ownerData: any;
+  payload: ProductPayload;
+}): Promise<string> {
+  const { eventId, uid, ownerData, payload } = params;
+  const owner = ownerData || {};
+  const base: any = {
+    eventId,
+    ownerUserId: uid,
+    ownerName: owner.nombre || owner.name || "",
+    ownerCompany: owner.empresa || owner.company || "",
+    ownerPhone: owner.telefono || owner.contacto?.telefono || null,
+    companyId: owner.companyId || null,
+    title: payload.title.trim(),
+    description: payload.description.trim(),
+    category: payload.category?.trim() || "",
+    imageUrl: null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  const docRef = await addDoc(collection(db, "events", eventId, "products"), base);
+
+  if (payload.imageFile) {
+    const url = await uploadProductImage(eventId, uid, docRef.id, payload.imageFile);
+    await updateDoc(docRef, { imageUrl: url, updatedAt: serverTimestamp() });
+  }
+
+  return docRef.id;
+}
+
+export async function updateProductDoc(params: {
+  eventId: string;
+  uid: string;
+  productId: string;
+  payload: ProductPayload;
+}): Promise<void> {
+  const { eventId, uid, productId, payload } = params;
+  const pRef = doc(db, "events", eventId, "products", productId);
+  const patch: any = {
+    title: payload.title.trim(),
+    description: payload.description.trim(),
+    category: payload.category?.trim() || "",
+    updatedAt: serverTimestamp(),
+  };
+
+  if (payload.imageFile) {
+    patch.imageUrl = await uploadProductImage(eventId, uid, productId, payload.imageFile);
+  }
+
+  await updateDoc(pRef, patch);
+}
+
+export async function deleteProductDoc(params: {
+  eventId: string;
+  productId: string;
+}): Promise<void> {
+  const { eventId, productId } = params;
+  await deleteDoc(doc(db, "events", eventId, "products", productId));
 }
 
 /**

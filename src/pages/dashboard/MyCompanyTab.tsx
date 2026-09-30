@@ -44,6 +44,7 @@ import StandVisitQrModal from "./StandVisitQrModal";
 import QrScannerModal from "../../components/QrScannerModal";
 import AttendeeScanReviewModal from "../../components/AttendeeScanReviewModal";
 import ProductEditModal from "./ProductEditModal";
+import ProductCard from "./ProductCard";
 import { useAttendeeScanFlow } from "../../hooks/useAttendeeScanFlow";
 import { splitAttendeeFields } from "../../utils/attendeeFields";
 import { normalizeTipoAsistente } from "../../utils/attendeeRole";
@@ -604,65 +605,12 @@ export default function MyCompanyTab({
               const key = `${p.id}-${p.ownerUserId}`;
               return (
                 <Grid.Col key={p.id} span={{ base: 6, md: 4, lg: 3 }}>
-                  <Card
-                    withBorder
-                    radius="lg"
-                    padding="sm"
-                    shadow="sm"
-                    style={{ height: "100%", overflow: "hidden" }}
-                  >
-                    <Card.Section>
-                      {p.imageUrl ? (
-                        <Box style={{ position: "relative" }}>
-                          <Image
-                            src={p.imageUrl}
-                            alt={p.title}
-                            height={140}
-                            fit="cover"
-                          />
-                          {p.category && (
-                            <Badge
-                              variant="filled"
-                              radius="md"
-                              size="sm"
-                              style={{
-                                position: "absolute",
-                                top: 10,
-                                left: 10,
-                                background: "rgba(0,0,0,0.55)",
-                                border: "1px solid rgba(255,255,255,0.18)",
-                              }}
-                            >
-                              {p.category}
-                            </Badge>
-                          )}
-                        </Box>
-                      ) : (
-                        <Box
-                          style={{
-                            height: 140,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                        >
-                          <Avatar size={64} radius="md" color="gray">
-                            {(p.title || "P")[0]?.toUpperCase()}
-                          </Avatar>
-                        </Box>
-                      )}
-                    </Card.Section>
-
-                    <Stack gap={8} mt="sm" style={{ height: "calc(100% - 140px)" }}>
-                      <Title order={6} lineClamp={2}>
-                        {p.title}
-                      </Title>
-                      <Text size="xs" c="dimmed" lineClamp={3} style={{ whiteSpace: "pre-wrap" }}>
-                        {p.description}
-                      </Text>
-                      <Divider my={2} />
-                      {isMine ? (
-                        <Group grow gap="xs" mt="auto">
+                  <ProductCard
+                    product={p}
+                    allowImageUpload={allowImageUpload}
+                    footer={
+                      isMine ? (
+                        <Group grow gap="xs">
                           <Button
                             variant="light"
                             size="compact-sm"
@@ -685,7 +633,6 @@ export default function MyCompanyTab({
                         </Group>
                       ) : (
                         <Button
-                          mt="auto"
                           size="compact-sm"
                           radius="md"
                           fullWidth
@@ -695,9 +642,9 @@ export default function MyCompanyTab({
                         >
                           Solicitar reunión
                         </Button>
-                      )}
-                    </Stack>
-                  </Card>
+                      )
+                    }
+                  />
                 </Grid.Col>
               );
             })}
