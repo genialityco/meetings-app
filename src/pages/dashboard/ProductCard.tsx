@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Card, Box, Image, Stack, Title, Group, Text, ThemeIcon, Badge, Divider } from "@mantine/core";
 import { IconBuildingStore } from "@tabler/icons-react";
 
@@ -37,11 +37,27 @@ export default function ProductCard({
   className,
 }: ProductCardProps) {
   const [expanded, setExpanded] = useState(false);
+  // "Ver más" solo debe aparecer si el texto realmente se corta con el lineClamp
+  // (no por un umbral de caracteres, que no tiene en cuenta el ancho real de la
+  // card ni cómo envuelven las palabras). Se mide el propio elemento: si su alto
+  // de contenido (scrollHeight) excede el alto visible (clientHeight), está truncado.
+  const [isTruncated, setIsTruncated] = useState(false);
+  const descRef = useRef<HTMLDivElement>(null);
   const description = p.description || "Sin descripción.";
   const toggleExpanded = (e: any) => {
     e.stopPropagation();
     setExpanded((v) => !v);
   };
+
+  useLayoutEffect(() => {
+    const el = descRef.current;
+    if (!el) return;
+    const check = () => setIsTruncated(el.scrollHeight > el.clientHeight + 1);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [description, expanded]);
 
   const companyRow = company ? (
     <Group
@@ -136,10 +152,16 @@ export default function ProductCard({
             {companyRow}
 
             <Box>
-              <Text size="xs" c="dimmed" lineClamp={expanded ? undefined : 3} style={{ whiteSpace: "pre-wrap" }}>
+              <Text
+                ref={descRef}
+                size="xs"
+                c="dimmed"
+                lineClamp={expanded ? undefined : 3}
+                style={{ whiteSpace: "pre-wrap" }}
+              >
                 {description}
               </Text>
-              {description.length > 90 && (
+              {(isTruncated || expanded) && (
                 <Text size="xs" fw={600} c="blue" style={{ cursor: "pointer" }} onClick={toggleExpanded}>
                   {expanded ? "Ver menos" : "Ver más"}
                 </Text>
@@ -160,10 +182,16 @@ export default function ProductCard({
           {companyRow}
 
           <Box style={{ flex: 1, minHeight: 0 }}>
-            <Text size="sm" c="dimmed" lineClamp={expanded ? undefined : 4} style={{ whiteSpace: "pre-wrap" }}>
+            <Text
+              ref={descRef}
+              size="sm"
+              c="dimmed"
+              lineClamp={expanded ? undefined : 4}
+              style={{ whiteSpace: "pre-wrap" }}
+            >
               {description}
             </Text>
-            {description.length > 120 && (
+            {(isTruncated || expanded) && (
               <Text size="xs" fw={600} c="blue" style={{ cursor: "pointer" }} onClick={toggleExpanded}>
                 {expanded ? "Ver menos" : "Ver más"}
               </Text>

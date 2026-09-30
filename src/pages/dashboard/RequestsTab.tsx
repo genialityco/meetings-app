@@ -35,7 +35,7 @@ import {
   IconUsers,
   IconNote,
 } from "@tabler/icons-react";
-import { Assistant, Meeting } from "./types";
+import { Assistant, Meeting, Company } from "./types";
 import { trackEvent } from "../../utils/analytics";
 import { logWhatsAppClick } from "../../utils/eventStats";
 import { splitAttendeeFields, getFieldLabel } from "../../utils/attendeeFields";
@@ -49,6 +49,7 @@ interface RequestsTabProps {
   sentRejectedRequests: Meeting[];
   assistants: Assistant[];
   formFields?: any[];
+  companies?: Company[];
   updateMeetingStatus: (meetingId: string, status: string) => void;
   sendWhatsAppMessage: (participant: Assistant) => void;
   cancelSentMeeting: (meetingId: string, action: string) => void;
@@ -107,12 +108,14 @@ function InfoRow({
 function RequestCard({
   user,
   request,
+  company,
   formFields = [],
   actions,
   statusBadge,
 }: {
   user: Assistant | undefined;
   request: Meeting;
+  company?: Company | null;
   formFields?: any[];
   actions?: React.ReactNode;
   statusBadge?: React.ReactNode;
@@ -129,6 +132,44 @@ function RequestCard({
   );
 
   if (!user) {
+    // receiverId null = solicitud dirigida a la empresa, todavía sin que ningún
+    // representante la reclame (ver comentario en types.ts). No es un estado de
+    // carga transitorio: puede quedarse así indefinidamente hasta que alguien la
+    // acepte, así que no tiene sentido decir "Cargando información...".
+    if (!request.receiverId && (company || request.companyId)) {
+      return (
+        <Card withBorder radius="xl" padding="md" shadow="sm">
+          <Group wrap="nowrap" align="center" gap="sm">
+            <Avatar src={company?.logoUrl} radius="xl" size={52} color="gray">
+              {(company?.razonSocial || "E")[0]?.toUpperCase()}
+            </Avatar>
+            <Box style={{ minWidth: 0, flex: 1 }}>
+              <Title order={6} lineClamp={1}>
+                {company?.razonSocial || "Empresa"}
+              </Title>
+              <Text size="sm" c="dimmed">
+                Enviada a la empresa, esperando que un representante la acepte.
+              </Text>
+            </Box>
+          </Group>
+          {request.contextNote && (
+            <Badge variant="light" color="grape" size="sm" mt="sm" radius="md">
+              <Group gap={4} wrap="nowrap">
+                <IconNote size={12} />
+                {request.contextNote}
+              </Group>
+            </Badge>
+          )}
+          {actions && (
+            <Stack gap="xs" mt="sm" pt="sm">
+              <Divider />
+              {actions}
+            </Stack>
+          )}
+        </Card>
+      );
+    }
+
     return (
       <Card withBorder radius="xl" padding="md" shadow="sm">
         <Group justify="center" py="md">
@@ -242,6 +283,7 @@ export default function RequestsTab({
   takenRequests,
   assistants,
   formFields = [],
+  companies = [],
   updateMeetingStatus,
   sendWhatsAppMessage,
   cancelSentMeeting,
@@ -250,6 +292,7 @@ export default function RequestsTab({
 }: RequestsTabProps) {
   const theme = useMantineTheme();
   const findUser = (id: string) => assistants.find((u) => u.id === id);
+  const findCompany = (nit?: string | null) => companies.find((c) => c.nitNorm === nit);
 
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
 
@@ -377,11 +420,13 @@ export default function RequestsTab({
             {sentRequests.length > 0 ? (
               sentRequests.map((request) => {
                 const receiver = findUser(request.receiverId);
+                const company = findCompany(request.companyId);
                 return (
                   <Grid.Col span={{ base: 12, sm: 6, lg: 4 }} key={request.id}>
                     <RequestCard
                       user={receiver}
                       request={request}
+                      company={company}
                       formFields={formFields}
                       statusBadge={
                         <Badge

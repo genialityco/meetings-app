@@ -303,15 +303,26 @@ export default function CompanyLanding() {
           <Paper withBorder radius="lg" p="lg">
             <Group gap="md" align="flex-start" wrap="nowrap">
               {company.logoUrl ? (
-                <Image
-                  src={company.logoUrl}
-                  alt={company.razonSocial}
-                  w={336}
-                  h={336}
-                  radius="md"
-                  fit="contain"
-                  style={{ flexShrink: 0 }}
-                />
+                <Box
+                  style={{
+                    position: "relative",
+                    width: 336,
+                    height: 336,
+                    flexShrink: 0,
+                    borderRadius: "var(--mantine-radius-md)",
+                    overflow: "hidden",
+                  }}
+                >
+                  {/* position:absolute en vez de confiar en que el Image llene el
+                      100% como hijo flex: la clase base de Mantine trae flex:0, que
+                      rompe el llenado/centrado dentro de un contenedor flex. */}
+                  <Image
+                    src={company.logoUrl}
+                    alt={company.razonSocial}
+                    fit="contain"
+                    style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+                  />
+                </Box>
               ) : (
                 <Avatar size={336} radius="md" color="blue" style={{ flexShrink: 0 }}>
                   {(company.razonSocial || "E")[0]?.toUpperCase()}

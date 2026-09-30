@@ -24,7 +24,7 @@ import {
   Select,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useLayoutEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   IconSearch,
@@ -78,6 +78,61 @@ function formatFieldValue(fieldName: string, data: any): string | null {
     return items.join(", ");
   }
   return String(raw);
+}
+
+/** Fila de un campo configurable (Sector, País, Descripción...) en el detalle de la
+ * card de empresa. Clampea a 4 líneas y solo muestra "Ver más" si el texto realmente
+ * se corta (medido en el DOM, no por cantidad de caracteres) — así una descripción
+ * de exactamente 4 líneas no muestra el link de más. */
+function CompanyDetailFieldRow({
+  icon: Icon,
+  label,
+  value,
+  color,
+}: {
+  icon: any;
+  label: string;
+  value: string;
+  color: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [isTruncated, setIsTruncated] = useState(false);
+  const textRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const el = textRef.current;
+    if (!el) return;
+    const check = () => setIsTruncated(el.scrollHeight > el.clientHeight + 1);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [value, expanded]);
+
+  return (
+    <Group gap={8} wrap="nowrap" align="flex-start">
+      <ThemeIcon variant="light" color={color} radius="xl" size={26} style={{ flexShrink: 0, marginTop: 2 }}>
+        <Icon size={14} />
+      </ThemeIcon>
+      <Box style={{ minWidth: 0, flex: 1 }}>
+        <Text ref={textRef} size="sm" lineClamp={expanded ? undefined : 4} style={{ whiteSpace: "pre-wrap" }}>
+          <Text span fw={700}>{label}: </Text>
+          {value && value.trim().length > 0 ? value : "No disponible"}
+        </Text>
+        {(isTruncated || expanded) && (
+          <Text
+            size="xs"
+            fw={600}
+            c="blue"
+            style={{ cursor: "pointer" }}
+            onClick={() => setExpanded((v) => !v)}
+          >
+            {expanded ? "Ver menos" : "Ver más"}
+          </Text>
+        )}
+      </Box>
+    </Group>
+  );
 }
 
 /** Texto del badge de reunión ya agendada con la empresa: hora (y día si el evento es multi-día). */
@@ -727,6 +782,7 @@ export default function CompaniesView({
                             : undefined
                         }
                         style={{
+                          position: "relative",
                           width: "100%",
                           aspectRatio: "1 / 1",
                           borderRadius: "var(--mantine-radius-xl)",
@@ -741,7 +797,15 @@ export default function CompaniesView({
                         }}
                       >
                         {logoUrl ? (
-                          <Image src={logoUrl} alt={empresa} w="100%" h="100%" fit="contain" />
+                          // position:absolute en vez de hijo flex al 100%: la clase
+                          // base de Mantine para <Image> trae flex:0, que rompe el
+                          // llenado/centrado del logo dentro de un contenedor flex.
+                          <Image
+                            src={logoUrl}
+                            alt={empresa}
+                            fit="contain"
+                            style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+                          />
                         ) : (
                           <Text size="40px" fw={700} c="white">
                             {empresa?.[0]?.toUpperCase()}
@@ -932,17 +996,19 @@ export default function CompaniesView({
                         ? getFieldLabel(fieldDef, selectedAssistant?.tipoAsistente)
                         : fieldName;
                       const Icon = FIELD_ICONS[fieldName] || IconFileDescription;
-                      const value = formatFieldValue(fieldName, selectedAssistant);
+                      const value = formatFieldValue(fieldName, selectedAssistant) || "";
                       return (
-                        <Group key={fieldName} gap={8} wrap="nowrap">
-                          <ThemeIcon variant="light" color={theme.primaryColor} radius="xl" size={26}>
-                            <Icon size={14} />
-                          </ThemeIcon>
-                          <Text size="sm" style={{ minWidth: 0 }}>
-                            <Text span fw={700}>{label}: </Text>
-                            {value && value.trim().length > 0 ? value : "No disponible"}
-                          </Text>
-                        </Group>
+                        <CompanyDetailFieldRow
+                          // Incluye el id del representante seleccionado: al cambiar de
+                          // representante en la lista, remonta la fila (en vez de solo
+                          // actualizar el valor) para que "Ver más" no quede expandido
+                          // con el dato de otra persona.
+                          key={`${fieldName}-${selectedAssistant?.id}`}
+                          icon={Icon}
+                          label={label}
+                          value={value}
+                          color={theme.primaryColor}
+                        />
                       );
                     })}
                   </Stack>
