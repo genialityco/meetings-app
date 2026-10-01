@@ -682,7 +682,7 @@ export default function CompaniesView({
       <Paper withBorder radius="lg" p="sm">
         <Group gap="xs">
           <TextInput
-            placeholder="Buscar empresa o representante..."
+            placeholder="Ingresa aquí qué estás buscando en empresas y productos"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             leftSection={
@@ -801,9 +801,8 @@ export default function CompaniesView({
                     </Badge>
                   )}
 
-                  {/* HEADER tipo imagen: columna 1 = logo grande + nombre/nit, columna 2 = info */}
-                  <Group justify="space-between" align="flex-start" wrap="nowrap" gap="md">
-                    <Stack gap={6} align="center" style={{ flex: "1 1 50%", minWidth: 0 }}>
+                  {/* HEADER: logo centrado arriba; debajo, nombre a la izquierda y badges a la derecha */}
+                  <Group justify="center">
                       <Box
                         onClick={
                           nit !== "sin-nit" && eventId
@@ -812,7 +811,7 @@ export default function CompaniesView({
                         }
                         style={{
                           position: "relative",
-                          width: "100%",
+                          width: "50%",
                           aspectRatio: "1 / 1",
                           borderRadius: "var(--mantine-radius-xl)",
                           overflow: "hidden",
@@ -841,8 +840,10 @@ export default function CompaniesView({
                           </Text>
                         )}
                       </Box>
+                  </Group>
 
-                      <Box style={{ minWidth: 0, width: "100%", textAlign: "left" }}>
+                  <Group justify="space-between" align="flex-start" wrap="nowrap" gap="md" mt="sm">
+                      <Box style={{ minWidth: 0, flex: "1 1 50%", textAlign: "left" }}>
                         <Title
                           order={5}
                           lineClamp={2}
@@ -865,7 +866,6 @@ export default function CompaniesView({
                           </Highlight>
                         </Title>
                       </Box>
-                    </Stack>
 
                     <Stack gap={6} align="flex-end" style={{ flex: "1 1 50%" }}>
                       {mine && (

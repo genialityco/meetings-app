@@ -393,7 +393,7 @@ export default function ProductsView({
         <Grid gutter="sm" align="center">
           <Grid.Col span={{ base: 12, sm: 7 }}>
             <TextInput
-              placeholder="Buscar producto, categoría, empresa..."
+              placeholder="Ingresa aquí qué estás buscando en empresas y productos"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               leftSection={
