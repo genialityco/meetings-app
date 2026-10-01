@@ -495,8 +495,12 @@ export default function CompaniesView({
         (v) => v && String(v).toLowerCase().includes(t),
       );
 
+    // Al buscar se excluye la propia empresa del usuario: solo se fija arriba en la
+    // lista sin búsqueda, en los resultados no aporta nada.
+    const searchable = companiesDataFiltered.filter((c) => !c.mine);
+
     const exactMatches: CompanyMatch[] = [];
-    companiesDataFiltered.forEach((c) => {
+    searchable.forEach((c) => {
       const matchedAssistant = c.asistentes.find(assistantMatches);
       const companyMatches = c.empresa.toLowerCase().includes(t) || c.nit.includes(t);
       if (companyMatches || matchedAssistant) {
@@ -513,7 +517,7 @@ export default function CompaniesView({
       // vectorResults viene ordenado por similitud: el primer representante que
       // aparece de cada empresa es su mejor match.
       vectorResults.forEach((v) => {
-        const found = companiesDataFiltered.find((c) => c.asistentes.some((a) => a.id === v.id));
+        const found = searchable.find((c) => c.asistentes.some((a) => a.id === v.id));
         if (!found || exactIds.has(found.nit) || byNit.has(found.nit)) return;
         byNit.set(found.nit, {
           ...found,
