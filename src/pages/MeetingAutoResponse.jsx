@@ -8,7 +8,6 @@ import {
   collection,
   query,
   where,
-  orderBy,
   getDocs,
   runTransaction,
 } from "firebase/firestore";
@@ -263,20 +262,29 @@ export default function MeetingAutoResponse() {
       const breaks = config.breakBlocks || [];
 
       const now = new Date();
+      // Sin orderBy: se ordena en el cliente (fecha, hora, mesa).
       const agSn = await getDocs(
         query(
           collection(db, "events", eventId, "agenda"),
-          where("available", "==", true),
-          orderBy("startTime")
+          where("available", "==", true)
         )
       );
+      const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
       const slots = agSn.docs
         .map((d) => ({ id: d.id, ...d.data() }))
+        .sort(
+          (a, b) =>
+            String(a.date || "").localeCompare(String(b.date || "")) ||
+            String(a.startTime).localeCompare(String(b.startTime)) ||
+            Number(a.tableNumber) - Number(b.tableNumber)
+        )
         .filter((slot) => {
+          // Slots de días pasados fuera; de días futuros se mantienen completos
+          if (slot.date && slot.date < todayISO) return false;
           const [h, m] = slot.startTime.split(":").map(Number);
           const dt = new Date(now);
           dt.setHours(h, m, 0, 0);
-          if (dt <= now) return false;
+          if ((!slot.date || slot.date === todayISO) && dt <= now) return false;
           if (slotOverlapsBreakBlock(slot.startTime, duration, breaks))
             return false;
           const startMin = h * 60 + m,
@@ -290,8 +298,8 @@ export default function MeetingAutoResponse() {
       setStatus("");
     } catch (e) {
       console.error(e);
-      setStatus("Error cargando horarios.");
-      setTimeout(() => navigate(`/event/${eventId}`), 2000);
+      setStatus(`Error cargando horarios (${e?.code || e?.message || "desconocido"}).`);
+      setTimeout(() => navigate(`/event/${eventId}`), 10000);
     } finally {
       setLoadingSlots(false);
     }
@@ -384,11 +392,13 @@ export default function MeetingAutoResponse() {
 
       // Obtener la fecha del evento para los lockIds
       const eventDocSnap = await getDoc(doc(db, "events", eventId));
+      // Eventos multi-día no tienen eventDate: la fecha real es la del slot.
       const eventDateISO =
-        eventDocSnap.exists()
-          ? String(eventDocSnap.data()?.eventDate || "").trim() ||
-            new Date().toISOString().slice(0, 10)
-          : new Date().toISOString().slice(0, 10);
+        String(slot.date || "").trim() ||
+        (eventDocSnap.exists()
+          ? String(eventDocSnap.data()?.eventDate || "").trim()
+          : "") ||
+        new Date().toISOString().slice(0, 10);
 
       let requesterId, receiverId, isCompanyClaim;
       const myUid = currentUser?.uid || auth.currentUser?.uid;
@@ -470,6 +480,7 @@ export default function MeetingAutoResponse() {
         tx.update(mtgRef, {
           status: "accepted",
           timeSlot: `${slot.startTime} - ${slot.endTime}`,
+          meetingDate: eventDateISO,
           tableAssigned: slot.tableNumber.toString(),
           slotId: slot.id,
           lockIds: [reqLockRef.id, recLockRef.id],
