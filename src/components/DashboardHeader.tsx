@@ -20,7 +20,7 @@ import {
   Alert,
   Box,
   Paper,
-  Divider,
+  Stepper,
   Grid,
   Tooltip,
   ActionIcon,
@@ -100,6 +100,7 @@ const DashboardHeader = ({
 
   // Edit modal state
   const [editModalOpened, setEditModalOpened] = useState(false);
+  const [editStep, setEditStep] = useState(0);
   const [editData, setEditData] = useState<any>({});
   const [saving, setSaving] = useState(false);
   const [profilePicPreview, setProfilePicPreview] = useState<string | null>(null);
@@ -800,7 +801,7 @@ const DashboardHeader = ({
       {/* Modal de edición con formFields dinámicos */}
       <Modal
         opened={editModalOpened}
-        onClose={() => setEditModalOpened(false)}
+        onClose={() => { setEditModalOpened(false); setEditStep(0); }}
         title={
           <Group gap="xs">
             <IconEdit size={20} />
@@ -813,144 +814,110 @@ const DashboardHeader = ({
         <Stack gap="md">
           {formFields.length > 0
             ? (() => {
-                // Separar campo de foto
-                const photoFields = formFields.filter(
-                  (f: any) => f.name === "photoURL" || f.type === "photo"
-                );
+                // Mismo modo que el formulario de registro: "stepper" (paso a paso) o plano
+                const regForm = eventConfig?.registrationForm;
+                const steps: any[] = regForm?.steps || [];
+                const isStepper = regForm?.mode === "stepper" && steps.length > 0;
 
-                // Detectar campos de empresa dinámicamente desde los steps del registrationForm
-                const steps = eventConfig?.registrationForm?.steps || [];
                 const companyStep = steps.find((s: any) =>
                   (s.fields || []).includes("company_nit")
                 );
                 const companyFieldNames: Set<string> = new Set(
                   companyStep?.fields || ["company_nit", "company_razonSocial", "company_logo", "empresa"]
                 );
-                const companyStepTitle = companyStep?.title || "Datos de empresa";
 
-                const companyFields = formFields.filter(
+                const editableFields = formFields.filter(
                   (f: any) =>
-                    companyFieldNames.has(f.name) &&
-                    !photoFields.includes(f) &&
-                    !HIDDEN_EDIT_FIELDS.has(f.name)
+                    f.name !== CONSENTIMIENTO_FIELD_NAME && !HIDDEN_EDIT_FIELDS.has(f.name)
                 );
-
-                // El resto son campos personales/networking (agrupados por step si hay steps)
-                const nonPhotoNonCompanyFields = formFields.filter(
-                  (f: any) =>
-                    !photoFields.includes(f) &&
-                    !companyFields.includes(f) &&
-                    f.name !== CONSENTIMIENTO_FIELD_NAME &&
-                    !HIDDEN_EDIT_FIELDS.has(f.name)
+                const hasCompanyFields = editableFields.some(
+                  (f: any) => companyFieldNames.has(f.name) && isFieldVisible(f)
                 );
+                const companyNote = hasCompanyFields ? (
+                  <Text size="xs" c="dimmed" mt="xs">
+                    Al guardar, la información de la empresa se actualiza para todos los representantes.
+                  </Text>
+                ) : null;
 
-                // Agrupar campos restantes por step
-                const otherSteps = steps.filter(
-                  (s: any) => s !== companyStep
-                );
-                const fieldsByStep: { title: string; fields: any[] }[] = [];
+                const renderGrid = (fields: any[]) => {
+                  const visible = fields.filter(isFieldVisible);
+                  if (visible.length === 0) return null;
+                  return (
+                    <Grid gutter="sm">
+                      {visible.map((field: any) => (
+                        <Grid.Col
+                          key={field.name}
+                          span={
+                            field.type === "textarea" ||
+                            field.type === "richtext" ||
+                            field.type === "photo" ||
+                            field.name === "photoURL" ||
+                            field.name === "descripcion" ||
+                            isLogoField(field) ||
+                            field.type === "multiselect" ||
+                            field.type === "eventDays"
+                              ? 12
+                              : 6
+                          }
+                        >
+                          {renderField(field)}
+                        </Grid.Col>
+                      ))}
+                    </Grid>
+                  );
+                };
 
-                if (otherSteps.length > 0) {
-                  for (const step of otherSteps) {
-                    const stepFieldNames = new Set(step.fields || []);
-                    const stepFields = nonPhotoNonCompanyFields.filter(
-                      (f: any) => stepFieldNames.has(f.name)
-                    );
-                    if (stepFields.length > 0) {
-                      fieldsByStep.push({ title: step.title || "Otros datos", fields: stepFields });
-                    }
-                  }
-                  // Campos no asignados a ningún step
-                  const allAssigned = new Set(fieldsByStep.flatMap((g) => g.fields.map((f: any) => f.name)));
-                  const unassigned = nonPhotoNonCompanyFields.filter((f: any) => !allAssigned.has(f.name));
-                  if (unassigned.length > 0) {
-                    fieldsByStep.push({ title: "Otros datos", fields: unassigned });
-                  }
-                } else {
-                  // Sin steps, todo en una sección
-                  if (nonPhotoNonCompanyFields.length > 0) {
-                    fieldsByStep.push({ title: "Datos personales", fields: nonPhotoNonCompanyFields });
-                  }
+                if (!isStepper) {
+                  // Formulario plano: respeta el orden configurado de los campos
+                  return (
+                    <Paper withBorder radius="md" p="md">
+                      {renderGrid(editableFields)}
+                      {companyNote}
+                    </Paper>
+                  );
                 }
+
+                // Paso a paso: un paso por cada step configurado; los campos que no
+                // pertenecen a ningún paso van al último para no perderlos.
+                const assigned = new Set(steps.flatMap((st: any) => st.fields || []));
+                const stepGroups = steps.map((st: any, i: number) => {
+                  const names: string[] = st.fields || [];
+                  let fields = names
+                    .map((n) => editableFields.find((f: any) => f.name === n))
+                    .filter(Boolean) as any[];
+                  if (i === steps.length - 1) {
+                    fields = fields.concat(editableFields.filter((f: any) => !assigned.has(f.name)));
+                  }
+                  return { id: st.id ?? i, title: st.title || `Paso ${i + 1}`, fields };
+                }).filter((g: any) => g.fields.some(isFieldVisible));
+
+                if (stepGroups.length === 0) return null;
+                const current = Math.min(editStep, stepGroups.length - 1);
+                const isLast = current === stepGroups.length - 1;
 
                 return (
                   <>
-                    {/* Foto */}
-                    {photoFields.filter(isFieldVisible).length > 0 && (
-                      <Paper withBorder radius="md" p="md">
-                        {photoFields.filter(isFieldVisible).map((field: any) => renderField(field))}
-                      </Paper>
-                    )}
-
-                    {/* Secciones por step */}
-                    {fieldsByStep.map((group) => {
-                      const visibleFields = group.fields.filter(isFieldVisible);
-                      if (visibleFields.length === 0) return null;
-                      return (
-                        <Paper key={group.title} withBorder radius="md" p="md">
-                          <Divider
-                            label={<Text fw={600} size="sm">{group.title}</Text>}
-                            labelPosition="left"
-                            mb="sm"
-                          />
-                          <Grid gutter="sm">
-                            {visibleFields.map((field: any) => (
-                              <Grid.Col
-                                key={field.name}
-                                span={
-                                  field.type === "textarea" ||
-                                  field.type === "richtext" ||
-                                  field.name === "descripcion" ||
-                                  field.type === "multiselect" ||
-                                  field.type === "eventDays"
-                                    ? 12
-                                    : 6
-                                }
-                              >
-                                {renderField(field)}
-                              </Grid.Col>
-                            ))}
-                          </Grid>
-                        </Paper>
-                      );
-                    })}
-
-                    {/* Datos de empresa */}
-                    {(() => {
-                      const visibleCompanyFields = companyFields.filter(isFieldVisible);
-                      if (visibleCompanyFields.length === 0) return null;
-                      return (
-                        <Paper withBorder radius="md" p="md">
-                          <Divider
-                            label={<Text fw={600} size="sm">{companyStepTitle}</Text>}
-                            labelPosition="left"
-                            mb="sm"
-                          />
-                          <Grid gutter="sm">
-                            {visibleCompanyFields.map((field: any) => (
-                              <Grid.Col
-                                key={field.name}
-                                span={
-                                  field.type === "textarea" ||
-                                  field.type === "richtext" ||
-                                  field.name === "descripcion" ||
-                                  isLogoField(field) ||
-                                  field.type === "multiselect" ||
-                                  field.type === "eventDays"
-                                    ? 12
-                                    : 6
-                                }
-                              >
-                                {renderField(field)}
-                              </Grid.Col>
-                            ))}
-                          </Grid>
-                          <Text size="xs" c="dimmed" mt="xs">
-                            Al guardar, la información de la empresa se actualiza para todos los representantes.
-                          </Text>
-                        </Paper>
-                      );
-                    })()}
+                    <Stepper active={current} onStepClick={setEditStep} size="sm" allowNextStepsSelect>
+                      {stepGroups.map((g: any) => (
+                        <Stepper.Step key={g.id} label={g.title} />
+                      ))}
+                    </Stepper>
+                    <Paper withBorder radius="md" p="md">
+                      {renderGrid(stepGroups[current].fields)}
+                      {stepGroups[current].fields.some((f: any) => companyFieldNames.has(f.name)) && companyNote}
+                    </Paper>
+                    <Group justify="space-between">
+                      <Button
+                        variant="default"
+                        disabled={current === 0}
+                        onClick={() => setEditStep(current - 1)}
+                      >
+                        Anterior
+                      </Button>
+                      {!isLast && (
+                        <Button onClick={() => setEditStep(current + 1)}>Siguiente</Button>
+                      )}
+                    </Group>
                   </>
                 );
               })()

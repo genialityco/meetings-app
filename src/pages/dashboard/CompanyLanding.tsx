@@ -36,6 +36,8 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { useCompanyData } from "./useCompanyData";
+import { useDashboardData } from "./useDashboardData";
+import DashboardHeader from "../../components/DashboardHeader";
 import { DEFAULT_POLICIES } from "./types";
 import type { Product } from "./types";
 import type { CompanyRepresentative } from "./useCompanyData";
@@ -106,6 +108,8 @@ export default function CompanyLanding() {
     updateProduct,
     deleteProduct,
   } = useCompanyData(eventId, companyNit);
+  // Solo para alimentar el DashboardHeader (notificaciones, campos de perfil, políticas)
+  const dashboard = useDashboardData(eventId);
 
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [requestMessage, setRequestMessage] = useState("");
@@ -277,6 +281,21 @@ export default function CompanyLanding() {
           }
         `}
       </style>
+      {currentUser?.data && (
+        <DashboardHeader
+          eventImage={dashboard.eventImage}
+          dashboardLogo={dashboard.dashboardLogo}
+          eventName={dashboard.eventName}
+          notifications={dashboard.notifications}
+          onNotificationClick={(notif: any) => {
+            dashboard.markNotificationRead(notif.id);
+          }}
+          onMarkAllRead={dashboard.markAllNotificationsRead}
+          formFields={dashboard.formFields}
+          eventConfig={dashboard.eventConfig}
+          policies={dashboard.policies}
+        />
+      )}
       <Container size="lg" py="md">
         <Stack gap="lg">
           {/* Back button + event branding */}
