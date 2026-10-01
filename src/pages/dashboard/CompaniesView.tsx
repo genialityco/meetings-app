@@ -22,6 +22,7 @@ import {
   Loader,
   Tooltip,
   Select,
+  Highlight,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import { useState, useMemo, useEffect, useLayoutEffect, useRef } from "react";
@@ -50,6 +51,7 @@ import { getTableLabel } from "./meetingSlotEngine";
 import { isCheckedInOnDay, resolveCheckInDay } from "../../utils/eventDays";
 import { normalizeTipoAsistente, canDiscoverAttendee } from "../../utils/attendeeRole";
 import { getFieldLabel } from "../../utils/attendeeFields";
+import CompanyLinks from "./CompanyLinks";
 
 const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
 
@@ -89,11 +91,13 @@ function CompanyDetailFieldRow({
   label,
   value,
   color,
+  highlightText,
 }: {
   icon: any;
   label: string;
   value: string;
   color: string;
+  highlightText?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [isTruncated, setIsTruncated] = useState(false);
@@ -117,7 +121,13 @@ function CompanyDetailFieldRow({
       <Box style={{ minWidth: 0, flex: 1 }}>
         <Text ref={textRef} size="sm" lineClamp={expanded ? undefined : 4} style={{ whiteSpace: "pre-wrap" }}>
           <Text span fw={700}>{label}: </Text>
-          {value && value.trim().length > 0 ? value : "No disponible"}
+          {value && value.trim().length > 0 ? (
+            <Highlight highlight={highlightText || ""} component="span" size="sm">
+              {value}
+            </Highlight>
+          ) : (
+            "No disponible"
+          )}
         </Text>
         {(isTruncated || expanded) && (
           <Text
@@ -374,6 +384,12 @@ export default function CompaniesView({
     return companiesData.filter((c) => c.pais === countryFilter);
   }, [companiesData, countryFilter]);
 
+  type CompanyMatch = (typeof companiesData)[number] & {
+    _matchedAssistantId?: string;
+    _similarity?: number;
+    _isSemantic?: boolean;
+  };
+
   // Reunión aceptada ya existente con cada empresa (por NIT o razón social),
   // para el badge "Reunión hh:mm" de la tarjeta.
   const meetingsByCompany = useMemo(() => {
@@ -415,9 +431,12 @@ export default function CompaniesView({
           headers: {
             "Content-Type": "application/json",
           },
+          // Se buscan representantes (users.search_vector) y no empresas: los docs de
+          // empresa no tienen vector generado de forma automática, mientras que cada
+          // usuario lo recibe al crearse. Los resultados se agrupan luego por empresa.
           body: JSON.stringify({
             text: trimmed,
-            category: "companies",
+            category: "assistants",
             eventId: eventId,
             limit: 30,
             threshold: 0.3,
@@ -448,7 +467,7 @@ export default function CompaniesView({
   }, [searchTerm, eventId]);
 
   // Filtrar por búsqueda
-  const filtered = useMemo(() => {
+  const filtered = useMemo((): CompanyMatch[] => {
     const t = searchTerm.trim().toLowerCase();
     
     // Mi empresa primero; luego las empresas con check-in; dentro de cada grupo, por afinidad promedio.
@@ -470,41 +489,50 @@ export default function CompaniesView({
       return results;
     }
 
-    const exactMatches = companiesDataFiltered
-      .filter(
-        (c) =>
-          c.empresa.toLowerCase().includes(t) ||
-          c.nit.includes(t) ||
-          c.asistentes.some((a) =>
-            (a.nombre || "").toLowerCase().includes(t) ||
-            (a.cargo || "").toLowerCase().includes(t)
-          )
-      )
-      .sort(byCheckInThenAffinity);
+    // Un representante coincide por nombre, cargo o cualquiera de los campos que la
+    // card muestra (descripción, sector...), para que lo resaltado sea lo que se ve.
+    const assistantMatches = (a: any) =>
+      [a.nombre, a.cargo, ...cardFields.map((f) => formatFieldValue(f, a))].some(
+        (v) => v && String(v).toLowerCase().includes(t),
+      );
 
-    let semanticMatches: any[] = [];
+    // Al buscar se excluye la propia empresa del usuario: solo se fija arriba en la
+    // lista sin búsqueda, en los resultados no aporta nada.
+    const searchable = companiesDataFiltered.filter((c) => !c.mine);
+
+    const exactMatches: CompanyMatch[] = [];
+    searchable.forEach((c) => {
+      const matchedAssistant = c.asistentes.find(assistantMatches);
+      const companyMatches = c.empresa.toLowerCase().includes(t) || c.nit.includes(t);
+      if (companyMatches || matchedAssistant) {
+        exactMatches.push({ ...c, _matchedAssistantId: matchedAssistant?.id });
+      }
+    });
+    exactMatches.sort(byCheckInThenAffinity);
+
+    let semanticMatches: CompanyMatch[] = [];
     if (vectorResults.length > 0) {
       const exactIds = new Set(exactMatches.map((c) => c.nit));
-      
-      semanticMatches = vectorResults
-        .map((v) => {
-          const found = companiesDataFiltered.find((c) => c.nit === v.nitNorm || c.nit === v.id);
-          if (found) {
-            return {
-              ...found,
-              _similarity: v.similarity,
-              _isSemantic: true,
-            };
-          }
-          return null;
-        })
-        .filter(Boolean);
-        
-      semanticMatches = semanticMatches.filter((c) => !exactIds.has(c.nit));
+      const byNit = new Map<string, CompanyMatch>();
+
+      // vectorResults viene ordenado por similitud: el primer representante que
+      // aparece de cada empresa es su mejor match.
+      vectorResults.forEach((v) => {
+        const found = searchable.find((c) => c.asistentes.some((a) => a.id === v.id));
+        if (!found || exactIds.has(found.nit) || byNit.has(found.nit)) return;
+        byNit.set(found.nit, {
+          ...found,
+          _similarity: v.similarity,
+          _isSemantic: true,
+          _matchedAssistantId: v.id,
+        });
+      });
+
+      semanticMatches = Array.from(byNit.values());
     }
 
     return [...exactMatches, ...semanticMatches];
-  }, [companiesDataFiltered, searchTerm, vectorResults, affinityScores]);
+  }, [companiesDataFiltered, searchTerm, vectorResults, affinityScores, cardFields]);
 
   const handleOpenModal = async (assistant: Assistant, companyNit: string) => {
     // Con "sin aceptación" (requester_picks), se salta el modal de mensaje: se
@@ -655,7 +683,7 @@ export default function CompaniesView({
       <Paper withBorder radius="lg" p="sm">
         <Group gap="xs">
           <TextInput
-            placeholder="Buscar empresa o representante..."
+            placeholder="Ingresa aquí qué estás buscando en empresas y productos"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             leftSection={
@@ -697,7 +725,7 @@ export default function CompaniesView({
 
       <Grid gutter="sm">
         {filtered.length > 0 ? (
-          filtered.map(({ nit, nitLookup, empresa, logoUrl, fixedTable, pais, asistentes, hasAdvisor, mine, _similarity, _isSemantic }: any) => {
+          filtered.map(({ nit, nitLookup, empresa, logoUrl, fixedTable, pais, asistentes, hasAdvisor, mine, _similarity, _isSemantic, _matchedAssistantId }) => {
             const companyKey = nit; // clave estable
             const selectedId = selectedAssistantPerCompany[companyKey];
 
@@ -707,9 +735,11 @@ export default function CompaniesView({
             const companyMeeting =
               meetingsByCompany.get(nit) || (nitLookup ? meetingsByCompany.get(nitLookup) : undefined);
 
-            // si no hay seleccionado, por defecto el primero
+            // si no hay seleccionado, por defecto el que coincidió con la búsqueda, o el primero
             const selectedAssistant =
-              asistentes.find((a) => a.id === selectedId) || asistentes[0];
+              asistentes.find((a) => a.id === selectedId) ||
+              asistentes.find((a) => a.id === _matchedAssistantId) ||
+              asistentes[0];
 
             // Verificar si tiene similarity score (viene de búsqueda por vectores)
             const hasSimilarity = _isSemantic && typeof _similarity === 'number';
@@ -772,9 +802,8 @@ export default function CompaniesView({
                     </Badge>
                   )}
 
-                  {/* HEADER tipo imagen: columna 1 = logo grande + nombre/nit, columna 2 = info */}
-                  <Group justify="space-between" align="flex-start" wrap="nowrap" gap="md">
-                    <Stack gap={6} align="center" style={{ flex: "1 1 50%", minWidth: 0 }}>
+                  {/* HEADER: logo centrado arriba; debajo, nombre a la izquierda y badges a la derecha */}
+                  <Group justify="center">
                       <Box
                         onClick={
                           nit !== "sin-nit" && eventId
@@ -783,7 +812,7 @@ export default function CompaniesView({
                         }
                         style={{
                           position: "relative",
-                          width: "100%",
+                          width: "50%",
                           aspectRatio: "1 / 1",
                           borderRadius: "var(--mantine-radius-xl)",
                           overflow: "hidden",
@@ -812,8 +841,10 @@ export default function CompaniesView({
                           </Text>
                         )}
                       </Box>
+                  </Group>
 
-                      <Box style={{ minWidth: 0, width: "100%", textAlign: "left" }}>
+                  <Group justify="space-between" align="flex-start" wrap="nowrap" gap="md" mt="sm">
+                      <Box style={{ minWidth: 0, flex: "1 1 50%", textAlign: "left" }}>
                         <Title
                           order={5}
                           lineClamp={2}
@@ -831,10 +862,11 @@ export default function CompaniesView({
                               : undefined
                           }
                         >
-                          {empresa}
+                          <Highlight highlight={searchTerm} component="span" inherit>
+                            {empresa}
+                          </Highlight>
                         </Title>
                       </Box>
-                    </Stack>
 
                     <Stack gap={6} align="flex-end" style={{ flex: "1 1 50%" }}>
                       {mine && (
@@ -906,6 +938,10 @@ export default function CompaniesView({
                     </Stack>
                   </Group>
 
+                  <Box mt="sm">
+                    <CompanyLinks compact formFields={formFields} representatives={asistentes} />
+                  </Box>
+
                   <Divider my="md" />
 
                   {/* Lista de reps (compacta y bonita) */}
@@ -949,12 +985,16 @@ export default function CompaniesView({
                                   </Avatar>
                                   <Box style={{ minWidth: 0, flex: 1 }}>
                                     <Text size="sm" fw={600} lineClamp={1}>
-                                      {a.nombre || "Sin nombre"}
+                                      <Highlight highlight={searchTerm} component="span" inherit>
+                                        {a.nombre || "Sin nombre"}
+                                      </Highlight>
                                     </Text>
                                     {/* Rol discreto: el cargo se trunca solo, el rol siempre queda visible */}
                                     <Group gap={4} wrap="nowrap">
                                       <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>
-                                        {a.cargo || "Representante"}
+                                        <Highlight highlight={searchTerm} component="span" inherit>
+                                          {a.cargo || "Representante"}
+                                        </Highlight>
                                       </Text>
                                       {rol && (
                                         <Text size="xs" c="dimmed" style={{ flexShrink: 0, opacity: 0.7 }}>
@@ -1008,6 +1048,7 @@ export default function CompaniesView({
                           label={label}
                           value={value}
                           color={theme.primaryColor}
+                          highlightText={searchTerm}
                         />
                       );
                     })}

@@ -46,6 +46,7 @@ import ProductEditModal from "./ProductEditModal";
 import ProductCard from "./ProductCard";
 import { getTableLabel } from "./meetingSlotEngine";
 import { getFieldLabel } from "../../utils/attendeeFields";
+import CompanyLinks from "./CompanyLinks";
 
 const FIELD_ICONS: Record<string, any> = {
   empresa: IconBuildingStore,
@@ -394,6 +395,11 @@ export default function CompanyLanding() {
                 </Group>
               </Stack>
             </Group>
+
+            {/* Redes sociales / web: solo aparece si algún representante las cargó */}
+            <Box mt="md">
+              <CompanyLinks formFields={formFields} representatives={representatives} />
+            </Box>
 
             {/* Campos configurables de empresa (datos del primer representante) */}
             {representatives.length > 0 && cardFields.length > 0 && (
