@@ -1,6 +1,6 @@
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onRequest } from "firebase-functions/v2/https";
-import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
+import { onDocumentCreated, onDocumentUpdated, onDocumentWritten } from "firebase-functions/v2/firestore";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
@@ -2542,6 +2542,113 @@ export const generateAllSearchVectors = onRequest(
   }
 );
 
+
+/**
+ * Texto que se vectoriza de un producto (campo `vector`, el que usa vectorSearch con
+ * category "products"). Se guarda también en `vectorText` para poder saltar
+ * regeneraciones cuando el texto no cambió.
+ */
+function buildProductVectorText(product) {
+  return [product.title, product.description, product.category, product.ownerCompany]
+    .filter((v) => typeof v === "string" && v.trim())
+    .map((v) => v.trim())
+    .join(". ");
+}
+
+/**
+ * Genera y guarda el vector de un producto. Devuelve "updated", "skipped" (sin texto
+ * o texto sin cambios) o lanza error si falla la API de embeddings.
+ */
+async function vectorizeProduct(ref, product, { force = false } = {}) {
+  const text = buildProductVectorText(product);
+  if (!text) return "skipped";
+  if (!force && product.vector && product.vectorText === text) return "skipped";
+
+  const vector = await generateEmbedding(text);
+  await ref.update({
+    vector: FieldValue.vector(vector),
+    vectorText: text,
+    vectorGeneratedAt: new Date(),
+  });
+  return "updated";
+}
+
+/**
+ * Trigger: vectoriza un producto al crearlo o editarlo, para que aparezca en la
+ * búsqueda semántica de ProductsView. La comparación con `vectorText` evita el loop
+ * (la propia escritura del vector vuelve a disparar el trigger) y regenerar cuando
+ * solo cambian campos que no forman parte del texto (imagen, teléfono...).
+ */
+export const vectorizeProductOnWrite = onDocumentWritten(
+  {
+    document: "events/{eventId}/products/{productId}",
+    region: "us-central1",
+    secrets: ["GEMINI_API_KEY", "GEMINI_API_URL"],
+  },
+  async (event) => {
+    const after = event.data?.after;
+    if (!after?.exists) return;
+
+    try {
+      const result = await vectorizeProduct(after.ref, after.data());
+      if (result === "updated") {
+        console.log(`Vector updated for product ${event.params.productId} (event ${event.params.eventId})`);
+      }
+    } catch (err) {
+      console.error(`Failed to vectorize product ${event.params.productId}:`, err);
+    }
+  }
+);
+
+/**
+ * HTTP: vectoriza todos los productos de un evento (backfill para productos creados
+ * antes del trigger). Solo toca el campo `vector` de los productos, a diferencia de
+ * vectorizeDocuments que también reescribe el `vector` de afinidad de los usuarios.
+ * Uso: GET/POST ?eventId=...  (&force=true para regenerar aunque el texto no cambió)
+ */
+export const vectorizeProductsForEvent = onRequest(
+  {
+    secrets: ["GEMINI_API_KEY", "GEMINI_API_URL"],
+    memory: "512MiB",
+    timeoutSeconds: 300,
+    region: "us-central1",
+  },
+  async (req, res) => {
+    const eventId = req.body?.eventId || req.query?.eventId;
+    if (!eventId) {
+      res.status(400).send({ error: "Missing eventId" });
+      return;
+    }
+    const force = String(req.body?.force ?? req.query?.force) === "true";
+
+    try {
+      const db = getFirestore();
+      const snap = await db.collection("events").doc(eventId).collection("products").get();
+      let updated = 0;
+      let skipped = 0;
+      let errors = 0;
+
+      await Promise.all(
+        snap.docs.map(async (doc) => {
+          try {
+            const result = await vectorizeProduct(doc.ref, doc.data(), { force });
+            if (result === "updated") updated++;
+            else skipped++;
+          } catch (err) {
+            console.error(`Error vectorizing product ${doc.id}:`, err.message);
+            errors++;
+          }
+        })
+      );
+
+      console.log(`Products vectorized for ${eventId}: updated=${updated} skipped=${skipped} errors=${errors}`);
+      res.status(200).send({ success: true, total: snap.size, updated, skipped, errors });
+    } catch (error) {
+      console.error("Error vectorizing products:", error);
+      res.status(500).send({ error: "Internal error", details: error.message });
+    }
+  }
+);
 
 /**
  * Función helper para condensar información del usuario usando Gemini AI

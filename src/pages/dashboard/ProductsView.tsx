@@ -316,6 +316,7 @@ export default function ProductsView({
           allowImageUpload={allowImageUpload}
           highlighted={isHighlighted}
           matchScore={similarityScore}
+          highlightText={searchTerm}
           company={{
             logoUrl: companyDoc?.logoUrl,
             name: p.ownerCompany || "Sin empresa",

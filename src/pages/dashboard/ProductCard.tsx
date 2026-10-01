@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { Card, Box, Image, Stack, Title, Group, Text, ThemeIcon, Badge, Divider } from "@mantine/core";
+import { Card, Box, Image, Stack, Title, Group, Text, ThemeIcon, Badge, Divider, Highlight } from "@mantine/core";
 import { IconBuildingStore } from "@tabler/icons-react";
 
 interface ProductCardCompany {
@@ -19,6 +19,8 @@ interface ProductCardProps {
   highlighted?: boolean;
   /** % de coincidencia de búsqueda semántica, si aplica. */
   matchScore?: number | null;
+  /** Término de búsqueda a resaltar en título, empresa y descripción. */
+  highlightText?: string;
   domId?: string;
   className?: string;
 }
@@ -33,6 +35,7 @@ export default function ProductCard({
   allowImageUpload = true,
   highlighted = false,
   matchScore = null,
+  highlightText = "",
   domId,
   className,
 }: ProductCardProps) {
@@ -44,6 +47,11 @@ export default function ProductCard({
   const [isTruncated, setIsTruncated] = useState(false);
   const descRef = useRef<HTMLDivElement>(null);
   const description = p.description || "Sin descripción.";
+  const hl = (text: string) => (
+    <Highlight highlight={highlightText} component="span" inherit>
+      {text}
+    </Highlight>
+  );
   const toggleExpanded = (e: any) => {
     e.stopPropagation();
     setExpanded((v) => !v);
@@ -80,7 +88,7 @@ export default function ProductCard({
         style={{ minWidth: 0 }}
         td={company.onClick ? "underline" : undefined}
       >
-        {company.name}
+        {hl(company.name)}
       </Text>
     </Group>
   ) : null;
@@ -146,7 +154,7 @@ export default function ProductCard({
 
           <Stack gap={8} mt="sm" style={{ flex: 1, minHeight: 0 }}>
             <Title order={6} lineClamp={2} style={{ minWidth: 0 }}>
-              {p.title || "Producto"}
+              {hl(p.title || "Producto")}
             </Title>
 
             {companyRow}
@@ -159,7 +167,7 @@ export default function ProductCard({
                 lineClamp={expanded ? undefined : 3}
                 style={{ whiteSpace: "pre-wrap" }}
               >
-                {description}
+                {hl(description)}
               </Text>
               {(isTruncated || expanded) && (
                 <Text size="xs" fw={600} c="blue" style={{ cursor: "pointer" }} onClick={toggleExpanded}>
@@ -176,7 +184,7 @@ export default function ProductCard({
       ) : (
         <Stack gap={8} style={{ height: "100%" }}>
           <Title order={5} lineClamp={2} style={{ minWidth: 0, lineHeight: 1.2 }}>
-            {p.title || "Producto"}
+            {hl(p.title || "Producto")}
           </Title>
 
           {companyRow}
@@ -189,7 +197,7 @@ export default function ProductCard({
               lineClamp={expanded ? undefined : 4}
               style={{ whiteSpace: "pre-wrap" }}
             >
-              {description}
+              {hl(description)}
             </Text>
             {(isTruncated || expanded) && (
               <Text size="xs" fw={600} c="blue" style={{ cursor: "pointer" }} onClick={toggleExpanded}>
