@@ -51,6 +51,7 @@ import { getTableLabel } from "./meetingSlotEngine";
 import { isCheckedInOnDay, resolveCheckInDay } from "../../utils/eventDays";
 import { normalizeTipoAsistente, canDiscoverAttendee } from "../../utils/attendeeRole";
 import { getFieldLabel } from "../../utils/attendeeFields";
+import CompanyLinks from "./CompanyLinks";
 
 const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
 
@@ -936,6 +937,10 @@ export default function CompaniesView({
                       )}
                     </Stack>
                   </Group>
+
+                  <Box mt="sm">
+                    <CompanyLinks compact formFields={formFields} representatives={asistentes} />
+                  </Box>
 
                   <Divider my="md" />
 

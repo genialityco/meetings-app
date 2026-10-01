@@ -45,6 +45,7 @@ import QrScannerModal from "../../components/QrScannerModal";
 import AttendeeScanReviewModal from "../../components/AttendeeScanReviewModal";
 import ProductEditModal from "./ProductEditModal";
 import ProductCard from "./ProductCard";
+import CompanyLinks from "./CompanyLinks";
 import { useAttendeeScanFlow } from "../../hooks/useAttendeeScanFlow";
 import { splitAttendeeFields } from "../../utils/attendeeFields";
 import { normalizeTipoAsistente } from "../../utils/attendeeRole";
@@ -345,6 +346,9 @@ export default function MyCompanyTab({
                 {products.length === 1 ? "producto" : "productos"}
               </Badge>
             </Group>
+            <Box mt="xs">
+              <CompanyLinks formFields={eventConfig?.formFields} representatives={representatives} />
+            </Box>
           </Stack>
         </Group>
       </Paper>
