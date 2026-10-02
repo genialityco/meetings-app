@@ -70,7 +70,7 @@ const App = () => {
 
         <Route path="/phonesadmin" element={<PhonesAdminPage />} />
         <Route
-          path="/meeting-response/:eventId/:meetingId/:action"
+          path="/meeting-response/:eventId/:meetingId/:action/:advisorId?"
           element={<MeetingAutoResponse />}
         />
         <Route path="/admin/event/:eventId" element={<ProtectedAdminRoute><EventAdmin /></ProtectedAdminRoute>} />

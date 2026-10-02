@@ -1155,7 +1155,7 @@ export async function createMeetingRequestDoc(
               `🏢 *Empresa:* ${requesterCompany}\n` +
               contextLine +
               `\n*Cualquier asesor de tu empresa puede aceptarla (el primero se la queda):*\n` +
-              `✅ *Aceptar:* \n${acceptUrl}\n\n` +
+              `✅ *Aceptar:* \n${acceptUrl}/${advisor.id}\n\n` +
               `🔗 Ir al evento: \n${landingUrl}`,
         fallbackInfo: {
           enabled: fallbackEnabled,
@@ -1170,8 +1170,10 @@ export async function createMeetingRequestDoc(
           requesterPosition: requester?.cargo || "",
           requesterEmail: requester?.correo || "",
           requesterPhone: requester?.telefono || "",
-          acceptUrl: acceptPath,
-          cancelUrl: rejectPath,
+          // Enlaces propios de cada asesor (llevan su ID) para que, al abrirlos en un
+          // navegador sin sesión, la página pueda iniciar su sesión sin pedirle ingresar.
+          acceptUrl: `${acceptPath}/${advisor.id}`,
+          cancelUrl: `${rejectPath}/${advisor.id}`,
           contextNote: context?.contextNote,
         },
       }),

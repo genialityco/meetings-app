@@ -1,4 +1,4 @@
-import { useEffect, useContext, useState, useMemo } from "react";
+import { useEffect, useContext, useState, useMemo, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   doc,
@@ -68,9 +68,15 @@ async function ensureFirebaseAuth() {
 }
 
 export default function MeetingAutoResponse() {
-  const { eventId, meetingId, action } = useParams();
+  // advisorId (opcional): en solicitudes a una empresa el enlace de WhatsApp lleva el ID del
+  // asesor al que se envió, para poder iniciar su sesión sin pedirle ingresar de nuevo.
+  const { eventId, meetingId, action, advisorId } = useParams();
   const navigate = useNavigate();
   const { currentUser, userLoading, loginAsUser } = useContext(UserContext);
+  // uid de quien actúa sobre la reunión, resuelto en la validación. loginAsUser actualiza el
+  // estado de forma asíncrona, así que el closure del efecto que carga los slots seguiría
+  // viendo la sesión anterior (anónima) si leyera currentUser.
+  const actingUidRef = useRef(null);
 
   const [status, setStatus] = useState(
     action === "accept" ? "Cargando horarios..." : "Procesando..."
@@ -175,6 +181,7 @@ export default function MeetingAutoResponse() {
       // llegó la solicitud). Si la sesión activa no es ya la suya (p.ej.
       // quedó anónima al abrir el link), la reemplazamos por su sesión real
       // para que el redirect final al dashboard lo reconozca ya logueado.
+      actingUidRef.current = receiverId || userId;
       if (receiverId && currentUser?.uid !== receiverId) {
         const receiverSnap = await getDoc(doc(db, "users", receiverId));
         if (receiverSnap.exists()) {
@@ -182,10 +189,25 @@ export default function MeetingAutoResponse() {
         }
       } else if (!receiverId && companyId) {
         // Solicitud dirigida a una empresa (sin reclamar): no hay un destinatario
-        // fijo, así que no forzamos sesión a nadie en particular. Solo validamos
-        // que la sesión activa sea la de un asesor de esa empresa.
-        const myUserSnap = await getDoc(doc(db, "users", userId));
-        const myData = myUserSnap.exists() ? myUserSnap.data() : null;
+        // fijo. Si el enlace trae el ID del asesor al que se envió, se inicia su sesión
+        // (siempre que pertenezca a esa empresa y evento); si no, se valida que la
+        // sesión activa sea la de un asesor de esa empresa.
+        let claimerId = userId;
+        let myData = null;
+        if (advisorId && advisorId !== userId) {
+          const advSnap = await getDoc(doc(db, "users", advisorId));
+          const advData = advSnap.exists() ? advSnap.data() : null;
+          if (advData && advData.companyId === companyId && advData.eventId === eventId) {
+            claimerId = advisorId;
+            myData = advData;
+            loginAsUser(advisorId, advData);
+          }
+        }
+        if (!myData) {
+          const myUserSnap = await getDoc(doc(db, "users", claimerId));
+          myData = myUserSnap.exists() ? myUserSnap.data() : null;
+        }
+        actingUidRef.current = claimerId;
         const myCompanyNit = myData?.companyId;
         // Cualquier persona asociada a la empresa puede reclamarla, sin importar
         // su tipoAsistente (ver getCompanyAdvisors en meetingSlotEngine.ts).
@@ -248,7 +270,7 @@ export default function MeetingAutoResponse() {
       // Solicitud de empresa sin reclamar: quien está viendo esta página (ya validado
       // como asesor de la empresa) es quien efectivamente ocuparía el slot.
       const effectiveReceiverId =
-        receiverId || currentUser?.uid || auth.currentUser?.uid;
+        receiverId || actingUidRef.current || currentUser?.uid || auth.currentUser?.uid;
 
       // Carga el nombre del solicitante
       const userSnap = await getDoc(doc(db, "users", requesterId));
@@ -337,7 +359,7 @@ export default function MeetingAutoResponse() {
       // Obtener datos del solicitante y del receptor (quien rechaza). Para una
       // solicitud de empresa sin reclamar, receiverId puede ser null: se atribuye
       // el rechazo a la sesión activa (el asesor que abrió el enlace).
-      const myUid = currentUser?.uid || auth.currentUser?.uid;
+      const myUid = actingUidRef.current || currentUser?.uid || auth.currentUser?.uid;
       const requesterSnap = await getDoc(doc(db, "users", mtgData.requesterId));
       const receiverSnap = await getDoc(doc(db, "users", mtgData.receiverId || myUid));
       const requester = requesterSnap.exists() ? requesterSnap.data() : {};
@@ -422,7 +444,7 @@ export default function MeetingAutoResponse() {
         new Date().toISOString().slice(0, 10);
 
       let requesterId, receiverId, isCompanyClaim;
-      const myUid = currentUser?.uid || auth.currentUser?.uid;
+      const myUid = actingUidRef.current || currentUser?.uid || auth.currentUser?.uid;
 
       // TRANSACCIÓN: valida, crea locks, actualiza meeting y ocupa slot
       await runTransaction(db, async (tx) => {
