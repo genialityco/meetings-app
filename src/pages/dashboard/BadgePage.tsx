@@ -2,8 +2,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams, Link } from "react-router-dom";
 import { Container, Paper, Title, Text, Center, Loader, Avatar, Stack, Box, Button, Switch, Group, Select, NumberInput, Divider, SimpleGrid } from "@mantine/core";
 import { IconArrowRight, IconPrinter, IconAdjustments, IconRuler2, IconFileText } from "@tabler/icons-react";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
+import { isCheckedInOnDay, resolveCheckInDay } from "../../utils/eventDays";
 import QRCode from "qrcode";
 
 // Tamaños de página (papel) en milímetros
@@ -230,6 +231,15 @@ export default function BadgePage({
     loadData();
   }, [eventId, userId, hasPreloadedData]);
 
+  // En la vista del asistente (ruta propia, no embebida) el estado de check-in se
+  // mantiene en vivo: el staff lo marca desde el escáner y debe pasar a verde sin recargar.
+  useEffect(() => {
+    if (embedded || hasPreloadedData || !userId) return;
+    return onSnapshot(doc(db, "users", userId), (snap) => {
+      if (snap.exists()) setUser(snap.data());
+    });
+  }, [embedded, hasPreloadedData, userId]);
+
   if (loading) {
     return (
       <Center style={{ minHeight: embedded ? 200 : "100vh", background: "#f8f9fa" }}>
@@ -245,6 +255,8 @@ export default function BadgePage({
       </Center>
     );
   }
+
+  const checkedIn = isCheckedInOnDay(user, resolveCheckInDay(event?.config));
 
   return (
     <Box id="badge-print-root" style={{ minHeight: embedded ? "auto" : "100vh", background: "#f8f9fa", padding: "20px" }}>
@@ -414,6 +426,35 @@ export default function BadgePage({
           >
             Vista previa
           </Text>
+        )}
+
+        {/* Estado de check-in del día (solo en pantalla, no se imprime en la escarapela) */}
+        {!embedded && !printMode && (
+          <Center mb="md" className="no-print">
+            <Group
+              gap={8}
+              wrap="nowrap"
+              px="md"
+              py={6}
+              style={{
+                borderRadius: 999,
+                background: checkedIn ? "var(--mantine-color-green-0)" : "var(--mantine-color-orange-0)",
+                border: `1px solid ${checkedIn ? "var(--mantine-color-green-3)" : "var(--mantine-color-orange-3)"}`,
+              }}
+            >
+              <Box
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: 999,
+                  background: checkedIn ? "#37b24d" : "#fd7e14",
+                }}
+              />
+              <Text size="sm" fw={600} c={checkedIn ? "green.8" : "orange.8"}>
+                {checkedIn ? "Con check-in" : "Sin check-in"}
+              </Text>
+            </Group>
+          </Center>
         )}
 
         <Center>

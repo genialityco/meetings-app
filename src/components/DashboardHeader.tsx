@@ -26,7 +26,7 @@ import {
   ActionIcon,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
-import { IconEdit, IconLogout, IconChevronDown, IconPackage, IconBuilding, IconCheck, IconUserCheck, IconQrcode, IconScan } from "@tabler/icons-react";
+import { IconEdit, IconLogout, IconChevronDown, IconPackage, IconBuilding, IconQrcode, IconScan } from "@tabler/icons-react";
 import { UserContext } from "../context/UserContext";
 import { isComprador as isCompradorRole } from "../utils/attendeeRole";
 import { withRoleLabel } from "../utils/attendeeFields";
@@ -623,8 +623,10 @@ const DashboardHeader = ({
       <Group
         justify="space-between"
         align="center"
+        wrap="nowrap"
+        gap={isMobile ? 6 : "md"}
         py="sm"
-        px="md"
+        px={isMobile ? "xs" : "md"}
         style={{
           borderBottom: "1px solid var(--mantine-color-gray-3)",
           position: "sticky",
@@ -634,13 +636,14 @@ const DashboardHeader = ({
         }}
       >
         {/* Izquierda: Logo + Nombre del evento */}
-        <Group gap="sm" align="center">
+        <Group gap="sm" align="center" wrap="nowrap" style={{ minWidth: 0, flex: isMobile ? "1 1 0" : undefined }}>
           {(dashboardLogo || eventImage) ? (
             <Image
               src={dashboardLogo || eventImage}
               alt={eventName}
-              h={isMobile ? 33 : 45}
+              h={isMobile ? 30 : 45}
               w="auto"
+              maw="100%"
               fit="contain"
             />
           ) : null}
@@ -653,11 +656,17 @@ const DashboardHeader = ({
 
         {/* Centro: Identificador de asistente */}
         {showAttendeeId && (
-          <Box style={{ position: "absolute", left: "50%", transform: "translateX(-50%)", pointerEvents: "none" }}>
+          <Box
+            style={
+              isMobile
+                ? { flexShrink: 0, pointerEvents: "none" }
+                : { position: "absolute", left: "50%", transform: "translateX(-50%)", pointerEvents: "none" }
+            }
+          >
             <Text
               fw={900}
               style={{
-                fontSize: isMobile ? 28 : 38,
+                fontSize: isMobile ? 20 : 38,
                 lineHeight: 1,
                 letterSpacing: 2,
                 color: "var(--mantine-color-blue-7)",
@@ -670,14 +679,14 @@ const DashboardHeader = ({
         )}
 
         {/* Derecha: Notificaciones + Check-in + Avatar con Menu */}
-        <Group gap="sm" align="center">
+        <Group gap={isMobile ? 4 : "sm"} align="center" wrap="nowrap" style={{ flexShrink: 0 }}>
           {!qrOnlyMode && policies?.standVisitsEnabled === true && (
             isMobile ? (
               <Tooltip label="Escanear stand" withArrow>
                 <ActionIcon
                   variant="light"
                   color="grape"
-                  size={42}
+                  size={34}
                   radius="xl"
                   onClick={() => setStandScannerOpened(true)}
                   aria-label="Escanear stand"
@@ -702,7 +711,7 @@ const DashboardHeader = ({
             <Tooltip label="Mi código QR" withArrow>
               <ActionIcon
                 variant="default"
-                size={42}
+                size={isMobile ? 34 : 42}
                 radius="xl"
                 onClick={() => window.open(`/badge/${eventId}/${uid}`, "_blank")}
                 aria-label="Mi código QR"
@@ -712,28 +721,6 @@ const DashboardHeader = ({
             </Tooltip>
           )}
 
-          <Tooltip
-            label={checkedIn ? "Asistencia confirmada" : "Sin check-in"}
-            withArrow
-          >
-            <Box
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: 42,
-                height: 42,
-                borderRadius: 999,
-                background: checkedIn ? "#37b24d" : "transparent",
-                border: checkedIn ? "none" : "1px solid var(--mantine-color-gray-4)",
-                color: checkedIn ? "#ffffff" : "var(--mantine-color-gray-7)",
-              }}
-              aria-label={checkedIn ? "Asistencia confirmada" : "Sin check-in"}
-            >
-              {checkedIn ? <IconUserCheck size={20} /> : <IconCheck size={20} />}
-            </Box>
-          </Tooltip>
-
           <NotificationsMenu
             notifications={notifications}
             onNotificationClick={onNotificationClick}
@@ -742,16 +729,33 @@ const DashboardHeader = ({
 
           <Menu position="bottom-end" width={200} shadow="md">
             <Menu.Target>
-              <Group gap={6} style={{ cursor: "pointer" }}>
-                <Avatar src={avatarSrc} size={36} radius="xl">
+              <Group gap={isMobile ? 4 : 6} wrap="nowrap" style={{ cursor: "pointer" }}>
+                <Avatar src={avatarSrc} size={isMobile ? 32 : 36} radius="xl">
                   {String(userName).slice(0, 1).toUpperCase()}
                 </Avatar>
-                {!isMobile && (
-                  <Text size="sm" fw={500} lineClamp={1} maw={150}>
-                    {userName}
-                  </Text>
-                )}
-                <IconChevronDown size={14} />
+                <Stack gap={0}>
+                  {!isMobile && (
+                    <Text size="sm" fw={500} lineClamp={1} maw={150}>
+                      {userName}
+                    </Text>
+                  )}
+                  {/* Estado de check-in del día: verde = con check-in, naranja = sin check-in */}
+                  <Group gap={isMobile ? 3 : 5} wrap="nowrap" aria-label={checkedIn ? "Con check-in" : "Sin check-in"}>
+                    <Box
+                      style={{
+                        width: isMobile ? 6 : 8,
+                        height: isMobile ? 6 : 8,
+                        borderRadius: 999,
+                        flexShrink: 0,
+                        background: checkedIn ? "#37b24d" : "#fd7e14",
+                      }}
+                    />
+                    <Text fz={isMobile ? 10 : "xs"} c={checkedIn ? "green.8" : "orange.8"} fw={500} style={{ whiteSpace: "nowrap" }}>
+                      {checkedIn ? "Con check-in" : "Sin check-in"}
+                    </Text>
+                  </Group>
+                </Stack>
+                {!isMobile && <IconChevronDown size={14} />}
               </Group>
             </Menu.Target>
             <Menu.Dropdown>
