@@ -16,6 +16,7 @@ import MeetingConfirmationGuard from "./MeetingConfirmationGuard";
 import { useCallback, useContext, useMemo, useState, useEffect } from "react";
 import { UserContext } from "../../context/UserContext";
 import DashboardHeader from "../../components/DashboardHeader";
+import SupportButton from "../../components/SupportButton";
 import type { Notification, NotificationType } from "./types";
 import { DEFAULT_POLICIES } from "./types";
 import { Modal, Text, Button, TextInput, Stack, Group, Loader } from "@mantine/core";
@@ -193,6 +194,13 @@ export default function Dashboard() {
       <Container fluid pt="sm">
         <TabsPanel dashboard={dashboard} viewRequest={viewRequest} />
       </Container>
+      {currentUser?.data && (
+        <SupportButton
+          eventName={dashboard.eventName}
+          userName={currentUser.data.nombre}
+          userEmail={currentUser.data.correo}
+        />
+      )}
       <AvatarModal
         opened={dashboard.avatarModalOpened}
         image={dashboard.selectedImage}

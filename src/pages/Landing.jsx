@@ -73,6 +73,7 @@ import { sendWelcomeNotification } from "../utils/whatsappService";
 import { getEventDayKeys, formatDayLabel } from "../utils/eventDays";
 import { getForcedRegistrationRole } from "../utils/attendeeRole";
 import { withRoleLabel } from "../utils/attendeeFields";
+import SupportButton from "../components/SupportButton";
 
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
 
@@ -2928,6 +2929,7 @@ const Landing = () => {
           </Text>
         </Container>
       </Box>
+      <SupportButton eventName={event?.eventName} />
     </MantineProvider>
   );
 };
