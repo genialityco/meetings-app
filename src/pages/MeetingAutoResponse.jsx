@@ -11,6 +11,7 @@ import {
   getDocs,
   runTransaction,
 } from "firebase/firestore";
+import { signInAnonymously } from "firebase/auth";
 import { auth, db } from "../firebase/firebaseConfig";
 import { UserContext } from "../context/UserContext";
 import { getTableLabel, getCompanyAdvisors } from "./dashboard/meetingSlotEngine";
@@ -50,6 +51,21 @@ const slotOverlapsBreakBlock = (
     return slotStartMin < be && slotEndMin > bs;
   });
 };
+
+// Las reglas exigen request.auth != null para escribir. En navegadores in-app
+// (WhatsApp/Instagram) la sesión de Firebase Auth puede perderse aunque el
+// localStorage conserve una sesión manual (UserContext no reintenta el login
+// anónimo en ese caso), así que nos aseguramos de tener una antes de operar.
+async function ensureFirebaseAuth() {
+  if (auth.currentUser) return true;
+  try {
+    await signInAnonymously(auth);
+    return true;
+  } catch (e) {
+    console.error("No se pudo iniciar sesión anónima:", e);
+    return false;
+  }
+}
 
 export default function MeetingAutoResponse() {
   const { eventId, meetingId, action } = useParams();
@@ -113,7 +129,9 @@ export default function MeetingAutoResponse() {
   async function validateUserAndMeeting() {
     try {
       setIsValidating(true);
-      
+
+      await ensureFirebaseAuth();
+
       // 1. Validar que el usuario tiene sesión activa
       if (!currentUser?.uid && !auth.currentUser?.uid) {
         setValidationError(
@@ -308,6 +326,7 @@ export default function MeetingAutoResponse() {
   async function processReject() {
     try {
       setRejectLoading(true);
+      await ensureFirebaseAuth();
       const mtgRef = doc(db, "events", eventId, "meetings", meetingId);
       await updateDoc(mtgRef, {
         status: "rejected",
@@ -386,7 +405,9 @@ export default function MeetingAutoResponse() {
   // --------------------------------------------------------
   async function confirmWithSlot(slot) {
     setConfirmLoading(true);
+    let succeeded = false;
     try {
+      await ensureFirebaseAuth();
       const mtgRef = doc(db, "events", eventId, "meetings", meetingId);
       const slotRef = doc(db, "events", eventId, "agenda", slot.id);
 
@@ -637,6 +658,7 @@ export default function MeetingAutoResponse() {
         }
       }
 
+      succeeded = true;
       setStatus("Reunión confirmada.");
     } catch (e) {
       console.error(e);
@@ -650,17 +672,23 @@ export default function MeetingAutoResponse() {
       ) {
         setStatus(msg);
       } else {
-        setStatus("Error al confirmar. Por favor intenta de nuevo.");
+        setStatus(
+          `Error al confirmar (${e?.code || msg || "desconocido"}). Por favor intenta de nuevo.`
+        );
       }
     } finally {
       setConfirmLoading(false);
-      setTimeout(() => {
-        const dest =
-          currentUser?.data || auth.currentUser
-            ? `/dashboard/${eventId}`
-            : `/event/${eventId}`;
-        navigate(dest);
-      }, 1500);
+      // En éxito se va rápido al dashboard; si falló, damos tiempo de leer el motivo.
+      setTimeout(
+        () => {
+          const dest =
+            currentUser?.data || auth.currentUser
+              ? `/dashboard/${eventId}`
+              : `/event/${eventId}`;
+          navigate(dest);
+        },
+        succeeded ? 1500 : 8000
+      );
     }
   }
 

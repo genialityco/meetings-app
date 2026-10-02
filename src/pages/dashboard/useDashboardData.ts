@@ -1419,8 +1419,10 @@ export function useDashboardData(eventId?: string) {
         await updateDoc(mtgRef, { status: newStatus });
 
         // Obtener datos del receptor (quien rechaza) y solicitante
+        // En solicitudes de empresa sin reclamar (receiverId null) quien rechaza es el usuario actual.
+        const rejecterId: string = data.receiverId || uid;
         const requesterSnap = await getDoc(doc(db, "users", data.requesterId));
-        const receiverSnap = await getDoc(doc(db, "users", data.receiverId));
+        const receiverSnap = await getDoc(doc(db, "users", rejecterId));
         const requester = requesterSnap.exists()
           ? (requesterSnap.data() as Assistant)
           : null;
@@ -1457,7 +1459,7 @@ export function useDashboardData(eventId?: string) {
           await notifyCompanyAdvisors({
             eventId: eventId!,
             companyNit: data.companyId,
-            excludeUids: [data.requesterId, data.receiverId],
+            excludeUids: [data.requesterId, rejecterId],
             policies,
             whatsappBuilder: (advisor) => ({
               phone: advisor.telefono || "",
@@ -1601,7 +1603,12 @@ export function useDashboardData(eventId?: string) {
       const mtgRef = doc(db, "events", eventId!, "meetings", meetingId);
       const mtgSnap = await getDoc(mtgRef);
       if (!mtgSnap.exists()) throw new Error("Reunión no existe");
-      const { requesterId, receiverId } = mtgSnap.data();
+      const { requesterId, receiverId: docReceiverId, companyId } = mtgSnap.data();
+      // Solicitud de empresa sin reclamar (receiverId null): quien acepta será el
+      // receptor efectivo (igual que en confirmAcceptWithSlot). Sin esto, los slots
+      // se calculaban con receiverId null y el modal nunca llegaba a abrirse.
+      const receiverId = docReceiverId || (companyId ? uid : null);
+      if (!receiverId) throw new Error("Datos de la reunión incompletos");
 
       if (!isEdit) {
         setMeetingToAccept({ id: meetingId, requesterId, receiverId });
@@ -1630,6 +1637,16 @@ export function useDashboardData(eventId?: string) {
       setSelectedDate(selectedDate || eventDayISO);
       setAvailableSlots(slots);
       setSlotModalOpened(true);
+    } catch (e) {
+      // Antes el error escapaba sin manejar y el usuario no veía nada.
+      trackError(e instanceof Error ? e.message : String(e), "useDashboardData.prepareSlotSelection");
+      mantineNotifications.show({
+        title: "No se pudo abrir la selección de horario",
+        message: "Ocurrió un error al cargar los horarios. Intenta de nuevo.",
+        color: "red",
+        autoClose: 5000,
+        withCloseButton: true,
+      });
     } finally {
       setPrepareSlotSelectionLoading(false);
     }
