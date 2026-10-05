@@ -118,8 +118,9 @@ export default function Dashboard() {
       if (currentUser?.uid) {
         await updateUser(currentUser.uid, { 
           welcomePopupSeen: true,
-          telefono: welcomePhone,
-          correo: welcomeEmail
+          telefono: welcomePhone.trim(),
+          // loginByEmail busca el correo en minúsculas
+          correo: welcomeEmail.trim().toLowerCase()
         });
       }
       

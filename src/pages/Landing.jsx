@@ -756,6 +756,15 @@ const Landing = () => {
   const handleSubmit = useCallback(async () => {
     console.log("Iniciando handleSubmit...");
     setSubmitError("");
+    // Sin el evento cargado formFields está vacío y validateForm solo revisa el
+    // consentimiento: se guardaba un usuario sin nombre/empresa/rol (conexión lenta,
+    // navegadores in-app). No se permite enviar hasta tener la configuración.
+    if (!event || formFields.length === 0) {
+      setSubmitError(
+        "Aún estamos cargando el formulario del evento. Espera unos segundos e intenta de nuevo.",
+      );
+      return;
+    }
     const validationErrors = validateForm();
     if (Object.keys(validationErrors).length > 0) {
       console.warn("Validación falló. Abortando submit.");
@@ -1114,7 +1123,8 @@ const Landing = () => {
     companyStepFields,
     companyLogoFile,
     pdfFiles,
-    event?.eventType,
+    event,
+    formFields.length,
     forcedRole,
   ]);
 
