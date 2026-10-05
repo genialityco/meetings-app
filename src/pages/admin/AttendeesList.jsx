@@ -8,6 +8,7 @@ import {
   getDialCodeForIso2,
   parsePhoneValue,
   isPhoneField,
+  cleanLocalPhoneNumber,
 } from "../../utils/phoneUtils";
 import PropTypes from "prop-types";
 import * as XLSX from "xlsx";
@@ -550,7 +551,7 @@ function parseFirestoreTimestamp(input) {
                 type="text"
                 value={parsedPhone.number}
                 onChange={(e) => {
-                  const num = e.target.value.replace(/\D/g, "");
+                  const num = cleanLocalPhoneNumber(e.target.value, parsedPhone.dialCode);
                   setEditingCell({
                     ...editingCell,
                     value: `${parsedPhone.dialCode} ${num}`.trim(),

@@ -9,6 +9,7 @@ import {
   getDialCodeForIso2,
   parsePhoneValue,
   isPhoneField,
+  cleanLocalPhoneNumber,
 } from "../../utils/phoneUtils";
 
 const normalizeNit = (v = "") => String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -393,7 +394,7 @@ const ModalEditAttendee = ({
               placeholder="Número"
               value={phoneNumber}
               onChange={(e) => {
-                const num = e.target.value.replace(/\D/g, "");
+                const num = cleanLocalPhoneNumber(e.target.value, dialCode);
                 handleChange(f.name, `${dialCode} ${num}`.trim());
               }}
               required={f.required}

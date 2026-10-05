@@ -32,6 +32,14 @@ import { isComprador as isCompradorRole } from "../utils/attendeeRole";
 import { withRoleLabel } from "../utils/attendeeFields";
 import { resolveCheckInDay, isCheckedInOnDay, getEventDayKeys, formatDayLabel } from "../utils/eventDays";
 import { parseStandVisitQrUrl } from "../utils/qrScan";
+import {
+  COUNTRY_CODES,
+  detectDefaultIso2,
+  getDialCodeForIso2,
+  parsePhoneValue,
+  isPhoneField,
+  cleanLocalPhoneNumber,
+} from "../utils/phoneUtils";
 import QrScannerModal from "./QrScannerModal";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { doc, setDoc, getDoc } from "firebase/firestore";
@@ -61,6 +69,8 @@ const uploadProfilePicture = async (file: File, uid: string) => {
 const normalizeNit = (v = "") => String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
+// País por defecto del selector de indicativo para teléfonos guardados sin "+código"
+const DEFAULT_PHONE_ISO2 = detectDefaultIso2();
 
 // Campos del registro que no deben poder editarse desde el perfil del asistente
 // (bloqueados = ni se muestran). company_nit: cambiarlo movería al asistente a otra empresa.
@@ -586,6 +596,43 @@ const DashboardHeader = ({
         );
       }
 
+      // Teléfono: indicativo + número (mismo formato que el registro), sin el 0 troncal
+      if (isPhoneField(field)) {
+        const { iso2, dialCode, number: phoneNumber } = parsePhoneValue(
+          getFieldValue(field.name),
+          DEFAULT_PHONE_ISO2,
+        );
+        return (
+          <Box key={field.name}>
+            <Text size="sm" fw={500} mb={4}>{field.label || "Teléfono"}</Text>
+            <Group gap={6} align="flex-start" wrap="nowrap">
+              <Select
+                data={COUNTRY_CODES}
+                value={iso2}
+                onChange={(newIso2) => {
+                  if (!newIso2) return;
+                  const dc = getDialCodeForIso2(newIso2);
+                  handleChange(field.name, phoneNumber ? `${dc} ${phoneNumber}` : dc);
+                }}
+                style={{ width: 104 }}
+                searchable
+                comboboxProps={{ width: 300 }}
+                allowDeselect={false}
+              />
+              <TextInput
+                placeholder="Número"
+                value={phoneNumber}
+                onChange={(e) => {
+                  const num = cleanLocalPhoneNumber(e.target.value, dialCode);
+                  handleChange(field.name, `${dialCode} ${num}`.trim());
+                }}
+                style={{ flex: 1 }}
+              />
+            </Group>
+          </Box>
+        );
+      }
+
       // company_nit — normalize on change
       if (field.name === "company_nit") {
         return (
@@ -936,11 +983,7 @@ const DashboardHeader = ({
                     />
                   </Grid.Col>
                   <Grid.Col span={12}>
-                    <TextInput
-                      label="Teléfono"
-                      value={editData.telefono || ""}
-                      onChange={(e) => handleChange("telefono", e.target.value)}
-                    />
+                    {renderField({ name: "telefono", label: "Teléfono" })}
                   </Grid.Col>
                 </Grid>
               </Paper>

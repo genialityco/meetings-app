@@ -68,6 +68,7 @@ import {
   getDialCodeForIso2,
   parsePhoneValue,
   isPhoneField,
+  cleanLocalPhoneNumber,
 } from "../utils/phoneUtils";
 import { sendWelcomeNotification } from "../utils/whatsappService";
 import { getEventDayKeys, formatDayLabel } from "../utils/eventDays";
@@ -1543,7 +1544,7 @@ const Landing = () => {
                   placeholder={field.placeholder || "Número"}
                   value={phoneNumber}
                   onChange={(e) => {
-                    const num = e.target.value.replace(/\D/g, "");
+                    const num = cleanLocalPhoneNumber(e.target.value, dialCode);
                     const combined = `${dialCode} ${num}`.trim(); // dialCode viene del parsePhoneValue
                     handleDynamicChange(field.name, combined);
                     const err = validateField(field, combined);

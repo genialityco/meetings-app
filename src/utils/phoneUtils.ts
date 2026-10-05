@@ -113,7 +113,15 @@ export const parsePhoneValue = (
   };
 };
 
-export const isPhoneField = (field: { type?: string; name?: string }): boolean =>
+// Número local -> solo dígitos, sin el 0 troncal nacional. En Venezuela (y otros países)
+// la gente escribe "0412..." y quedaba "+58 0412...", formato que WhatsApp no reconoce.
+// Italia (+39) es la excepción: su 0 inicial sí forma parte del número internacional.
+export const cleanLocalPhoneNumber = (raw: string, dialCode: string): string => {
+  const digits = String(raw || "").replace(/\D/g, "");
+  return dialCode === "+39" ? digits : digits.replace(/^0+/, "");
+};
+
+export const isPhoneField =(field: { type?: string; name?: string }): boolean =>
   field.type === "phone" ||
   field.name === "telefono" ||
   field.name === "celular";
