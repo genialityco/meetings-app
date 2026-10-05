@@ -26,7 +26,7 @@ import {
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import { useState, useMemo, useEffect, useLayoutEffect, useRef } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   IconSearch,
   IconX,
@@ -44,12 +44,15 @@ import {
   IconCircleCheck,
   IconCalendarEvent,
   IconInfoCircle,
+  IconClockHour4,
+  IconEdit,
+  IconEye,
 } from "@tabler/icons-react";
 import type { Assistant, Company, EventPolicies, MeetingContext } from "./types";
 import MeetingRequestModal from "./MeetingRequestModal";
-import { getTableLabel } from "./meetingSlotEngine";
+import { getTableLabel, buildPendingCompanyKeys, normCompanyKey } from "./meetingSlotEngine";
 import { isCheckedInOnDay, resolveCheckInDay } from "../../utils/eventDays";
-import { normalizeTipoAsistente, canDiscoverAttendee } from "../../utils/attendeeRole";
+import { normalizeTipoAsistente, canDiscoverAttendee, getRoleDisplayLabel } from "../../utils/attendeeRole";
 import { getFieldLabel } from "../../utils/attendeeFields";
 import CompanyLinks from "./CompanyLinks";
 
@@ -180,6 +183,8 @@ interface CompaniesViewProps {
   affinityScores: Record<string, number>;
   highlightEntityId?: string;
   acceptedMeetings?: any[];
+  // Solicitudes pendientes enviadas por el usuario: marcan la empresa como "Solicitud enviada"
+  sentPendingRequests?: any[];
   participantsInfo?: Record<string, any>;
   myStandVisits?: Set<string>;
 }
@@ -200,12 +205,21 @@ export default function CompaniesView({
   affinityScores,
   highlightEntityId,
   acceptedMeetings,
+  sentPendingRequests,
   participantsInfo,
   myStandVisits,
 }: CompaniesViewProps) {
   const theme = useMantineTheme();
   const navigate = useNavigate();
   const { eventId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // DashboardHeader abre "Editar perfil" (datos personales + empresa) con ?editProfile=1
+  const openEditProfile = () => {
+    const next = new URLSearchParams(searchParams);
+    next.set("editProfile", "1");
+    setSearchParams(next);
+  };
 
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [loadingCompany, setLoadingCompany] = useState<string | null>(null);
@@ -412,6 +426,20 @@ export default function CompaniesView({
     return map;
   }, [acceptedMeetings, participantsInfo, myUid, policies.groupByRazonSocial]);
 
+  // Empresas con una solicitud mía pendiente (a la empresa o a cualquiera de sus
+  // representantes): la tarjeta muestra "Solicitud enviada" y no deja enviar otra.
+  // Es por solicitante: un colega de mi empresa sí puede pedir su propia reunión.
+  const pendingCompanyKeys = useMemo(() => {
+    const byId = new Map<string, any>();
+    assistantsWithMe.forEach((a) => byId.set(a.id, a));
+    return buildPendingCompanyKeys(
+      sentPendingRequests,
+      myUid,
+      (id) => byId.get(id) || participantsInfo?.[id],
+      policies.groupByRazonSocial,
+    );
+  }, [sentPendingRequests, assistantsWithMe, participantsInfo, policies.groupByRazonSocial, myUid]);
+
   // Búsqueda por vectores con debounce
   useEffect(() => {
     const trimmed = searchTerm.trim();
@@ -542,8 +570,8 @@ export default function CompaniesView({
       setLoadingId(assistant.id);
       try {
         await sendMeetingRequestToCompany(companyNit, {}, assistant.id);
-      } catch {
-        showNotification({ title: "Error", message: "No se pudo iniciar la solicitud.", color: "red" });
+      } catch (e: any) {
+        if (!e?.handled) showNotification({ title: "Error", message: "No se pudo iniciar la solicitud.", color: "red" });
       } finally {
         setLoadingId(null);
       }
@@ -576,12 +604,17 @@ export default function CompaniesView({
 
       setModalOpened(false);
       setSelectedMeeting(null);
-    } catch {
-      showNotification({
-        title: "Error",
-        message: "No se pudo enviar la solicitud.",
-        color: "red",
-      });
+    } catch (e: any) {
+      if (e?.handled) {
+        setModalOpened(false);
+        setSelectedMeeting(null);
+      } else {
+        showNotification({
+          title: "Error",
+          message: "No se pudo enviar la solicitud.",
+          color: "red",
+        });
+      }
     } finally {
       setLoadingId(null);
     }
@@ -599,8 +632,8 @@ export default function CompaniesView({
       setLoadingCompany(empresa);
       try {
         await sendMeetingRequestToCompany(companyNit, {});
-      } catch {
-        showNotification({ title: "Error", message: "No se pudo iniciar la solicitud.", color: "red" });
+      } catch (e: any) {
+        if (!e?.handled) showNotification({ title: "Error", message: "No se pudo iniciar la solicitud.", color: "red" });
       } finally {
         setLoadingCompany(null);
       }
@@ -631,12 +664,17 @@ export default function CompaniesView({
 
       setCompanyModalOpened(false);
       setSelectedCompanyRequest(null);
-    } catch {
-      showNotification({
-        title: "Error",
-        message: "No se pudo enviar la solicitud a la empresa.",
-        color: "red",
-      });
+    } catch (e: any) {
+      if (e?.handled) {
+        setCompanyModalOpened(false);
+        setSelectedCompanyRequest(null);
+      } else {
+        showNotification({
+          title: "Error",
+          message: "No se pudo enviar la solicitud a la empresa.",
+          color: "red",
+        });
+      }
     } finally {
       setLoadingCompany(null);
     }
@@ -734,6 +772,10 @@ export default function CompaniesView({
               !!(myStandVisits?.has(nitLookup) || myStandVisits?.has(nit));
             const companyMeeting =
               meetingsByCompany.get(nit) || (nitLookup ? meetingsByCompany.get(nitLookup) : undefined);
+            const requestPending =
+              !mine &&
+              (pendingCompanyKeys.has(normCompanyKey(nit)) ||
+                (!!nitLookup && pendingCompanyKeys.has(normCompanyKey(nitLookup))));
 
             // si no hay seleccionado, por defecto el que coincidió con la búsqueda, o el primero
             const selectedAssistant =
@@ -760,11 +802,53 @@ export default function CompaniesView({
                   style={{
                     height: "100%",
                     position: "relative",
-                    border: isHighlighted ? "3px solid var(--mantine-color-teal-5)" : undefined,
+                    border: isHighlighted
+                      ? "3px solid var(--mantine-color-teal-5)"
+                      : mine
+                        ? "2px solid var(--mantine-color-green-5)"
+                        : undefined,
                     boxShadow: isHighlighted ? "0 0 20px rgba(20, 184, 166, 0.4)" : undefined,
                     animation: isHighlighted ? "pulse 2s ease-in-out 3" : undefined,
                   }}
                 >
+                  {/* Tarjeta propia: aviso de que es una vista previa de cómo la ven los demás */}
+                  {mine && (
+                    <Paper
+                      radius="md"
+                      p="sm"
+                      mb="md"
+                      style={{
+                        background: "var(--mantine-color-green-0)",
+                        border: "1px solid var(--mantine-color-green-2)",
+                      }}
+                    >
+                      <Group gap="sm" wrap="nowrap" align="flex-start">
+                        <ThemeIcon color="green" variant="filled" radius="xl" size={30} style={{ flexShrink: 0 }}>
+                          <IconEye size={17} />
+                        </ThemeIcon>
+                        <Box style={{ minWidth: 0 }}>
+                          <Text fw={700} size="sm" c="green.9">
+                            Así ven tu empresa los demás asistentes
+                          </Text>
+                          <Text size="xs" c="green.9" style={{ opacity: 0.85 }}>
+                            Revisa que tu información esté completa y actualizada.{" "}
+                            <Text
+                              span
+                              size="xs"
+                              fw={700}
+                              c="green.8"
+                              td="underline"
+                              style={{ cursor: "pointer" }}
+                              onClick={openEditProfile}
+                            >
+                              Editar ahora
+                            </Text>
+                          </Text>
+                        </Box>
+                      </Group>
+                    </Paper>
+                  )}
+
                   {/* Badge de concordancia */}
                   {hasSimilarity && (
                     <Badge
@@ -935,6 +1019,17 @@ export default function CompaniesView({
                           {meetingBadgeLabel(companyMeeting, eventConfig)}
                         </Badge>
                       )}
+
+                      {requestPending && (
+                        <Badge
+                          variant="light"
+                          color="orange"
+                          radius="xl"
+                          leftSection={<IconClockHour4 size={12} />}
+                        >
+                          Solicitud enviada
+                        </Badge>
+                      )}
                     </Stack>
                   </Group>
 
@@ -988,6 +1083,11 @@ export default function CompaniesView({
                                       <Highlight highlight={searchTerm} component="span" inherit>
                                         {a.nombre || "Sin nombre"}
                                       </Highlight>
+                                      {a.id === myUid && (
+                                        <Text span size="xs" fw={700} c="green.7" ml={6}>
+                                          (Tú)
+                                        </Text>
+                                      )}
                                     </Text>
                                     {/* Rol discreto: el cargo se trunca solo, el rol siempre queda visible */}
                                     <Group gap={4} wrap="nowrap">
@@ -998,7 +1098,7 @@ export default function CompaniesView({
                                       </Text>
                                       {rol && (
                                         <Text size="xs" c="dimmed" style={{ flexShrink: 0, opacity: 0.7 }}>
-                                          · {rol === "vendedor" ? "Vendedor" : "Comprador"}
+                                          · {getRoleDisplayLabel(policies, rol)}
                                         </Text>
                                       )}
                                     </Group>
@@ -1054,6 +1154,37 @@ export default function CompaniesView({
                     })}
                   </Stack>
 
+                  {/* Tarjeta propia: en lugar de solicitar reunión (no se permite consigo
+                      mismo ni con la propia empresa), acceso directo a editar los datos. */}
+                  {mine ? (
+                    <>
+                      <Button
+                        fullWidth
+                        mt="md"
+                        radius="md"
+                        size="md"
+                        color="green"
+                        leftSection={<IconEdit size={18} />}
+                        onClick={openEditProfile}
+                      >
+                        Editar mi empresa y mis datos
+                      </Button>
+                      {nit !== "sin-nit" && eventId && (
+                        <Button
+                          fullWidth
+                          mt="xs"
+                          radius="md"
+                          variant="subtle"
+                          color="green"
+                          leftSection={<IconInfoCircle size={16} />}
+                          onClick={() => navigate(`/dashboard/${eventId}/company/${nit}`)}
+                        >
+                          Ver la página de mi empresa
+                        </Button>
+                      )}
+                    </>
+                  ) : (
+                  <>
                   {/* Ver más info de la empresa */}
                   {nit !== "sin-nit" && eventId && (
                     <Button
@@ -1069,6 +1200,33 @@ export default function CompaniesView({
                     </Button>
                   )}
 
+                  {/* Ya hay una solicitud mía pendiente con esta empresa: no se permite otra */}
+                  {requestPending ? (
+                    <Paper
+                      mt="md"
+                      radius="md"
+                      p="sm"
+                      style={{
+                        background: "var(--mantine-color-orange-0)",
+                        border: "1px solid var(--mantine-color-orange-2)",
+                      }}
+                    >
+                      <Group gap="sm" wrap="nowrap">
+                        <ThemeIcon color="orange" variant="light" radius="xl" size={30} style={{ flexShrink: 0 }}>
+                          <IconClockHour4 size={17} />
+                        </ThemeIcon>
+                        <Box style={{ minWidth: 0 }}>
+                          <Text fw={700} size="sm" c="orange.9">
+                            Solicitud enviada
+                          </Text>
+                          <Text size="xs" c="orange.9" style={{ opacity: 0.85 }}>
+                            Pendiente por aceptar. Te avisaremos cuando la empresa responda.
+                          </Text>
+                        </Box>
+                      </Group>
+                    </Paper>
+                  ) : (
+                  <>
                   {/* CTA grande abajo: oculto si solo hay un representante, ya que
                       en ese caso "Solicitar reunión a la empresa" cubre el mismo caso. */}
                   {asistentes.length > 1 && (
@@ -1114,6 +1272,10 @@ export default function CompaniesView({
                     >
                       Solicitar reunión a la empresa
                     </Button>
+                  )}
+                  </>
+                  )}
+                  </>
                   )}
                 </Card>
               </Grid.Col>

@@ -67,6 +67,19 @@ export function getForcedRegistrationRole(
   return null;
 }
 
+// Etiqueta visible del rol en el dashboard: usa el mismo término del enlace de registro
+// (roleUrlParamValues, p. ej. "Expositor"/"Asistente") para que el asistente reconozca
+// su rol con el nombre con que se inscribió; sin valor configurado, "Comprador"/"Vendedor".
+export function getRoleDisplayLabel(
+  policies: RegistrationRolePolicies | null | undefined,
+  value: unknown,
+): string {
+  const rol = normalizeTipoAsistente(value);
+  if (!rol) return "";
+  const label = String(policies?.roleUrlParamValues?.[rol] || rol).trim();
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 export type DiscoveryMode = "all" | "by_role" | "sellers_see_all";
 
 // ¿Puede un asistente con rol `viewerTipo` ver en el directorio a uno con rol `targetTipo`?

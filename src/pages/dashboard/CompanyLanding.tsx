@@ -34,6 +34,7 @@ import {
   IconUsers,
   IconPencil,
   IconTrash,
+  IconClockHour4,
 } from "@tabler/icons-react";
 import { useCompanyData } from "./useCompanyData";
 import { useDashboardData } from "./useDashboardData";
@@ -44,7 +45,7 @@ import type { CompanyRepresentative } from "./useCompanyData";
 import SlotModal from "./SlotModal";
 import ProductEditModal from "./ProductEditModal";
 import ProductCard from "./ProductCard";
-import { getTableLabel } from "./meetingSlotEngine";
+import { getTableLabel, buildPendingCompanyKeys, normCompanyKey } from "./meetingSlotEngine";
 import { getFieldLabel } from "../../utils/attendeeFields";
 import CompanyLinks from "./CompanyLinks";
 
@@ -153,6 +154,15 @@ export default function CompanyLanding() {
   const myUid = currentUser?.uid;
   // El asistente está viendo la página de su propia empresa
   const isMyCompany = !!companyNit && currentUser?.data?.companyId === companyNit;
+  // Ya tengo una solicitud pendiente con esta empresa (a ella o a uno de sus
+  // representantes): no se permite otra hasta que la respondan.
+  const requestPendingWithCompany = useMemo(() => {
+    if (isMyCompany || !companyNit) return false;
+    const repsById = new Map(representatives.map((r) => [r.id, r]));
+    return buildPendingCompanyKeys(userMeetings, myUid, (id) => repsById.get(id)).has(
+      normCompanyKey(companyNit),
+    );
+  }, [isMyCompany, companyNit, representatives, userMeetings, myUid]);
 
   const allowImageUpload = eventConfig?.policies?.allowProductImageUpload !== false;
   // Cualquier miembro de la empresa cuenta como "asesor", sin importar su tipoAsistente.
@@ -198,8 +208,8 @@ export default function CompanyLanding() {
           color: "teal",
         });
       }
-    } catch {
-      showNotification({
+    } catch (e: any) {
+      if (!e?.handled) showNotification({
         title: "Error",
         message: "No se pudo enviar la solicitud.",
         color: "red",
@@ -233,8 +243,8 @@ export default function CompanyLanding() {
           color: "teal",
         });
       }
-    } catch {
-      showNotification({
+    } catch (e: any) {
+      if (!e?.handled) showNotification({
         title: "Error",
         message: "No se pudo enviar la solicitud a la empresa.",
         color: "red",
@@ -437,15 +447,20 @@ export default function CompanyLanding() {
 
           {/* CTA de solicitud dirigida a la empresa (cualquier asesor la puede reclamar).
               Oculto si la empresa no tiene ningún vendedor registrado. */}
-          {hasAdvisor && !representatives.some((r) => r.id === myUid) && (
+          {hasAdvisor && !isMyCompany && !representatives.some((r) => r.id === myUid) && (
             <Button
               radius="md"
               size="md"
               onClick={handleCompanyMeeting}
-              disabled={loadingId === "company"}
+              disabled={loadingId === "company" || requestPendingWithCompany}
               loading={loadingId === "company"}
+              color={requestPendingWithCompany ? "orange" : undefined}
+              variant={requestPendingWithCompany ? "light" : "filled"}
+              leftSection={requestPendingWithCompany ? <IconClockHour4 size={16} /> : undefined}
             >
-              Solicitar reunión a la empresa
+              {requestPendingWithCompany
+                ? "Solicitud enviada · pendiente por aceptar"
+                : "Solicitar reunión a la empresa"}
             </Button>
           )}
 
@@ -529,6 +544,9 @@ export default function CompanyLanding() {
                           
                           if (isSelf) {
                             buttonText = "Eres tú";
+                          } else if (isMyCompany) {
+                            buttonText = "Tu empresa";
+                            isDisabled = true;
                           } else if (isAccepted) {
                             buttonText = "Reunión aceptada";
                             buttonColor = "teal";
@@ -538,9 +556,9 @@ export default function CompanyLanding() {
                             buttonColor = "green";
                             buttonVariant = "filled";
                             onClick = async () => { window.open(`/meeting-response/${eventId}/${existingMeeting.id}/accept`, "_blank"); };
-                          } else if (isPendingRequester) {
-                            buttonText = "Solicitud pendiente";
-                            buttonColor = "yellow";
+                          } else if (isPendingRequester || requestPendingWithCompany) {
+                            buttonText = "Solicitud enviada";
+                            buttonColor = "orange";
                             isDisabled = true;
                           }
 
@@ -624,7 +642,11 @@ export default function CompanyLanding() {
                     let isDisabled = loadingId === key;
                     let onClick = () => handleProductMeeting(p);
 
-                    if (isAccepted) {
+                    if (isMyCompany) {
+                      buttonText = "Producto de tu empresa";
+                      buttonVariant = "light";
+                      isDisabled = true;
+                    } else if (isAccepted) {
                       buttonText = "Reunión aceptada";
                       buttonColor = "teal";
                       isDisabled = true;
@@ -635,9 +657,9 @@ export default function CompanyLanding() {
                       onClick = (async () => {
                         window.open(`/meeting-response/${eventId}/${existingMeeting.id}/accept`, "_blank");
                       }) as any;
-                    } else if (isPendingRequester) {
-                      buttonText = "Solicitud pendiente";
-                      buttonColor = "yellow";
+                    } else if (isPendingRequester || requestPendingWithCompany) {
+                      buttonText = "Solicitud enviada";
+                      buttonColor = "orange";
                       buttonVariant = "light";
                       isDisabled = true;
                     }

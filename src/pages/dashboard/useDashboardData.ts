@@ -34,6 +34,7 @@ import {
   checkContactMeetingLimit as checkContactMeetingLimitShared,
   checkRoleMeetingLimit as checkRoleMeetingLimitShared,
   createMeetingRequestDoc,
+  assertMeetingRequestAllowed,
   pickAvailableCompanyAdvisor,
   notifyCompanyAdvisors,
   getCompanyAdvisors,
@@ -979,6 +980,18 @@ export function useDashboardData(eventId?: string) {
       return sendMeetingRequest(assistantId, assistantPhone, context);
     }
 
+    // La reunión queda confirmada al instante (no hay "pendientes" que duplicar):
+    // solo aplica la regla de no reunirse con la propia empresa.
+    if (uid && eventId) {
+      await assertMeetingRequestAllowed({
+        eventId,
+        requesterId: uid,
+        targetCompanyId: context?.companyId || null,
+        receiverId: assistantId,
+        checkDuplicates: false,
+      });
+    }
+
     const receiverSnap = await getDoc(doc(db, "users", assistantId));
     if (!receiverSnap.exists()) {
       showNotification({
@@ -1748,6 +1761,12 @@ export function useDashboardData(eventId?: string) {
     }
 
     if (policies.schedulingMode === "requester_picks") {
+      await assertMeetingRequestAllowed({
+        eventId,
+        requesterId: uid,
+        targetCompanyId: companyNit,
+        checkDuplicates: false,
+      });
       if (!(await checkRoleMeetingLimit())) {
         return Promise.reject(new Error("Role meeting limit reached"));
       }
@@ -2235,6 +2254,9 @@ export function useDashboardData(eventId?: string) {
     pendingRequests: filteredPendingRequests,
     cancelSentMeeting,
     sentRequests: filteredSentRequests,
+    // Sin el filtro de fecha global: las pendientes no tienen fecha y la vista de
+    // empresas las necesita todas para marcar "Solicitud enviada".
+    allSentRequests: sentRequests,
     sentRejectedRequests: filteredSentRejectedRequests,
     acceptedRequests: filteredAcceptedRequests,
     rejectedRequests: filteredRejectedRequests,

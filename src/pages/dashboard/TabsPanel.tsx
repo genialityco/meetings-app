@@ -266,6 +266,7 @@ export default function TabsPanel({
           companies={dashboard.companies}
           policies={policies}
           acceptedMeetings={dashboard.acceptedMeetings}
+          sentPendingRequests={dashboard.allSentRequests}
           participantsInfo={dashboard.participantsInfo}
           myStandVisits={dashboard.myStandVisits}
           eventConfig={dashboard.eventConfig}
@@ -321,6 +322,8 @@ export default function TabsPanel({
           solicitarReunionHabilitado={dashboard.solicitarReunionHabilitado}
           sendMeetingRequest={dashboard.sendMeetingRequest}
           requestMeetingWithSlotPicker={dashboard.requestMeetingWithSlotPicker}
+          sentPendingRequests={dashboard.allSentRequests}
+          allAssistants={dashboard.assistants}
           currentUser={dashboard.currentUser}
           affinityScores={dashboard.affinityScores}
           highlightEntityId={topView === "products" && persistentHighlight.entityType === "product" ? persistentHighlight.entityId : undefined}

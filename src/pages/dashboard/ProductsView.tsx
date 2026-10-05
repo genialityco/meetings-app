@@ -19,6 +19,7 @@ import { IconSearch, IconX, IconFilterOff, IconSparkles, IconPlus } from "@table
 import type { Product, Company, Assistant, MeetingContext } from "./types";
 import MeetingRequestModal from "./MeetingRequestModal";
 import ProductCard from "./ProductCard";
+import { buildPendingCompanyKeys, normCompanyKey } from "./meetingSlotEngine";
 
 interface ProductsViewProps {
   products: Product[];
@@ -39,6 +40,10 @@ interface ProductsViewProps {
   affinityScores: Record<string, number>;
   highlightEntityId?: string;
   policies?: any;
+  // Solicitudes pendientes enviadas por el usuario (sin filtro de fecha) y asistentes
+  // del evento: para marcar "Solicitud enviada" en productos de esas empresas.
+  sentPendingRequests?: any[];
+  allAssistants?: Assistant[];
 }
 
 const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
@@ -53,6 +58,8 @@ export default function ProductsView({
   affinityScores,
   highlightEntityId,
   policies,
+  sentPendingRequests,
+  allAssistants,
 }: ProductsViewProps) {
   const navigate = useNavigate();
   const { eventId } = useParams();
@@ -69,6 +76,13 @@ export default function ProductsView({
   const [hasSearchedVector, setHasSearchedVector] = useState(false);
 
   const myUid = currentUser?.uid;
+  const myCompanyKey = normCompanyKey(currentUser?.data?.companyId);
+
+  // Empresas con una solicitud mía pendiente: sus productos muestran "Solicitud enviada"
+  const pendingCompanyKeys = useMemo(() => {
+    const byId = new Map((allAssistants || []).map((a) => [a.id, a]));
+    return buildPendingCompanyKeys(sentPendingRequests, myUid, (id) => byId.get(id));
+  }, [sentPendingRequests, allAssistants, myUid]);
 
   const allowImageUpload = policies?.allowProductImageUpload !== false;
 
@@ -229,8 +243,8 @@ export default function ProductsView({
           productId: product.id,
           companyId: product.companyId || null,
         });
-      } catch {
-        showNotification({ title: "Error", message: "No se pudo iniciar la solicitud.", color: "red" });
+      } catch (e: any) {
+        if (!e?.handled) showNotification({ title: "Error", message: "No se pudo iniciar la solicitud.", color: "red" });
       } finally {
         setLoadingId(null);
       }
@@ -264,8 +278,8 @@ export default function ProductsView({
 
       setModalOpened(false);
       setSelectedProduct(null);
-    } catch {
-      showNotification({
+    } catch (e: any) {
+      if (!e?.handled) showNotification({
         title: "Error",
         message: "No se pudo enviar la solicitud.",
         color: "red",
@@ -285,17 +299,28 @@ export default function ProductsView({
     const companyDoc = p.companyId ? companiesByNit.get(p.companyId) : undefined;
 
     const isMine = !!myUid && p.ownerUserId === myUid;
+    const productCompanyKey = normCompanyKey(p.companyId);
+    // Producto de un colega: no se permite solicitar reunión a la propia empresa
+    const isMyCompanyProduct = !isMine && !!myCompanyKey && productCompanyKey === myCompanyKey;
+    const requestPending =
+      !isMine && !isMyCompanyProduct && !!productCompanyKey && pendingCompanyKeys.has(productCompanyKey);
     const isDisabled =
       !solicitarReunionHabilitado ||
       !p.ownerUserId ||
       isMine ||
+      isMyCompanyProduct ||
+      requestPending ||
       loadingId === `${p.id}-${p.ownerUserId}`;
 
     const ctaLabel = !solicitarReunionHabilitado
       ? "Deshabilitado"
       : isMine
         ? "Tu producto"
-        : "Solicitar reunión";
+        : isMyCompanyProduct
+          ? "Producto de tu empresa"
+          : requestPending
+            ? "Solicitud enviada"
+            : "Solicitar reunión";
 
     // Verificar si tiene similarity score (viene de búsqueda por vectores)
     const hasSimilarity = p._isSemantic && typeof p._similarity === 'number';
@@ -331,6 +356,7 @@ export default function ProductsView({
               radius="md"
               fullWidth
               variant={isDisabled ? "light" : "filled"}
+              color={requestPending ? "orange" : undefined}
               onClick={() => handleOpenModal(p.ownerUserId, p.ownerPhone || "", p)}
               disabled={isDisabled}
               loading={loadingId === `${p.id}-${p.ownerUserId}`}

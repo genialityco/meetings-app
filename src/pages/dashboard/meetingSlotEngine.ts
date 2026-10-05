@@ -993,6 +993,113 @@ export interface CreateMeetingRequestDocParams {
   dashboardLogo?: string;
 }
 
+/** Solicitud bloqueada por una regla de negocio. Ya mostró su propia notificación
+ *  (`handled`), así que la UI no debe sumar el error genérico "No se pudo enviar". */
+export class MeetingRequestBlockedError extends Error {
+  handled = true;
+  constructor(public reason: "own_company" | "duplicate_pending", message: string) {
+    super(message);
+    this.name = "MeetingRequestBlockedError";
+  }
+}
+
+export const normCompanyKey = (v: unknown) => String(v ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+/**
+ * Empresas (claves normalizadas con normCompanyKey) con las que `requesterId` tiene una
+ * solicitud pendiente, ya sea a la empresa o a cualquiera de sus representantes. Es la
+ * versión para la UI de la regla 2 de assertMeetingRequestAllowed ("Solicitud enviada").
+ * `lookupUser` resuelve el receptor para conocer su empresa cuando la reunión no la trae.
+ */
+export function buildPendingCompanyKeys(
+  meetings: any[] | undefined,
+  requesterId: string | undefined,
+  lookupUser: (id: string) => any,
+  groupByRazonSocial?: boolean,
+): Set<string> {
+  const keys = new Set<string>();
+  if (!requesterId) return keys;
+  (meetings || []).forEach((m: any) => {
+    if (m.status !== "pending" || m.requesterId !== requesterId) return;
+    if (m.companyId) keys.add(normCompanyKey(m.companyId));
+    const receiver = m.receiverId ? lookupUser(m.receiverId) : null;
+    if (receiver?.companyId) keys.add(normCompanyKey(receiver.companyId));
+    if (groupByRazonSocial) {
+      const razon = receiver?.company_razonSocial || receiver?.empresa;
+      if (razon) keys.add(normCompanyKey(razon));
+    }
+  });
+  keys.delete("");
+  return keys;
+}
+
+/**
+ * Reglas comunes a toda solicitud de reunión (dashboard, landing de empresa, chatbot...):
+ * 1. Nadie puede solicitarse una reunión a sí mismo ni a un colega de su propia empresa.
+ * 2. Un mismo solicitante no puede tener dos solicitudes pendientes con la misma empresa
+ *    (sea a la empresa en general o a cualquiera de sus representantes). La regla es por
+ *    solicitante: un colega del solicitante sí puede pedir su propia reunión.
+ * Si no se cumple, muestra la notificación y lanza MeetingRequestBlockedError.
+ */
+export async function assertMeetingRequestAllowed(params: {
+  eventId: string;
+  requesterId: string;
+  targetCompanyId?: string | null;
+  receiverId?: string | null;
+  checkDuplicates?: boolean;
+}): Promise<void> {
+  const { eventId, requesterId, receiverId, checkDuplicates = true } = params;
+  const block = (reason: "own_company" | "duplicate_pending", title: string, message: string) => {
+    showNotification({ title, message, color: "orange" });
+    throw new MeetingRequestBlockedError(reason, message);
+  };
+
+  const companyOfUser = new Map<string, string>();
+  const getUserCompany = async (userId: string): Promise<string> => {
+    if (!companyOfUser.has(userId)) {
+      const snap = await getDoc(doc(db, "users", userId));
+      companyOfUser.set(userId, normCompanyKey(snap.exists() ? snap.data()?.companyId : ""));
+    }
+    return companyOfUser.get(userId)!;
+  };
+
+  if (receiverId && receiverId === requesterId) {
+    block("own_company", "No permitido", "No puedes solicitarte una reunión a ti mismo.");
+  }
+
+  const myCompany = await getUserCompany(requesterId);
+  const target =
+    normCompanyKey(params.targetCompanyId) || (receiverId ? await getUserCompany(receiverId) : "");
+
+  if (myCompany && target && myCompany === target) {
+    block("own_company", "No permitido", "No puedes solicitar reuniones a tu propia empresa.");
+  }
+
+  if (!checkDuplicates) return;
+
+  const pending = await getDocs(
+    query(
+      collection(db, "events", eventId, "meetings"),
+      where("requesterId", "==", requesterId),
+      where("status", "==", "pending"),
+    ),
+  );
+  for (const m of pending.docs) {
+    const d = m.data();
+    // Sin empresa destino (persona sin empresa) se compara por receptor.
+    const sameTarget = target
+      ? (normCompanyKey(d.companyId) || (d.receiverId ? await getUserCompany(d.receiverId) : "")) === target
+      : !!receiverId && d.receiverId === receiverId;
+    if (sameTarget) {
+      block(
+        "duplicate_pending",
+        "Solicitud ya enviada",
+        "Ya tienes una solicitud pendiente con esta empresa. Espera a que la acepten antes de enviar otra.",
+      );
+    }
+  }
+}
+
 /**
  * Crea una solicitud de reunión "pending" (modo con aceptación) y envía las
  * notificaciones correspondientes. Cubre ambos casos con la misma lógica:
@@ -1011,6 +1118,13 @@ export async function createMeetingRequestDoc(
   if (!advisorId && !companyNit) {
     throw new Error("Se requiere advisorId o companyNit");
   }
+
+  await assertMeetingRequestAllowed({
+    eventId,
+    requesterId,
+    targetCompanyId: companyNit || context?.companyId || null,
+    receiverId: advisorId || null,
+  });
 
   let receiverData: any = null;
   if (advisorId) {
