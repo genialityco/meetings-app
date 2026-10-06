@@ -232,7 +232,11 @@ const Landing = () => {
   const [registrationEnabled, setRegistrationEnabled] = useState(true);
 
   // UI state
-  const [activeTab, setActiveTab] = useState("register"); // 'login' | 'register'
+  // ?ingresar=1 abre directo la pestaña de ingreso (p. ej. el enlace que se envía a
+  // expositores precargados, para que no se registren de nuevo por error)
+  const [activeTab, setActiveTab] = useState(
+    searchParams.get("ingresar") === "1" ? "login" : "register",
+  ); // 'login' | 'register'
   const isMobile = useMediaQuery("(max-width: 600px)");
 
   // Login state
