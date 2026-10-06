@@ -50,6 +50,7 @@ import ExternalMeetingModal from "./ExternalMeetingModal";
 import SendWaRemindersModal from "./SendWaRemindersModal";
 import { isComprador, isVendedor } from "../../utils/attendeeRole";
 import EventLandingQrModal from "./EventLandingQrModal";
+import WaCampaignsTab from "./waCampaigns/WaCampaignsTab";
 
 // Crea documentos nuevos en events/{eventId}/agenda usando writeBatch en vez de
 // un addDoc secuencial por slot (que en agendas grandes tarda minutos por hacer
@@ -1626,6 +1627,7 @@ const EventAdmin = () => {
         <Tabs defaultValue="operacion" keepMounted={false}>
           <Tabs.List>
             <Tabs.Tab value="operacion">Operación</Tabs.Tab>
+            <Tabs.Tab value="wacampaigns">Campañas WhatsApp</Tabs.Tab>
             <Tabs.Tab value="config">Configuración</Tabs.Tab>
             <Tabs.Tab value="importexport">Import / Export</Tabs.Tab>
             <Tabs.Tab value="peligro" color="red">
@@ -1759,6 +1761,10 @@ const EventAdmin = () => {
                   : "Activar Confirmación de Reuniones"}
               </Button>
             </Group>
+          </Tabs.Panel>
+
+          <Tabs.Panel value="wacampaigns" pt="md">
+            <WaCampaignsTab event={event} />
           </Tabs.Panel>
 
           <Tabs.Panel value="config" pt="md">

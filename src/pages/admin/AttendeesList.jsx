@@ -19,25 +19,6 @@ import { isComprador, isVendedor } from "../../utils/attendeeRole";
 import { uploadCompanyLogo } from "../../utils/companyStorage";
 import { getTableLabel } from "../dashboard/meetingSlotEngine";
 
-// API v2 de WhatsApp (misma que usa src/utils/whatsappService.ts)
-const WHATSAPP_API_V2 = import.meta.env.VITE_WHATSAPP_API_V2 || "https://apiwhatsapp.geniality.com.co";
-
-// Construye el número que espera la API de WhatsApp: indicativo internacional +
-// número nacional, sin "+" ni separadores. Respeta el indicativo guardado en el
-// valor (p. ej. "+1 555 123 4567" -> "15551234567"); si el valor no trae
-// indicativo, usa `defaultIso2` (Colombia por defecto para números heredados).
-const normalizePhoneForWa = (raw, defaultIso2 = "co") => {
-  const parsed = parsePhoneValue(String(raw || ""), defaultIso2 || "co");
-  const cc = String(parsed.dialCode || "").replace(/\D/g, "");
-  let local = String(parsed.number || "").replace(/\D/g, "");
-  if (!cc || local.length < 6) return "";
-  // Si el número nacional ya trae el indicativo pegado, quítalo para no duplicarlo.
-  if (local.length > 10 && local.startsWith(cc)) {
-    local = local.slice(cc.length);
-  }
-  return `${cc}${local}`;
-};
-
 // Utilidad para obtener campos configurados para el evento (omite foto y consentimiento)
 const getEventTableFields = (event, entityType = "users") => {
   let configKey = "formFields";
@@ -296,9 +277,6 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
   // Estado para regeneración de vectores
   const [regeneratingVector, setRegeneratingVector] = useState(null);
 
-  // Estado para envío de la encuesta "valor de negocio" por WhatsApp
-  const [sendingEncuesta, setSendingEncuesta] = useState(null); // attendeeId | "all" | null
-
   // Estado para edición inline
   const [editingCell, setEditingCell] = useState(null); // { id, fieldName, value }
   const defaultIso2 = useMemo(() => detectDefaultIso2(), []);
@@ -347,6 +325,23 @@ function parseFirestoreTimestamp(input) {
     setShownProductFields(getEventTableFields(event, "products").map((f) => f.name));
     // eslint-disable-next-line
   }, [event?.config?.formFields, event?.config?.companyFields, event?.config?.productFields]);
+
+  // Columnas para las respuestas de campañas de WhatsApp guardadas en el asistente
+  // (campaña con "responseField", ej. encuestaValorNegocio → { answerText, ... })
+  useEffect(() => {
+    const keys = new Set();
+    attendees.forEach((a) =>
+      Object.entries(a).forEach(([k, v]) => {
+        if (v && typeof v === "object" && typeof v.answerText === "string") keys.add(k);
+      })
+    );
+    const newFields = [...keys]
+      .map((k) => ({ name: `${k}.answerText`, label: `Respuesta WhatsApp: ${k}`, type: "text" }))
+      .filter((f) => !fields.some((x) => x.name === f.name));
+    if (!newFields.length) return;
+    setFields((prev) => [...prev, ...newFields]);
+    setShownFields((prev) => [...prev, ...newFields.map((f) => f.name)]);
+  }, [attendees, fields]);
 
   useEffect(() => {
     if (event) {
@@ -1240,72 +1235,6 @@ function parseFirestoreTimestamp(input) {
     });
   }, [companies, searchCompany, companyFields]);
 
-  // Resuelve el número de WhatsApp del asistente respetando su indicativo.
-  const phoneForWa = (a) =>
-    normalizePhoneForWa(a?.telefono || a?.celular || a?.phone, defaultIso2);
-
-  // Envía la encuesta "valor de negocio" por WhatsApp (API v2).
-  // El webhook de WhatsApp llama luego a la Cloud Function guardarRespuestaEncuesta,
-  // que guarda la respuesta en el campo `encuestaValorNegocio` del usuario.
-  const postEncuestaValorNegocio = (attendee) =>
-    fetch(`${WHATSAPP_API_V2}/api/send-encuesta-valor-negocio`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        to: phoneForWa(attendee),
-        name: attendee.nombre || attendee.nombres || "",
-        eventId: event.id,
-      }),
-    });
-
-  const sendEncuestaValorNegocio = async (attendee) => {
-    const to = phoneForWa(attendee);
-    if (!to) {
-      setGlobalMessage(`El asistente ${attendee.nombre || attendee.id} no tiene un teléfono válido.`);
-      return;
-    }
-    setSendingEncuesta(attendee.id);
-    try {
-      const response = await postEncuestaValorNegocio(attendee);
-      if (response.ok) {
-        setGlobalMessage(`Encuesta enviada a ${attendee.nombre || attendee.id}.`);
-      } else {
-        const txt = await response.text().catch(() => "");
-        setGlobalMessage(`Error al enviar la encuesta: ${txt || response.status}`);
-      }
-    } catch (error) {
-      console.error("Error enviando encuesta valor negocio:", error);
-      setGlobalMessage("Error al enviar la encuesta de valor de negocio.");
-    } finally {
-      setSendingEncuesta(null);
-    }
-  };
-
-  const sendEncuestaValorNegocioBulk = async () => {
-    const targets = filteredAttendees.filter((a) => phoneForWa(a));
-    if (targets.length === 0) {
-      setGlobalMessage("No hay asistentes con teléfono válido para enviar la encuesta.");
-      return;
-    }
-    if (!window.confirm(`¿Enviar la encuesta de valor de negocio a ${targets.length} asistente(s)?`)) {
-      return;
-    }
-    setSendingEncuesta("all");
-    let sent = 0;
-    let failed = 0;
-    for (const a of targets) {
-      try {
-        const response = await postEncuestaValorNegocio(a);
-        if (response.ok) sent++;
-        else failed++;
-      } catch {
-        failed++;
-      }
-    }
-    setSendingEncuesta(null);
-    setGlobalMessage(`Encuesta de valor de negocio: ${sent} enviada(s), ${failed} con error.`);
-  };
-
   // Función para regenerar vectores de un usuario
   const handleRegenerateUserVector = async (userId) => {
     setRegeneratingVector(userId);
@@ -1400,15 +1329,6 @@ function parseFirestoreTimestamp(input) {
               </Button>
               <Button variant="outline" color="orange" onClick={exportVendedoresToExcel}>
                 Exportar vendedores
-              </Button>
-              <Button
-                variant="outline"
-                color="teal"
-                onClick={sendEncuestaValorNegocioBulk}
-                loading={sendingEncuesta === "all"}
-                disabled={sendingEncuesta !== null}
-              >
-                Enviar encuesta valor negocio
               </Button>
               <MultiSelect
                 data={fields.map((f) => ({
@@ -1517,18 +1437,6 @@ function parseFirestoreTimestamp(input) {
                           title="Regenerar vector y recalcular afinidades"
                         >
                           Regenerar Vector
-                        </Button>
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          color="teal"
-                          onClick={() => sendEncuestaValorNegocio(a)}
-                          loading={sendingEncuesta === a.id}
-                          disabled={sendingEncuesta !== null}
-                          style={{ marginRight: 8 }}
-                          title="Enviar encuesta de valor de negocio por WhatsApp"
-                        >
-                          Encuesta
                         </Button>
                         <Button
                           color="red"

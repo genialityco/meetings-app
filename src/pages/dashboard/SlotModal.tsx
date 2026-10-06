@@ -59,17 +59,24 @@ export default function SlotModal({
     });
   };
 
-  // Contar slots disponibles por fecha
-  const slotCountByDate = useMemo(() => {
-    const counts: Record<string, number> = {};
-    availableSlots.forEach((slot) => {
-      const date = slot.date || eventDates[0] || "";
-      counts[date] = (counts[date] || 0) + 1;
-    });
-    return counts;
-  }, [availableSlots, eventDates]);
-
   const hasMultipleDays = eventDates.length > 1;
+  const currentDate = selectedDate || eventDates[0];
+
+  // Los slots se cargan solo para el día seleccionado (al cambiar de día se
+  // recalculan), así que el conteo solo es real para ese día: mostrar "(0)" en
+  // los demás hacía creer que el evento tenía un solo día con horarios.
+  const dayOptions = useMemo(
+    () =>
+      eventDates.map((date) => ({
+        value: date,
+        label:
+          date === currentDate
+            ? `${formatDate(date)} (${availableSlots.length} horarios)`
+            : formatDate(date),
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [eventDates, currentDate, availableSlots.length],
+  );
 
   // Si para el horario elegido solo hay una mesa posible (mesa fija de la
   // empresa/asistente, o único cupo libre), se asigna automáticamente y no
@@ -108,25 +115,30 @@ export default function SlotModal({
       overlayProps={{ opacity: 0.3 }}
     >
       <LoadingOverlay visible={confirmLoading} />
+      {/* El selector de día va fuera del estado vacío: si el día actual no
+          tiene horarios libres, el usuario debe poder pasar a otro día */}
+      {hasMultipleDays && (
+        <Stack px="md" pt="md" gap="xs">
+          {description && <Text size="sm">{description}</Text>}
+          <Select
+            label="Día"
+            data={dayOptions}
+            value={currentDate}
+            onChange={(value) => onDateChange?.(value || eventDates[0])}
+            disabled={confirmLoading}
+            allowDeselect={false}
+          />
+        </Stack>
+      )}
       {availableSlots.length === 0 ? (
-        <Text ta="center">No hay horarios disponibles.</Text>
+        <Text ta="center" p="md">
+          {hasMultipleDays
+            ? "No hay horarios disponibles este día. Prueba con otro día."
+            : "No hay horarios disponibles."}
+        </Text>
       ) : (
         <Stack p="md">
-          {description && <Text size="sm">{description}</Text>}
-
-          {/* Selector de día (solo si hay múltiples días) */}
-          {hasMultipleDays && (
-            <Select
-              label="Día"
-              data={eventDates.map((date) => ({
-                value: date,
-                label: `${formatDate(date)} (${slotCountByDate[date] || 0} slots)`,
-              }))}
-              value={selectedDate || eventDates[0]}
-              onChange={(value) => onDateChange?.(value || eventDates[0])}
-              disabled={confirmLoading}
-            />
-          )}
+          {description && !hasMultipleDays && <Text size="sm">{description}</Text>}
 
           <Select
             label="Hora"

@@ -1,2 +1,4 @@
 node_modules/
 *.local
+# Valores de parámetros que guarda el CLI de Firebase al desplegar (ej. SURVEY_WEBHOOK_SECRET)
+.env.*
