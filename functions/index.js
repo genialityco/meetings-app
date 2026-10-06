@@ -4432,3 +4432,7 @@ export const generateAttendeeId = onRequest(
     }
   }
 );
+
+// Campañas masivas de WhatsApp + respuestas a botones (incluye la encuesta
+// legacy "valor de negocio"): ver waCampaigns.js
+export * from "./waCampaigns.js";

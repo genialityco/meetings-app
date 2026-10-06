@@ -23,8 +23,12 @@ import {
   Tooltip,
   Select,
   Highlight,
+  SegmentedControl,
+  Affix,
+  Transition,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
+import { useMediaQuery } from "@mantine/hooks";
 import { useState, useMemo, useEffect, useLayoutEffect, useRef } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
@@ -149,6 +153,13 @@ function CompanyDetailFieldRow({
 }
 
 /** Texto del badge de reunión ya agendada con la empresa: hora (y día si el evento es multi-día). */
+// Color por rol para identificarlo de un vistazo (vendedor = expositor)
+const ROLE_COLORS: Record<string, string> = { vendedor: "teal", comprador: "indigo" };
+
+// Plural en español para las etiquetas de rol: "Expositor" -> "Expositores",
+// "Asistente" -> "Asistentes", "Comprador" -> "Compradores"
+const pluralizeEs = (word: string) => (/[aeiouáéíóú]$/i.test(word) ? `${word}s` : `${word}es`);
+
 function meetingBadgeLabel(m: any, eventConfig: any): string {
   const time = String(m.timeSlot || "").split(" - ")[0];
   const multiDay = (eventConfig?.eventDates?.length || 0) > 1;
@@ -227,6 +238,9 @@ export default function CompaniesView({
     useState<Record<string, string | null>>({});
   const [searchTerm, setSearchTerm] = useState("");
   const [countryFilter, setCountryFilter] = useState<string | null>(null);
+  // Filtro por rol de la empresa: "all" | "vendedor" (expositores) | "comprador" (asistentes)
+  const [roleFilter, setRoleFilter] = useState<string>("all");
+  const isMobile = useMediaQuery("(max-width: 48em)");
   const [modalOpened, setModalOpened] = useState(false);
   const [selectedMeeting, setSelectedMeeting] = useState<{ assistant: Assistant; companyNit: string } | null>(null);
   const [companyModalOpened, setCompanyModalOpened] = useState(false);
@@ -393,10 +407,67 @@ export default function CompaniesView({
     return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
   }, [companiesData]);
 
-  const companiesDataFiltered = useMemo(() => {
-    if (!countryFilter) return companiesData;
-    return companiesData.filter((c) => c.pais === countryFilter);
+  // Roles presentes en el listado: el filtro por rol solo se ofrece si hay
+  // empresas de ambos roles (p. ej. un comprador que solo ve expositores no lo necesita)
+  const availableRoles = useMemo(() => {
+    const set = new Set<string>();
+    companiesData.forEach((c) =>
+      c.asistentes.forEach((a: any) => {
+        const r = normalizeTipoAsistente(a.tipoAsistente);
+        if (r) set.add(r);
+      }),
+    );
+    return set;
+  }, [companiesData]);
+  const showRoleFilter = availableRoles.has("vendedor") && availableRoles.has("comprador");
+
+  // Empresas por rol (respetando el filtro de país) para mostrar el conteo en cada opción
+  const roleCounts = useMemo(() => {
+    const counts = { all: 0, vendedor: 0, comprador: 0 };
+    companiesData.forEach((c) => {
+      if (countryFilter && c.pais !== countryFilter) return;
+      counts.all++;
+      const roles = new Set(c.asistentes.map((a: any) => normalizeTipoAsistente(a.tipoAsistente)));
+      if (roles.has("vendedor")) counts.vendedor++;
+      if (roles.has("comprador")) counts.comprador++;
+    });
+    return counts;
   }, [companiesData, countryFilter]);
+
+  const sellerLabel = pluralizeEs(getRoleDisplayLabel(policies, "vendedor"));
+  const buyerLabel = pluralizeEs(getRoleDisplayLabel(policies, "comprador"));
+  const roleViewText =
+    roleFilter === "vendedor"
+      ? `Viendo ${sellerLabel}`
+      : roleFilter === "comprador"
+        ? `Viendo ${buyerLabel}`
+        : `Viendo ${sellerLabel} y ${buyerLabel}`;
+  const roleViewCount = roleCounts[roleFilter as keyof typeof roleCounts] ?? roleCounts.all;
+  const roleViewColor = roleFilter === "all" ? "gray" : ROLE_COLORS[roleFilter];
+
+  // Aviso flotante breve al cambiar el filtro (no al cargar la vista)
+  const [roleToastVisible, setRoleToastVisible] = useState(false);
+  const roleToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const changeRoleFilter = (value: string) => {
+    setRoleFilter(value);
+    setRoleToastVisible(true);
+    if (roleToastTimer.current) clearTimeout(roleToastTimer.current);
+    roleToastTimer.current = setTimeout(() => setRoleToastVisible(false), 2800);
+  };
+  useEffect(() => () => {
+    if (roleToastTimer.current) clearTimeout(roleToastTimer.current);
+  }, []);
+
+  const companiesDataFiltered = useMemo(() => {
+    return companiesData.filter((c) => {
+      if (countryFilter && c.pais !== countryFilter) return false;
+      // Una empresa es "expositora"/"asistente" si tiene al menos un representante con ese rol
+      if (showRoleFilter && roleFilter !== "all") {
+        return c.asistentes.some((a: any) => normalizeTipoAsistente(a.tipoAsistente) === roleFilter);
+      }
+      return true;
+    });
+  }, [companiesData, countryFilter, roleFilter, showRoleFilter]);
 
   type CompanyMatch = (typeof companiesData)[number] & {
     _matchedAssistantId?: string;
@@ -498,22 +569,19 @@ export default function CompaniesView({
   const filtered = useMemo((): CompanyMatch[] => {
     const t = searchTerm.trim().toLowerCase();
     
-    // Mi empresa primero; luego las empresas con check-in; dentro de cada grupo, por afinidad promedio.
-    const byCheckInThenAffinity = (a: any, b: any) => {
+    // Mi empresa primero; el resto en orden alfabético por nombre de empresa
+    // (ignorando mayúsculas y tildes; "numeric" ordena "Grupo 2" antes que "Grupo 10").
+    const byName = (a: any, b: any) => {
       if (a.mine !== b.mine) return a.mine ? -1 : 1;
-      if (a.hasCheckedIn !== b.hasCheckedIn) return a.hasCheckedIn ? -1 : 1;
-      const avgAffinityA = a.asistentes.length > 0
-        ? a.asistentes.reduce((sum: number, assistant: any) => sum + (affinityScores[assistant.id] || 0), 0) / a.asistentes.length
-        : 0;
-      const avgAffinityB = b.asistentes.length > 0
-        ? b.asistentes.reduce((sum: number, assistant: any) => sum + (affinityScores[assistant.id] || 0), 0) / b.asistentes.length
-        : 0;
-      return avgAffinityB - avgAffinityA;
+      return String(a.empresa || "").trim().localeCompare(String(b.empresa || "").trim(), "es", {
+        sensitivity: "base",
+        numeric: true,
+      });
     };
 
     if (!t) {
       let results = [...companiesDataFiltered];
-      results.sort(byCheckInThenAffinity);
+      results.sort(byName);
       return results;
     }
 
@@ -536,7 +604,7 @@ export default function CompaniesView({
         exactMatches.push({ ...c, _matchedAssistantId: matchedAssistant?.id });
       }
     });
-    exactMatches.sort(byCheckInThenAffinity);
+    exactMatches.sort(byName);
 
     let semanticMatches: CompanyMatch[] = [];
     if (vectorResults.length > 0) {
@@ -560,7 +628,7 @@ export default function CompaniesView({
     }
 
     return [...exactMatches, ...semanticMatches];
-  }, [companiesDataFiltered, searchTerm, vectorResults, affinityScores, cardFields]);
+  }, [companiesDataFiltered, searchTerm, vectorResults, cardFields]);
 
   const handleOpenModal = async (assistant: Assistant, companyNit: string) => {
     // Con "sin aceptación" (requester_picks), se salta el modal de mensaje: se
@@ -759,7 +827,64 @@ export default function CompaniesView({
             />
           )}
         </Group>
+        {showRoleFilter && (
+          <Box mt="sm">
+            <Group justify="space-between" mb={6} gap="xs">
+              <Text size="sm" fw={700}>
+                Mostrar empresas
+              </Text>
+              {/* Indicador permanente de qué se está viendo */}
+              <Group gap={6} wrap="nowrap">
+                <Box
+                  w={8}
+                  h={8}
+                  style={{ borderRadius: "50%", background: `var(--mantine-color-${roleViewColor}-6)` }}
+                />
+                <Text size="sm" c={`${roleViewColor}.7`} fw={600}>
+                  {roleViewText} · {roleViewCount}
+                </Text>
+              </Group>
+            </Group>
+            <SegmentedControl
+              fullWidth
+              size={isMobile ? "xs" : "md"}
+              radius="md"
+              color={roleViewColor}
+              value={roleFilter}
+              onChange={changeRoleFilter}
+              data={[
+                { value: "all", label: `Todas (${roleCounts.all})` },
+                { value: "vendedor", label: `${sellerLabel} (${roleCounts.vendedor})` },
+                { value: "comprador", label: `${buyerLabel} (${roleCounts.comprador})` },
+              ]}
+            />
+          </Box>
+        )}
       </Paper>
+
+      {/* Aviso flotante breve al cambiar el filtro de rol */}
+      <Affix position={{ bottom: 24, left: 0, right: 0 }} style={{ pointerEvents: "none" }}>
+        <Transition transition="slide-up" mounted={showRoleFilter && roleToastVisible} duration={200}>
+          {(styles) => (
+            <Group justify="center" style={styles}>
+              <Paper
+                shadow="md"
+                radius="xl"
+                px="lg"
+                py={8}
+                style={{
+                  background: `var(--mantine-color-${roleViewColor}-filled)`,
+                  color: "white",
+                }}
+              >
+                <Text size="sm" fw={700} c="white">
+                  {roleViewText} · {roleViewCount} {roleViewCount === 1 ? "empresa" : "empresas"}
+                </Text>
+              </Paper>
+            </Group>
+          )}
+        </Transition>
+      </Affix>
 
       <Grid gutter="sm">
         {filtered.length > 0 ? (
@@ -950,6 +1075,30 @@ export default function CompaniesView({
                             {empresa}
                           </Highlight>
                         </Title>
+                        {/* Rol de la empresa (según sus representantes), grande para
+                            identificar de un vistazo si es expositor o asistente */}
+                        {(() => {
+                          const roles = Array.from(
+                            new Set(asistentes.map((a) => normalizeTipoAsistente(a.tipoAsistente)).filter(Boolean)),
+                          ).sort((a, b) => (a === "vendedor" ? -1 : b === "vendedor" ? 1 : 0));
+                          if (!roles.length) return null;
+                          return (
+                            <Group gap={6} mt={8}>
+                              {roles.map((rol) => (
+                                <Badge
+                                  key={rol}
+                                  size="lg"
+                                  variant="filled"
+                                  radius="sm"
+                                  color={ROLE_COLORS[rol]}
+                                  style={{ letterSpacing: rem(0.5) }}
+                                >
+                                  {getRoleDisplayLabel(policies, rol)}
+                                </Badge>
+                              ))}
+                            </Group>
+                          );
+                        })()}
                       </Box>
 
                     <Stack gap={6} align="flex-end" style={{ flex: "1 1 50%" }}>
@@ -1089,18 +1238,24 @@ export default function CompaniesView({
                                         </Text>
                                       )}
                                     </Text>
-                                    {/* Rol discreto: el cargo se trunca solo, el rol siempre queda visible */}
-                                    <Group gap={4} wrap="nowrap">
+                                    {/* El cargo se trunca solo; el rol siempre queda visible como etiqueta de color */}
+                                    <Group gap={6} wrap="nowrap" mt={2}>
+                                      {rol && (
+                                        <Badge
+                                          size="sm"
+                                          variant="light"
+                                          radius="sm"
+                                          color={ROLE_COLORS[rol]}
+                                          style={{ flexShrink: 0 }}
+                                        >
+                                          {getRoleDisplayLabel(policies, rol)}
+                                        </Badge>
+                                      )}
                                       <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>
                                         <Highlight highlight={searchTerm} component="span" inherit>
                                           {a.cargo || "Representante"}
                                         </Highlight>
                                       </Text>
-                                      {rol && (
-                                        <Text size="xs" c="dimmed" style={{ flexShrink: 0, opacity: 0.7 }}>
-                                          · {getRoleDisplayLabel(policies, rol)}
-                                        </Text>
-                                      )}
                                     </Group>
                                   </Box>
                                   {/* Indicador de presencia: solo se marca cuando SÍ hizo

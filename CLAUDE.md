@@ -120,6 +120,18 @@ Beyond the base request/accept/cancel flow (see `EventPoliciesModal.tsx`, `Calen
 - **Check-in / badges**: `CheckInTab.jsx` (inside `AttendeesList.jsx`) lists real-time check-in status with a day selector (writes `checkIns.{day}` on the user doc; un-checking uses `deleteField()`) and an "Escanear QR" badge-scanning flow via `useAttendeeScanFlow`. `BadgePage.tsx` (`/badge/:eventId/:userId`, also reachable from the dashboard header menu "Ver mi código QR") renders a printable badge whose QR encodes only the attendee uid — check-in happens from the admin scanner, not by navigating. `QuickCheckInPage.tsx` (`/admin/event/:eventId/checkin/:userId`) remains for legacy printed badges that encoded a link.
 - **Stand visits** (`standVisitsEnabled`): two directions for registering that an attendee visited a company's stand, both writing `events/{eventId}/companies/{nitNorm}/visits/{attendeeUid}` (one visit per attendee per stand; requires the visitor to be checked in on the current day, and not visiting their own stand). (1) Attendee scans the stand's fixed QR (`StandVisitQrModal.tsx` in `MyCompanyTab`, encodes `/stand-visit/:eventId/:companyNit`) → `StandVisitScanPage.tsx` self-registers the visit. (2) With `standVisitAllowSellerScan`, the stand representative scans the visitor's badge from `MyCompanyTab` ("Escanear visitante") → `lookupAttendeeForVisit`/`confirmVisit` in `useCompanyData.ts`. `MyCompanyTab` shows the real-time visitor list.
 
+### WhatsApp Campaigns (EventAdmin → "Campañas WhatsApp")
+
+Bulk send of Meta-approved templates to an event's attendees (templates are created/edited in Meta's template manager, not here). Code: `src/utils/waCampaigns.ts` (template analysis, variable mapping, per-recipient Meta `components` builder, Firestore actions), `src/pages/admin/waCampaigns/` (tab, 4-step wizard, detail modal), `functions/waCampaigns.js`.
+- Client writes `events/{eventId}/waCampaigns/{id}` + `recipients/{userId}` (components pre-built per recipient) then sets `status: "queued"`. Firestore rules make `waCampaigns` readable only by `canManageEvent` (it holds phone numbers).
+- `processWaCampaign` (onDocumentWritten, fires on transition to `queued`) claims the campaign (`running`), sends `pending` recipients via wa-multi-session-backend `POST /api/campaign/send` (header `x-api-key`), works ~8 min per invocation and re-queues itself until done. Admin can pause (`paused`) / resume / retry failed. A `running` campaign with `heartbeatAt` older than 10 min is shown as stalled and can be resumed.
+- `listWaTemplates` (HTTP, requires admin Firebase ID token + canManageEvent) proxies the backend's `GET /api/templates`.
+- Quick-reply buttons carry payload `{t:"wac",e,c,u,b}`; the backend forwards taps to `guardarRespuestaWhatsapp` (alias `guardarRespuestaEncuesta`, header `x-webhook-secret`), which stores `recipient.response`, campaign `responseCounts`, and optionally `users/{uid}[campaign.responseField]` (e.g. `encuestaValorNegocio`, shown automatically as a column in AttendeesList). It also still handles the legacy "valor de negocio" survey payload (lookup by phone).
+- Secrets: `WHATSAPP_API_V2` (backend base URL), `WA_CAMPAIGN_API_KEY` (= backend `CAMPAIGN_API_KEY`). Delivered/read status tracking is not implemented yet (phase 2).
+- Phone numbers for WhatsApp: `toWhatsAppNumber` in `src/utils/phoneUtils.ts`.
+- Recipients can also come from an uploaded Excel/CSV (`source: "import"`, `parseContactsFile`): contacts are NOT created as event users; recipient doc id is `ext_<whatsapp>`, the original row is kept in `recipient.data`, template variables map to file columns (`$col:<header>`), and `responseField` is unavailable (no user doc to write to).
+- Template components are stored via `toStoredComponents` — Meta's `example` contains nested arrays, which Firestore rejects.
+
 ### Data Flow
 
 - `UserContext` provides `currentUser`, `updateUser()`, `loginByCedula()`, `loginByEmail()`, `logout()`
@@ -229,6 +241,8 @@ Firebase config via Vite env vars (prefix `VITE_`):
 - `VITE_ENABLE_CHATBOT` — toggles chatbot tab availability (separate from policy toggle)
 - `VITE_AI_PROXY_URL` — deployed URL of the `aiProxy` Cloud Function (chatbot backend)
 - `VITE_OPTIMIZER_API_URL` — agenda optimizer FastAPI service URL (local: `http://127.0.0.1:8080`)
+- `VITE_PUBLIC_APP_URL` — public app origin used for links inside WhatsApp campaign messages (e.g. `https://gen-meetings.netlify.app`); falls back to `window.location.origin`
+- `VITE_WA_TEMPLATES_URL` — optional override for the `listWaTemplates` Cloud Function URL
 
 ## npm Configuration
 

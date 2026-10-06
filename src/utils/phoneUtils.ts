@@ -125,3 +125,61 @@ export const isPhoneField =(field: { type?: string; name?: string }): boolean =>
   field.type === "phone" ||
   field.name === "telefono" ||
   field.name === "celular";
+
+// Caracteres invisibles que se cuelan al copiar números (marcas de dirección, BOM)
+const INVISIBLE_CHARS = /[​-‏‪-‮⁦-⁩﻿]/g;
+
+// Indicativos conocidos, del más largo al más corto (para separar "58" de "5804...")
+const DIAL_CODES = [...new Set(COUNTRY_CODES.map((c) => c.dialCode.replace(/\D/g, "")))].sort(
+  (a, b) => b.length - a.length
+);
+
+// Número internacional en dígitos: quita el 0 troncal que algunos dejan después
+// del indicativo ("+58 0414…" escrito "5804…"); Italia (39) lo conserva.
+const fixInternational = (digits: string): string => {
+  const cc = DIAL_CODES.find((d) => digits.startsWith(d));
+  if (cc && cc !== "39" && digits[cc.length] === "0") return cc + digits.slice(cc.length).replace(/^0+/, "");
+  return digits;
+};
+
+// Número en el formato que espera WhatsApp: indicativo + número nacional, solo
+// dígitos (ej. "+57 300 123 4567" -> "573001234567"). Si el valor no trae
+// indicativo se usa el de `defaultIso2`. Devuelve "" si no queda un número válido
+// (WhatsApp exige 10–15 dígitos en total).
+export const toWhatsAppNumber = (raw: unknown, defaultIso2 = "co"): string => {
+  // Si la celda trae varios números ("+58414…/+58414…"), se usa el primero
+  const value = String(raw ?? "")
+    .replace(INVISIBLE_CHARS, "")
+    .split(/[/;,|]/)[0]
+    .trim();
+  if (!value) return "";
+
+  let digits: string;
+  const withSpace = value.match(/^\+(\d{1,4})\s+(.+)$/);
+  if (withSpace) {
+    // "+58 0412..." -> se quita el 0 troncal del número local
+    digits = withSpace[1] + cleanLocalPhoneNumber(withSpace[2], `+${withSpace[1]}`);
+  } else {
+    const all = value.replace(/\D/g, "");
+    if (/^[+±]/.test(value) || all.startsWith("00")) {
+      // "+5841…", "±58 04…" o "0058…" (prefijo internacional 00): ya trae indicativo
+      digits = fixInternational(all.replace(/^00/, ""));
+    } else {
+      const local = defaultIso2 === "it" ? all : all.replace(/^0+/, "");
+      // Más de 10 dígitos: el número ya trae indicativo (ej. "573001234567",
+      // "584147077580"); con 10 o menos es un número nacional sin indicativo
+      digits =
+        local.length > 10
+          ? fixInternational(local)
+          : getDialCodeForIso2(defaultIso2).replace(/\D/g, "") + local;
+    }
+  }
+
+  // En Colombia ningún número empieza por 4 (móviles 3xx, fijos 60x): un "+57 4…"
+  // es un móvil venezolano (412/414/416/424/426) con el indicativo equivocado
+  if (/^574\d{9}$/.test(digits)) digits = "58" + digits.slice(2);
+
+  // Debe empezar por un indicativo que exista (ej. "+68…" es un error de digitación)
+  if (!DIAL_CODES.some((d) => digits.startsWith(d))) return "";
+  return digits.length >= 10 && digits.length <= 15 ? digits : "";
+};

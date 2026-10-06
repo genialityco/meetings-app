@@ -121,10 +121,30 @@ const getEventTableFields = (event, entityType = "users") => {
   return defaultFields;
 };
 
+// Lee un valor que puede estar anidado con notación de punto:
+// "contacto.telefono", "encuestaValorNegocio.answerText", etc.
+const getNestedValue = (obj, path) =>
+  String(path)
+    .split(".")
+    .reduce((acc, key) => (acc == null ? undefined : acc[key]), obj);
+
+// Devuelve una copia de `obj` con la ruta anidada `path` asignada a `value`.
+const setNestedValue = (obj, path, value) => {
+  const keys = String(path).split(".");
+  const clone = { ...(obj || {}) };
+  let cursor = clone;
+  for (let i = 0; i < keys.length - 1; i++) {
+    const k = keys[i];
+    cursor[k] = cursor[k] && typeof cursor[k] === "object" ? { ...cursor[k] } : {};
+    cursor = cursor[k];
+  }
+  cursor[keys[keys.length - 1]] = value;
+  return clone;
+};
+
 const getValue = (a, fieldName) => {
-  if (fieldName.startsWith("contacto.")) {
-    const key = fieldName.split(".")[1];
-    return a.contacto?.[key] || "";
+  if (fieldName.includes(".")) {
+    return getNestedValue(a, fieldName) ?? "";
   }
   if (fieldName === "images" && Array.isArray(a.images)) {
     return a.images[0] || "";
@@ -306,6 +326,23 @@ function parseFirestoreTimestamp(input) {
     // eslint-disable-next-line
   }, [event?.config?.formFields, event?.config?.companyFields, event?.config?.productFields]);
 
+  // Columnas para las respuestas de campañas de WhatsApp guardadas en el asistente
+  // (campaña con "responseField", ej. encuestaValorNegocio → { answerText, ... })
+  useEffect(() => {
+    const keys = new Set();
+    attendees.forEach((a) =>
+      Object.entries(a).forEach(([k, v]) => {
+        if (v && typeof v === "object" && typeof v.answerText === "string") keys.add(k);
+      })
+    );
+    const newFields = [...keys]
+      .map((k) => ({ name: `${k}.answerText`, label: `Respuesta WhatsApp: ${k}`, type: "text" }))
+      .filter((f) => !fields.some((x) => x.name === f.name));
+    if (!newFields.length) return;
+    setFields((prev) => [...prev, ...newFields]);
+    setShownFields((prev) => [...prev, ...newFields.map((f) => f.name)]);
+  }, [attendees, fields]);
+
   useEffect(() => {
     if (event) {
       fetchAttendees();
@@ -436,21 +473,21 @@ function parseFirestoreTimestamp(input) {
         docRef = doc(db, "events", event.id, "products", itemId);
       }
 
+      // Firestore interpreta las claves con punto como campos anidados
       await updateDoc(docRef, { [fieldName]: newValue });
-      
-      // Actualizar estado local
+
+      // Actualizar estado local (respetando rutas anidadas)
+      const applyUpdate = (row) =>
+        fieldName.includes(".")
+          ? setNestedValue(row, fieldName, newValue)
+          : { ...row, [fieldName]: newValue };
+
       if (entityType === "users") {
-        setAttendees(prev => prev.map(a => 
-          a.id === itemId ? { ...a, [fieldName]: newValue } : a
-        ));
+        setAttendees(prev => prev.map(a => (a.id === itemId ? applyUpdate(a) : a)));
       } else if (entityType === "companies") {
-        setCompanies(prev => prev.map(c => 
-          c.id === itemId ? { ...c, [fieldName]: newValue } : c
-        ));
+        setCompanies(prev => prev.map(c => (c.id === itemId ? applyUpdate(c) : c)));
       } else if (entityType === "products") {
-        setProducts(prev => prev.map(p => 
-          p.id === itemId ? { ...p, [fieldName]: newValue } : p
-        ));
+        setProducts(prev => prev.map(p => (p.id === itemId ? applyUpdate(p) : p)));
       }
 
       setGlobalMessage("Campo actualizado correctamente.");
