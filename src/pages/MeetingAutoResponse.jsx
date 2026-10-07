@@ -6,15 +6,13 @@ import {
   updateDoc,
   addDoc,
   collection,
-  query,
-  where,
-  getDocs,
   runTransaction,
 } from "firebase/firestore";
 import { signInAnonymously } from "firebase/auth";
 import { auth, db } from "../firebase/firebaseConfig";
 import { UserContext } from "../context/UserContext";
-import { getTableLabel, getCompanyAdvisors } from "./dashboard/meetingSlotEngine";
+import { getTableLabel, getCompanyAdvisors, computeAvailableSlots } from "./dashboard/meetingSlotEngine";
+import { isVendedor } from "../utils/attendeeRole";
 import {
   Loader,
   Container,
@@ -34,22 +32,18 @@ import {
 const API_WP_URL = "https://apiwhatsapp.geniality.com.co/api/send";
 const CLIENT_ID = "genialitybussinesstest";
 
-// Reutilizamos esta función
-const slotOverlapsBreakBlock = (
-  slotStart,
-  meetingDuration,
-  breakBlocks = []
-) => {
-  const [h, m] = slotStart.split(":").map(Number);
-  const slotStartMin = h * 60 + m;
-  const slotEndMin = slotStartMin + meetingDuration;
-  return breakBlocks.some((b) => {
-    const [sh, sm] = b.start.split(":").map(Number);
-    const [eh, em] = b.end.split(":").map(Number);
-    const bs = sh * 60 + sm,
-      be = eh * 60 + em;
-    return slotStartMin < be && slotEndMin > bs;
-  });
+// "2026-10-15" -> "jueves, 15 de octubre" (mismo formato que SlotModal/ConfirmModal)
+const formatDay = (dateISO) => {
+  if (!dateISO) return "";
+  const [y, m, d] = String(dateISO).split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
+};
+
+const localTodayISO = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 };
 
 // Las reglas exigen request.auth != null para escribir. En navegadores in-app
@@ -83,6 +77,12 @@ export default function MeetingAutoResponse() {
   );
   const [availableSlots, setAvailableSlots] = useState([]);
   const [loadingSlots, setLoadingSlots] = useState(action === "accept");
+  // Días del evento (multi-día) y día cuyos horarios se muestran
+  const [eventDays, setEventDays] = useState([]);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [loadingDay, setLoadingDay] = useState(false);
+  // Datos para recalcular los slots al cambiar de día sin volver a leer todo
+  const slotCtxRef = useRef(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
 
   //  Añadidos para selects y confirmación
@@ -126,6 +126,9 @@ export default function MeetingAutoResponse() {
       const first = groupedSlots[0];
       setSelectedRange(first.id);
       setSelectedSlotId(first.slots[0]?.id || null);
+    } else {
+      setSelectedRange(null);
+      setSelectedSlotId(null);
     }
   }, [groupedSlots]);
 
@@ -261,6 +264,32 @@ export default function MeetingAutoResponse() {
   // --------------------------------------------------------
   // cargar y filtrar slots como antes...
   // --------------------------------------------------------
+  // Horarios libres de un día, con la misma lógica del dashboard
+  // (computeAvailableSlots): reuniones aceptadas de ESE día, descansos del día
+  // (dailyConfig), slots bloqueados, horas pasadas, mesa fija y agenda compartida.
+  async function computeSlotsForDay(dateISO) {
+    const ctx = slotCtxRef.current;
+    const { slots } = await computeAvailableSlots({
+      eventId,
+      eventConfig: ctx.eventConfig,
+      policies: ctx.eventConfig.policies || {},
+      requesterId: ctx.requesterId,
+      receiverId: ctx.receiverId,
+      selectedDate: dateISO,
+      receiverFixedTable: ctx.receiverFixedTable,
+      receiverGroupIds: ctx.receiverGroupIds,
+    });
+    // Los slots de standby (último recurso del dashboard) no están "available" y la
+    // transacción de aceptación de esta página los rechazaría.
+    return slots
+      .filter((s) => !s.isStandbySlot)
+      .sort(
+        (a, b) =>
+          String(a.startTime).localeCompare(String(b.startTime)) ||
+          Number(a.tableNumber) - Number(b.tableNumber)
+      );
+  }
+
   async function loadSlots() {
     try {
       const mtgRef = doc(db, "events", eventId, "meetings", meetingId);
@@ -272,68 +301,66 @@ export default function MeetingAutoResponse() {
       const effectiveReceiverId =
         receiverId || actingUidRef.current || currentUser?.uid || auth.currentUser?.uid;
 
-      // Carga el nombre del solicitante
-      const userSnap = await getDoc(doc(db, "users", requesterId));
+      const [userSnap, eventSnap, receiverSnap] = await Promise.all([
+        getDoc(doc(db, "users", requesterId)),
+        getDoc(doc(db, "events", eventId)),
+        getDoc(doc(db, "users", effectiveReceiverId)),
+      ]);
       if (userSnap.exists()) {
         setRequesterName(userSnap.data().nombre);
       }
+      const eventConfig = eventSnap.exists() ? eventSnap.data().config || {} : {};
 
-      // ocupados...
-      const accSn = await getDocs(
-        query(
-          collection(db, "events", eventId, "meetings"),
-          where("status", "==", "accepted"),
-          where("participants", "array-contains-any", [requesterId, effectiveReceiverId])
-        )
-      );
-      const occupied = accSn.docs
-        .map((d) => d.data().timeSlot)
+      // Mesa fija y agenda compartida de la empresa del receptor (igual que
+      // resolveFixedTableForReceiver / resolveReceiverGroupIds del dashboard)
+      const receiverCompanyId = receiverSnap.exists() ? receiverSnap.data().companyId : null;
+      let receiverFixedTable = null;
+      let receiverGroupIds = [effectiveReceiverId];
+      if (receiverCompanyId) {
+        const companySnap = await getDoc(doc(db, "events", eventId, "companies", receiverCompanyId));
+        const company = companySnap.exists() ? companySnap.data() : null;
+        receiverFixedTable = company?.fixedTable ? String(company.fixedTable) : null;
+        if (company?.sharedAgenda) {
+          const teammates = (await getCompanyAdvisors(eventId, receiverCompanyId))
+            .filter((a) => isVendedor(a.tipoAsistente))
+            .map((a) => a.id);
+          if (teammates.includes(effectiveReceiverId)) receiverGroupIds = teammates;
+        }
+      }
+
+      slotCtxRef.current = {
+        eventConfig,
+        requesterId,
+        receiverId: effectiveReceiverId,
+        receiverFixedTable,
+        receiverGroupIds,
+      };
+
+      // Días del evento que aún no han pasado; arranca en hoy si es día de evento
+      const todayISO = localTodayISO();
+      const allDays = [
+        ...new Set(eventConfig.eventDates || (eventConfig.eventDate ? [eventConfig.eventDate] : [])),
+      ]
         .filter(Boolean)
-        .map((ts) => {
-          const [s, e] = ts.split(" - ");
-          const [sh, sm] = s.split(":").map(Number);
-          const [eh, em] = e.split(":").map(Number);
-          return { start: sh * 60 + sm, end: eh * 60 + em };
-        });
+        .sort();
+      const upcoming = allDays.filter((d) => d >= todayISO);
+      const days = upcoming.length ? upcoming : allDays;
+      setEventDays(days);
 
-      const eventSnap = await getDoc(doc(db, "events", eventId));
-      const config = eventSnap.exists() ? eventSnap.data().config || {} : {};
-      const duration = config.meetingDuration || 20;
-      const breaks = config.breakBlocks || [];
+      // Primer día con horarios libres (empezando por hoy / el primer día)
+      let firstDay = days.includes(todayISO) ? todayISO : days[0];
+      let slots = await computeSlotsForDay(firstDay);
+      for (const d of days) {
+        if (slots.length > 0 || d <= firstDay) continue;
+        const next = await computeSlotsForDay(d);
+        if (next.length > 0) {
+          firstDay = d;
+          slots = next;
+          break;
+        }
+      }
 
-      const now = new Date();
-      // Sin orderBy: se ordena en el cliente (fecha, hora, mesa).
-      const agSn = await getDocs(
-        query(
-          collection(db, "events", eventId, "agenda"),
-          where("available", "==", true)
-        )
-      );
-      const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-      const slots = agSn.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
-        .sort(
-          (a, b) =>
-            String(a.date || "").localeCompare(String(b.date || "")) ||
-            String(a.startTime).localeCompare(String(b.startTime)) ||
-            Number(a.tableNumber) - Number(b.tableNumber)
-        )
-        .filter((slot) => {
-          // Slots de días pasados fuera; de días futuros se mantienen completos
-          if (slot.date && slot.date < todayISO) return false;
-          const [h, m] = slot.startTime.split(":").map(Number);
-          const dt = new Date(now);
-          dt.setHours(h, m, 0, 0);
-          if ((!slot.date || slot.date === todayISO) && dt <= now) return false;
-          if (slotOverlapsBreakBlock(slot.startTime, duration, breaks))
-            return false;
-          const startMin = h * 60 + m,
-            endMin = startMin + duration;
-          if (occupied.some((r) => startMin < r.end && endMin > r.start))
-            return false;
-          return true;
-        });
-
+      setSelectedDate(firstDay || null);
       setAvailableSlots(slots);
       setStatus("");
     } catch (e) {
@@ -342,6 +369,20 @@ export default function MeetingAutoResponse() {
       setTimeout(() => navigate(`/event/${eventId}`), 10000);
     } finally {
       setLoadingSlots(false);
+    }
+  }
+
+  async function changeDay(dateISO) {
+    if (!dateISO || dateISO === selectedDate || !slotCtxRef.current) return;
+    setSelectedDate(dateISO);
+    setLoadingDay(true);
+    try {
+      setAvailableSlots(await computeSlotsForDay(dateISO));
+    } catch (e) {
+      console.error(e);
+      setAvailableSlots([]);
+    } finally {
+      setLoadingDay(false);
     }
   }
 
@@ -546,13 +587,14 @@ export default function MeetingAutoResponse() {
       const eventConfig = eventDocSnap.exists() ? eventDocSnap.data().config || {} : {};
       const evPolicies = eventConfig.policies || {};
       const tableLabel = getTableLabel(slot.tableNumber, eventConfig.tableNames);
+      const dayLabel = formatDay(eventDateISO);
 
       // Notificación in-app
       if (evPolicies.dashboardNotificationsEnabled !== false) {
         await addDoc(collection(db, "notifications"), {
           userId: mtgData.requesterId,
           title: "Reunión aceptada",
-          message: `${receiver?.nombre || "Un participante"} ha aceptado tu reunión para ${slot.startTime} en ${tableLabel}.`,
+          message: `${receiver?.nombre || "Un participante"} ha aceptado tu reunión para ${dayLabel ? `el ${dayLabel} a las ` : ""}${slot.startTime} en ${tableLabel}.`,
           timestamp: new Date(),
           read: false,
           type: "meeting_accepted",
@@ -566,6 +608,8 @@ export default function MeetingAutoResponse() {
         timeSlot: `${slot.startTime} - ${slot.endTime}`,
         tableAssigned: tableLabel,
       };
+      // Mismo formato que sendMeetingAcceptedWhatsapp del dashboard: "jueves, 15 de octubre - 08:00 - 08:20"
+      const scheduleWithDay = dayLabel ? `${dayLabel} - ${meetingInfo.timeSlot}` : meetingInfo.timeSlot;
 
       if (evPolicies.whatsappNotificationsEnabled !== false) {
         if (whatsappApiVersion === "v2") {
@@ -579,7 +623,7 @@ export default function MeetingAutoResponse() {
               acceptedBy: accepterName,
               meetingWith: receiver?.nombre || "Participante",
               company: receiver?.empresa || "Empresa",
-              schedule: meetingInfo.timeSlot,
+              schedule: scheduleWithDay,
               table: meetingInfo.tableAssigned,
             });
           }
@@ -591,7 +635,7 @@ export default function MeetingAutoResponse() {
               acceptedBy: accepterName,
               meetingWith: requester?.nombre || "Participante",
               company: requester?.empresa || "Empresa",
-              schedule: meetingInfo.timeSlot,
+              schedule: scheduleWithDay,
               table: meetingInfo.tableAssigned,
             });
           }
@@ -608,6 +652,7 @@ export default function MeetingAutoResponse() {
               acceptedLine +
               `👤 *Con:* ${otherParticipant?.nombre || ""}\n` +
               `🏢 *Empresa:* ${otherParticipant?.empresa || ""}\n` +
+              (dayLabel ? `📅 *Día:* ${dayLabel}\n` : "") +
               `🕐 *Horario:* ${meetingInfo.timeSlot}\n` +
               `🪑 *Mesa:* ${meetingInfo.tableAssigned}\n\n` +
               `¡Te esperamos!`
@@ -670,7 +715,7 @@ export default function MeetingAutoResponse() {
                 body: JSON.stringify({
                   clientId: CLIENT_ID,
                   phone: `57${advisorPhone}`,
-                  message: `Un compañero de tu empresa (${receiver?.nombre || ""}) aceptó una reunión (${meetingInfo.timeSlot}, ${tableLabel}).`,
+                  message: `Un compañero de tu empresa (${receiver?.nombre || ""}) aceptó una reunión (${scheduleWithDay}, ${tableLabel}).`,
                 }),
               }).catch(() => {});
             }
@@ -725,7 +770,7 @@ export default function MeetingAutoResponse() {
     ? (groupedSlots.find((g) => g.id === selectedRange)?.slots || []).map(
         (s) => ({
           value: s.id,
-          label: `Mesa ${s.tableNumber}`,
+          label: getTableLabel(s.tableNumber, slotCtxRef.current?.eventConfig?.tableNames),
         })
       )
     : [];
@@ -810,7 +855,7 @@ export default function MeetingAutoResponse() {
               {status || "Validando acceso..."}
             </Text>
           </Box>
-        ) : availableSlots.length > 0 && !showConfirmation ? (
+        ) : (availableSlots.length > 0 || eventDays.length > 1) && !showConfirmation ? (
           <Stack spacing={0}>
             <Box p="xl" style={{ backgroundColor: "#f8f9fa", borderBottom: "1px solid #e9ecef" }}>
               <Text size="lg" weight={700} align="center">
@@ -821,6 +866,33 @@ export default function MeetingAutoResponse() {
               </Text>
             </Box>
             <Stack p="xl" spacing="lg">
+              {/* Fuera del estado vacío: si el día no tiene horarios, se puede pasar a otro */}
+              {eventDays.length > 1 && (
+                <Select
+                  label="Día"
+                  data={eventDays.map((d) => ({
+                    value: d,
+                    label:
+                      d === selectedDate && !loadingDay
+                        ? `${formatDay(d)} (${availableSlots.length} horarios)`
+                        : formatDay(d),
+                  }))}
+                  value={selectedDate}
+                  onChange={changeDay}
+                  disabled={confirmLoading || loadingDay}
+                  allowDeselect={false}
+                />
+              )}
+              {loadingDay ? (
+                <Center py="md">
+                  <Loader size="sm" />
+                </Center>
+              ) : availableSlots.length === 0 ? (
+                <Text align="center" color="dimmed" size="sm">
+                  No hay horarios disponibles este día. Prueba con otro día.
+                </Text>
+              ) : (
+              <>
               <Select
                 label="Horario"
                 placeholder="Selecciona un horario"
@@ -852,10 +924,13 @@ export default function MeetingAutoResponse() {
                 size="lg"
                 loading={confirmLoading}
                 onClick={() => setShowConfirmation(true)}
+                disabled={!chosenSlot}
                 mt="md"
               >
                 Confirmar datos
               </Button>
+              </>
+              )}
             </Stack>
           </Stack>
         ) : showConfirmation ? (
@@ -875,6 +950,19 @@ export default function MeetingAutoResponse() {
                     <Text weight={700}>{requesterName}</Text>
                   </Group>
                   <Divider />
+                  {chosenSlot?.date && (
+                    <>
+                      <Group position="apart">
+                        <Text size="sm" color="dimmed" weight={500}>
+                          Día:
+                        </Text>
+                        <Text weight={700} style={{ textTransform: "capitalize" }}>
+                          {formatDay(chosenSlot.date)}
+                        </Text>
+                      </Group>
+                      <Divider />
+                    </>
+                  )}
                   <Group position="apart">
                     <Text size="sm" color="dimmed" weight={500}>
                       Horario:
@@ -889,7 +977,7 @@ export default function MeetingAutoResponse() {
                       Mesa:
                     </Text>
                     <Badge color="blue" size="lg">
-                      Mesa {chosenSlot?.tableNumber}
+                      {getTableLabel(chosenSlot?.tableNumber, slotCtxRef.current?.eventConfig?.tableNames)}
                     </Badge>
                   </Group>
                 </Stack>
