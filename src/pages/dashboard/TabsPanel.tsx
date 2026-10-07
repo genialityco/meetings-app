@@ -17,7 +17,6 @@ import AttendeesView from "./AttendeesView";
 import CompaniesView from "./CompaniesView";
 import ProductsView from "./ProductsView";
 import ChatbotTab from "./ChatbotTab";
-import MeetingsTab from "./MeetingsTab";
 import RequestsTab from "./RequestsTab";
 import CalendarTab from "./CalendarTab";
 import MatchesTab from "./MatchesTab";
@@ -149,7 +148,11 @@ export default function TabsPanel({
       setTopView(view);
     }
     if (tab) {
-      setActivityDefaultTab(tab === "solicitudes" && hideSolicitudes ? "reuniones" : tab);
+      // La sub-tab "Reuniones" está oculta: sus reuniones se ven en "Agenda"
+      // (notificaciones de reunión aceptada/cancelada/modificada piden "reuniones")
+      setActivityDefaultTab(
+        tab === "reuniones" || (tab === "solicitudes" && hideSolicitudes) ? "agenda" : tab,
+      );
     }
     
     // Guardar highlight info para persistir durante el render
@@ -168,12 +171,8 @@ export default function TabsPanel({
     }
   }, [viewRequest?._k]);
 
-  const requestsCount =
-    (dashboard.pendingRequests?.length || 0) +
-    (dashboard.acceptedRequests?.length || 0) +
-    (dashboard.rejectedRequests?.length || 0) +
-    (dashboard.sentRequests?.length || 0) +
-    (dashboard.sentRejectedRequests?.length || 0);
+  // Solo solicitudes recibidas pendientes por aceptar (incluye las dirigidas a la empresa)
+  const requestsCount = dashboard.pendingRequests?.length || 0;
 
   // Modo "Solo QR": eventos que solo usan la app para control de acceso/check-in.
   // Reemplaza por completo las pestañas (reuniones, asistentes, empresas...) por
@@ -348,20 +347,8 @@ export default function TabsPanel({
             >
               Agenda
             </Tabs.Tab>
-            <Tabs.Tab
-              value="reuniones"
-              leftSection={<IconCalendarEvent size={16} />}
-              style={{ fontWeight: activityDefaultTab === "reuniones" ? 700 : 500, transition: "background 0.15s" }}
-            >
-              <Group gap={4} wrap="nowrap">
-                Reuniones
-                {(dashboard.acceptedMeetings?.length || 0) > 0 && (
-                  <Badge size="sm" variant="light" circle>
-                    {dashboard.acceptedMeetings?.length || 0}
-                  </Badge>
-                )}
-              </Group>
-            </Tabs.Tab>
+            {/* Sub-tab "Reuniones" (MeetingsTab) oculta: la Agenda ya muestra las
+                reuniones con las mismas acciones (encuesta, QR de sorteo, cancelar, WhatsApp) */}
             {!hideSolicitudes && (
               <Tabs.Tab
                 value="solicitudes"
@@ -396,21 +383,6 @@ export default function TabsPanel({
               downloadVCard={dashboard.downloadVCard}
               sendWhatsAppMessage={dashboard.sendWhatsAppMessage}
               cancelMeeting={dashboard.cancelMeeting}
-            />
-          </Tabs.Panel>
-          <Tabs.Panel value="reuniones" pt="md">
-            <MeetingsTab 
-              {...dashboard} 
-              onNavigateToCompany={(companyNit) => {
-                // Change main view to "companies"
-                setTopView("companies");
-                // Set the persistent highlight to trigger scroll and highlight in CompaniesView
-                setPersistentHighlight({
-                  entityType: "company",
-                  entityId: companyNit,
-                  timestamp: Date.now()
-                });
-              }}
             />
           </Tabs.Panel>
           {!hideSolicitudes && (
