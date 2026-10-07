@@ -2,6 +2,7 @@ import { Suspense, lazy } from "react";
 import { Routes, Route } from "react-router-dom";
 import { LoadingOverlay } from "@mantine/core";
 import { usePageTracking } from "./hooks/usePageTracking";
+import { useVersionCheck } from "./hooks/useVersionCheck";
 import ProtectedAdminRoute from "./components/ProtectedAdminRoute.tsx";
 
 // Eager: landing page (ruta más visitada)
@@ -36,6 +37,8 @@ const StandVisitScanPage = lazy(() => import("./pages/StandVisitScanPage.tsx"));
 const App = () => {
   // Trackear automáticamente todas las vistas de página
   usePageTracking();
+  // Recarga las pestañas abiertas cuando se publica una versión nueva
+  useVersionCheck();
 
   return (
     <Suspense fallback={<LoadingOverlay visible />}>
