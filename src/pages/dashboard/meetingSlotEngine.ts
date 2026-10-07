@@ -938,16 +938,44 @@ export async function notifyCompanyAdvisors(params: {
     fallbackInfo?: { enabled: boolean; email: string; subject: string; logoUrl?: string };
   } | null;
   dashboardNotif: { title: string; message: string; type: string };
+  /** Nombre del evento para la plantilla de aviso (advisorNoticeTemplate) */
+  eventName?: string;
 }): Promise<void> {
-  const { eventId, companyNit, excludeUids, policies, whatsappBuilder, dashboardNotif } = params;
+  const { eventId, companyNit, excludeUids, policies, whatsappBuilder, dashboardNotif, eventName } = params;
   const advisors = await getCompanyAdvisors(eventId, companyNit);
   const targets = advisors.filter((a) => !excludeUids.includes(a.id));
+
+  const apiVersion = policies.whatsappApiVersion || "v1";
+  const noticeTemplate = policies.advisorNoticeTemplate?.name ? policies.advisorNoticeTemplate : null;
 
   for (const advisor of targets) {
     try {
       if (policies.whatsappNotificationsEnabled !== false) {
         const built = whatsappBuilder(advisor);
-        if (built?.phone) {
+        // En v2 todo sendWhatsAppAPI sale con la plantilla "solicitud_reunion" (ver
+        // sendSms): un aviso informativo sin metadata llegaba como una solicitud vacía
+        // ("Evento", "Asistente", "Compañia"…) con botones Aceptar/Cancelar que no
+        // aplican. Solo la solicitud compartida a la empresa trae metadata real; los
+        // avisos informativos van con la plantilla advisorNoticeTemplate y, si no hay
+        // una configurada, quedan solo como notificación in-app.
+        if (built?.phone && apiVersion === "v2" && !built.metadata) {
+          if (noticeTemplate) {
+            const { sendAdvisorNoticeTemplate } = await import("../../utils/whatsappService");
+            const rawName = (advisor.nombre || "").trim();
+            const company = advisor.empresa || (advisor as any).company_razonSocial || "";
+            await sendAdvisorNoticeTemplate({
+              phone: built.phone,
+              templateName: noticeTemplate.name,
+              language: noticeTemplate.language,
+              // Los representantes genéricos (rep_<nit>) se llaman "Asistente": se saluda a la empresa
+              name: !rawName || rawName.toLowerCase() === "asistente" ? company || "asesor" : rawName,
+              eventName: eventName || "el evento",
+              notice: built.message,
+              buttonSuffix: `event/${eventId}?ingresar=1`,
+              fallbackInfo: built.fallbackInfo,
+            });
+          }
+        } else if (built?.phone) {
           console.log(
             "[meetingSlotEngine] notifyCompanyAdvisors: enviando a asesor",
             advisor.id,
@@ -955,7 +983,7 @@ export async function notifyCompanyAdvisors(params: {
             built.fallbackInfo,
           );
           await sendWhatsAppAPI({
-            apiVersion: policies.whatsappApiVersion || "v1",
+            apiVersion,
             phone: built.phone.replace(/[^\d]/g, ""),
             message: built.message,
             fallbackInfo: built.fallbackInfo,
@@ -1233,9 +1261,12 @@ export async function createMeetingRequestDoc(
         companyNit: effectiveCompanyNit,
         excludeUids: [requesterId, advisorId],
         policies,
+        eventName,
         whatsappBuilder: (advisor) => ({
           phone: advisor.telefono || "",
-          message: `${requesterName || "Alguien"} solicitó una reunión con tu compañero de empresa.`,
+          message:
+            `${requesterName || "Alguien"}${requesterCompany ? ` (${requesterCompany})` : ""} solicitó una reunión ` +
+            (receiverData?.nombre?.trim() ? `con tu compañero ${receiverData.nombre.trim()}.` : "con tu compañero de empresa."),
           fallbackInfo: {
             enabled: fallbackEnabled,
             email: advisor.correo || "",

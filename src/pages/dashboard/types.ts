@@ -169,6 +169,12 @@ export interface EventPolicies {
   standVisitAllowSellerScan?: boolean;
   /** Modo "Solo QR": el dashboard del asistente muestra únicamente su código de asistencia (sin tabs de reuniones, asistentes, empresas, etc). Pensado para eventos que solo usan la app para control de acceso/check-in. */
   qrOnlyModeEnabled?: boolean;
+  /** Plantilla de Meta (API v2) para los avisos informativos a compañeros de empresa
+   * (solicitud/aceptación/rechazo/cancelación de la reunión de un compañero). Cuerpo:
+   * {{1}} nombre del asesor, {{2}} evento, {{3}} texto del aviso; botón URL opcional
+   * que recibe "event/<eventId>?ingresar=1". Sin plantilla, en v2 esos avisos solo
+   * quedan como notificación in-app. */
+  advisorNoticeTemplate?: { name: string; language: string } | null;
 }
 
 /** Campo de un formulario de encuesta (reutiliza el modelo de ConfigureSurveyModal) */
@@ -279,4 +285,5 @@ export const DEFAULT_POLICIES: EventPolicies = {
   standVisitsEnabled: false,
   standVisitAllowSellerScan: false,
   qrOnlyModeEnabled: false,
+  advisorNoticeTemplate: null,
 };

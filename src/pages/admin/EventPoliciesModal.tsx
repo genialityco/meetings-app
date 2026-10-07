@@ -95,6 +95,8 @@ export default function EventPoliciesModal({
   const [standVisitsEnabled, setStandVisitsEnabled] = useState(false);
   const [standVisitAllowSellerScan, setStandVisitAllowSellerScan] = useState(false);
   const [qrOnlyModeEnabled, setQrOnlyModeEnabled] = useState(false);
+  const [advisorNoticeTemplateName, setAdvisorNoticeTemplateName] = useState("");
+  const [advisorNoticeTemplateLanguage, setAdvisorNoticeTemplateLanguage] = useState("es");
 
   // Empresas y asignación de mesas fijas
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -157,6 +159,8 @@ export default function EventPoliciesModal({
     setStandVisitsEnabled(p.standVisitsEnabled ?? false);
     setStandVisitAllowSellerScan(p.standVisitAllowSellerScan ?? false);
     setQrOnlyModeEnabled(p.qrOnlyModeEnabled ?? false);
+    setAdvisorNoticeTemplateName(p.advisorNoticeTemplate?.name ?? "");
+    setAdvisorNoticeTemplateLanguage(p.advisorNoticeTemplate?.language || "es");
   }, [event]);
 
   // Cargar empresas cuando se abre el modal y tableMode es "fixed"
@@ -300,6 +304,12 @@ export default function EventPoliciesModal({
               standVisitsEnabled,
               standVisitAllowSellerScan,
               qrOnlyModeEnabled,
+              advisorNoticeTemplate: advisorNoticeTemplateName.trim()
+                ? {
+                    name: advisorNoticeTemplateName.trim(),
+                    language: advisorNoticeTemplateLanguage.trim() || "es",
+                  }
+                : null,
             },
           },
         },
@@ -701,6 +711,26 @@ export default function EventPoliciesModal({
             onChange={(e) => setFallbackEmailOnWaFailure(e.currentTarget.checked)}
             ml="xl"
           />
+        )}
+
+        {whatsappNotificationsEnabled && whatsappApiVersion === "v2" && (
+          <Group grow align="flex-start" ml="xl">
+            <TextInput
+              label="Plantilla de avisos a compañeros de empresa"
+              description="Plantilla aprobada en Meta para avisar a los demás asesores cuando un compañero recibe, acepta, rechaza o cancela una reunión. Cuerpo: {{1}} nombre, {{2}} evento, {{3}} aviso. Vacío = esos avisos solo quedan como notificación en el dashboard."
+              placeholder="aviso_companero_empresa"
+              value={advisorNoticeTemplateName}
+              onChange={(e) => setAdvisorNoticeTemplateName(e.currentTarget.value.replace(/\s/g, ""))}
+            />
+            <TextInput
+              label="Idioma"
+              description="Código del idioma de la plantilla"
+              placeholder="es"
+              value={advisorNoticeTemplateLanguage}
+              onChange={(e) => setAdvisorNoticeTemplateLanguage(e.currentTarget.value.trim())}
+              style={{ maxWidth: 140 }}
+            />
+          </Group>
         )}
 
         <Switch
