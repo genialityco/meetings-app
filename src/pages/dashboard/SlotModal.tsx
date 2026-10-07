@@ -62,20 +62,10 @@ export default function SlotModal({
   const hasMultipleDays = eventDates.length > 1;
   const currentDate = selectedDate || eventDates[0];
 
-  // Los slots se cargan solo para el día seleccionado (al cambiar de día se
-  // recalculan), así que el conteo solo es real para ese día: mostrar "(0)" en
-  // los demás hacía creer que el evento tenía un solo día con horarios.
   const dayOptions = useMemo(
-    () =>
-      eventDates.map((date) => ({
-        value: date,
-        label:
-          date === currentDate
-            ? `${formatDate(date)} (${availableSlots.length} horarios)`
-            : formatDate(date),
-      })),
+    () => eventDates.map((date) => ({ value: date, label: formatDate(date) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [eventDates, currentDate, availableSlots.length],
+    [eventDates],
   );
 
   // Si para el horario elegido solo hay una mesa posible (mesa fija de la

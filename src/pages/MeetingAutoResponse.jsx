@@ -870,13 +870,7 @@ export default function MeetingAutoResponse() {
               {eventDays.length > 1 && (
                 <Select
                   label="Día"
-                  data={eventDays.map((d) => ({
-                    value: d,
-                    label:
-                      d === selectedDate && !loadingDay
-                        ? `${formatDay(d)} (${availableSlots.length} horarios)`
-                        : formatDay(d),
-                  }))}
+                  data={eventDays.map((d) => ({ value: d, label: formatDay(d) }))}
                   value={selectedDate}
                   onChange={changeDay}
                   disabled={confirmLoading || loadingDay}
@@ -956,7 +950,7 @@ export default function MeetingAutoResponse() {
                         <Text size="sm" color="dimmed" weight={500}>
                           Día:
                         </Text>
-                        <Text weight={700} style={{ textTransform: "capitalize" }}>
+                        <Text weight={700}>
                           {formatDay(chosenSlot.date)}
                         </Text>
                       </Group>
