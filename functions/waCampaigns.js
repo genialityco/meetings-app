@@ -50,9 +50,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ----------------------------------------------------------------------------
 // Auth: el llamador debe ser superadmin u owner del evento (igual que
-// canManageEvent en firestore.rules)
+// canManageEvent en firestore.rules). También lo usa pendingReminders.js.
 // ----------------------------------------------------------------------------
-async function assertCanManageEvent(req, eventId) {
+export async function assertCanManageEvent(req, eventId) {
   const header = req.get("authorization") || "";
   const match = header.match(/^Bearer (.+)$/);
   if (!match) {
