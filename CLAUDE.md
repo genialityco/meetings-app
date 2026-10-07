@@ -55,6 +55,7 @@ Configurable per event via admin panel (`EventPoliciesModal.tsx`). Interface + d
 - `maxMeetingsPerRole`: `{ comprador?, vendedor? }` — max meetings a requester of each role may *request* (only meaningful with `roleMode: "buyer_seller"`; receivers are never limited); `maxMeetingsPerRoleScope`: "total" | "day" controls whether the count is event-wide or resets per event day
 - `raffleEnabled`, `raffleShowPointsToAttendee` — enables the meeting-raffle feature (see below)
 - `standVisitsEnabled`, `standVisitAllowSellerScan` — stand-visit registration via QR (see below)
+- `pendingRemindersEnabled` (+ `pendingRemindersEveryHours`, `MinAgeHours`, `StartHour`/`EndHour` Bogotá window, `Whatsapp` + `Template {name, language}`, `Email`) — periodic digest to whoever has `pending` requests to answer (direct `receiverId`, or every user of the target `companyId` for company requests). Cloud Functions in `functions/pendingReminders.js`: `sendPendingRequestReminders` (every 30 min) and `runPendingReminders` (admin HTTP, dry-run/send-now, backs `PendingRemindersSettings.tsx`). WhatsApp goes through `/api/campaign/send` with a Meta template whose body vars are, in order, nombre/evento/pendientes/empresa; email goes directly to `apigencampus /email/custom`. Per-recipient state lives in `events/{eventId}/pendingReminders/{uid}`; it stops after the last event day
 
 Some newer per-event toggles (e.g. `cancelMeetingDisabled`, read in `CalendarTab.tsx`/`EventPoliciesModal.tsx`) are set directly on the policies object without yet being formalized in the `EventPolicies` interface — check `EventPoliciesModal.tsx` for the full current set of admin-configurable toggles rather than relying solely on the type.
 
@@ -243,6 +244,7 @@ Firebase config via Vite env vars (prefix `VITE_`):
 - `VITE_OPTIMIZER_API_URL` — agenda optimizer FastAPI service URL (local: `http://127.0.0.1:8080`)
 - `VITE_PUBLIC_APP_URL` — public app origin used for links inside WhatsApp campaign messages (e.g. `https://gen-meetings.netlify.app`); falls back to `window.location.origin`
 - `VITE_WA_TEMPLATES_URL` — optional override for the `listWaTemplates` Cloud Function URL
+- `VITE_PENDING_REMINDERS_URL` — optional override for the `runPendingReminders` Cloud Function URL (defaults to `https://us-central1-<projectId>.cloudfunctions.net/runPendingReminders`)
 
 ## npm Configuration
 

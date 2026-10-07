@@ -175,6 +175,20 @@ export interface EventPolicies {
    * que recibe "event/<eventId>?ingresar=1". Sin plantilla, en v2 esos avisos solo
    * quedan como notificación in-app. */
   advisorNoticeTemplate?: { name: string; language: string } | null;
+  /** Recordatorio automático (Cloud Function sendPendingRequestReminders) a quienes tienen solicitudes "pending" por aceptar: directas (receiverId) o a su empresa (todos sus asesores). Un resumen por destinatario cada N horas. */
+  pendingRemindersEnabled?: boolean;
+  /** Horas mínimas entre recordatorios a un mismo destinatario */
+  pendingRemindersEveryHours?: number;
+  /** Solo cuenta solicitudes con al menos esta antigüedad (horas) */
+  pendingRemindersMinAgeHours?: number;
+  /** Ventana de envío en hora de Bogotá: [startHour, endHour) */
+  pendingRemindersStartHour?: number;
+  pendingRemindersEndHour?: number;
+  /** Enviar por WhatsApp con la plantilla pendingRemindersTemplate (aprobada en Meta) */
+  pendingRemindersWhatsapp?: boolean;
+  pendingRemindersTemplate?: { name: string; language: string } | null;
+  /** Enviar correo con el detalle de las solicitudes y enlaces para aceptar/rechazar */
+  pendingRemindersEmail?: boolean;
 }
 
 /** Campo de un formulario de encuesta (reutiliza el modelo de ConfigureSurveyModal) */
@@ -286,4 +300,12 @@ export const DEFAULT_POLICIES: EventPolicies = {
   standVisitAllowSellerScan: false,
   qrOnlyModeEnabled: false,
   advisorNoticeTemplate: null,
+  pendingRemindersEnabled: false,
+  pendingRemindersEveryHours: 12,
+  pendingRemindersMinAgeHours: 2,
+  pendingRemindersStartHour: 8,
+  pendingRemindersEndHour: 20,
+  pendingRemindersWhatsapp: true,
+  pendingRemindersTemplate: null,
+  pendingRemindersEmail: true,
 };

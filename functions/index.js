@@ -4436,3 +4436,10 @@ export const generateAttendeeId = onRequest(
 // Campañas masivas de WhatsApp + respuestas a botones (incluye la encuesta
 // legacy "valor de negocio"): ver waCampaigns.js
 export * from "./waCampaigns.js";
+
+// Recordatorios automáticos de solicitudes pendientes (WhatsApp + correo): ver
+// pendingReminders.js
+export {
+  sendPendingRequestReminders,
+  runPendingReminders,
+} from "./pendingReminders.js";

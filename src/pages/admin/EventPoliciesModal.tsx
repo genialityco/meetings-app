@@ -23,6 +23,18 @@ import { db } from "../../firebase/firebaseConfig";
 import { DEFAULT_POLICIES } from "../dashboard/types";
 import type { EventPolicies, Company } from "../dashboard/types";
 import { normalizeTipoAsistente, DEFAULT_ROLE_URL_PARAM_NAME } from "../../utils/attendeeRole";
+import PendingRemindersSettings, { type PendingRemindersConfig } from "./PendingRemindersSettings";
+
+const readPendingReminders = (p: Partial<EventPolicies> = {}): PendingRemindersConfig => ({
+  pendingRemindersEnabled: p.pendingRemindersEnabled ?? false,
+  pendingRemindersEveryHours: p.pendingRemindersEveryHours ?? DEFAULT_POLICIES.pendingRemindersEveryHours!,
+  pendingRemindersMinAgeHours: p.pendingRemindersMinAgeHours ?? DEFAULT_POLICIES.pendingRemindersMinAgeHours!,
+  pendingRemindersStartHour: p.pendingRemindersStartHour ?? DEFAULT_POLICIES.pendingRemindersStartHour!,
+  pendingRemindersEndHour: p.pendingRemindersEndHour ?? DEFAULT_POLICIES.pendingRemindersEndHour!,
+  pendingRemindersWhatsapp: p.pendingRemindersWhatsapp ?? true,
+  pendingRemindersTemplate: p.pendingRemindersTemplate ?? null,
+  pendingRemindersEmail: p.pendingRemindersEmail ?? true,
+});
 
 /** Etiquetas legibles de cada vista del dashboard (para configurar su orden) */
 const VIEW_LABELS: Record<string, string> = {
@@ -97,6 +109,7 @@ export default function EventPoliciesModal({
   const [qrOnlyModeEnabled, setQrOnlyModeEnabled] = useState(false);
   const [advisorNoticeTemplateName, setAdvisorNoticeTemplateName] = useState("");
   const [advisorNoticeTemplateLanguage, setAdvisorNoticeTemplateLanguage] = useState("es");
+  const [pendingReminders, setPendingReminders] = useState<PendingRemindersConfig>(readPendingReminders());
 
   // Empresas y asignación de mesas fijas
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -161,6 +174,7 @@ export default function EventPoliciesModal({
     setQrOnlyModeEnabled(p.qrOnlyModeEnabled ?? false);
     setAdvisorNoticeTemplateName(p.advisorNoticeTemplate?.name ?? "");
     setAdvisorNoticeTemplateLanguage(p.advisorNoticeTemplate?.language || "es");
+    setPendingReminders(readPendingReminders(p));
   }, [event]);
 
   // Cargar empresas cuando se abre el modal y tableMode es "fixed"
@@ -253,6 +267,13 @@ export default function EventPoliciesModal({
       setGlobalMessage("Los valores del parámetro de URL para comprador y vendedor deben ser distintos.");
       return;
     }
+    if (
+      pendingReminders.pendingRemindersEnabled &&
+      pendingReminders.pendingRemindersEndHour <= pendingReminders.pendingRemindersStartHour
+    ) {
+      setGlobalMessage("Recordatorios: la hora final debe ser mayor que la hora de inicio.");
+      return;
+    }
     setSaving(true);
     try {
       // Guardar políticas en evento
@@ -310,6 +331,7 @@ export default function EventPoliciesModal({
                     language: advisorNoticeTemplateLanguage.trim() || "es",
                   }
                 : null,
+              ...pendingReminders,
             },
           },
         },
@@ -732,6 +754,11 @@ export default function EventPoliciesModal({
             />
           </Group>
         )}
+        <PendingRemindersSettings
+          event={event}
+          value={pendingReminders}
+          onChange={(patch) => setPendingReminders((prev) => ({ ...prev, ...patch }))}
+        />
 
         <Switch
           label="Notificaciones en el dashboard"
