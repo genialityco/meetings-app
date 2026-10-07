@@ -32,6 +32,7 @@
 // Estado por destinatario: events/{eventId}/pendingReminders/{userId}
 // (lastSentAt, lastPendingCount, lastWhatsapp, lastEmail, sendCount).
 
+/* global Intl */
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onRequest } from "firebase-functions/v2/https";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
@@ -106,7 +107,7 @@ function lastEventDay(event) {
 // indicativo + número nacional, solo dígitos; "" si no es válido.
 function toWhatsAppNumber(raw) {
   const value = String(raw ?? "")
-    .replace(/[​-‏‪-‮⁦-⁩﻿]/g, "")
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, "")
     .split(/[/;,|]/)[0]
     .trim();
   if (!value) return "";
@@ -500,7 +501,9 @@ export const sendPendingRequestReminders = onSchedule(
     for (const ev of events.docs) {
       try {
         const result = await processEventReminders(ev.id);
-        const { preview, ...rest } = result;
+        // El preview solo se llena en dryRun; no se registra
+        const rest = { ...result };
+        delete rest.preview;
         console.log("pendingReminders", JSON.stringify(rest));
       } catch (err) {
         console.error(`pendingReminders ${ev.id} error:`, err);
