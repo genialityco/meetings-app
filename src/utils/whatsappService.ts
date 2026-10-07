@@ -639,6 +639,80 @@ export async function sendWelcomeNotification(options: {
 }
 
 /**
+ * Aviso informativo a un compañero de empresa con una plantilla aprobada en Meta
+ * (policy advisorNoticeTemplate). Cuerpo: {{1}} nombre, {{2}} evento, {{3}} aviso;
+ * el botón URL dinámico (índice 0) recibe `buttonSuffix`.
+ */
+export async function sendAdvisorNoticeTemplate(options: {
+  phone: string;
+  templateName: string;
+  language?: string;
+  name: string;
+  eventName: string;
+  notice: string;
+  buttonSuffix?: string;
+  fallbackInfo?: {
+    enabled: boolean;
+    email: string;
+    subject: string;
+    logoUrl?: string;
+  };
+}): Promise<boolean> {
+  const { phone, templateName, language, name, eventName, notice, buttonSuffix, fallbackInfo } = options;
+  // Meta rechaza parámetros con saltos de línea, tabs o más de 4 espacios seguidos
+  const clean = (v: string, def: string) =>
+    String(v || "").replace(/[\r\n\t]+/g, " ").replace(/\s{2,}/g, " ").trim() || def;
+
+  try {
+    const payload: any = {
+      accountId: ACCOUNT_ID,
+      to: phone.replace(/[^\d]/g, ""),
+      templateName,
+      languageCode: language || "es",
+      parameters: [clean(name, "asesor"), clean(eventName, "el evento"), clean(notice, "Hay novedades en las reuniones de tu empresa.")],
+    };
+    if (buttonSuffix) {
+      payload.buttonUrl = buttonSuffix;
+      payload.buttonIndex = "0";
+    }
+
+    if (fallbackInfo?.enabled && fallbackInfo.email) {
+      const contentHtml = `
+        <p>Hola <strong>${clean(name, "")}</strong>,</p>
+        <p>Te informamos sobre la actividad de tu empresa en <strong>${clean(eventName, "el evento")}</strong>:</p>
+        <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+          <p style="margin: 0;">${clean(notice, "")}</p>
+        </div>
+      `;
+      payload.fallbackEmail = fallbackInfo.email;
+      payload.fallbackSubject = fallbackInfo.subject;
+      payload.fallbackHtml = buildEmailHtml(fallbackInfo.subject, contentHtml, fallbackInfo.logoUrl);
+    }
+
+    const response = await fetch(`${API_V2_URL}/api/send-template`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    let isSuccess = response.ok;
+    try {
+      const responseData = await response.clone().json();
+      console.log("[whatsappService] send-template (aviso empresa) response:", response.status, responseData);
+      if (responseData && (responseData.success === false || responseData.error)) {
+        isSuccess = false;
+      }
+    } catch (e) {
+      console.log("[whatsappService] send-template (aviso empresa) response (no-JSON):", response.status);
+    }
+    return isSuccess;
+  } catch (error) {
+    console.error("Error sending advisor notice:", error);
+    return false;
+  }
+}
+
+/**
  * Construye el HTML base para los correos de fallback
  */
 function buildEmailHtml(subject: string, contentHtml: string, logoUrl?: string): string {

@@ -59,6 +59,15 @@ type Product = {
   updatedAt?: any;
 };
 
+// "2026-10-15" -> "jueves, 15 de octubre" (para los avisos a compañeros de empresa)
+function formatDayLabel(dateISO?: string | null): string {
+  if (!dateISO) return "";
+  const [y, m, d] = String(dateISO).split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
+}
+
 function downloadVCard(participant: Assistant) {
   const vCard = `BEGIN:VCARD
 VERSION:3.0
@@ -1210,10 +1219,24 @@ export function useDashboardData(eventId?: string) {
           companyNit: meeting.companyId,
           excludeUids: [meeting.requesterId, meeting.receiverId as string],
           policies,
-          whatsappBuilder: (advisor) => ({
-            phone: advisor.telefono || "",
-            message: `La reunión de tu compañero${cancellerName ? ` (cancelada por ${cancellerName})` : ""} fue cancelada.`,
-          }),
+          eventName,
+          whatsappBuilder: (advisor) => {
+            // El compañero es el participante de la empresa de la reunión; el otro, la contraparte
+            const mate = receiver?.companyId !== meeting.companyId && requester?.companyId === meeting.companyId
+              ? requester
+              : receiver;
+            const other = mate === receiver ? requester : receiver;
+            const day = formatDayLabel(meeting.meetingDate);
+            const when = [day, meeting.timeSlot].filter(Boolean).join(", ");
+            return {
+              phone: advisor.telefono || "",
+              message:
+                `Se canceló la reunión de tu compañero ${mate?.nombre || ""}` +
+                (other?.nombre ? ` con ${other.nombre}` : "") +
+                (when ? ` (${when})` : "") +
+                (cancellerName ? `. La canceló ${cancellerName}.` : "."),
+            };
+          },
           dashboardNotif: {
             title: "Reunión cancelada",
             message: "Se canceló una reunión de un compañero de tu empresa.",
@@ -1474,9 +1497,12 @@ export function useDashboardData(eventId?: string) {
             companyNit: data.companyId,
             excludeUids: [data.requesterId, rejecterId],
             policies,
+            eventName,
             whatsappBuilder: (advisor) => ({
               phone: advisor.telefono || "",
-              message: `${receiver?.nombre || "Un compañero"} rechazó una solicitud de reunión de la empresa.`,
+              message:
+                `Tu compañero ${receiver?.nombre || ""} rechazó una solicitud de reunión` +
+                (requester?.nombre ? ` de ${requester.nombre}.` : "."),
             }),
             dashboardNotif: {
               title: "Reunión rechazada",
@@ -2056,10 +2082,28 @@ export function useDashboardData(eventId?: string) {
           companyNit: companyId,
           excludeUids: [requesterId as string, receiverId as string],
           policies,
-          whatsappBuilder: (advisor) => ({
-            phone: advisor.telefono || "",
-            message: `Un compañero de tu empresa aceptó una reunión (${slot.startTime} - ${slot.endTime}, mesa ${slot.tableNumber}).`,
-          }),
+          eventName,
+          whatsappBuilder: (advisor) => {
+            // `assistants` excluye al usuario actual: se resuelve aparte con currentUser
+            const userOf = (id?: string | null): any =>
+              id === uid ? currentUser?.data : assistants.find((a) => a.id === id);
+            const nameOf = (id?: string | null) => userOf(id)?.nombre || "";
+            // El compañero es el participante de la empresa de la reunión
+            const mateId =
+              userOf(receiverId)?.companyId !== companyId && userOf(requesterId)?.companyId === companyId
+                ? requesterId
+                : receiverId;
+            const otherId = mateId === requesterId ? receiverId : requesterId;
+            const day = formatDayLabel(eventDateISO);
+            const table = getTableLabel(slot.tableNumber, eventConfig?.tableNames);
+            return {
+              phone: advisor.telefono || "",
+              message:
+                `Tu compañero ${nameOf(mateId)} aceptó una reunión` +
+                (nameOf(otherId) ? ` con ${nameOf(otherId)}` : "") +
+                ` ${day ? `el ${day} ` : ""}a las ${slot.startTime} (${table}).`,
+            };
+          },
           dashboardNotif: {
             title: "Reunión aceptada",
             message: "Un compañero de tu empresa aceptó una reunión.",
