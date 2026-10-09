@@ -148,10 +148,13 @@ function RequestCard({
                 {company?.razonSocial || "Empresa"}
               </Title>
               <Text size="sm" c="dimmed">
-                Enviada a la empresa, esperando que un representante la acepte.
+                {request.status === "rejected"
+                  ? "Enviada a la empresa, que rechazó la reunión."
+                  : "Enviada a la empresa, esperando que un representante la acepte."}
               </Text>
             </Box>
           </Group>
+          {statusBadge && <Box mt="sm">{statusBadge}</Box>}
           {request.contextNote && (
             <Badge variant="light" color="grape" size="sm" mt="sm" radius="md">
               <Group gap={4} wrap="nowrap">
@@ -643,11 +646,13 @@ export default function RequestsTab({
             })}
             {sentRejectedRequests.map((request) => {
               const receiver = findUser(request.receiverId);
+              const company = findCompany(request.companyId);
               return (
                 <Grid.Col span={{ base: 12, sm: 6, lg: 4 }} key={request.id}>
                   <RequestCard
                     user={receiver}
                     request={request}
+                    company={company}
                     formFields={formFields}
                     statusBadge={
                       <Badge variant="light" color="red" radius="md" size="sm">
