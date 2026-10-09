@@ -28,6 +28,7 @@ import {
   IconLock,
   IconLockOpen,
   IconChevronRight,
+  IconHandClick,
   IconClipboardCheck,
   IconAddressBook,
   IconBrandWhatsapp,
@@ -37,13 +38,15 @@ import { getTableLabel } from "./meetingSlotEngine";
 import { doc, updateDoc, collection, query, where, getDocs, addDoc, deleteDoc, onSnapshot, getDoc, setDoc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { showNotification } from "@mantine/notifications";
-import { DEFAULT_SURVEY_FIELDS } from "../admin/ConfigureSurveyModal";
+import { DEFAULT_SURVEY_FIELDS, getRatingData } from "../admin/ConfigureSurveyModal";
 import OptimisticCheckbox from "../../components/OptimisticCheckbox";
 import RaffleQrModal from "./RaffleQrModal";
 import { normalizeTipoAsistente } from "../../utils/attendeeRole";
 import { isCheckedInOnDay, resolveCheckInDay } from "../../utils/eventDays";
 import { trackEvent } from "../../utils/analytics";
 import { logWhatsAppClick } from "../../utils/eventStats";
+import classes from "./CalendarTab.module.css";
+import { ListSkeleton } from "./DashboardSkeletons";
 
 interface CalendarTabProps {
   acceptedMeetings: any[];
@@ -60,6 +63,8 @@ interface CalendarTabProps {
   downloadVCard?: (participant: any) => void;
   sendWhatsAppMessage?: (participant: any) => void;
   cancelMeeting?: (meeting: any) => Promise<any>;
+  /** Primera carga de reuniones aceptadas en curso */
+  loadingMeetings?: boolean;
 }
 
 function InfoRow({
@@ -101,6 +106,7 @@ export default function CalendarTab({
   downloadVCard,
   sendWhatsAppMessage,
   cancelMeeting,
+  loadingMeetings = false,
 }: CalendarTabProps) {
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
   const [modalOpened, setModalOpened] = useState(false);
@@ -296,6 +302,17 @@ export default function CalendarTab({
         color: "red",
       });
       throw err;
+    }
+  };
+
+  // Franja cuyo bloqueo/desbloqueo está en curso (spinner en su botón)
+  const [slotActionTime, setSlotActionTime] = useState<string | null>(null);
+  const runSlotAction = async (time: string, action: (time: string) => Promise<void>) => {
+    setSlotActionTime(time);
+    try {
+      await action(time);
+    } finally {
+      setSlotActionTime(null);
     }
   };
 
@@ -612,10 +629,21 @@ export default function CalendarTab({
                 Canceladas
               </Chip>
             </Group>
+            {Object.values(meetingsByTime).some((list: any) => list?.length) && (
+              <Group gap={6} wrap="nowrap">
+                <IconHandClick size={14} color="var(--mantine-color-dimmed)" style={{ flexShrink: 0 }} />
+                <Text size="xs" c="dimmed">
+                  Toca una cita para ver el detalle: contacto, mesa, encuesta y opciones de la reunión.
+                </Text>
+              </Group>
+            )}
           </Stack>
 
           <Divider my="md" />
 
+          {loadingMeetings || loadingSlots ? (
+            <ListSkeleton label={loadingMeetings ? "Cargando tus citas…" : "Cargando la agenda del día…"} rows={6} />
+          ) : (
           <Stack gap={4}>
                 {timeSlots.map((time) => {
                   const meetings = meetingsByTime[time] || [];
@@ -654,7 +682,9 @@ export default function CalendarTab({
                                 color="gray"
                                 size="compact-xs"
                                 leftSection={<IconLockOpen size={12} />}
-                                onClick={() => handleUnblockSlot(time)}
+                                onClick={() => runSlotAction(time, handleUnblockSlot)}
+                                loading={slotActionTime === time}
+                                disabled={!!slotActionTime && slotActionTime !== time}
                               >
                                 Desbloquear
                               </Button>
@@ -671,7 +701,9 @@ export default function CalendarTab({
                                 color="gray"
                                 size="compact-xs"
                                 leftSection={<IconLock size={12} />}
-                                onClick={() => handleBlockSlot(time)}
+                                onClick={() => runSlotAction(time, handleBlockSlot)}
+                                loading={slotActionTime === time}
+                                disabled={!!slotActionTime && slotActionTime !== time}
                               >
                                 Bloquear franja
                               </Button>
@@ -688,9 +720,18 @@ export default function CalendarTab({
                                   withBorder
                                   radius="md"
                                   p="xs"
+                                  className={classes.meetingCard}
+                                  role="button"
+                                  tabIndex={0}
+                                  aria-label={`Ver detalle de la cita con ${participant?.nombre || "participante"}`}
                                   onClick={() => handleMeetingClick(meeting)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                      e.preventDefault();
+                                      handleMeetingClick(meeting);
+                                    }
+                                  }}
                                   style={{
-                                    cursor: "pointer",
                                     borderLeft: `4px solid var(--mantine-color-${statusColor}-6)`,
                                   }}
                                 >
@@ -732,7 +773,20 @@ export default function CalendarTab({
                                           Realizada
                                         </Badge>
                                       )}
-                                      <IconChevronRight size={16} color="var(--mantine-color-gray-5)" />
+                                      {meeting.type === "accepted" &&
+                                        meeting.completed &&
+                                        !surveyBlocked &&
+                                        !surveyExists(meeting.id) && (
+                                          <Badge color="violet" variant="light" size="sm" visibleFrom="xs">
+                                            Encuesta pendiente
+                                          </Badge>
+                                        )}
+                                      <Group gap={2} wrap="nowrap" c="dimmed" className={classes.detailHint}>
+                                        <Text size="xs" fw={600} c="inherit" visibleFrom="sm">
+                                          Ver detalle
+                                        </Text>
+                                        <IconChevronRight size={16} />
+                                      </Group>
                                     </Group>
                                   </Group>
                                 </Paper>
@@ -745,6 +799,7 @@ export default function CalendarTab({
                   );
                 })}
           </Stack>
+          )}
         </Paper>
       </Stack>
 
@@ -754,6 +809,8 @@ export default function CalendarTab({
         onClose={() => setSurveyEditModal({ open: false, meeting: null })}
         title="Encuesta de reunión"
         radius="lg"
+        // Se abre desde el modal de detalle (renderizado después, mismo z-index por defecto): debe quedar encima
+        zIndex={300}
       >
         {loadingSurvey ? (
           <Group justify="center" py="md"><Text size="sm" c="dimmed">Cargando...</Text></Group>
@@ -788,12 +845,12 @@ export default function CalendarTab({
               if ((field.type === "select" || field.type === "rating") && field.options?.length) {
                 return (
                   <Select key={field.name} label={field.label} value={val} onChange={(v) => onChange(v || "")}
-                    data={field.type === "rating" ? ["1","2","3","4","5"].map((n) => ({ value: n, label: `${n} ⭐` })) : field.options.map((o: string) => ({ value: o, label: o }))}
+                    data={field.type === "rating" ? getRatingData(field) : field.options.map((o: string) => ({ value: o, label: o }))}
                     required={field.required} radius="md" />
                 );
               }
               if (field.type === "rating") {
-                return <Select key={field.name} label={field.label} value={val} onChange={(v) => onChange(v || "")} data={["1","2","3","4","5"].map((n) => ({ value: n, label: `${n} ⭐` }))} required={field.required} radius="md" />;
+                return <Select key={field.name} label={field.label} value={val} onChange={(v) => onChange(v || "")} data={getRatingData(field)} required={field.required} radius="md" />;
               }
               return (
                 <Box key={field.name}>

@@ -44,6 +44,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import MeetingRequestModal from "./MeetingRequestModal";
 import { normalizeTipoAsistente, isVendedor, isComprador } from "../../utils/attendeeRole";
 import { getFieldLabel } from "../../utils/attendeeFields";
+import { CardGridSkeleton } from "./DashboardSkeletons";
 
 interface MeetingContext {
   contextNote?: string;
@@ -85,6 +86,8 @@ function formatFieldValue(fieldName: string, data: any): string | null {
 }
 
 interface AttendeesViewProps {
+  /** Primera carga de asistentes en curso */
+  loading?: boolean;
   filteredAssistants: Assistant[];
   showOnlyToday: boolean;
   setShowOnlyToday: (v: any) => void;
@@ -152,6 +155,7 @@ function InfoRow({
 }
 
 export default function AttendeesView({
+  loading = false,
   filteredAssistants,
   showOnlyToday,
   setShowOnlyToday,
@@ -544,6 +548,9 @@ export default function AttendeesView({
       )}
 
       {/* Grid */}
+      {loading ? (
+        <CardGridSkeleton label="Cargando asistentes…" />
+      ) : (
       <Grid gutter="sm">
         {displayedAssistants.length > 0 ? (
           displayedAssistants.map((assistant) => {
@@ -805,6 +812,7 @@ export default function AttendeesView({
           </Grid.Col>
         )}
       </Grid>
+      )}
 
       {/* Modal de solicitud de reunión */}
       <MeetingRequestModal

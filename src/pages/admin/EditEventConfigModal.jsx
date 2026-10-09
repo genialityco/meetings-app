@@ -23,6 +23,7 @@ import {
 import { IconSettings, IconCalendarTime, IconPalette, IconCalendarEvent, IconUsers, IconChecklist, IconStar, IconPlus, IconMinus } from "@tabler/icons-react";
 import { doc, setDoc, collection, getDocs, query, where } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { notifications } from "@mantine/notifications";
 import { db, storage } from "../../firebase/firebaseConfig";
 import QRCode from "qrcode";
 import ConfigureFieldsModal from "./ConfigureFieldsModal";
@@ -37,14 +38,38 @@ function timeToMinutes(timeStr) {
   return h * 60 + m;
 }
 
+const SAVE_TOAST_ID = "event-config-save";
+
+// Toast según el tipo de mensaje: los de error empiezan por "Error"; los de
+// validación (no se guardó nada) no dicen "correctamente"/"guardada"/"actualizada".
+function showConfigToast(message) {
+  if (!message) return;
+  const isError = /^error/i.test(message);
+  const isSuccess = !isError && /correctamente|guardad|actualizad/i.test(message);
+  notifications.show({
+    title: isError ? "Error" : isSuccess ? "Cambios guardados" : "Revisa la configuración",
+    message,
+    color: isError ? "red" : isSuccess ? "green" : "yellow",
+    autoClose: isError ? 6000 : 4000,
+  });
+}
+
 // Modal de configuración de evento/agendamiento
 const EditEventConfigModal = ({
   opened,
   onClose,
   event,
   refreshEvents,
-  setGlobalMessage,
+  setGlobalMessage: setPageMessage,
 }) => {
+  // Además del aviso en la página (que queda tapado por el modal), muestra un
+  // toast. Se pasa también a las pestañas embebidas (campos, políticas, encuestas).
+  const setGlobalMessage = (message) => {
+    setPageMessage?.(message);
+    showConfigToast(message);
+  };
+  const [saving, setSaving] = useState(false);
+
   // ---- Estados ----
   const [eventName, setEventName] = useState(event.eventName || "");
   const [eventType, setEventType] = useState(event.eventType || "Networking");
@@ -294,6 +319,36 @@ const EditEventConfigModal = ({
 
   // ------ GUARDADO ------
   const saveConfig = async () => {
+    setSaving(true);
+    notifications.show({
+      id: SAVE_TOAST_ID,
+      loading: true,
+      title: "Guardando configuración",
+      message: "Aplicando cambios al evento...",
+      autoClose: false,
+      withCloseButton: false,
+    });
+    try {
+      await doSaveConfig();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const finishSaveToast = (ok, message) => {
+    setPageMessage?.(message);
+    notifications.update({
+      id: SAVE_TOAST_ID,
+      loading: false,
+      title: ok ? "Cambios guardados" : "Error",
+      message,
+      color: ok ? "green" : "red",
+      autoClose: ok ? 4000 : 6000,
+      withCloseButton: true,
+    });
+  };
+
+  const doSaveConfig = async () => {
     let finalEventImage = eventImageUrl;
     let finalLandingTitleImage = landingTitleImageUrl;
     let finalBackgroundImage = backgroundImageUrl;
@@ -310,12 +365,19 @@ const EditEventConfigModal = ({
       
       // Generar y subir QR si hay una URL de landing
       if (landingUrl && landingUrl.trim() !== "") {
-        setGlobalMessage?.("Generando código QR...");
+        notifications.update({
+          id: SAVE_TOAST_ID,
+          loading: true,
+          title: "Guardando configuración",
+          message: "Generando código QR...",
+          autoClose: false,
+          withCloseButton: false,
+        });
         finalLandingQR = await generateAndUploadQR(landingUrl);
       }
     } catch (err) {
       console.error(err);
-      setGlobalMessage?.("Error al subir la(s) imagen(es) o generar el QR");
+      finishSaveToast(false, "Error al subir la(s) imagen(es) o generar el QR");
       return;
     }
 
@@ -386,11 +448,11 @@ const EditEventConfigModal = ({
         },
         { merge: true }
       )
-      setGlobalMessage?.("Configuración actualizada correctamente");
+      finishSaveToast(true, "Configuración actualizada correctamente");
       refreshEvents();
     } catch (error) {
       console.error(error);
-      setGlobalMessage("Error al actualizar configuración");
+      finishSaveToast(false, "Error al actualizar configuración");
     }
   };
 
@@ -488,7 +550,7 @@ const EditEventConfigModal = ({
             )}
             <Group justify="flex-end" mt="md">
               <Button variant="default" onClick={onClose}>Cancelar</Button>
-              <Button onClick={saveConfig}>Guardar configuración básica</Button>
+              <Button onClick={saveConfig} loading={saving}>Guardar configuración básica</Button>
             </Group>
           </Stack>
         </Tabs.Panel>
@@ -666,7 +728,7 @@ const EditEventConfigModal = ({
 
             <Group justify="flex-end" mt="md">
               <Button variant="default" onClick={onClose}>Cancelar</Button>
-              <Button onClick={saveConfig}>Guardar fechas y horarios</Button>
+              <Button onClick={saveConfig} loading={saving}>Guardar fechas y horarios</Button>
             </Group>
           </Stack>
         </Tabs.Panel>
@@ -804,7 +866,7 @@ const EditEventConfigModal = ({
           </Grid>
           <Group justify="flex-end" mt="md">
             <Button variant="default" onClick={onClose}>Cancelar</Button>
-            <Button onClick={saveConfig}>Guardar apariencia</Button>
+            <Button onClick={saveConfig} loading={saving}>Guardar apariencia</Button>
           </Group>
         </Tabs.Panel>
 
@@ -879,7 +941,7 @@ const EditEventConfigModal = ({
 
             <Group justify="flex-end" mt="md">
               <Button variant="default" onClick={onClose}>Cancelar</Button>
-              <Button onClick={saveConfig}>Guardar mesas/espacios</Button>
+              <Button onClick={saveConfig} loading={saving}>Guardar mesas/espacios</Button>
             </Group>
           </Stack>
         </Tabs.Panel>

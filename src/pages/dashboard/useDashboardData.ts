@@ -296,6 +296,14 @@ export function useDashboardData(eventId?: string) {
   const [affinityScores, setAffinityScores] = useState<Record<string, number>>({});
   const [myStandVisits, setMyStandVisits] = useState<Set<string>>(new Set());
 
+  // Primera carga de cada fuente: mientras sea false las vistas muestran skeletons
+  // en vez de su estado vacío ("No se encontraron…"), que confundía al entrar.
+  const [eventLoaded, setEventLoaded] = useState(false);
+  const [assistantsLoaded, setAssistantsLoaded] = useState(false);
+  const assistantsReceivedRef = useRef(false);
+  const [companiesLoaded, setCompaniesLoaded] = useState(false);
+  const [productsLoaded, setProductsLoaded] = useState(false);
+
   // ---------------------- EFECTOS PRINCIPALES ----------------------
 
   // 1. Configuración del evento (eventConfig + policies) — real-time para reflejar cambios de admin
@@ -312,6 +320,10 @@ export function useDashboardData(eventId?: string) {
         setFormFields(config.formFields || []);
         setPolicies({ ...DEFAULT_POLICIES, ...(config.policies || {}) });
       }
+      setEventLoaded(true);
+    }, (error) => {
+      console.error("Error cargando el evento:", error);
+      setEventLoaded(true);
     });
   }, [eventId]);
 
@@ -341,6 +353,11 @@ export function useDashboardData(eventId?: string) {
           ...d.data(),
         })) as Company[];
         setCompanies(list);
+        setCompaniesLoaded(true);
+      },
+      (error) => {
+        console.error("Error cargando empresas:", error);
+        setCompaniesLoaded(true);
       }
     );
   }, [eventId]);
@@ -513,7 +530,12 @@ export function useDashboardData(eventId?: string) {
           return 0;
         });
 
+      assistantsReceivedRef.current = true;
       setAssistants(list);
+    }, (error) => {
+      console.error("Error cargando asistentes:", error);
+      assistantsReceivedRef.current = true;
+      setAssistantsLoaded(true);
     });
   }, [uid, eventId]);
 
@@ -561,6 +583,9 @@ export function useDashboardData(eventId?: string) {
     });
 
     setFilteredAssistants(filtered);
+    // Se marca aquí (no en el snapshot) para que la vista no muestre un frame con
+    // la lista filtrada aún vacía entre la llegada de datos y este filtro
+    if (assistantsReceivedRef.current) setAssistantsLoaded(true);
   }, [assistants, interestFilter, formFields, policies.discoveryMode, currentUser?.data?.tipoAsistente, companies]);
 
   // 6. Solicitudes enviadas por usuario actual (pendientes + rechazadas)
@@ -625,6 +650,9 @@ export function useDashboardData(eventId?: string) {
       setAcceptedMeetings(mts);
       setParticipantsInfo(info);
       setLoadingMeetings(false); // <- DESACTIVA loading
+    }, (error) => {
+      console.error("Error cargando reuniones aceptadas:", error);
+      setLoadingMeetings(false);
     });
   }, [uid, eventId]);
 
@@ -830,6 +858,10 @@ export function useDashboardData(eventId?: string) {
         ...(d.data() as any),
       })) as Product[];
       setProducts(list);
+      setProductsLoaded(true);
+    }, (error) => {
+      console.error("Error cargando productos:", error);
+      setProductsLoaded(true);
     });
   }, [eventId]);
 
@@ -998,6 +1030,7 @@ export function useDashboardData(eventId?: string) {
         targetCompanyId: context?.companyId || null,
         receiverId: assistantId,
         checkDuplicates: false,
+        discoveryMode: policies.discoveryMode,
       });
     }
 
@@ -1768,11 +1801,16 @@ export function useDashboardData(eventId?: string) {
     // asociados) generaría una solicitud "fantasma" que nadie puede ver ni
     // reclamar (con aceptación), o un mensaje de "sin disponibilidad" engañoso
     // (sin aceptación) cuando el problema real es que no hay ningún asesor.
-    const advisors = await getCompanyAdvisors(eventId, companyNit);
+    // Solo cuentan los asesores con los que mi rol puede reunirse (discoveryMode):
+    // p. ej. un comprador no puede terminar reunido con un colega comprador de la empresa.
+    const advisors = await getCompanyAdvisors(eventId, companyNit, {
+      tipo: currentUser?.data?.tipoAsistente,
+      discoveryMode: policies.discoveryMode,
+    });
     if (advisors.length === 0) {
       showNotification({
         title: "Sin asesores",
-        message: "Esta empresa no tiene asesores disponibles para recibir la solicitud.",
+        message: "Esta empresa no tiene representantes disponibles con los que puedas reunirte.",
         color: "red",
       });
       return Promise.reject(new Error("No advisors available"));
@@ -1792,6 +1830,7 @@ export function useDashboardData(eventId?: string) {
         requesterId: uid,
         targetCompanyId: companyNit,
         checkDuplicates: false,
+        discoveryMode: policies.discoveryMode,
       });
       if (!(await checkRoleMeetingLimit())) {
         return Promise.reject(new Error("Role meeting limit reached"));
@@ -1894,6 +1933,24 @@ export function useDashboardData(eventId?: string) {
       const preReceiverId: string | null = mtgPreData.receiverId || null;
       const preIsCompanyClaim = !preReceiverId && !!mtgPreData.companyId;
       const effectivePreReceiverId = preReceiverId || (preIsCompanyClaim ? uid : undefined);
+
+      if (preIsCompanyClaim && policies.discoveryMode && policies.discoveryMode !== "all") {
+        const requesterTipo =
+          assistants.find((a) => a.id === preRequesterId)?.tipoAsistente ??
+          (await getDoc(doc(db, "users", preRequesterId))).data()?.tipoAsistente;
+        if (!canDiscoverAttendee(policies.discoveryMode, currentUser?.data?.tipoAsistente, requesterTipo)) {
+          mantineNotifications.update({
+            id: notifId,
+            title: "No permitido",
+            message: "Tu perfil no puede atender esta solicitud; debe aceptarla un compañero de tu empresa con el rol correspondiente.",
+            color: "orange",
+            loading: false,
+            autoClose: 6000,
+            withCloseButton: true,
+          });
+          return false;
+        }
+      }
 
       // Pre-read checkedIn status outside transaction (users collection has restricted read rules)
       let reqCheckedIn = false;
@@ -2258,10 +2315,17 @@ export function useDashboardData(eventId?: string) {
   }, [cancelledMeetings, globalDateFilter]);
 
   const filteredPendingRequests = useMemo(() => {
-    const combined = [...pendingRequests, ...companyPendingRequests];
+    // Solicitudes a mi empresa: solo las de solicitantes con los que mi rol puede
+    // reunirse (las demás las atiende un compañero del rol correspondiente)
+    const myTipo = currentUser?.data?.tipoAsistente;
+    const companyVisible = companyPendingRequests.filter((m) => {
+      const requester = assistants.find((a) => a.id === m.requesterId);
+      return !requester || canDiscoverAttendee(policies.discoveryMode, myTipo, requester.tipoAsistente);
+    });
+    const combined = [...pendingRequests, ...companyVisible];
     if (!globalDateFilter) return combined;
     return combined.filter(m => m.meetingDate === globalDateFilter);
-  }, [pendingRequests, companyPendingRequests, globalDateFilter]);
+  }, [pendingRequests, companyPendingRequests, globalDateFilter, assistants, policies.discoveryMode, currentUser?.data?.tipoAsistente]);
 
   const filteredSentRequests = useMemo(() => {
     if (!globalDateFilter) return sentRequests;
@@ -2295,6 +2359,13 @@ export function useDashboardData(eventId?: string) {
     standbyMeetings,
     cancelledMeetings: filteredCancelledMeetings,
     loadingMeetings,
+    loadingState: {
+      event: !eventLoaded,
+      assistants: !assistantsLoaded,
+      companies: !companiesLoaded,
+      products: !productsLoaded,
+      meetings: loadingMeetings,
+    },
     pendingRequests: filteredPendingRequests,
     cancelSentMeeting,
     sentRequests: filteredSentRequests,

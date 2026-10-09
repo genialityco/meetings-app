@@ -59,7 +59,7 @@ import { UserContext } from "../../context/UserContext";
 import { showNotification } from "@mantine/notifications";
 import { trackEvent } from "../../utils/analytics";
 import { logWhatsAppClick } from "../../utils/eventStats";
-import { DEFAULT_SURVEY_FIELDS } from "../../pages/admin/ConfigureSurveyModal";
+import { DEFAULT_SURVEY_FIELDS, getRatingData } from "../../pages/admin/ConfigureSurveyModal";
 import OptimisticCheckbox from "../../components/OptimisticCheckbox";
 import RaffleQrModal from "./RaffleQrModal";
 import { getTableLabel } from "./meetingSlotEngine";
@@ -909,7 +909,7 @@ export default function MeetingsTab({
                     label={field.label}
                     value={val}
                     onChange={(v) => onChange(v || "")}
-                    data={["1", "2", "3", "4", "5"].map((n) => ({ value: n, label: `${n} ⭐` }))}
+                    data={getRatingData(field)}
                     required={field.required}
                     radius="md"
                   />

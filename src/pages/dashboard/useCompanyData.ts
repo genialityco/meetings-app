@@ -13,7 +13,7 @@ import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
 import { Company, Product, EventPolicies, DEFAULT_POLICIES, MeetingContext, StandVisit } from "./types";
 import { resolveCheckInDay, isCheckedInOnDay } from "../../utils/eventDays";
-import { isVendedor } from "../../utils/attendeeRole";
+import { isVendedor, canDiscoverAttendee } from "../../utils/attendeeRole";
 import { showNotification } from "@mantine/notifications";
 import {
   computeAvailableSlots,
@@ -417,6 +417,15 @@ export function useCompanyData(
         });
         throw new Error("Receiver not found");
       }
+      // Confirmación instantánea: validar aquí que los roles puedan reunirse
+      if (!canDiscoverAttendee(policies.discoveryMode, currentUser?.data?.tipoAsistente, receiverSnap.data()?.tipoAsistente)) {
+        showNotification({
+          title: "No permitido",
+          message: "Tu perfil no puede agendar reuniones con este asistente.",
+          color: "orange",
+        });
+        throw new Error("Role not allowed");
+      }
       await checkContactMeetingLimit(receiverId, receiverSnap.data());
       if (!(await checkRoleMeetingLimit())) {
         throw new Error("Role meeting limit reached");
@@ -428,6 +437,8 @@ export function useCompanyData(
     },
     [
       policies.schedulingMode,
+      policies.discoveryMode,
+      currentUser?.data?.tipoAsistente,
       sendMeetingRequest,
       prepareSlotSelectionForRequest,
       checkContactMeetingLimit,
@@ -458,13 +469,16 @@ export function useCompanyData(
         return requestMeetingWithSlotPicker(advisorId, advisorPhone, { ...context, companyId: companyNit });
       }
 
-      // Validar que la empresa tenga al menos un asesor antes de crear cualquier
-      // solicitud (ver la misma validación en useDashboardData.ts).
-      const advisors = await getCompanyAdvisors(eventId, companyNit);
+      // Validar que la empresa tenga al menos un asesor con el que mi rol pueda
+      // reunirse antes de crear cualquier solicitud (ver useDashboardData.ts).
+      const advisors = await getCompanyAdvisors(eventId, companyNit, {
+        tipo: currentUser?.data?.tipoAsistente,
+        discoveryMode: policies.discoveryMode,
+      });
       if (advisors.length === 0) {
         showNotification({
           title: "Sin asesores",
-          message: "Esta empresa no tiene asesores disponibles para recibir la solicitud.",
+          message: "Esta empresa no tiene representantes disponibles con los que puedas reunirte.",
           color: "red",
         });
         throw new Error("No advisors available");
@@ -524,6 +538,7 @@ export function useCompanyData(
       requestMeetingWithSlotPicker,
       checkRoleMeetingLimit,
       checkContactMeetingLimit,
+      currentUser?.data?.tipoAsistente,
     ],
   );
 

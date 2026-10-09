@@ -1,0 +1,28 @@
+/* Tarjeta de cita en la Agenda: debe "verse clicable" (abre el detalle) */
+.meetingCard {
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+.meetingCard:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--mantine-shadow-sm);
+  background-color: var(--mantine-color-gray-0);
+}
+
+.meetingCard:active {
+  transform: translateY(0);
+}
+
+.meetingCard:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+}
+
+.detailHint {
+  transition: color 120ms ease;
+}
+
+.meetingCard:hover .detailHint {
+  color: var(--mantine-primary-color-filled);
+}

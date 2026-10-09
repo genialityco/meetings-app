@@ -7,7 +7,7 @@ import { IconCheck, IconX } from "@tabler/icons-react";
 import { doc, updateDoc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
-import { DEFAULT_SURVEY_FIELDS } from "../admin/ConfigureSurveyModal";
+import { DEFAULT_SURVEY_FIELDS, getRatingData } from "../admin/ConfigureSurveyModal";
 import { normalizeTipoAsistente } from "../../utils/attendeeRole";
 
 interface Props {
@@ -331,7 +331,7 @@ export default function MeetingConfirmationGuard({ uid, eventId, enabled, eventC
                     label={field.label}
                     value={val}
                     onChange={(v) => onChange(v || "")}
-                    data={["1", "2", "3", "4", "5"].map((n) => ({ value: n, label: `${n} ⭐` }))}
+                    data={getRatingData(field)}
                     required={field.required}
                     radius="md"
                   />

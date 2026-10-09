@@ -50,9 +50,9 @@ interface RequestsTabProps {
   assistants: Assistant[];
   formFields?: any[];
   companies?: Company[];
-  updateMeetingStatus: (meetingId: string, status: string) => void;
+  updateMeetingStatus: (meetingId: string, status: string) => void | Promise<void>;
   sendWhatsAppMessage: (participant: Assistant) => void;
-  cancelSentMeeting: (meetingId: string, action: string) => void;
+  cancelSentMeeting: (meetingId: string, action: string) => void | Promise<void>;
   prepareSlotSelection: (meetingId: string) => void;
   prepareSlotSelectionLoading?: boolean;
 }
@@ -295,6 +295,16 @@ export default function RequestsTab({
   const findCompany = (nit?: string | null) => companies.find((c) => c.nitNorm === nit);
 
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
+  // Solicitud con un rechazo/cancelación en curso (spinner en su botón)
+  const [busyAction, setBusyAction] = useState<{ id: string; kind: "reject" | "cancel" } | null>(null);
+  const runAction = async (id: string, kind: "reject" | "cancel", fn: () => void | Promise<void>) => {
+    setBusyAction({ id, kind });
+    try {
+      await fn();
+    } finally {
+      setBusyAction(null);
+    }
+  };
 
   useEffect(() => {
     if (!prepareSlotSelectionLoading) {
@@ -340,7 +350,7 @@ export default function RequestsTab({
                             radius="md"
                             leftSection={<IconCheck size={14} />}
                             loading={prepareSlotSelectionLoading && acceptingId === request.id}
-                            disabled={prepareSlotSelectionLoading && acceptingId !== request.id}
+                            disabled={(prepareSlotSelectionLoading && acceptingId !== request.id) || busyAction?.id === request.id}
                             onClick={() => {
                               trackEvent({
                                 name: "meeting_accepted",
@@ -360,7 +370,8 @@ export default function RequestsTab({
                             size="compact-sm"
                             radius="md"
                             leftSection={<IconX size={14} />}
-                            disabled={prepareSlotSelectionLoading}
+                            loading={busyAction?.id === request.id && busyAction.kind === "reject"}
+                            disabled={prepareSlotSelectionLoading || (!!busyAction && busyAction.id !== request.id)}
                             onClick={() => {
                               trackEvent({
                                 name: "meeting_rejected",
@@ -368,7 +379,7 @@ export default function RequestsTab({
                                   meeting_id: request.id,
                                 },
                               });
-                              updateMeetingStatus(request.id, "rejected");
+                              runAction(request.id, "reject", () => updateMeetingStatus(request.id, "rejected"));
                             }}
                           >
                             Rechazar
@@ -449,6 +460,8 @@ export default function RequestsTab({
                           radius="md"
                           fullWidth
                           leftSection={<IconX size={14} />}
+                          loading={busyAction?.id === request.id && busyAction.kind === "cancel"}
+                          disabled={!!busyAction && busyAction.id !== request.id}
                           onClick={() => {
                             trackEvent({
                               name: "meeting_cancelled",
@@ -457,7 +470,7 @@ export default function RequestsTab({
                                 reason: "user_cancelled_sent_request",
                               },
                             });
-                            cancelSentMeeting(request.id, "cancel");
+                            runAction(request.id, "cancel", () => cancelSentMeeting(request.id, "cancel"));
                           }}
                         >
                           Cancelar solicitud

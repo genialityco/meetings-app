@@ -23,6 +23,7 @@ import MatchesTab from "./MatchesTab";
 import EventSurveyTab from "./EventSurveyTab";
 import MyCompanyTab from "./MyCompanyTab";
 import QrOnlyView from "./QrOnlyView";
+import { DashboardSkeleton } from "./DashboardSkeletons";
 import { DEFAULT_POLICIES } from "./types";
 import { isVendedor } from "../../utils/attendeeRole";
 import { useMediaQuery } from "@mantine/hooks";
@@ -178,6 +179,11 @@ export default function TabsPanel({
   // Reemplaza por completo las pestañas (reuniones, asistentes, empresas...) por
   // el código de asistencia del usuario. Se resuelve después de todos los hooks
   // anteriores para no romper el orden de hooks entre renders.
+  // Mientras llega la configuración del evento no se sabe qué pestañas mostrar
+  if (dashboard.loadingState?.event) {
+    return <DashboardSkeleton />;
+  }
+
   if (policies.qrOnlyModeEnabled) {
     return (
       <Stack mt="md">
@@ -233,6 +239,7 @@ export default function TabsPanel({
 
       {topView === "attendees" && (
         <AttendeesView
+          loading={dashboard.loadingState?.assistants}
           filteredAssistants={dashboard.filteredAssistants}
           showOnlyToday={dashboard.showOnlyToday}
           setShowOnlyToday={dashboard.setShowOnlyToday}
@@ -260,6 +267,7 @@ export default function TabsPanel({
 
       {topView === "companies" && (
         <CompaniesView
+          loading={dashboard.loadingState?.companies || dashboard.loadingState?.assistants}
           filteredAssistants={dashboard.filteredAssistants}
           allAssistants={dashboard.assistants}
           companies={dashboard.companies}
@@ -314,6 +322,7 @@ export default function TabsPanel({
 
       {topView === "products" && (
         <ProductsView
+          loading={dashboard.loadingState?.products || dashboard.loadingState?.assistants}
           products={dashboard.products}
           companies={dashboard.companies}
           filteredAssistants={dashboard.filteredAssistants}
@@ -383,6 +392,7 @@ export default function TabsPanel({
               downloadVCard={dashboard.downloadVCard}
               sendWhatsAppMessage={dashboard.sendWhatsAppMessage}
               cancelMeeting={dashboard.cancelMeeting}
+              loadingMeetings={dashboard.loadingState?.meetings}
             />
           </Tabs.Panel>
           {!hideSolicitudes && (

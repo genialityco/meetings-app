@@ -59,6 +59,7 @@ import { isCheckedInOnDay, resolveCheckInDay } from "../../utils/eventDays";
 import { normalizeTipoAsistente, canDiscoverAttendee, getRoleDisplayLabel } from "../../utils/attendeeRole";
 import { getFieldLabel } from "../../utils/attendeeFields";
 import CompanyLinks from "./CompanyLinks";
+import { CardGridSkeleton } from "./DashboardSkeletons";
 
 const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
 
@@ -171,6 +172,8 @@ function meetingBadgeLabel(m: any, eventConfig: any): string {
 }
 
 interface CompaniesViewProps {
+  /** Primera carga de empresas/asistentes en curso */
+  loading?: boolean;
   filteredAssistants: Assistant[];
   // Lista sin filtrar (rol/interés): solo para reconstruir la tarjeta de la propia empresa.
   allAssistants?: Assistant[];
@@ -201,6 +204,7 @@ interface CompaniesViewProps {
 }
 
 export default function CompaniesView({
+  loading = false,
   filteredAssistants,
   allAssistants,
   companies,
@@ -886,6 +890,9 @@ export default function CompaniesView({
         </Transition>
       </Affix>
 
+      {loading ? (
+        <CardGridSkeleton label="Cargando empresas…" />
+      ) : (
       <Grid gutter="sm">
         {filtered.length > 0 ? (
           filtered.map(({ nit, nitLookup, empresa, logoUrl, fixedTable, pais, asistentes, hasAdvisor, mine, _similarity, _isSemantic, _matchedAssistantId }) => {
@@ -1442,6 +1449,7 @@ export default function CompaniesView({
           </Grid.Col>
         )}
       </Grid>
+      )}
 
       {/* Modal de solicitud de reunión */}
       <MeetingRequestModal

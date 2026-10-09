@@ -21,7 +21,7 @@ import { db, storage } from "../../firebase/firebaseConfig";
 import { AgendaSlot, Assistant, EventPolicies, MeetingContext } from "./types";
 import { sendWhatsAppMessage as sendWhatsAppAPI } from "../../utils/whatsappService";
 import { showNotification } from "@mantine/notifications";
-import { normalizeTipoAsistente, isVendedor } from "../../utils/attendeeRole";
+import { normalizeTipoAsistente, isVendedor, canDiscoverAttendee } from "../../utils/attendeeRole";
 
 export function parseISODate(dateStr: string): Date {
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -905,12 +905,29 @@ export async function checkContactMeetingLimit(params: {
  * sin importar su tipoAsistente. No todas las empresas registran a su contacto
  * como "vendedor" (ej. solo tiene un comprador vinculado), y esa persona debe
  * poder seguir recibiendo/atendiendo solicitudes de reunión dirigidas a su empresa.
+ *
+ * Con `forRequester` se dejan solo los asesores con los que ESE solicitante puede
+ * reunirse según discoveryMode (misma regla del directorio, canDiscoverAttendee):
+ * p. ej. con "sellers_see_all" un comprador solo llega a los vendedores de la
+ * empresa, nunca a un colega comprador registrado bajo el mismo NIT.
  */
-export async function getCompanyAdvisors(eventId: string, companyNit: string): Promise<Assistant[]> {
+export async function getCompanyAdvisors(
+  eventId: string,
+  companyNit: string,
+  forRequester?: { tipo: unknown; discoveryMode?: string },
+): Promise<Assistant[]> {
   const snap = await getDocs(
     query(collection(db, "users"), where("eventId", "==", eventId), where("companyId", "==", companyNit)),
   );
-  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }) as Assistant);
+  const advisors = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }) as Assistant);
+  if (!forRequester) return advisors;
+  return advisors.filter((a) => canDiscoverAttendee(forRequester.discoveryMode, forRequester.tipo, a.tipoAsistente));
+}
+
+/** Rol (tipoAsistente) de un usuario, o "" si no existe / no tiene */
+async function getUserTipo(userId: string): Promise<unknown> {
+  const snap = await getDoc(doc(db, "users", userId));
+  return snap.exists() ? snap.data()?.tipoAsistente : "";
 }
 
 /** Reuniones activas (pendientes o aceptadas) donde `userId` participa, para elegir al asesor de menor carga. */
@@ -940,9 +957,15 @@ export async function notifyCompanyAdvisors(params: {
   dashboardNotif: { title: string; message: string; type: string };
   /** Nombre del evento para la plantilla de aviso (advisorNoticeTemplate) */
   eventName?: string;
+  /** Si se indica, solo se notifica a los asesores con los que este rol puede reunirse */
+  requesterTipo?: unknown;
 }): Promise<void> {
-  const { eventId, companyNit, excludeUids, policies, whatsappBuilder, dashboardNotif, eventName } = params;
-  const advisors = await getCompanyAdvisors(eventId, companyNit);
+  const { eventId, companyNit, excludeUids, policies, whatsappBuilder, dashboardNotif, eventName, requesterTipo } = params;
+  const advisors = await getCompanyAdvisors(
+    eventId,
+    companyNit,
+    requesterTipo !== undefined ? { tipo: requesterTipo, discoveryMode: policies.discoveryMode } : undefined,
+  );
   const targets = advisors.filter((a) => !excludeUids.includes(a.id));
 
   const apiVersion = policies.whatsappApiVersion || "v1";
@@ -1025,7 +1048,7 @@ export interface CreateMeetingRequestDocParams {
  *  (`handled`), así que la UI no debe sumar el error genérico "No se pudo enviar". */
 export class MeetingRequestBlockedError extends Error {
   handled = true;
-  constructor(public reason: "own_company" | "duplicate_pending", message: string) {
+  constructor(public reason: "own_company" | "duplicate_pending" | "role_not_allowed", message: string) {
     super(message);
     this.name = "MeetingRequestBlockedError";
   }
@@ -1075,9 +1098,11 @@ export async function assertMeetingRequestAllowed(params: {
   targetCompanyId?: string | null;
   receiverId?: string | null;
   checkDuplicates?: boolean;
+  /** policies.discoveryMode: si se indica, valida que los roles puedan reunirse */
+  discoveryMode?: string;
 }): Promise<void> {
-  const { eventId, requesterId, receiverId, checkDuplicates = true } = params;
-  const block = (reason: "own_company" | "duplicate_pending", title: string, message: string) => {
+  const { eventId, requesterId, receiverId, checkDuplicates = true, discoveryMode } = params;
+  const block = (reason: MeetingRequestBlockedError["reason"], title: string, message: string) => {
     showNotification({ title, message, color: "orange" });
     throw new MeetingRequestBlockedError(reason, message);
   };
@@ -1101,6 +1126,22 @@ export async function assertMeetingRequestAllowed(params: {
 
   if (myCompany && target && myCompany === target) {
     block("own_company", "No permitido", "No puedes solicitar reuniones a tu propia empresa.");
+  }
+
+  // Roles: misma regla del directorio (canDiscoverAttendee). Ej. con "sellers_see_all"
+  // un comprador solo puede reunirse con vendedores; un vendedor, con ambos.
+  if (discoveryMode && discoveryMode !== "all") {
+    const myTipo = await getUserTipo(requesterId);
+    if (receiverId) {
+      if (!canDiscoverAttendee(discoveryMode, myTipo, await getUserTipo(receiverId))) {
+        block("role_not_allowed", "No permitido", "Tu perfil no puede agendar reuniones con este asistente.");
+      }
+    } else if (params.targetCompanyId) {
+      const eligible = await getCompanyAdvisors(eventId, params.targetCompanyId, { tipo: myTipo, discoveryMode });
+      if (eligible.length === 0) {
+        block("role_not_allowed", "No permitido", "Esta empresa no tiene representantes con los que tu perfil pueda reunirse.");
+      }
+    }
   }
 
   if (!checkDuplicates) return;
@@ -1152,6 +1193,7 @@ export async function createMeetingRequestDoc(
     requesterId,
     targetCompanyId: companyNit || context?.companyId || null,
     receiverId: advisorId || null,
+    discoveryMode: policies.discoveryMode,
   });
 
   let receiverData: any = null;
@@ -1282,12 +1324,14 @@ export async function createMeetingRequestDoc(
       });
     }
   } else {
-    // Solicitud compartida: mismo mensaje (con link de aceptar) para todos los asesores
+    // Solicitud compartida: mismo mensaje (con link de aceptar) para los asesores
+    // con los que el solicitante puede reunirse según su rol
     await notifyCompanyAdvisors({
       eventId,
       companyNit: effectiveCompanyNit!,
       excludeUids: [requesterId],
       policies,
+      requesterTipo: requester?.tipoAsistente ?? "",
       whatsappBuilder: (advisor) => ({
         phone: advisor.telefono || "",
         message:
@@ -1360,7 +1404,12 @@ export async function pickAvailableCompanyAdvisor(
 ): Promise<PickAvailableCompanyAdvisorResult | null> {
   const { eventId, eventConfig, policies, requesterId, companyNit } = params;
 
-  const advisors = (await getCompanyAdvisors(eventId, companyNit)).filter((a) => a.id !== requesterId);
+  const advisors = (
+    await getCompanyAdvisors(eventId, companyNit, {
+      tipo: await getUserTipo(requesterId),
+      discoveryMode: policies.discoveryMode,
+    })
+  ).filter((a) => a.id !== requesterId);
   if (advisors.length === 0) return null;
 
   // Mesa fija de la empresa (fallback cuando el asesor no tiene una propia),

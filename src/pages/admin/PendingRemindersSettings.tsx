@@ -66,9 +66,19 @@ interface Props {
   event: any;
   value: PendingRemindersConfig;
   onChange: (patch: Partial<PendingRemindersConfig>) => void;
+  /** Hay cambios de políticas sin guardar: la simulación/envío leen lo guardado */
+  hasUnsavedChanges?: boolean;
+  /** Guarda las políticas; devuelve false si no se pudo (validación o error) */
+  onSaveRequest?: () => Promise<boolean>;
 }
 
-export default function PendingRemindersSettings({ event, value, onChange }: Props) {
+export default function PendingRemindersSettings({
+  event,
+  value,
+  onChange,
+  hasUnsavedChanges = false,
+  onSaveRequest,
+}: Props) {
   const [templates, setTemplates] = useState<WaTemplate[]>([]);
   const [templatesError, setTemplatesError] = useState<string | null>(null);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
@@ -77,6 +87,14 @@ export default function PendingRemindersSettings({ event, value, onChange }: Pro
   const [runError, setRunError] = useState<string | null>(null);
 
   const showWhatsapp = value.pendingRemindersEnabled && value.pendingRemindersWhatsapp;
+
+  // Un resultado anterior deja de ser válido en cuanto cambia la configuración
+  // (p. ej. un "No hay plantilla configurada" de antes de elegirla).
+  const valueJson = JSON.stringify(value);
+  useEffect(() => {
+    setResult(null);
+    setRunError(null);
+  }, [valueJson]);
 
   useEffect(() => {
     if (!showWhatsapp || !event?.id || templates.length) return;
@@ -100,6 +118,8 @@ export default function PendingRemindersSettings({ event, value, onChange }: Pro
     setRunning(dryRun ? "dry" : "send");
     setRunError(null);
     try {
+      // La función lee la configuración guardada en Firestore: guardar primero
+      if (hasUnsavedChanges && onSaveRequest && !(await onSaveRequest())) return;
       setResult({ dryRun, data: await runReminders(event.id, dryRun) });
     } catch (e: any) {
       setRunError(e.message);
@@ -112,7 +132,10 @@ export default function PendingRemindersSettings({ event, value, onChange }: Pro
   const lastRunDate = lastRun?.at?.toDate ? lastRun.at.toDate() : null;
 
   return (
-    <Paper p="md" withBorder>
+    <Paper p="md" withBorder radius="md">
+      <Text size="xs" fw={700} tt="uppercase" c="dimmed" mb="sm">
+        Recordatorios de solicitudes pendientes
+      </Text>
       <Switch
         label="Recordatorio automático de solicitudes pendientes"
         description="Cada N horas envía un resumen a quien tenga solicitudes de reunión por aceptar: al asesor si la solicitud es directa, o a todos los asesores de la empresa si se envió a la empresa."
@@ -237,16 +260,18 @@ export default function PendingRemindersSettings({ event, value, onChange }: Pro
 
       <Group mt="md" gap="xs">
         <Button size="xs" variant="light" loading={running === "dry"} onClick={() => handleRun(true)}>
-          Simular (ver destinatarios)
+          {hasUnsavedChanges ? "Guardar y simular" : "Simular (ver destinatarios)"}
         </Button>
         {value.pendingRemindersEnabled && (
           <Button size="xs" variant="outline" color="green" loading={running === "send"} onClick={() => handleRun(false)}>
-            Enviar ahora
+            {hasUnsavedChanges ? "Guardar y enviar ahora" : "Enviar ahora"}
           </Button>
         )}
       </Group>
-      <Text size="xs" c="dimmed" mt={4}>
-        La simulación y el envío manual usan la configuración guardada: guarda las políticas antes de probar.
+      <Text size="xs" c={hasUnsavedChanges ? "yellow.8" : "dimmed"} mt={4}>
+        {hasUnsavedChanges
+          ? "Tienes cambios sin guardar: se guardarán las políticas antes de simular o enviar."
+          : "La simulación y el envío manual usan la configuración guardada."}
       </Text>
 
       {lastRunDate && (

@@ -12,9 +12,7 @@ import {
   Paper,
   ThemeIcon,
   Box,
-  useMantineTheme,
-  Loader,
-  Center,
+  useMantineTheme,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import { useState, useEffect } from "react";
@@ -23,6 +21,8 @@ import type { Assistant, MeetingContext, EventPolicies } from "./types";
 import MeetingRequestModal from "./MeetingRequestModal";
 import { collection, onSnapshot, query, where, updateDoc, doc, getDoc } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
+import { CardGridSkeleton } from "./DashboardSkeletons";
+import { canDiscoverAttendee } from "../../utils/attendeeRole";
 
 interface Match {
   id: string;
@@ -237,14 +237,16 @@ export default function MatchesTab({
   };
 
   // Filtrar solo matches pendientes
-  const pendingMatches = matches.filter((m) => m.status === "pending");
+  // Solo matches con personas que mi rol puede ver (misma regla del directorio):
+  // p. ej. con "sellers_see_all" un comprador solo ve vendedores
+  const pendingMatches = matches.filter(
+    (m) =>
+      m.status === "pending" &&
+      canDiscoverAttendee(policies?.discoveryMode, currentUser?.data?.tipoAsistente, m.userRole),
+  );
 
   if (loading) {
-    return (
-      <Center h={400}>
-        <Loader size="lg" />
-      </Center>
-    );
+    return <CardGridSkeleton label="Buscando tus mejores coincidencias…" />;
   }
 
   if (pendingMatches.length === 0) {

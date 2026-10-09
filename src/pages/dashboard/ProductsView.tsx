@@ -20,8 +20,12 @@ import type { Product, Company, Assistant, MeetingContext } from "./types";
 import MeetingRequestModal from "./MeetingRequestModal";
 import ProductCard from "./ProductCard";
 import { buildPendingCompanyKeys, normCompanyKey } from "./meetingSlotEngine";
+import { CardGridSkeleton } from "./DashboardSkeletons";
+import { canDiscoverAttendee } from "../../utils/attendeeRole";
 
 interface ProductsViewProps {
+  /** Primera carga de productos/asistentes en curso */
+  loading?: boolean;
   products: Product[];
   companies: Company[];
   filteredAssistants: Assistant[]; // (se mantiene por compatibilidad aunque no se use aquí)
@@ -49,6 +53,7 @@ interface ProductsViewProps {
 const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
 
 export default function ProductsView({
+  loading = false,
   products,
   companies,
   solicitarReunionHabilitado,
@@ -177,10 +182,23 @@ export default function ProductsView({
     return () => clearTimeout(timeoutId);
   }, [searchTerm, eventId]);
 
+  // Productos visibles según rol: solo los de dueños que mi rol puede ver en el
+  // directorio (p. ej. con "sellers_see_all" un comprador solo ve productos de vendedores)
+  const roleVisibleProducts = useMemo(() => {
+    const myTipo = currentUser?.data?.tipoAsistente;
+    if (!policies?.discoveryMode || policies.discoveryMode === "all") return products || [];
+    const byId = new Map((allAssistants || []).map((a) => [a.id, a]));
+    return (products || []).filter((p) => {
+      const owner = p.ownerUserId ? byId.get(p.ownerUserId) : undefined;
+      // Sin dueño identificable (o el propio usuario) se muestra igual
+      return !owner || canDiscoverAttendee(policies.discoveryMode, myTipo, owner.tipoAsistente);
+    });
+  }, [products, allAssistants, currentUser?.data?.tipoAsistente, policies?.discoveryMode]);
+
   const filteredProducts = useMemo(() => {
     const t = searchTerm.trim().toLowerCase();
     
-    let baseProducts = products || [];
+    let baseProducts = roleVisibleProducts;
     if (categoryFilter) {
       baseProducts = baseProducts.filter(p => p.category === categoryFilter);
     }
@@ -226,7 +244,7 @@ export default function ProductsView({
     }
 
     return [...exactMatches, ...semanticMatches];
-  }, [products, searchTerm, categoryFilter, vectorResults, affinityScores]);
+  }, [roleVisibleProducts, searchTerm, categoryFilter, vectorResults, affinityScores]);
 
   const handleOpenModal = async (
     assistantId: string,
@@ -486,7 +504,9 @@ export default function ProductsView({
       </Paper>
 
       {/* Resultados */}
-      {filteredProducts.length === 0 ? (
+      {loading ? (
+        <CardGridSkeleton label="Cargando productos…" />
+      ) : filteredProducts.length === 0 ? (
         <Paper withBorder radius="lg" p="lg">
           <Stack gap={6}>
             <Title order={5}>No hay resultados</Title>

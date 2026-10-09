@@ -45,7 +45,7 @@ import {
   runTransaction,
   setDoc,
 } from "firebase/firestore";
-import { DEFAULT_SURVEY_FIELDS } from "./ConfigureSurveyModal";
+import { DEFAULT_SURVEY_FIELDS, getRatingData } from "./ConfigureSurveyModal";
 import { useParams } from "react-router-dom";
 import QuickMeetingModal from "./QuickMeetingModal";
 import EditMeetingModal from "./EditMeetingModal";
@@ -65,7 +65,9 @@ import {
   IconInfoCircle,
   IconCopy,
   IconBrandWhatsapp,
+  IconSearch,
 } from "@tabler/icons-react";
+import MatrixStatsHeader from "./MatrixStatsHeader";
 
 // ----------- UTILIDADES -----------
 
@@ -1935,9 +1937,7 @@ const MatrixPage = () => {
         (config?.config?.eventDate ? [config.config.eventDate] : []),
     ),
   ];
-  const isMultiDay = eventDates.length > 1;
-
-  // Contador de citas (reuniones aceptadas) por día, para el selector de día y el resumen del día activo
+  // Contador de citas (reuniones aceptadas) por día, para el selector de día del encabezado
   const meetingsPerDay = useMemo(() => {
     const counts = {};
     meetings.forEach((m) => {
@@ -1948,51 +1948,33 @@ const MatrixPage = () => {
     });
     return counts;
   }, [meetings, selectedDate]);
-  const citasDelDia = selectedDate ? meetingsPerDay[selectedDate] || 0 : 0;
 
   return (
     <Container fluid>
-      <Title order={2} mt="md" mb="md" align="center">
-        Operación Mesas — {config?.eventName || "Evento"}
-      </Title>
-
-      {/* Selector de día para eventos multi-día */}
-      {isMultiDay && (
-        <Flex justify="center" align="flex-end" gap="sm" mb="md">
-          <Select
-            label="Seleccionar día"
-            placeholder="Escoge un día"
-            data={eventDates.map((date) => ({
-              value: date,
-              label: `${formatDate(date)} — ${meetingsPerDay[date] || 0} citas`,
-            }))}
-            value={selectedDate}
-            onChange={setSelectedDate}
-            style={{ width: "100%", maxWidth: 320 }}
-          />
-        </Flex>
-      )}
-
-      {selectedDate && (
-        <Flex justify="center" mb="md">
-          <Badge size="lg" variant="light" color="teal">
-            {citasDelDia} {citasDelDia === 1 ? "cita" : "citas"} el{" "}
-            {formatDate(selectedDate)}
-          </Badge>
-        </Flex>
-      )}
-
-      <Flex justify="center" mb="md" px="md">
+      <MatrixStatsHeader
+        event={config}
+        meetings={meetings}
+        agenda={agenda}
+        attendees={asistentes}
+        surveys={surveys}
+        selectedDate={selectedDate}
+        eventDates={eventDates}
+        onDateChange={setSelectedDate}
+        meetingsPerDay={meetingsPerDay}
+        now={now}
+        formatDate={formatDate}
+      >
         <TextInput
           placeholder="Buscar asistente por nombre, empresa o teléfono"
+          leftSection={<IconSearch size={16} />}
           value={userSearch}
           onChange={(e) => setUserSearch(e.currentTarget.value)}
+          radius="md"
           style={{ width: "100%", maxWidth: 520 }}
-          clearable
         />
-      </Flex>
+      </MatrixStatsHeader>
 
-      <Tabs defaultValue="mesas">
+      <Tabs defaultValue="mesas" variant="pills" radius="md">
         <Tabs.List>
           <Tabs.Tab value="mesas">Por Mesas</Tabs.Tab>
           <Tabs.Tab value="usuarios">Por Usuarios</Tabs.Tab>
@@ -2000,7 +1982,8 @@ const MatrixPage = () => {
 
         {/* Panel Mesas */}
         <Tabs.Panel value="mesas" pt="md">
-          <Flex gap="md" mb="md" wrap="wrap" align="center">
+          <Paper withBorder radius="md" p="xs" px="md" mb="md">
+          <Flex gap="md" wrap="wrap" align="center">
             <Select
               placeholder="Todas las mesas"
               value={selectedTableFilter}
@@ -2019,8 +2002,14 @@ const MatrixPage = () => {
                 setShowCurrentTimeOnly(e.currentTarget.checked)
               }
             />
+            <Group gap="xs" ml="auto" visibleFrom="sm">
+              <Badge variant="dot" color="green">Reunión aceptada</Badge>
+              <Badge variant="dot" color="orange">Cupo ocupado</Badge>
+              <Badge variant="dot" color="gray">Disponible</Badge>
+            </Group>
           </Flex>
-          <div style={{ height: "calc(100vh - 280px)" }}>
+          </Paper>
+          <div style={{ height: "calc(100vh - 200px)" }}>
             <Virtuoso
               style={{ height: "100%" }}
               data={chunkedMesas}
@@ -2041,15 +2030,29 @@ const MatrixPage = () => {
                       style={{
                         flex: 1,
                         minWidth: 0,
-                        background: "#f9fafb",
+                        background: "#fff",
                         border: "1px solid #e5e7eb",
+                        borderTop: "3px solid var(--mantine-color-blue-5)",
                         boxShadow: "0 2px 8px #0001",
                       }}
                     >
-                      <Group justify="space-between" mb="xs" align="center">
-                    <Title order={5} style={{ letterSpacing: 0.5 }}>
+                      <Group justify="space-between" mb="xs" align="center" wrap="nowrap">
+                    <Title order={5} style={{ letterSpacing: 0.5 }} lineClamp={1}>
                       {config?.config?.tableNames?.[ti] || `Mesa ${ti + 1}`}
                     </Title>
+                    {(() => {
+                      const ocupadas = table.filter((c) => c?.status === "accepted").length;
+                      return (
+                        <Badge
+                          size="sm"
+                          variant="light"
+                          color={ocupadas > 0 ? "teal" : "gray"}
+                          style={{ flexShrink: 0 }}
+                        >
+                          {ocupadas}/{table.length} citas
+                        </Badge>
+                      );
+                    })()}
                   </Group>
                   <Divider mb="sm" />
                   <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
@@ -3778,10 +3781,7 @@ const MatrixPage = () => {
                     label={field.label}
                     value={val}
                     onChange={(v) => onChange(v || "")}
-                    data={["1", "2", "3", "4", "5"].map((n) => ({
-                      value: n,
-                      label: `${n} ⭐`,
-                    }))}
+                    data={getRatingData(field)}
                     required={field.required}
                     radius="md"
                   />

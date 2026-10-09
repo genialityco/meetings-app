@@ -12,7 +12,7 @@ import { signInAnonymously } from "firebase/auth";
 import { auth, db } from "../firebase/firebaseConfig";
 import { UserContext } from "../context/UserContext";
 import { getTableLabel, getCompanyAdvisors, computeAvailableSlots } from "./dashboard/meetingSlotEngine";
-import { isVendedor } from "../utils/attendeeRole";
+import { isVendedor, canDiscoverAttendee } from "../utils/attendeeRole";
 import {
   Loader,
   Container,
@@ -221,6 +221,23 @@ export default function MeetingAutoResponse() {
           );
           setTimeout(() => navigate(`/event/${eventId}`), 3000);
           return false;
+        }
+
+        // Rol: solo puede reclamarla un asesor con el que el solicitante pueda
+        // reunirse (misma regla del directorio, policies.discoveryMode)
+        if (action === "accept") {
+          const [evSnap, reqSnap] = await Promise.all([
+            getDoc(doc(db, "events", eventId)),
+            getDoc(doc(db, "users", requesterId)),
+          ]);
+          const mode = evSnap.exists() ? evSnap.data().config?.policies?.discoveryMode : undefined;
+          if (!canDiscoverAttendee(mode, myData?.tipoAsistente, reqSnap.exists() ? reqSnap.data().tipoAsistente : "")) {
+            setValidationError(
+              "Tu perfil no puede atender esta solicitud; debe aceptarla un compañero de tu empresa con el rol correspondiente."
+            );
+            setTimeout(() => navigate(`/dashboard/${eventId}`), 4000);
+            return false;
+          }
         }
       }
 
