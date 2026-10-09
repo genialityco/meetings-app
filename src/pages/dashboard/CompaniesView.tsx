@@ -412,11 +412,13 @@ export default function CompaniesView({
   }, [companiesData]);
 
   // Roles presentes en el listado: el filtro por rol solo se ofrece si hay
-  // empresas de ambos roles (p. ej. un comprador que solo ve expositores no lo necesita)
+  // empresas de ambos roles (p. ej. un comprador que solo ve expositores no lo necesita).
+  // Se excluye mi propia empresa: se muestra siempre (con mis colegas de mi rol) y haría
+  // que un comprador que solo descubre expositores viera el filtro sin sentido.
   const availableRoles = useMemo(() => {
     const set = new Set<string>();
     companiesData.forEach((c) =>
-      c.asistentes.forEach((a: any) => {
+      !c.mine && c.asistentes.forEach((a: any) => {
         const r = normalizeTipoAsistente(a.tipoAsistente);
         if (r) set.add(r);
       }),
