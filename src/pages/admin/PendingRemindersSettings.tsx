@@ -43,17 +43,18 @@ interface RunResult {
   emailSent?: number;
   emailFailed?: number;
   templateError?: string | null;
+  sendToAll?: boolean;
   preview?: { userId: string; nombre: string; empresa: string; pendientes: number; whatsapp: string | null; email: string | null }[];
 }
 
-async function runReminders(eventId: string, dryRun: boolean): Promise<RunResult> {
+async function runReminders(eventId: string, dryRun: boolean, sendToAll = false): Promise<RunResult> {
   const user = auth.currentUser;
   if (!user) throw new Error("Debes iniciar sesión como administrador");
   const token = await user.getIdToken();
   const res = await fetch(RUN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ eventId, dryRun }),
+    body: JSON.stringify({ eventId, dryRun, sendToAll }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
@@ -82,7 +83,7 @@ export default function PendingRemindersSettings({
   const [templates, setTemplates] = useState<WaTemplate[]>([]);
   const [templatesError, setTemplatesError] = useState<string | null>(null);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
-  const [running, setRunning] = useState<"dry" | "send" | null>(null);
+  const [running, setRunning] = useState<"dry" | "send" | "all" | null>(null);
   const [result, setResult] = useState<{ dryRun: boolean; data: RunResult } | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
 
@@ -96,15 +97,26 @@ export default function PendingRemindersSettings({
     setRunError(null);
   }, [valueJson]);
 
-  useEffect(() => {
-    if (!showWhatsapp || !event?.id || templates.length) return;
+  const loadTemplates = () => {
+    if (!event?.id || templates.length || loadingTemplates) return;
     setLoadingTemplates(true);
     setTemplatesError(null);
     fetchWaTemplates(event.id)
       .then(setTemplates)
       .catch((e) => setTemplatesError(e.message))
       .finally(() => setLoadingTemplates(false));
-  }, [showWhatsapp, event?.id, templates.length]);
+  };
+
+  useEffect(() => {
+    if (showWhatsapp) loadTemplates();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showWhatsapp, event?.id]);
+
+  const templateOptions = templates.map((t) => ({ value: templateKey(t), label: `${t.name} (${t.language})` }));
+  const onTemplateChange = (v: string | null) => {
+    const [name, language] = (v || "").split("|");
+    onChange({ pendingRemindersTemplate: v ? { name, language } : null });
+  };
 
   const selected = value.pendingRemindersTemplate
     ? templates.find((t) => templateKey(t) === templateKey(value.pendingRemindersTemplate!))
@@ -121,6 +133,37 @@ export default function PendingRemindersSettings({
       // La función lee la configuración guardada en Firestore: guardar primero
       if (hasUnsavedChanges && onSaveRequest && !(await onSaveRequest())) return;
       setResult({ dryRun, data: await runReminders(event.id, dryRun) });
+    } catch (e: any) {
+      setRunError(e.message);
+    } finally {
+      setRunning(null);
+    }
+  };
+
+  // Envío manual a todos los que tienen solicitudes por aceptar: simula primero
+  // para mostrar a cuántos llega y pide confirmación antes de enviar.
+  const handleSendToAll = async () => {
+    if (!event?.id) return;
+    setRunning("all");
+    setRunError(null);
+    try {
+      if (hasUnsavedChanges && onSaveRequest && !(await onSaveRequest())) return;
+      const preview = await runReminders(event.id, true, true);
+      if (preview.skipped || !preview.due) {
+        setResult({ dryRun: true, data: preview.skipped ? preview : { ...preview, skipped: "No hay nadie con solicitudes pendientes por aceptar" } });
+        return;
+      }
+      const withoutPhone = (preview.preview || []).filter((p) => !p.whatsapp).length;
+      const ok = window.confirm(
+        `Se enviará el WhatsApp "${value.pendingRemindersTemplate?.name}" a ${preview.due} persona(s) con solicitudes pendientes` +
+          (withoutPhone ? ` (${withoutPhone} sin teléfono válido no lo recibirán)` : "") +
+          ". No se envía correo. ¿Continuar?",
+      );
+      if (!ok) {
+        setResult({ dryRun: true, data: preview });
+        return;
+      }
+      setResult({ dryRun: false, data: await runReminders(event.id, false, true) });
     } catch (e: any) {
       setRunError(e.message);
     } finally {
@@ -207,12 +250,9 @@ export default function PendingRemindersSettings({
               <Select
                 label="Plantilla de WhatsApp (aprobada en Meta)"
                 placeholder={loadingTemplates ? "Cargando plantillas…" : "Selecciona una plantilla"}
-                data={templates.map((t) => ({ value: templateKey(t), label: `${t.name} (${t.language})` }))}
+                data={templateOptions}
                 value={value.pendingRemindersTemplate ? templateKey(value.pendingRemindersTemplate) : null}
-                onChange={(v) => {
-                  const [name, language] = (v || "").split("|");
-                  onChange({ pendingRemindersTemplate: v ? { name, language } : null });
-                }}
+                onChange={onTemplateChange}
                 searchable
                 clearable
                 error={templatesError}
@@ -274,6 +314,46 @@ export default function PendingRemindersSettings({
           : "La simulación y el envío manual usan la configuración guardada."}
       </Text>
 
+      <Paper withBorder radius="sm" p="sm" mt="md">
+        <Text size="sm" fw={600}>
+          Enviar recordatorio a todos los pendientes
+        </Text>
+        <Text size="xs" c="dimmed" mb="xs">
+          Envía ahora el WhatsApp de recordatorio a todas las personas que tienen solicitudes de reunión por aceptar,
+          sin esperar el intervalo ni la antigüedad mínima y aunque el recordatorio automático esté apagado. Solo
+          WhatsApp (no envía correo).
+        </Text>
+        {value.pendingRemindersTemplate ? (
+          <Text size="xs" mb="xs">
+            Plantilla: <code>{value.pendingRemindersTemplate.name}</code> ({value.pendingRemindersTemplate.language})
+          </Text>
+        ) : (
+          <Select
+            size="xs"
+            mb="xs"
+            label="Plantilla de WhatsApp"
+            placeholder={loadingTemplates ? "Cargando plantillas…" : "Selecciona la plantilla del recordatorio"}
+            data={templateOptions}
+            value={null}
+            onDropdownOpen={loadTemplates}
+            onChange={onTemplateChange}
+            searchable
+            error={templatesError}
+            nothingFoundMessage={loadingTemplates ? "Cargando…" : "Sin plantillas"}
+            maw={360}
+          />
+        )}
+        <Button
+          size="xs"
+          color="green"
+          loading={running === "all"}
+          disabled={!value.pendingRemindersTemplate || (running !== null && running !== "all")}
+          onClick={handleSendToAll}
+        >
+          {hasUnsavedChanges ? "Guardar y enviar a todos los pendientes" : "Enviar a todos los pendientes"}
+        </Button>
+      </Paper>
+
       {lastRunDate && (
         <Text size="xs" c="dimmed" mt="xs">
           Último envío: {lastRunDate.toLocaleString("es-CO")} — WhatsApp {lastRun.whatsappSent ?? 0} ok /{" "}
@@ -311,11 +391,12 @@ export default function PendingRemindersSettings({
               </Group>
               {!result.dryRun && (
                 <Text size="sm">
-                  WhatsApp: {result.data.whatsappSent} enviados, {result.data.whatsappFailed} con error · Correo:{" "}
-                  {result.data.emailSent} enviados, {result.data.emailFailed} con error
+                  WhatsApp: {result.data.whatsappSent} enviados, {result.data.whatsappFailed} con error
+                  {!result.data.sendToAll &&
+                    ` · Correo: ${result.data.emailSent} enviados, ${result.data.emailFailed} con error`}
                 </Text>
               )}
-              {result.data.templateError && value.pendingRemindersWhatsapp && (
+              {result.data.templateError && (value.pendingRemindersWhatsapp || result.data.sendToAll) && (
                 <Alert color="orange" p="xs">
                   WhatsApp: {result.data.templateError}
                 </Alert>

@@ -331,10 +331,13 @@ async function sendEmail(to, subject, html) {
 // Proceso de un evento
 // ----------------------------------------------------------------------------
 /**
- * @param {{ dryRun?: boolean, ignoreSchedule?: boolean }} opts
+ * @param {{ dryRun?: boolean, ignoreSchedule?: boolean, sendToAll?: boolean }} opts
  *   dryRun: no envía ni escribe, devuelve a quién se enviaría.
  *   ignoreSchedule: no aplica ventana horaria ni fin de evento (el intervalo por
  *   destinatario se sigue respetando para no duplicar envíos).
+ *   sendToAll: envío manual "a todos": solo WhatsApp con la plantilla configurada,
+ *   a todos los que tengan solicitudes pendientes, sin intervalo por destinatario
+ *   ni antigüedad mínima, aunque el recordatorio automático esté apagado.
  */
 export async function processEventReminders(eventId, opts = {}) {
   const db = getFirestore();
@@ -342,9 +345,14 @@ export async function processEventReminders(eventId, opts = {}) {
   const eventSnap = await eventRef.get();
   if (!eventSnap.exists) return { eventId, skipped: "Evento no encontrado" };
   const event = eventSnap.data();
-  const cfg = readConfig(event.config?.policies);
+  let cfg = readConfig(event.config?.policies);
 
-  if (!opts.dryRun && !cfg.enabled) return { eventId, skipped: "Recordatorios desactivados" };
+  if (opts.sendToAll) {
+    if (!cfg.template) return { eventId, skipped: "Selecciona y guarda la plantilla de WhatsApp del recordatorio" };
+    cfg = { ...cfg, minAgeHours: 0, whatsapp: true, email: false };
+  } else if (!opts.dryRun && !cfg.enabled) {
+    return { eventId, skipped: "Recordatorios desactivados" };
+  }
 
   const now = nowInBogota();
   if (!opts.ignoreSchedule) {
@@ -361,10 +369,12 @@ export async function processEventReminders(eventId, opts = {}) {
   const stateRefs = recipients.map((r) => eventRef.collection("pendingReminders").doc(r.user.id));
   const states = stateRefs.length ? await db.getAll(...stateRefs) : [];
   const intervalMs = cfg.everyHours * 3600 * 1000 - INTERVAL_TOLERANCE_MS;
-  const due = recipients.filter((r, i) => {
-    const last = toDate(states[i]?.data()?.lastSentAt);
-    return !last || Date.now() - last.getTime() >= intervalMs;
-  });
+  const due = opts.sendToAll
+    ? recipients
+    : recipients.filter((r, i) => {
+        const last = toDate(states[i]?.data()?.lastSentAt);
+        return !last || Date.now() - last.getTime() >= intervalMs;
+      });
 
   let template = null;
   let templateError = null;
@@ -382,6 +392,7 @@ export async function processEventReminders(eventId, opts = {}) {
   const origin = PUBLIC_APP_URL.value().replace(/\/+$/, "");
   const summary = {
     eventId,
+    sendToAll: !!opts.sendToAll,
     pendingTotal,
     skippedRecent,
     recipientsWithPending: recipients.length,
@@ -483,6 +494,7 @@ export async function processEventReminders(eventId, opts = {}) {
           emailSent: summary.emailSent,
           emailFailed: summary.emailFailed,
           templateError: templateError || null,
+          sendToAll: !!opts.sendToAll,
         },
       },
       { merge: true }
@@ -528,6 +540,8 @@ export const sendPendingRequestReminders = onSchedule(
  * POST { eventId, dryRun?: boolean } (Authorization: Bearer <idToken de admin>)
  * dryRun=true: simula y devuelve a quién se enviaría ahora (sin ventana horaria).
  * dryRun=false: envía ya (respeta el intervalo por destinatario, ignora la ventana horaria).
+ * sendToAll=true: solo WhatsApp a todos los que tengan pendientes, sin intervalo ni
+ * antigüedad mínima (botón "Enviar a todos los pendientes" de Políticas).
  */
 export const runPendingReminders = onRequest(
   {
@@ -542,7 +556,7 @@ export const runPendingReminders = onRequest(
       res.status(405).json({ error: "Method not allowed" });
       return;
     }
-    const { eventId, dryRun = true } = req.body || {};
+    const { eventId, dryRun = true, sendToAll = false } = req.body || {};
     if (!eventId) {
       res.status(400).json({ error: "Falta eventId" });
       return;
@@ -554,7 +568,11 @@ export const runPendingReminders = onRequest(
       return;
     }
     try {
-      const result = await processEventReminders(String(eventId), { dryRun: dryRun !== false, ignoreSchedule: true });
+      const result = await processEventReminders(String(eventId), {
+        dryRun: dryRun !== false,
+        ignoreSchedule: true,
+        sendToAll: sendToAll === true,
+      });
       res.status(200).json(result);
     } catch (err) {
       console.error("runPendingReminders error:", err);

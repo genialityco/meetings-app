@@ -99,7 +99,6 @@ interface RankingRow {
   recordatorios: number;
   solicitudes: number;
   aceptadas: number;
-  atendidasPorOtro: number;
   rechazadas: number;
   pendientes: number;
   canceladas: number;
@@ -184,6 +183,8 @@ export default function WaTrackingPage() {
   const [rankingMode, setRankingMode] = useState<"pending" | "noAccept" | "all">("pending");
   const [rankingSearch, setRankingSearch] = useState("");
   const [requesterMode, setRequesterMode] = useState<"all" | "withPending">("all");
+  const [receiverView, setReceiverView] = useState<"attendee" | "company">("attendee");
+  const [requesterView, setRequesterView] = useState<"attendee" | "company">("attendee");
   const [requesterSearch, setRequesterSearch] = useState("");
 
   const loadData = async () => {
@@ -359,31 +360,62 @@ export default function WaTrackingPage() {
     };
   }, [event, agenda, meetings, users, companies]);
 
+  // ── Agrupación de las listas: por asistente o por empresa ──
+  // Por asistente: cada persona cuenta solo las solicitudes dirigidas a ella
+  // (receiverId); las enviadas a una empresa y aún sin reclamar no se reparten
+  // entre sus miembros. Por empresa: cada solicitud cuenta una vez para la
+  // empresa del destinatario (o la empresa a la que se envió).
+  const companyKeyOfUser = (uid: string) => {
+    const cid = users.get(uid)?.companyId;
+    return cid ? `c:${cid}` : `u:${uid}`;
+  };
+  const groupLabel = (key: string) => {
+    if (key.startsWith("u:")) {
+      const u = users.get(key.slice(2));
+      return { nombre: u?.nombre || "(asistente eliminado)", sub: "Sin empresa" };
+    }
+    const cid = key.slice(2);
+    const c = companies.get(cid);
+    const members = [...users.values()].filter((u) => u.companyId === cid);
+    return {
+      nombre: c?.razonSocial || members[0]?.empresa || cid,
+      sub: `${members.length} asistente${members.length === 1 ? "" : "s"}`,
+    };
+  };
+
+  // Solicitudes enviadas a una empresa que nadie ha reclamado aún (no aparecen por asistente)
+  const unassignedCompanyPending = useMemo(() => {
+    let n = 0;
+    meetings.forEach((m) => {
+      if (!m.isExternal && m.requesterId && !m.receiverId && m.companyId && m.status === "pending") n++;
+    });
+    return n;
+  }, [meetings]);
+
   // ── Ranking de destinatarios de solicitudes ──
   // Se arma con el historial de reuniones del evento (sirve para eventos
   // anteriores al tracking) y se completa con los WhatsApp registrados y los
-  // recordatorios de pendientes. Destinatarios de una solicitud:
-  //  - directa: receiverId
-  //  - a empresa sin reclamar (receiverId null): los asistentes de esa empresa
-  //  - cualquiera a la que se le haya enviado un WhatsApp de solicitud o recordatorio
+  // recordatorios de pendientes.
   const ranking = useMemo<RankingRow[]>(() => {
+    const byCompany = receiverView === "company";
+    const keyOfUser = (uid: string) => (byCompany ? companyKeyOfUser(uid) : uid);
     const rows = new Map<string, RankingRow & { meetingSet: Set<string> }>();
-    const rowFor = (userId: string, phone = "") => {
-      let r = rows.get(userId);
+    const rowFor = (key: string, phone = "") => {
+      let r = rows.get(key);
       if (!r) {
-        const u = users.get(userId);
+        const u = byCompany ? undefined : users.get(key);
+        const label = byCompany ? groupLabel(key) : null;
         r = {
-          userId,
-          nombre: u?.nombre || "(asistente eliminado)",
-          empresa: u?.empresa || "",
-          telefono: u?.telefono || phone,
+          userId: key,
+          nombre: label?.nombre || u?.nombre || "(asistente eliminado)",
+          empresa: label?.sub || u?.empresa || "",
+          telefono: byCompany ? "" : u?.telefono || phone,
           notificaciones: 0,
           recibidas: 0,
           leidas: 0,
-          recordatorios: reminderCounts.get(userId) || 0,
+          recordatorios: 0,
           solicitudes: 0,
           aceptadas: 0,
-          atendidasPorOtro: 0,
           rechazadas: 0,
           pendientes: 0,
           canceladas: 0,
@@ -391,57 +423,49 @@ export default function WaTrackingPage() {
           capacidad: null,
           meetingSet: new Set(),
         };
-        rows.set(userId, r);
+        rows.set(key, r);
       }
       return r;
     };
 
-    const byCompany = new Map<string, string[]>();
-    users.forEach((u, id) => {
-      if (!u.companyId) return;
-      if (!byCompany.has(u.companyId)) byCompany.set(u.companyId, []);
-      byCompany.get(u.companyId)!.push(id);
-    });
-
     meetings.forEach((m, id) => {
       if (m.isExternal || !m.requesterId) return;
       if (m.receiverId) {
-        if (m.receiverId !== m.requesterId) rowFor(m.receiverId).meetingSet.add(id);
-      } else if (m.companyId) {
-        (byCompany.get(m.companyId) || [])
-          .filter((uid) => uid !== m.requesterId)
-          .forEach((uid) => rowFor(uid).meetingSet.add(id));
+        if (m.receiverId !== m.requesterId) rowFor(keyOfUser(m.receiverId)).meetingSet.add(id);
+      } else if (byCompany && m.companyId) {
+        rowFor(`c:${m.companyId}`).meetingSet.add(id);
       }
     });
 
+    // Recordatorios: el máximo entre el historial de cada persona y los registrados
+    const reminders = new Map<string, number>(reminderCounts);
     const trackedReminders = new Map<string, number>();
     for (const m of messages) {
       if (!m.userId || !isOut(m.status)) continue;
       if (m.type === "meeting_request") {
-        const r = rowFor(m.userId, m.to);
+        const r = rowFor(keyOfUser(m.userId), m.to);
         r.notificaciones++;
         if (isReceived(m.status)) r.recibidas++;
         if (m.status === "read") r.leidas++;
-        if (m.meetingId) r.meetingSet.add(m.meetingId);
       } else if (m.type === "pending_reminder") {
-        const r = rowFor(m.userId, m.to);
         trackedReminders.set(m.userId, (trackedReminders.get(m.userId) || 0) + 1);
-        (m.meetingIds || []).forEach((mid) => r.meetingSet.add(mid));
       }
     }
+    trackedReminders.forEach((n, uid) => reminders.set(uid, Math.max(reminders.get(uid) || 0, n)));
+    reminders.forEach((n, uid) => {
+      const r = rows.get(keyOfUser(uid));
+      if (r) r.recordatorios += n;
+    });
 
     return [...rows.values()]
       .map(({ meetingSet, ...r }) => {
-        r.recordatorios = Math.max(r.recordatorios, trackedReminders.get(r.userId) || 0);
         meetingSet.forEach((id) => {
           const mtg = meetings.get(id);
           if (!mtg) return;
           r.solicitudes++;
           switch (meetingOutcome(mtg)) {
             case "accepted":
-              // Solicitudes a empresa: la acepta (reclama) un solo asesor
-              if (!mtg.receiverId || mtg.receiverId === r.userId) r.aceptadas++;
-              else r.atendidasPorOtro++;
+              r.aceptadas++;
               break;
             case "rejected":
               r.rechazadas++;
@@ -455,7 +479,7 @@ export default function WaTrackingPage() {
           }
         });
         r.sinAceptar = r.rechazadas + r.pendientes;
-        r.capacidad = computeCapacity(r.userId);
+        r.capacidad = byCompany ? null : computeCapacity(r.userId);
         return r;
       })
       .filter((r) => r.solicitudes > 0 || r.notificaciones > 0)
@@ -466,7 +490,8 @@ export default function WaTrackingPage() {
           a.aceptadas - b.aceptadas ||
           b.notificaciones + b.recordatorios - (a.notificaciones + a.recordatorios),
       );
-  }, [messages, meetings, users, reminderCounts, computeCapacity]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, meetings, users, companies, reminderCounts, computeCapacity, receiverView]);
 
   const visibleRanking = useMemo(() => {
     const q = rankingSearch.trim().toLowerCase();
@@ -483,20 +508,23 @@ export default function WaTrackingPage() {
   // Historial completo de reuniones (requesterId). Las aceptadas pueden incluir
   // reuniones creadas directamente por el administrador (matriz/match).
   const requesters = useMemo<RequesterRow[]>(() => {
+    const byCompany = requesterView === "company";
     const receivedMeetings = new Set(
       messages.filter((m) => m.type === "meeting_request" && m.meetingId && isReceived(m.status)).map((m) => m.meetingId!),
     );
     const rows = new Map<string, RequesterRow & { targets: Set<string> }>();
     meetings.forEach((m, id) => {
       if (m.isExternal || !m.requesterId) return;
-      let r = rows.get(m.requesterId);
+      const key = byCompany ? companyKeyOfUser(m.requesterId) : m.requesterId;
+      let r = rows.get(key);
       if (!r) {
-        const u = users.get(m.requesterId);
+        const u = byCompany ? undefined : users.get(key);
+        const label = byCompany ? groupLabel(key) : null;
         r = {
-          userId: m.requesterId,
-          nombre: u?.nombre || "(asistente eliminado)",
-          empresa: u?.empresa || "",
-          telefono: u?.telefono || "",
+          userId: key,
+          nombre: label?.nombre || u?.nombre || "(asistente eliminado)",
+          empresa: label?.sub || u?.empresa || "",
+          telefono: byCompany ? "" : u?.telefono || "",
           enviadas: 0,
           aceptadas: 0,
           rechazadas: 0,
@@ -506,7 +534,7 @@ export default function WaTrackingPage() {
           notificadasRecibidas: 0,
           targets: new Set(),
         };
-        rows.set(m.requesterId, r);
+        rows.set(key, r);
       }
       r.enviadas++;
       switch (meetingOutcome(m)) {
@@ -530,7 +558,8 @@ export default function WaTrackingPage() {
     return [...rows.values()]
       .map(({ targets, ...r }) => ({ ...r, destinatarios: targets.size }))
       .sort((a, b) => b.enviadas - a.enviadas || b.pendientes - a.pendientes || a.aceptadas - b.aceptadas);
-  }, [meetings, messages, users]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meetings, messages, users, companies, requesterView]);
 
   const visibleRequesters = useMemo(() => {
     const q = requesterSearch.trim().toLowerCase();
@@ -562,18 +591,17 @@ export default function WaTrackingPage() {
   const exportRanking = () => {
     const rows = visibleRanking.map((r, i) => ({
       "#": i + 1,
-      Nombre: r.nombre,
-      Empresa: r.empresa,
-      Teléfono: r.telefono,
+      ...(receiverView === "company"
+        ? { Empresa: r.nombre, Asistentes: r.empresa }
+        : { Nombre: r.nombre, Empresa: r.empresa, Teléfono: r.telefono }),
       "Solicitudes recibidas": r.solicitudes,
       Aceptadas: r.aceptadas,
-      "Atendidas por compañero": r.atendidasPorOtro,
       Rechazadas: r.rechazadas,
       Pendientes: r.pendientes,
       Canceladas: r.canceladas,
       "Sin aceptar (rechazadas + pendientes)": r.sinAceptar,
       "Tasa de aceptación": pct(r.aceptadas, r.solicitudes),
-      "Puede aceptar (horarios libres)": r.capacidad ?? "",
+      ...(receiverView === "attendee" ? { "Puede aceptar (horarios libres)": r.capacidad ?? "" } : {}),
       "WhatsApp de solicitud enviados": r.notificaciones,
       "WhatsApp recibidos": r.recibidas,
       "WhatsApp leídos": r.leidas,
@@ -581,15 +609,15 @@ export default function WaTrackingPage() {
     }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Solicitudes sin aceptar");
-    XLSX.writeFile(wb, `whatsapp_solicitudes_${eventId}.xlsx`);
+    XLSX.writeFile(wb, `solicitudes_sin_aceptar_${receiverView === "company" ? "empresas" : "asistentes"}_${eventId}.xlsx`);
   };
 
   const exportRequesters = () => {
     const rows = visibleRequesters.map((r, i) => ({
       "#": i + 1,
-      Nombre: r.nombre,
-      Empresa: r.empresa,
-      Teléfono: r.telefono,
+      ...(requesterView === "company"
+        ? { Empresa: r.nombre, Asistentes: r.empresa }
+        : { Nombre: r.nombre, Empresa: r.empresa, Teléfono: r.telefono }),
       "Solicitudes enviadas": r.enviadas,
       Aceptadas: r.aceptadas,
       Rechazadas: r.rechazadas,
@@ -601,7 +629,7 @@ export default function WaTrackingPage() {
     }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Solicitudes enviadas");
-    XLSX.writeFile(wb, `solicitudes_enviadas_${eventId}.xlsx`);
+    XLSX.writeFile(wb, `solicitudes_enviadas_${requesterView === "company" ? "empresas" : "asistentes"}_${eventId}.xlsx`);
   };
 
   if (loading) {
@@ -832,6 +860,14 @@ export default function WaTrackingPage() {
                   </div>
                   <Group gap="sm">
                     <SegmentedControl
+                      value={receiverView}
+                      onChange={(v) => setReceiverView(v as typeof receiverView)}
+                      data={[
+                        { value: "attendee", label: "Por asistente" },
+                        { value: "company", label: "Por empresa" },
+                      ]}
+                    />
+                    <SegmentedControl
                       value={rankingMode}
                       onChange={(v) => setRankingMode(v as typeof rankingMode)}
                       data={[
@@ -857,20 +893,22 @@ export default function WaTrackingPage() {
                   onChange={(e) => setRankingSearch(e.currentTarget.value)}
                   maw={400}
                 />
+                {receiverView === "attendee" && unassignedCompanyPending > 0 && (
+                  <Text size="xs" c="dimmed">
+                    {unassignedCompanyPending} solicitud{unassignedCompanyPending === 1 ? "" : "es"} enviada
+                    {unassignedCompanyPending === 1 ? "" : "s"} a una empresa sin asesor asignado no aparece
+                    {unassignedCompanyPending === 1 ? "" : "n"} por asistente; míralas en "Por empresa".
+                  </Text>
+                )}
                 <Paper withBorder radius="md">
                   <ScrollArea h={520}>
                     <Table striped highlightOnHover stickyHeader miw={1100}>
                       <Table.Thead>
                         <Table.Tr>
                           <Table.Th>#</Table.Th>
-                          <Table.Th>Destinatario</Table.Th>
+                          <Table.Th>{receiverView === "company" ? "Empresa" : "Destinatario"}</Table.Th>
                           <Table.Th ta="right">Solicitudes</Table.Th>
                           <Table.Th ta="right">Aceptadas</Table.Th>
-                          <Table.Th ta="right">
-                            <Tooltip label="Solicitudes a su empresa que aceptó un compañero" withArrow>
-                              <span>Por compañero</span>
-                            </Tooltip>
-                          </Table.Th>
                           <Table.Th ta="right">Rechazadas</Table.Th>
                           <Table.Th ta="right">Pendientes</Table.Th>
                           <Table.Th ta="right">Aceptación</Table.Th>
@@ -910,7 +948,6 @@ export default function WaTrackingPage() {
                             </Table.Td>
                             <Table.Td ta="right">{r.solicitudes}</Table.Td>
                             <Table.Td ta="right">{r.aceptadas}</Table.Td>
-                            <Table.Td ta="right">{r.atendidasPorOtro}</Table.Td>
                             <Table.Td ta="right">{r.rechazadas}</Table.Td>
                             <Table.Td ta="right" fw={r.pendientes > 0 ? 600 : undefined}>
                               {r.pendientes}
@@ -937,7 +974,7 @@ export default function WaTrackingPage() {
                         ))}
                         {visibleRanking.length === 0 && (
                           <Table.Tr>
-                            <Table.Td colSpan={11}>
+                            <Table.Td colSpan={10}>
                               <Text c="dimmed" ta="center" py="md">
                                 Nadie en esta vista
                               </Text>
@@ -960,6 +997,14 @@ export default function WaTrackingPage() {
                     </Text>
                   </div>
                   <Group gap="sm">
+                    <SegmentedControl
+                      value={requesterView}
+                      onChange={(v) => setRequesterView(v as typeof requesterView)}
+                      data={[
+                        { value: "attendee", label: "Por asistente" },
+                        { value: "company", label: "Por empresa" },
+                      ]}
+                    />
                     <SegmentedControl
                       value={requesterMode}
                       onChange={(v) => setRequesterMode(v as typeof requesterMode)}
@@ -991,7 +1036,7 @@ export default function WaTrackingPage() {
                       <Table.Thead>
                         <Table.Tr>
                           <Table.Th>#</Table.Th>
-                          <Table.Th>Solicitante</Table.Th>
+                          <Table.Th>{requesterView === "company" ? "Empresa" : "Solicitante"}</Table.Th>
                           <Table.Th ta="right">Enviadas</Table.Th>
                           <Table.Th ta="right">Aceptadas</Table.Th>
                           <Table.Th ta="right">Rechazadas</Table.Th>
