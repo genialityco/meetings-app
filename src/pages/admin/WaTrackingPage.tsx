@@ -96,11 +96,17 @@ interface RankingRow {
   notificaciones: number;
   recibidas: number;
   leidas: number;
+  /** Recordatorios enviados: el mayor entre el historial de pendingReminders y los registrados */
   recordatorios: number;
+  /** Recordatorios registrados en el tracking que llegaron al teléfono / que se leyeron */
+  recordatoriosRecibidos: number;
+  recordatoriosLeidos: number;
   solicitudes: number;
   aceptadas: number;
   rechazadas: number;
   pendientes: number;
+  /** Por asistente: solicitudes pendientes enviadas a su empresa sin asesor asignado (cualquiera de sus asesores puede aceptarlas) */
+  pendientesEmpresa: number;
   canceladas: number;
   sinAceptar: number;
   /** Reuniones que aún puede aceptar: horarios futuros libres en su agenda (ver computeCapacity) */
@@ -414,10 +420,13 @@ export default function WaTrackingPage() {
           recibidas: 0,
           leidas: 0,
           recordatorios: 0,
+          recordatoriosRecibidos: 0,
+          recordatoriosLeidos: 0,
           solicitudes: 0,
           aceptadas: 0,
           rechazadas: 0,
           pendientes: 0,
+          pendientesEmpresa: 0,
           canceladas: 0,
           sinAceptar: 0,
           capacidad: null,
@@ -428,12 +437,24 @@ export default function WaTrackingPage() {
       return r;
     };
 
+    const membersByCompany = new Map<string, string[]>();
+    users.forEach((u, uid) => {
+      if (!u.companyId) return;
+      if (!membersByCompany.has(u.companyId)) membersByCompany.set(u.companyId, []);
+      membersByCompany.get(u.companyId)!.push(uid);
+    });
+
     meetings.forEach((m, id) => {
       if (m.isExternal || !m.requesterId) return;
       if (m.receiverId) {
         if (m.receiverId !== m.requesterId) rowFor(keyOfUser(m.receiverId)).meetingSet.add(id);
       } else if (byCompany && m.companyId) {
         rowFor(`c:${m.companyId}`).meetingSet.add(id);
+      } else if (m.companyId && m.status === "pending") {
+        // Por asistente: la solicitud a la empresa queda pendiente para cada uno de sus asesores
+        (membersByCompany.get(m.companyId) || [])
+          .filter((uid) => uid !== m.requesterId)
+          .forEach((uid) => rowFor(uid).pendientesEmpresa++);
       }
     });
 
@@ -449,6 +470,9 @@ export default function WaTrackingPage() {
         if (m.status === "read") r.leidas++;
       } else if (m.type === "pending_reminder") {
         trackedReminders.set(m.userId, (trackedReminders.get(m.userId) || 0) + 1);
+        const r = rowFor(keyOfUser(m.userId), m.to);
+        if (isReceived(m.status)) r.recordatoriosRecibidos++;
+        if (m.status === "read") r.recordatoriosLeidos++;
       }
     }
     trackedReminders.forEach((n, uid) => reminders.set(uid, Math.max(reminders.get(uid) || 0, n)));
@@ -478,15 +502,16 @@ export default function WaTrackingPage() {
               break;
           }
         });
-        r.sinAceptar = r.rechazadas + r.pendientes;
+        r.sinAceptar = r.rechazadas + r.pendientes + r.pendientesEmpresa;
         r.capacidad = byCompany ? null : computeCapacity(r.userId);
         return r;
       })
-      .filter((r) => r.solicitudes > 0 || r.notificaciones > 0)
+      .filter((r) => r.solicitudes > 0 || r.notificaciones > 0 || r.pendientesEmpresa > 0)
       .sort(
         (a, b) =>
           b.sinAceptar - a.sinAceptar ||
           b.pendientes - a.pendientes ||
+          b.pendientesEmpresa - a.pendientesEmpresa ||
           a.aceptadas - b.aceptadas ||
           b.notificaciones + b.recordatorios - (a.notificaciones + a.recordatorios),
       );
@@ -598,14 +623,17 @@ export default function WaTrackingPage() {
       Aceptadas: r.aceptadas,
       Rechazadas: r.rechazadas,
       Pendientes: r.pendientes,
+      ...(receiverView === "attendee" ? { "Pendientes a su empresa (sin asignar)": r.pendientesEmpresa } : {}),
       Canceladas: r.canceladas,
-      "Sin aceptar (rechazadas + pendientes)": r.sinAceptar,
+      "Sin aceptar": r.sinAceptar,
       "Tasa de aceptación": pct(r.aceptadas, r.solicitudes),
       ...(receiverView === "attendee" ? { "Puede aceptar (horarios libres)": r.capacidad ?? "" } : {}),
       "WhatsApp de solicitud enviados": r.notificaciones,
       "WhatsApp recibidos": r.recibidas,
       "WhatsApp leídos": r.leidas,
       "Recordatorios de pendientes": r.recordatorios,
+      "Recordatorios recibidos": r.recordatoriosRecibidos,
+      "Recordatorios leídos": r.recordatoriosLeidos,
     }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Solicitudes sin aceptar");
@@ -895,9 +923,10 @@ export default function WaTrackingPage() {
                 />
                 {receiverView === "attendee" && unassignedCompanyPending > 0 && (
                   <Text size="xs" c="dimmed">
-                    {unassignedCompanyPending} solicitud{unassignedCompanyPending === 1 ? "" : "es"} enviada
-                    {unassignedCompanyPending === 1 ? "" : "s"} a una empresa sin asesor asignado no aparece
-                    {unassignedCompanyPending === 1 ? "" : "n"} por asistente; míralas en "Por empresa".
+                    "Pend. a su empresa": {unassignedCompanyPending} solicitud
+                    {unassignedCompanyPending === 1 ? "" : "es"} enviada{unassignedCompanyPending === 1 ? "" : "s"} a una
+                    empresa sin asesor asignado; cualquiera de sus asesores puede aceptarlas, así que cuentan para cada
+                    uno. El total sin repetir por empresa está en "Por empresa".
                   </Text>
                 )}
                 <Paper withBorder radius="md">
@@ -910,7 +939,19 @@ export default function WaTrackingPage() {
                           <Table.Th ta="right">Solicitudes</Table.Th>
                           <Table.Th ta="right">Aceptadas</Table.Th>
                           <Table.Th ta="right">Rechazadas</Table.Th>
-                          <Table.Th ta="right">Pendientes</Table.Th>
+                          <Table.Th ta="right">{receiverView === "attendee" ? "Pend. directas" : "Pendientes"}</Table.Th>
+                          {receiverView === "attendee" && (
+                            <Table.Th ta="right">
+                              <Tooltip
+                                label="Solicitudes enviadas a su empresa que ningún asesor ha tomado; cualquiera de ellos puede aceptarlas"
+                                multiline
+                                w={260}
+                                withArrow
+                              >
+                                <span>Pend. a su empresa</span>
+                              </Tooltip>
+                            </Table.Th>
+                          )}
                           <Table.Th ta="right">Aceptación</Table.Th>
                           <Table.Th ta="right">
                             <Tooltip
@@ -923,11 +964,25 @@ export default function WaTrackingPage() {
                             </Tooltip>
                           </Table.Th>
                           <Table.Th ta="right">
-                            <Tooltip label="WhatsApp de solicitud enviados / recibidos (solo desde el tracking)" withArrow>
-                              <span>WA env. / rec.</span>
+                            <Tooltip
+                              label="WhatsApp que avisan una nueva solicitud de reunión (plantilla solicitud_reunion): enviados / recibidos. No incluye recordatorios. Solo desde el tracking."
+                              multiline
+                              w={280}
+                              withArrow
+                            >
+                              <span>WA solicitud env. / rec.</span>
                             </Tooltip>
                           </Table.Th>
-                          <Table.Th ta="right">Recordatorios</Table.Th>
+                          <Table.Th ta="right">
+                            <Tooltip
+                              label="Recordatorios de solicitudes pendientes enviados (historial completo). Debajo: cuántos llegaron y se leyeron, solo de los registrados en el tracking."
+                              multiline
+                              w={280}
+                              withArrow
+                            >
+                              <span>Recordatorios</span>
+                            </Tooltip>
+                          </Table.Th>
                         </Table.Tr>
                       </Table.Thead>
                       <Table.Tbody>
@@ -952,6 +1007,7 @@ export default function WaTrackingPage() {
                             <Table.Td ta="right" fw={r.pendientes > 0 ? 600 : undefined}>
                               {r.pendientes}
                             </Table.Td>
+                            {receiverView === "attendee" && <Table.Td ta="right">{r.pendientesEmpresa}</Table.Td>}
                             <Table.Td ta="right">{pct(r.aceptadas, r.solicitudes)}</Table.Td>
                             <Table.Td ta="right">
                               {r.capacidad === null ? (
@@ -969,12 +1025,19 @@ export default function WaTrackingPage() {
                             <Table.Td ta="right">
                               {r.notificaciones} / {r.recibidas}
                             </Table.Td>
-                            <Table.Td ta="right">{r.recordatorios}</Table.Td>
+                            <Table.Td ta="right">
+                              {r.recordatorios}
+                              {(r.recordatoriosRecibidos > 0 || r.recordatoriosLeidos > 0) && (
+                                <Text size="xs" c="dimmed">
+                                  {r.recordatoriosRecibidos} rec. · {r.recordatoriosLeidos} leído{r.recordatoriosLeidos === 1 ? "" : "s"}
+                                </Text>
+                              )}
+                            </Table.Td>
                           </Table.Tr>
                         ))}
                         {visibleRanking.length === 0 && (
                           <Table.Tr>
-                            <Table.Td colSpan={10}>
+                            <Table.Td colSpan={receiverView === "attendee" ? 11 : 10}>
                               <Text c="dimmed" ta="center" py="md">
                                 Nadie en esta vista
                               </Text>
