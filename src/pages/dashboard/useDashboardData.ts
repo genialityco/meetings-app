@@ -21,6 +21,7 @@ import { getEventDayKeys } from "../../utils/eventDays";
 import { showNotification, notifications as mantineNotifications } from "@mantine/notifications";
 import { serverTimestamp } from "firebase/firestore";
 import { sendWhatsAppMessage as sendWhatsAppAPI } from "../../utils/whatsappService";
+import type { WaTrackingContext } from "../../utils/waTracking";
 import { meetingAnalytics, profileAnalytics, trackError, trackEvent } from "../../utils/analytics";
 import {
   parseISODate,
@@ -104,7 +105,8 @@ async function sendMeetingCancelledWhatsapp(
   eventName?: string,
   cancelledByName?: string,
   whatsappApiVersion: "v1" | "v2" = "v1",
-  fallbackInfo?: { enabled: boolean; email: string; subject: string; logoUrl?: string }
+  fallbackInfo?: { enabled: boolean; email: string; subject: string; logoUrl?: string },
+  tracking?: WaTrackingContext
 ) {
   if (!toPhone) return;
   const phone = (toPhone || "").toString().replace(/[^\d]/g, "");
@@ -134,6 +136,7 @@ async function sendMeetingCancelledWhatsapp(
       schedule: meetingInfo.timeSlot || "Horario no especificado",
       table: meetingInfo.tableAssigned || "N/A",
       fallbackInfo,
+      tracking,
     });
     
     return;
@@ -186,7 +189,8 @@ async function sendMeetingRejectedWhatsapp(
   rejectedByParticipant: Assistant,
   eventName?: string,
   whatsappApiVersion: "v1" | "v2" = "v1",
-  fallbackInfo?: { enabled: boolean; email: string; subject: string }
+  fallbackInfo?: { enabled: boolean; email: string; subject: string },
+  tracking?: WaTrackingContext
 ) {
   if (!toPhone) return;
   const phone = (toPhone || "").toString().replace(/[^\d]/g, "");
@@ -201,6 +205,7 @@ async function sendMeetingRejectedWhatsapp(
       rejectedByName: rejectedByParticipant?.nombre || "Un participante",
       rejectedByCompany: rejectedByParticipant?.empresa || "Empresa",
       fallbackInfo,
+      tracking,
     });
     
     return;
@@ -1102,6 +1107,8 @@ export function useDashboardData(eventId?: string) {
       });
 
       await notifyMeetingConfirmed({
+        eventId,
+        meetingId,
         requesterId: uid,
         receiverId: assistantId,
         slot,
@@ -1209,7 +1216,7 @@ export function useDashboardData(eventId?: string) {
             email: requester.correo || "",
             subject: `Cancelación de reunión - ${eventName}`,
             logoUrl: dashboardLogo || "",
-          });
+          }, { eventId: meeting.eventId || eventId, userId: meeting.requesterId, meetingId: meeting.id });
         }
         if (receiver?.telefono) {
           await sendMeetingCancelledWhatsapp(receiver.telefono, requester, {
@@ -1221,7 +1228,7 @@ export function useDashboardData(eventId?: string) {
             email: receiver.correo || "",
             subject: `Cancelación de reunión - ${eventName}`,
             logoUrl: dashboardLogo || "",
-          });
+          }, { eventId: meeting.eventId || eventId, userId: meeting.receiverId, meetingId: meeting.id });
         }
       }
 
@@ -1463,7 +1470,8 @@ export function useDashboardData(eventId?: string) {
             accepterName,
             whatsappApiVersion,
             requester,
-            { enabled: fallbackEnabled, email: requester.correo || "", subject: `Confirmación de reunión - ${eventName}`, logoUrl: dashboardLogo || "" }
+            { enabled: fallbackEnabled, email: requester.correo || "", subject: `Confirmación de reunión - ${eventName}`, logoUrl: dashboardLogo || "" },
+            { eventId, userId: data.requesterId, meetingId }
           );
           await sendMeetingAcceptedWhatsapp(
             receiver.telefono || "",
@@ -1477,7 +1485,8 @@ export function useDashboardData(eventId?: string) {
             accepterName,
             whatsappApiVersion,
             receiver,
-            { enabled: fallbackEnabled, email: receiver.correo || "", subject: `Confirmación de reunión - ${eventName}`, logoUrl: dashboardLogo || "" }
+            { enabled: fallbackEnabled, email: receiver.correo || "", subject: `Confirmación de reunión - ${eventName}`, logoUrl: dashboardLogo || "" },
+            { eventId, userId: data.receiverId, meetingId }
           );
         }
         
@@ -1519,7 +1528,8 @@ export function useDashboardData(eventId?: string) {
             receiver,
             eventName,
             whatsappApiVersion,
-            { enabled: fallbackEnabled, email: requester.correo || "", subject: `Reunión rechazada - ${eventName}` }
+            { enabled: fallbackEnabled, email: requester.correo || "", subject: `Reunión rechazada - ${eventName}` },
+            { eventId, userId: data.requesterId, meetingId }
           );
         }
 
@@ -2122,6 +2132,8 @@ export function useDashboardData(eventId?: string) {
 
       // 2) Notificaciones/SMS/WhatsApp
       await notifyMeetingConfirmed({
+        eventId,
+        meetingId,
         requesterId: requesterId!,
         receiverId: receiverId!,
         slot,

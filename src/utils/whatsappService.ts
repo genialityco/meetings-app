@@ -1,6 +1,10 @@
 /**
  * Servicio para enviar mensajes de WhatsApp usando la API configurada
+ *
+ * Los envíos por la API oficial (v2) que reciben `tracking` (con eventId) quedan
+ * registrados en events/{eventId}/waMessages — ver src/utils/waTracking.ts.
  */
+import { logWaMessage, readWaSendResult, type WaTrackingContext } from "./waTracking";
 
 interface WhatsAppV1Payload {
   clientId: string;
@@ -98,6 +102,8 @@ interface SendWhatsAppOptions {
     cancelUrl?: string;
     contextNote?: string;
   };
+  /** Solo aplica a v2 (se registra como "meeting_request" salvo que tracking.type indique otro) */
+  tracking?: WaTrackingContext;
 }
 
 const API_V1_URL = import.meta.env.VITE_WHATSAPP_API_V1 as string || "https://apiwhatsapp.geniality.com.co/api/send";
@@ -205,16 +211,15 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
         body: JSON.stringify(payload),
       });
 
-      isSuccess = response.ok;
-      try {
-        const responseData = await response.clone().json();
-        console.log("[whatsappService] send-meeting-request response:", response.status, responseData);
-        if (responseData && (responseData.success === false || responseData.error)) {
-          isSuccess = false;
-        }
-      } catch (e) {
-        console.log("[whatsappService] send-meeting-request response (no-JSON):", response.status, await response.clone().text());
-      }
+      const result = await readWaSendResult(response, "send-meeting-request");
+      isSuccess = result.ok;
+      await logWaMessage({
+        tracking: options.tracking,
+        type: "meeting_request",
+        to: fullPhone,
+        result,
+        fallbackEmail: !!payload.fallbackEmail,
+      });
     } else {
       // API V1: Simple (default)
       const payload: WhatsAppV1Payload = {
@@ -250,6 +255,9 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
     return isSuccess;
   } catch (error) {
     console.error("[whatsappService] Error sending WhatsApp message:", error);
+    if (apiVersion === "v2") {
+      await logWaMessage({ tracking: options.tracking, type: "meeting_request", to: fullPhone, result: networkError(error) });
+    }
     return false;
   }
 }
@@ -290,8 +298,9 @@ export async function sendMeetingConfirmation(options: {
     subject: string;
     logoUrl?: string;
   };
+  tracking?: WaTrackingContext;
 }): Promise<boolean> {
-  const { phone, eventName, acceptedBy, meetingWith, company, schedule, table, fallbackInfo } = options;
+  const { phone, eventName, acceptedBy, meetingWith, company, schedule, table, fallbackInfo, tracking } = options;
 
   // Limpiar número de teléfono (ya viene con prefijo)
   const fullPhone = phone.replace(/[^\d]/g, "");
@@ -341,18 +350,10 @@ export async function sendMeetingConfirmation(options: {
       body: JSON.stringify(payload),
     });
 
-    let isSuccess = response.ok;
-    try {
-      const responseData = await response.clone().json();
-      console.log("[whatsappService] send-meeting-confirmation response:", response.status, responseData);
-      if (responseData && (responseData.success === false || responseData.error)) {
-        isSuccess = false;
-      }
-    } catch (e) {
-      console.log("[whatsappService] send-meeting-confirmation response (no-JSON):", response.status, await response.clone().text());
-    }
+    const result = await readWaSendResult(response, "send-meeting-confirmation");
+    await logWaMessage({ tracking, type: "meeting_confirmation", to: fullPhone, result, fallbackEmail: !!payload.fallbackEmail });
 
-    if (!isSuccess) {
+    if (!result.ok) {
       console.error("[whatsappService] Error sending meeting confirmation");
       return false;
     }
@@ -360,6 +361,7 @@ export async function sendMeetingConfirmation(options: {
     return true;
   } catch (error) {
     console.error("Error sending meeting confirmation:", error);
+    await logWaMessage({ tracking, type: "meeting_confirmation", to: fullPhone, result: networkError(error) });
     return false;
   }
 }
@@ -381,8 +383,9 @@ export async function sendMeetingCancellation(options: {
     subject: string;
     logoUrl?: string;
   };
+  tracking?: WaTrackingContext;
 }): Promise<boolean> {
-  const { phone, eventName, meetingWith, company, day, schedule, table, fallbackInfo } = options;
+  const { phone, eventName, meetingWith, company, day, schedule, table, fallbackInfo, tracking } = options;
 
   // Limpiar número de teléfono (ya viene con prefijo)
   const fullPhone = phone.replace(/[^\d]/g, "");
@@ -432,18 +435,10 @@ export async function sendMeetingCancellation(options: {
       body: JSON.stringify(payload),
     });
 
-    let isSuccess = response.ok;
-    try {
-      const responseData = await response.clone().json();
-      console.log("[whatsappService] send-meeting-cancelled response:", response.status, responseData);
-      if (responseData && (responseData.success === false || responseData.error)) {
-        isSuccess = false;
-      }
-    } catch (e) {
-      console.log("[whatsappService] send-meeting-cancelled response (no-JSON):", response.status, await response.clone().text());
-    }
+    const result = await readWaSendResult(response, "send-meeting-cancelled");
+    await logWaMessage({ tracking, type: "meeting_cancelled", to: fullPhone, result, fallbackEmail: !!payload.fallbackEmail });
 
-    if (!isSuccess) {
+    if (!result.ok) {
       console.error("[whatsappService] Error sending meeting cancellation");
       return false;
     }
@@ -451,6 +446,7 @@ export async function sendMeetingCancellation(options: {
     return true;
   } catch (error) {
     console.error("Error sending meeting cancellation:", error);
+    await logWaMessage({ tracking, type: "meeting_cancelled", to: fullPhone, result: networkError(error) });
     return false;
   }
 }
@@ -469,8 +465,9 @@ export async function sendMeetingRejection(options: {
     subject: string;
     logoUrl?: string;
   };
+  tracking?: WaTrackingContext;
 }): Promise<boolean> {
-  const { phone, eventName, rejectedByName, rejectedByCompany, fallbackInfo } = options;
+  const { phone, eventName, rejectedByName, rejectedByCompany, fallbackInfo, tracking } = options;
 
   // Limpiar número de teléfono (ya viene con prefijo)
   const fullPhone = phone.replace(/[^\d]/g, "");
@@ -514,18 +511,10 @@ export async function sendMeetingRejection(options: {
       body: JSON.stringify(payload),
     });
 
-    let isSuccess = response.ok;
-    try {
-      const responseData = await response.clone().json();
-      console.log("[whatsappService] send-meeting-rejection response:", response.status, responseData);
-      if (responseData && (responseData.success === false || responseData.error)) {
-        isSuccess = false;
-      }
-    } catch (e) {
-      console.log("[whatsappService] send-meeting-rejection response (no-JSON):", response.status, await response.clone().text());
-    }
+    const result = await readWaSendResult(response, "send-meeting-rejection");
+    await logWaMessage({ tracking, type: "meeting_rejected", to: fullPhone, result, fallbackEmail: !!payload.fallbackEmail });
 
-    if (!isSuccess) {
+    if (!result.ok) {
       console.error("[whatsappService] Error sending meeting rejection");
       return false;
     }
@@ -533,6 +522,7 @@ export async function sendMeetingRejection(options: {
     return true;
   } catch (error) {
     console.error("Error sending meeting rejection:", error);
+    await logWaMessage({ tracking, type: "meeting_rejected", to: fullPhone, result: networkError(error) });
     return false;
   }
 }
@@ -556,8 +546,9 @@ export async function sendWelcomeNotification(options: {
     subject: string;
     logoUrl?: string;
   };
+  tracking?: WaTrackingContext;
 }): Promise<boolean> {
-  const { phone, name, eventName, eventId, badgeUrl, headerImageUrl, date, time, fallbackInfo } = options;
+  const { phone, name, eventName, eventId, badgeUrl, headerImageUrl, date, time, fallbackInfo, tracking } = options;
 
   // Limpiar número de teléfono (ya viene con prefijo)
   const fullPhone = phone.replace(/[^\d]/g, "");
@@ -615,18 +606,10 @@ export async function sendWelcomeNotification(options: {
       body: JSON.stringify(payload),
     });
 
-    let isSuccess = response.ok;
-    try {
-      const responseData = await response.clone().json();
-      console.log("[whatsappService] send-welcome response:", response.status, responseData);
-      if (responseData && (responseData.success === false || responseData.error)) {
-        isSuccess = false;
-      }
-    } catch (e) {
-      console.log("[whatsappService] send-welcome response (no-JSON):", response.status, await response.clone().text());
-    }
+    const result = await readWaSendResult(response, "send-welcome");
+    await logWaMessage({ tracking, type: "welcome", to: fullPhone, result, fallbackEmail: !!payload.fallbackEmail });
 
-    if (!isSuccess) {
+    if (!result.ok) {
       console.error("[whatsappService] Error sending welcome notification");
       return false;
     }
@@ -634,6 +617,7 @@ export async function sendWelcomeNotification(options: {
     return true;
   } catch (error) {
     console.error("Error sending welcome notification:", error);
+    await logWaMessage({ tracking, type: "welcome", to: fullPhone, result: networkError(error) });
     return false;
   }
 }
@@ -657,16 +641,18 @@ export async function sendAdvisorNoticeTemplate(options: {
     subject: string;
     logoUrl?: string;
   };
+  tracking?: WaTrackingContext;
 }): Promise<boolean> {
-  const { phone, templateName, language, name, eventName, notice, buttonSuffix, fallbackInfo } = options;
+  const { phone, templateName, language, name, eventName, notice, buttonSuffix, fallbackInfo, tracking } = options;
   // Meta rechaza parámetros con saltos de línea, tabs o más de 4 espacios seguidos
   const clean = (v: string, def: string) =>
     String(v || "").replace(/[\r\n\t]+/g, " ").replace(/\s{2,}/g, " ").trim() || def;
+  const fullPhone = phone.replace(/[^\d]/g, "");
 
   try {
     const payload: any = {
       accountId: ACCOUNT_ID,
-      to: phone.replace(/[^\d]/g, ""),
+      to: fullPhone,
       templateName,
       languageCode: language || "es",
       parameters: [clean(name, "asesor"), clean(eventName, "el evento"), clean(notice, "Hay novedades en las reuniones de tu empresa.")],
@@ -695,21 +681,19 @@ export async function sendAdvisorNoticeTemplate(options: {
       body: JSON.stringify(payload),
     });
 
-    let isSuccess = response.ok;
-    try {
-      const responseData = await response.clone().json();
-      console.log("[whatsappService] send-template (aviso empresa) response:", response.status, responseData);
-      if (responseData && (responseData.success === false || responseData.error)) {
-        isSuccess = false;
-      }
-    } catch (e) {
-      console.log("[whatsappService] send-template (aviso empresa) response (no-JSON):", response.status);
-    }
-    return isSuccess;
+    const result = await readWaSendResult(response, "send-template (aviso empresa)");
+    await logWaMessage({ tracking, type: "advisor_notice", to: fullPhone, result, fallbackEmail: !!payload.fallbackEmail });
+    return result.ok;
   } catch (error) {
     console.error("Error sending advisor notice:", error);
+    await logWaMessage({ tracking, type: "advisor_notice", to: fullPhone, result: networkError(error) });
     return false;
   }
+}
+
+/** Resultado de un envío que no obtuvo respuesta del backend (red, CORS, etc.) */
+function networkError(error: unknown) {
+  return { ok: false, messageId: null, error: String((error as any)?.message || error).slice(0, 300), errorCode: "network" };
 }
 
 /**

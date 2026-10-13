@@ -1067,6 +1067,7 @@ const Landing = () => {
                 date: formattedDate,
                 time: formattedTime,
                 fallbackInfo: { enabled: false, email: "", subject: "" }, // Evitar doble correo
+                tracking: { eventId, userId: uid },
               });
             }
 

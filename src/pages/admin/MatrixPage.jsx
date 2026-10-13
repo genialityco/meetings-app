@@ -1186,6 +1186,9 @@ const MatrixPage = () => {
           wa.eventName,
           requester.nombre,
           wa.version,
+          undefined,
+          undefined,
+          { eventId, userId: receiver.id, meetingId: meetingRef.id },
         );
         dashboard.sendMeetingAcceptedWhatsapp(
           requester.telefono,
@@ -1194,6 +1197,9 @@ const MatrixPage = () => {
           wa.eventName,
           receiver.nombre,
           wa.version,
+          undefined,
+          undefined,
+          { eventId, userId: requester.id, meetingId: meetingRef.id },
         );
         // SMS solo en v1 (en v2 el envío dedicado de confirmación ya cubre el aviso)
         if (wa.version === "v1") {
@@ -1362,6 +1368,9 @@ const MatrixPage = () => {
           wa.eventName,
           requester.nombre,
           wa.version,
+          undefined,
+          undefined,
+          { eventId, userId: receiver.id, meetingId },
         );
         dashboard.sendMeetingAcceptedWhatsapp(
           requester.telefono,
@@ -1370,6 +1379,9 @@ const MatrixPage = () => {
           wa.eventName,
           receiver.nombre,
           wa.version,
+          undefined,
+          undefined,
+          { eventId, userId: requester.id, meetingId },
         );
         if (wa.version === "v1") {
           dashboard.sendSms(
@@ -1441,6 +1453,8 @@ const MatrixPage = () => {
               waCancel.eventName,
               undefined,
               waCancel.version,
+              undefined,
+              { eventId, userId: participantId, meetingId: cancelledMeeting.id },
             );
             // // SMS
             // dashboard.sendSms(
@@ -1551,6 +1565,9 @@ const MatrixPage = () => {
                 waReassign.eventName,
                 requester.nombre,
                 waReassign.version,
+                undefined,
+                undefined,
+                { eventId, userId: receiver.id, meetingId: solicitud.id },
               );
               dashboard.sendMeetingAcceptedWhatsapp(
                 requester.telefono,
@@ -1563,6 +1580,9 @@ const MatrixPage = () => {
                 waReassign.eventName,
                 receiver.nombre,
                 waReassign.version,
+                undefined,
+                undefined,
+                { eventId, userId: requester.id, meetingId: solicitud.id },
               );
               if (waReassign.version === "v1") {
                 dashboard.sendSms(

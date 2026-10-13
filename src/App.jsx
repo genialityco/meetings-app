@@ -32,6 +32,7 @@ const BadgePage = lazy(() => import("./pages/dashboard/BadgePage.tsx"));
 const QuickCheckInPage = lazy(() => import("./pages/admin/QuickCheckInPage.tsx"));
 const RaffleScanPage = lazy(() => import("./pages/RaffleScanPage.tsx"));
 const RafflePage = lazy(() => import("./pages/admin/RafflePage.tsx"));
+const WaTrackingPage = lazy(() => import("./pages/admin/WaTrackingPage.tsx"));
 const StandVisitScanPage = lazy(() => import("./pages/StandVisitScanPage.tsx"));
 
 const App = () => {
@@ -98,6 +99,10 @@ const App = () => {
         <Route
           path="/admin/event/:eventId/raffle"
           element={<ProtectedAdminRoute><RafflePage /></ProtectedAdminRoute>}
+        />
+        <Route
+          path="/admin/event/:eventId/whatsapp"
+          element={<ProtectedAdminRoute><WaTrackingPage /></ProtectedAdminRoute>}
         />
         <Route
           path="/admin/event/:eventId/optimize-agenda"

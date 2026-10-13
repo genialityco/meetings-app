@@ -16,6 +16,8 @@
 //  3. Las respuestas a botones quick reply llegan del backend de WhatsApp a
 //     guardarRespuestaWhatsapp, que las guarda en el destinatario (y opcionalmente
 //     en un campo del usuario, ver campaign.responseField).
+//  4. Cada envío queda también en events/{eventId}/waMessages (tipo "campaign")
+//     y guardarRespuestaWhatsapp recibe sus estados de entrega (ver waTracking.js).
 //
 // Estados de campaña: draft → queued → running → (queued ↔ running)* → completed
 //                     con paused como pausa manual.
@@ -26,6 +28,7 @@ import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
 import { defineSecret, defineString } from "firebase-functions/params";
+import { saveWaStatus, waMessageDoc } from "./waTracking.js";
 
 // URL base de wa-multi-session-backend (mismo secret que usan las notificaciones)
 const WHATSAPP_API_V2 = defineSecret("WHATSAPP_API_V2");
@@ -137,6 +140,81 @@ export const listWaTemplates = onRequest(
 );
 
 // ----------------------------------------------------------------------------
+// Analítica de Meta (página de tracking de WhatsApp). Es por cuenta/número, no
+// por evento: incluye todo lo enviado en el rango desde cualquier evento o
+// sistema que use el mismo número. El eventId solo se usa para los permisos.
+// ----------------------------------------------------------------------------
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Crea un endpoint GET/POST ?eventId&start=YYYY-MM-DD&end=YYYY-MM-DD
+ * (Authorization: Bearer <idToken de admin>) que reenvía el rango, como unix,
+ * al endpoint de analítica de wa-multi-session-backend.
+ * @param {string} backendPath - ej. "/api/message-analytics"
+ * @param {string} utcOffset - zona en la que se interpretan los días (ej. "-05:00")
+ */
+function analyticsProxy(backendPath, utcOffset) {
+  return onRequest(
+    {
+      region: "us-central1",
+      memory: "256MiB",
+      timeoutSeconds: 180,
+      cors: true,
+      secrets: [WHATSAPP_API_V2, WA_CAMPAIGN_API_KEY],
+    },
+    async (req, res) => {
+      if (req.method !== "GET" && req.method !== "POST") {
+        res.status(405).json({ error: "Method not allowed" });
+        return;
+      }
+      const eventId = req.query.eventId || req.body?.eventId;
+      const startDay = String(req.query.start || req.body?.start || "");
+      const endDay = String(req.query.end || req.body?.end || "");
+      if (!eventId || !DAY_RE.test(startDay) || !DAY_RE.test(endDay) || endDay < startDay) {
+        res.status(400).json({ error: "Faltan eventId, start y end (YYYY-MM-DD, start <= end)" });
+        return;
+      }
+
+      try {
+        await assertCanManageEvent(req, eventId);
+      } catch (err) {
+        res.status(err.status || 500).json({ error: err.message });
+        return;
+      }
+
+      const start = Date.parse(`${startDay}T00:00:00${utcOffset}`) / 1000;
+      const end = Date.parse(`${endDay}T00:00:00${utcOffset}`) / 1000 + 86400;
+      try {
+        const response = await fetch(`${WHATSAPP_API_V2.value()}${backendPath}?start=${start}&end=${end}`, {
+          headers: { "x-api-key": WA_CAMPAIGN_API_KEY.value() },
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          res.status(502).json({ error: data.error || "Error consultando la analítica", details: data.details, code: data.code, subcode: data.subcode });
+          return;
+        }
+        res.status(200).json(data);
+      } catch (err) {
+        console.error(`analytics ${backendPath} error:`, err);
+        res.status(502).json({ error: "No se pudo contactar el backend de WhatsApp" });
+      }
+    }
+  );
+}
+
+/**
+ * getWaMessageAnalytics: enviados/entregados del número principal cada media hora
+ * (días en hora de Bogotá). Meta guarda los últimos 365 días.
+ */
+export const getWaMessageAnalytics = analyticsProxy("/api/message-analytics", "-05:00");
+
+/**
+ * getWaTemplateAnalytics: enviados/entregados/leídos por plantilla y día (días UTC).
+ * Solo los últimos 90 días y requiere las estadísticas de plantillas activadas en la WABA.
+ */
+export const getWaTemplateAnalytics = analyticsProxy("/api/template-analytics", "Z");
+
+// ----------------------------------------------------------------------------
 // Envío de un destinatario
 // ----------------------------------------------------------------------------
 async function sendToRecipient(campaign, recipient) {
@@ -237,8 +315,20 @@ export const processWaCampaign = onDocumentWritten(
           results.forEach((r, idx) => {
             const docRef = chunk[idx].ref;
             const attempts = (chunk[idx].data().attempts || 0) + 1;
+            const logWa = () => {
+              const { ref, data } = waMessageDoc(db, {
+                eventId,
+                type: "campaign",
+                to: chunk[idx].data().phone,
+                userId: chunk[idx].id,
+                campaignId,
+                result: r,
+              });
+              batch.set(ref, data);
+            };
             if (r.ok) {
               sent++;
+              logWa();
               batch.update(docRef, {
                 status: "sent",
                 messageId: r.messageId,
@@ -252,6 +342,7 @@ export const processWaCampaign = onDocumentWritten(
               batch.update(docRef, { attempts, lastError: r.error });
             } else {
               failed++;
+              logWa();
               batch.update(docRef, {
                 status: "error",
                 error: r.error,
@@ -478,7 +569,11 @@ async function handleWhatsappReply(req, res) {
   const db = getFirestore();
   try {
     const { status, json } =
-      body.type === "campaign" ? await saveCampaignReply(db, body) : await saveLegacySurveyReply(db, body);
+      body.type === "status"
+        ? await saveWaStatus(db, body)
+        : body.type === "campaign"
+          ? await saveCampaignReply(db, body)
+          : await saveLegacySurveyReply(db, body);
     res.status(status).json(json);
   } catch (err) {
     console.error("guardarRespuestaWhatsapp error:", err);
@@ -489,7 +584,8 @@ async function handleWhatsappReply(req, res) {
 /**
  * guardarRespuestaWhatsapp
  * Webhook llamado por wa-multi-session-backend cuando un contacto toca un botón
- * quick reply de una plantilla (campañas o encuesta legacy de valor de negocio).
+ * quick reply de una plantilla (campañas o encuesta legacy de valor de negocio)
+ * y con cada estado de entrega de Meta (type "status", ver waTracking.js).
  * Auth: header x-webhook-secret = SURVEY_WEBHOOK_SECRET.
  */
 export const guardarRespuestaWhatsapp = onRequest(

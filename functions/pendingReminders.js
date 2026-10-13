@@ -38,6 +38,7 @@ import { onRequest } from "firebase-functions/v2/https";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { defineSecret, defineString } from "firebase-functions/params";
 import { assertCanManageEvent } from "./waCampaigns.js";
+import { logWaMessageServer } from "./waTracking.js";
 
 const WHATSAPP_API_V2 = defineSecret("WHATSAPP_API_V2");
 const WA_CAMPAIGN_API_KEY = defineSecret("WA_CAMPAIGN_API_KEY");
@@ -425,7 +426,17 @@ export async function processEventReminders(eventId, opts = {}) {
     if (cfg.whatsapp) {
       if (!template) wa = { ok: false, error: templateError };
       else if (!phone) wa = { ok: false, error: "Sin teléfono válido" };
-      else wa = await sendWhatsApp(phone, template, buildComponents(template, values, `event/${eventId}?ingresar=1`));
+      else {
+        wa = await sendWhatsApp(phone, template, buildComponents(template, values, `event/${eventId}?ingresar=1`));
+        await logWaMessageServer(db, {
+          eventId,
+          type: "pending_reminder",
+          to: phone,
+          userId: user.id,
+          meetingIds: meetings.map((m) => m.id),
+          result: wa,
+        });
+      }
       wa.ok ? summary.whatsappSent++ : summary.whatsappFailed++;
     }
 

@@ -1245,7 +1245,7 @@ const EventAdmin = () => {
       const usersMap = {};
       usersSnap.docs.forEach((d) => { usersMap[d.id] = { id: d.id, ...d.data() }; });
 
-      const sendToUser = async (user, otherUser, m, tipo) => {
+      const sendToUser = async (user, otherUser, m, tipo, meetingId) => {
         const phone = (user?.contacto?.telefono || user?.telefono || "").replace(/[^\d]/g, "");
         if (!phone) return "skip";
 
@@ -1266,6 +1266,7 @@ const EventAdmin = () => {
               company: otherUser?.empresa || "Empresa",
               schedule,
               table: m.tableAssigned || "N/A",
+              tracking: { eventId, userId: user?.id, meetingId },
             });
             return ok ? "ok" : "fail";
           } else {
@@ -1296,7 +1297,7 @@ const EventAdmin = () => {
         let recResult = "skip";
 
         if (notifyTarget === "compradores" || notifyTarget === "ambos") {
-          reqResult = await sendToUser(requester, receiver, m, "comprador");
+          reqResult = await sendToUser(requester, receiver, m, "comprador", meetingDoc.id);
           log.push({
             meetingId: meetingDoc.id,
             nombre: requester?.nombre || m.requesterId,
@@ -1309,7 +1310,7 @@ const EventAdmin = () => {
         }
 
         if (notifyTarget === "vendedores" || notifyTarget === "ambos") {
-          recResult = await sendToUser(receiver, requester, m, "vendedor");
+          recResult = await sendToUser(receiver, requester, m, "vendedor", meetingDoc.id);
           log.push({
             meetingId: meetingDoc.id,
             nombre: receiver?.nombre || m.receiverId,
@@ -1387,6 +1388,9 @@ const EventAdmin = () => {
           </Button>
           <Button component={Link} to={`/admin/event/${event.id}/event-survey`} variant="default">
             Encuesta evento
+          </Button>
+          <Button component={Link} to={`/admin/event/${event.id}/whatsapp`} variant="default">
+            Tracking WhatsApp
           </Button>
           <Button component={Link} to={`/admin/event/${event.id}/optimize-agenda`} variant="filled" color="orange">
             Optimizar Agenda

@@ -20,6 +20,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../../firebase/firebaseConfig";
 import { AgendaSlot, Assistant, EventPolicies, MeetingContext } from "./types";
 import { sendWhatsAppMessage as sendWhatsAppAPI } from "../../utils/whatsappService";
+import type { WaTrackingContext } from "../../utils/waTracking";
 import { showNotification } from "@mantine/notifications";
 import { normalizeTipoAsistente, isVendedor, canDiscoverAttendee } from "../../utils/attendeeRole";
 
@@ -296,7 +297,9 @@ export async function sendMeetingAcceptedWhatsapp(
   acceptedByName?: string,
   whatsappApiVersion: "v1" | "v2" = "v1",
   requesterData?: any,
-  fallbackInfo?: { enabled: boolean; email: string; subject: string; logoUrl?: string }
+  fallbackInfo?: { enabled: boolean; email: string; subject: string; logoUrl?: string },
+  /** Registro del envío v2 en events/{eventId}/waMessages (destinatario + reunión) */
+  tracking?: WaTrackingContext
 ) {
   if (!toPhone) return;
   const phone = toPhone.replace(/[^\d]/g, "");
@@ -329,6 +332,7 @@ export async function sendMeetingAcceptedWhatsapp(
       schedule,
       table: meetingInfo.tableAssigned || "N/A",
       fallbackInfo,
+      tracking,
     });
 
     return;
@@ -753,6 +757,9 @@ export async function createConfirmedMeeting(
 }
 
 export interface NotifyMeetingConfirmedParams {
+  /** Para registrar los WhatsApp enviados (waMessages); opcional */
+  eventId?: string;
+  meetingId?: string;
   requesterId: string;
   receiverId: string;
   slot: any;
@@ -768,7 +775,7 @@ export interface NotifyMeetingConfirmedParams {
 
 /** Notificaciones in-app + SMS + WhatsApp a ambos participantes tras confirmar una reunión. */
 export async function notifyMeetingConfirmed(params: NotifyMeetingConfirmedParams) {
-  const { requesterId, receiverId, slot, eventDateISO, isEdit, policies, eventName, acceptedByName, tableNames } = params;
+  const { eventId, meetingId, requesterId, receiverId, slot, eventDateISO, isEdit, policies, eventName, acceptedByName, tableNames } = params;
   const tableLabel = getTableLabel(slot.tableNumber, tableNames);
 
   const [reqSnap, recvSnap] = await Promise.all([
@@ -847,7 +854,8 @@ export async function notifyMeetingConfirmed(params: NotifyMeetingConfirmedParam
         accepterName,
         whatsappApiVersion,
         requester,
-        { enabled: fallbackEnabled, email: requester.correo || "", subject: `Confirmación de reunión - ${eventName}` }
+        { enabled: fallbackEnabled, email: requester.correo || "", subject: `Confirmación de reunión - ${eventName}` },
+        { eventId, userId: requesterId, meetingId }
       );
     }
     if (receiver?.telefono) {
@@ -859,7 +867,8 @@ export async function notifyMeetingConfirmed(params: NotifyMeetingConfirmedParam
         accepterName,
         whatsappApiVersion,
         receiver,
-        { enabled: fallbackEnabled, email: receiver?.correo || "", subject: `Confirmación de reunión - ${eventName}` }
+        { enabled: fallbackEnabled, email: receiver?.correo || "", subject: `Confirmación de reunión - ${eventName}` },
+        { eventId, userId: receiverId, meetingId }
       );
     }
   }
@@ -959,8 +968,10 @@ export async function notifyCompanyAdvisors(params: {
   eventName?: string;
   /** Si se indica, solo se notifica a los asesores con los que este rol puede reunirse */
   requesterTipo?: unknown;
+  /** Reunión a la que se refiere el aviso (para el registro en waMessages) */
+  meetingId?: string;
 }): Promise<void> {
-  const { eventId, companyNit, excludeUids, policies, whatsappBuilder, dashboardNotif, eventName, requesterTipo } = params;
+  const { eventId, companyNit, excludeUids, policies, whatsappBuilder, dashboardNotif, eventName, requesterTipo, meetingId } = params;
   const advisors = await getCompanyAdvisors(
     eventId,
     companyNit,
@@ -996,6 +1007,7 @@ export async function notifyCompanyAdvisors(params: {
               notice: built.message,
               buttonSuffix: `event/${eventId}?ingresar=1`,
               fallbackInfo: built.fallbackInfo,
+              tracking: { eventId, userId: advisor.id, meetingId },
             });
           }
         } else if (built?.phone) {
@@ -1011,6 +1023,8 @@ export async function notifyCompanyAdvisors(params: {
             message: built.message,
             fallbackInfo: built.fallbackInfo,
             metadata: built.metadata,
+            // En v2 con metadata es la plantilla de solicitud de reunión (solicitud compartida a la empresa)
+            tracking: { eventId, userId: advisor.id, meetingId },
           });
         }
       }
@@ -1280,6 +1294,7 @@ export async function createMeetingRequestDoc(
           cancelUrl: rejectPath,
           contextNote: context?.contextNote,
         },
+        tracking: { eventId, userId: advisorId, meetingId, type: "meeting_request" },
       });
     }
 
@@ -1304,6 +1319,7 @@ export async function createMeetingRequestDoc(
         excludeUids: [requesterId, advisorId],
         policies,
         eventName,
+        meetingId,
         whatsappBuilder: (advisor) => ({
           phone: advisor.telefono || "",
           message:
@@ -1331,6 +1347,7 @@ export async function createMeetingRequestDoc(
       companyNit: effectiveCompanyNit!,
       excludeUids: [requesterId],
       policies,
+      meetingId,
       requesterTipo: requester?.tipoAsistente ?? "",
       whatsappBuilder: (advisor) => ({
         phone: advisor.telefono || "",

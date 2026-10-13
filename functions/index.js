@@ -4,6 +4,7 @@ import { onDocumentCreated, onDocumentUpdated, onDocumentWritten } from "firebas
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
+import { logWaMessageServer } from "./waTracking.js";
 
 initializeApp();
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
@@ -4319,6 +4320,15 @@ export const cancelAndReassign = onRequest(
         const cleanPhone = phone.replace(/[^\d]/g, "");
 
         if (whatsappApiVersion === "v2") {
+          const track = (result) =>
+            logWaMessageServer(db, {
+              eventId,
+              type: "meeting_confirmation",
+              to: `57${cleanPhone}`,
+              userId: recipientData?.id,
+              meetingId: newMeetingId,
+              result,
+            });
           try {
             const response = await fetch(`${WHATSAPP_API_V2.value()}/api/send-meeting-confirmation`, {
               method: "POST",
@@ -4334,9 +4344,17 @@ export const cancelAndReassign = onRequest(
                 table: String(details.tableAssigned),
               }),
             });
+            const data = await response.json().catch(() => ({}));
+            await track({
+              ok: response.ok,
+              messageId: data.messageId || null,
+              error: data.details || data.error || `HTTP ${response.status}`,
+              code: data.code ?? response.status,
+            });
             return response.ok;
           } catch (e) {
             console.error("sendWA v2 error:", e);
+            await track({ ok: false, error: e.message || String(e), code: "network" });
             return false;
           }
         } else {

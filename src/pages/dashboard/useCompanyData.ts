@@ -567,7 +567,7 @@ export function useCompanyData(
 
       setConfirmLoading(true);
       try {
-        const { eventDateISO } = await createConfirmedMeeting({
+        const { meetingId, eventDateISO } = await createConfirmedMeeting({
           eventId,
           eventConfig,
           requesterId: uid,
@@ -578,6 +578,8 @@ export function useCompanyData(
         });
 
         await notifyMeetingConfirmed({
+          eventId,
+          meetingId,
           requesterId: uid,
           receiverId,
           slot,

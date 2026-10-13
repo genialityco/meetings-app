@@ -642,6 +642,7 @@ export default function MeetingAutoResponse() {
               company: receiver?.empresa || "Empresa",
               schedule: scheduleWithDay,
               table: meetingInfo.tableAssigned,
+              tracking: { eventId, userId: mtgData.requesterId, meetingId },
             });
           }
 
@@ -654,6 +655,7 @@ export default function MeetingAutoResponse() {
               company: requester?.empresa || "Empresa",
               schedule: scheduleWithDay,
               table: meetingInfo.tableAssigned,
+              tracking: { eventId, userId: mtgData.receiverId, meetingId },
             });
           }
         } else {
