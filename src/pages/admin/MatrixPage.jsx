@@ -69,6 +69,7 @@ import {
   IconSearch,
 } from "@tabler/icons-react";
 import MatrixStatsHeader from "./MatrixStatsHeader";
+import MatrixCompanyTotals from "./MatrixCompanyTotals";
 
 // ----------- UTILIDADES -----------
 
@@ -2078,6 +2079,7 @@ const MatrixPage = () => {
         <Tabs.List>
           <Tabs.Tab value="mesas">Por Mesas</Tabs.Tab>
           <Tabs.Tab value="usuarios">Por Usuarios</Tabs.Tab>
+          <Tabs.Tab value="empresas">Por Empresas</Tabs.Tab>
         </Tabs.List>
 
         {/* Panel Mesas */}
@@ -2826,6 +2828,17 @@ const MatrixPage = () => {
               )}
             />
           </div>
+        </Tabs.Panel>
+
+        {/* Panel Empresas: totales de reuniones agendadas/realizadas por empresa */}
+        <Tabs.Panel value="empresas" pt="md">
+          <MatrixCompanyTotals
+            eventId={eventId}
+            meetings={meetings}
+            asistentes={asistentes}
+            eventDates={eventDates}
+            formatDate={formatDate}
+          />
         </Tabs.Panel>
 
         {/* Panel Usuarios */}
