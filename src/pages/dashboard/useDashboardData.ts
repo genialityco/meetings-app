@@ -2326,6 +2326,9 @@ export function useDashboardData(eventId?: string) {
     return cancelledMeetings.filter(m => m.meetingDate === globalDateFilter);
   }, [cancelledMeetings, globalDateFilter]);
 
+  // Pendientes/enviadas/rechazadas nunca llegan a tener meetingDate (solo se
+  // asigna fecha al aceptar/agendar), así que filtrarlas por el día global las
+  // vaciaba por completo en eventos multi-día con un día seleccionado.
   const filteredPendingRequests = useMemo(() => {
     // Solicitudes a mi empresa: solo las de solicitantes con los que mi rol puede
     // reunirse (las demás las atiende un compañero del rol correspondiente)
@@ -2334,30 +2337,19 @@ export function useDashboardData(eventId?: string) {
       const requester = assistants.find((a) => a.id === m.requesterId);
       return !requester || canDiscoverAttendee(policies.discoveryMode, myTipo, requester.tipoAsistente);
     });
-    const combined = [...pendingRequests, ...companyVisible];
-    if (!globalDateFilter) return combined;
-    return combined.filter(m => m.meetingDate === globalDateFilter);
-  }, [pendingRequests, companyPendingRequests, globalDateFilter, assistants, policies.discoveryMode, currentUser?.data?.tipoAsistente]);
+    return [...pendingRequests, ...companyVisible];
+  }, [pendingRequests, companyPendingRequests, assistants, policies.discoveryMode, currentUser?.data?.tipoAsistente]);
 
-  const filteredSentRequests = useMemo(() => {
-    if (!globalDateFilter) return sentRequests;
-    return sentRequests.filter(m => m.meetingDate === globalDateFilter);
-  }, [sentRequests, globalDateFilter]);
+  const filteredSentRequests = sentRequests;
 
   const filteredAcceptedRequests = useMemo(() => {
     if (!globalDateFilter) return acceptedRequests;
     return acceptedRequests.filter(m => m.meetingDate === globalDateFilter);
   }, [acceptedRequests, globalDateFilter]);
 
-  const filteredRejectedRequests = useMemo(() => {
-    if (!globalDateFilter) return rejectedRequests;
-    return rejectedRequests.filter(m => m.meetingDate === globalDateFilter);
-  }, [rejectedRequests, globalDateFilter]);
+  const filteredRejectedRequests = rejectedRequests;
 
-  const filteredSentRejectedRequests = useMemo(() => {
-    if (!globalDateFilter) return sentRejectedRequests;
-    return sentRejectedRequests.filter(m => m.meetingDate === globalDateFilter);
-  }, [sentRejectedRequests, globalDateFilter]);
+  const filteredSentRejectedRequests = sentRejectedRequests;
 
   // ---------------------- RETORNO ----------------------
 
@@ -2381,8 +2373,7 @@ export function useDashboardData(eventId?: string) {
     pendingRequests: filteredPendingRequests,
     cancelSentMeeting,
     sentRequests: filteredSentRequests,
-    // Sin el filtro de fecha global: las pendientes no tienen fecha y la vista de
-    // empresas las necesita todas para marcar "Solicitud enviada".
+    // Alias usado por la vista de empresas/productos para marcar "Solicitud enviada".
     allSentRequests: sentRequests,
     sentRejectedRequests: filteredSentRejectedRequests,
     acceptedRequests: filteredAcceptedRequests,
