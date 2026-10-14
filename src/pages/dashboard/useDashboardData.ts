@@ -2334,6 +2334,9 @@ export function useDashboardData(eventId?: string) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cancelledMeetings, globalDateFilter]);
 
+  // Pendientes/enviadas/rechazadas nunca llegan a tener meetingDate (solo se
+  // asigna fecha al aceptar/agendar), así que filtrarlas por el día global las
+  // vaciaba por completo en eventos multi-día con un día seleccionado.
   const filteredPendingRequests = useMemo(() => {
     // Solicitudes a mi empresa: solo las de solicitantes con los que mi rol puede
     // reunirse (las demás las atiende un compañero del rol correspondiente)
@@ -2397,8 +2400,7 @@ export function useDashboardData(eventId?: string) {
     pendingRequests: filteredPendingRequests,
     cancelSentMeeting,
     sentRequests: filteredSentRequests,
-    // Sin el filtro de fecha global: las pendientes no tienen fecha y la vista de
-    // empresas las necesita todas para marcar "Solicitud enviada".
+    // Alias usado por la vista de empresas/productos para marcar "Solicitud enviada".
     allSentRequests: sentRequests,
     sentRejectedRequests: filteredSentRejectedRequests,
     acceptedRequests: filteredAcceptedRequests,
