@@ -1,6 +1,16 @@
 /** Clave usada como único "día" para eventos sin eventDates/eventDate configurados. */
 export const DEFAULT_CHECKIN_DAY = "unico";
 
+/** Fecha de hoy (YYYY-MM-DD) en la zona horaria local del dispositivo. No usar
+ * toISOString(): está en UTC, y en Colombia (UTC-5) desde las 7:00 pm ya devuelve
+ * el día siguiente. */
+export function getTodayKey(): string {
+  const now = new Date();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${m}-${d}`;
+}
+
 /** Lista de fechas (YYYY-MM-DD) del evento, a partir de event.config. */
 export function getEventDayKeys(eventConfig: any): string[] {
   if (eventConfig?.eventDates?.length) return eventConfig.eventDates;
@@ -14,7 +24,7 @@ export function resolveCheckInDay(eventConfig: any, preferredDate?: string | nul
   const days = getEventDayKeys(eventConfig);
   if (days.length === 0) return DEFAULT_CHECKIN_DAY;
   if (preferredDate && days.includes(preferredDate)) return preferredDate;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getTodayKey();
   if (days.includes(today)) return today;
   return days[0];
 }
@@ -28,7 +38,7 @@ export function isCheckedInOnDay(attendee: any, day: string | null | undefined):
  * El día único de eventos sin fechas nunca se bloquea. */
 export function isPastCheckInDay(day: string | null | undefined): boolean {
   if (!day || day === DEFAULT_CHECKIN_DAY) return false;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getTodayKey();
   return day < today;
 }
 
