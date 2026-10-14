@@ -21,7 +21,7 @@ export function resolveCheckInDay(eventConfig: any, preferredDate?: string | nul
   const days = getEventDayKeys(eventConfig);
   if (days.length === 0) return DEFAULT_CHECKIN_DAY;
   if (preferredDate && days.includes(preferredDate)) return preferredDate;
-  const today = getTodayKey();
+  const today = localTodayISO();
   if (days.includes(today)) return today;
   return days[0];
 }
@@ -35,7 +35,7 @@ export function isCheckedInOnDay(attendee: any, day: string | null | undefined):
  * El día único de eventos sin fechas nunca se bloquea. */
 export function isPastCheckInDay(day: string | null | undefined): boolean {
   if (!day || day === DEFAULT_CHECKIN_DAY) return false;
-  const today = getTodayKey();
+  const today = localTodayISO();
   return day < today;
 }
 
