@@ -7,3 +7,6 @@ node_modules/
 # Logs
 *.log
 npm-debug.log*
+
+# Respaldos de scripts de mantenimiento (contienen datos personales de asistentes)
+*-backup-*.json
