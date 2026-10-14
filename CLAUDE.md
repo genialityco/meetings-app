@@ -128,6 +128,7 @@ Bulk send of Meta-approved templates to an event's attendees (templates are crea
 - Client writes `events/{eventId}/waCampaigns/{id}` + `recipients/{userId}` (components pre-built per recipient) then sets `status: "queued"`. Firestore rules make `waCampaigns` readable only by `canManageEvent` (it holds phone numbers).
 - `processWaCampaign` (onDocumentWritten, fires on transition to `queued`) claims the campaign (`running`), sends `pending` recipients via wa-multi-session-backend `POST /api/campaign/send` (header `x-api-key`), works ~8 min per invocation and re-queues itself until done. Admin can pause (`paused`) / resume / retry failed. A `running` campaign with `heartbeatAt` older than 10 min is shown as stalled and can be resumed.
 - `listWaTemplates` (HTTP, requires admin Firebase ID token + canManageEvent) proxies the backend's `GET /api/templates`.
+- Wizard "Variables" step: image headers default to the event image (`getEventImageUrl`), and "Enviar prueba" sends the built message to one number via `sendWaTemplateTest` (HTTP, canManageEvent → backend `/api/campaign/send`; no campaign/recipient docs are created). URL-button variables accept the full link: the template's fixed URL prefix is stripped automatically.
 - Quick-reply buttons carry payload `{t:"wac",e,c,u,b}`; the backend forwards taps to `guardarRespuestaWhatsapp` (alias `guardarRespuestaEncuesta`, header `x-webhook-secret`), which stores `recipient.response`, campaign `responseCounts`, and optionally `users/{uid}[campaign.responseField]` (e.g. `encuestaValorNegocio`, shown automatically as a column in AttendeesList). It also still handles the legacy "valor de negocio" survey payload (lookup by phone).
 - Secrets: `WHATSAPP_API_V2` (backend base URL), `WA_CAMPAIGN_API_KEY` (= backend `CAMPAIGN_API_KEY`). Delivered/read status tracking is not implemented yet (phase 2).
 - Phone numbers for WhatsApp: `toWhatsAppNumber` in `src/utils/phoneUtils.ts`.
@@ -187,6 +188,7 @@ All `/admin/...` routes (except `/admin/login` and `/admin/register`) are wrappe
 | `/badge/:eventId/:userId` | BadgePage | Printable attendee badge with check-in QR (not admin-protected) |
 | `/raffle-scan/:eventId/:meetingId` | RaffleScanPage | Buyer scans seller's QR to claim a raffle ticket |
 | `/stand-visit/:eventId/:companyNit` | StandVisitScanPage | Attendee scans a stand's QR to register a visit |
+| `/acceso/:eventId/:userId` | AutoLoginPage | Direct-access link: logs the attendee in (`loginAsUser`, after checking `users/{userId}.eventId`) and redirects to the dashboard. Built with `buildAccessLink` (`src/utils/accessLink.ts`); copyable per attendee in AttendeesList ("Copiar acceso") and available in WA campaigns as `$link.acceso` |
 | `/phonesadmin` | PhonesAdminPage | Phone management |
 | `/meeting-response/:eventId/:meetingId/:action` | MeetingAutoResponse | Auto-response handler |
 

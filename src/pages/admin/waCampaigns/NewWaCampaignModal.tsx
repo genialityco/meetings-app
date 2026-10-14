@@ -29,6 +29,7 @@ import {
   COLUMN_FIELD_PREFIX,
   createAndQueueCampaign,
   fetchWaTemplates,
+  getEventImageUrl,
   getFieldOptions,
   getPublicAppOrigin,
   guessColumn,
@@ -36,6 +37,7 @@ import {
   newCampaignRef,
   parseContactsFile,
   renderTemplatePreview,
+  sendWaTemplateTest,
   SlotMapping,
   toStoredComponents,
   WaTemplate,
@@ -102,6 +104,13 @@ export default function NewWaCampaignModal({ opened, onClose, event, onCreated }
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // Envío de prueba a un número
+  const [testCountry, setTestCountry] = useState<string>("co");
+  const [testPhone, setTestPhone] = useState("");
+  const [testName, setTestName] = useState("Prueba");
+  const [testSending, setTestSending] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
   const defaultIso2 = useMemo(() => detectDefaultIso2(), []);
   const dayKeys = useMemo(() => getEventDayKeys(event?.config), [event]);
   const isImport = source === "import";
@@ -129,6 +138,10 @@ export default function NewWaCampaignModal({ opened, onClose, event, onCreated }
     setExcluded(new Set());
     setPreviewAttendeeId(null);
     setSubmitError(null);
+    setTestCountry(defaultIso2);
+    setTestPhone("");
+    setTestName("Prueba");
+    setTestResult(null);
     setSource("event");
     setImportFile(null);
     setImportError(null);
@@ -158,7 +171,9 @@ export default function NewWaCampaignModal({ opened, onClose, event, onCreated }
     const initial: Record<string, SlotMapping> = {};
     const firstBody = analysis.slots.find((s) => s.kind === "body");
     for (const slot of analysis.slots) {
-      if (slot.kind === "header_media") initial[slot.key] = { source: "fixed", value: "" };
+      // Encabezado con imagen: por defecto, la imagen del evento
+      if (slot.kind === "header_media")
+        initial[slot.key] = { source: "fixed", value: slot.mediaFormat === "IMAGE" ? getEventImageUrl(event) : "" };
       else if (slot === firstBody || slot.paramName === "nombre")
         initial[slot.key] = { source: "field", field: nameField, fallback: "" };
       else initial[slot.key] = { source: "field", field: undefined, fallback: "" };
@@ -268,6 +283,15 @@ export default function NewWaCampaignModal({ opened, onClose, event, onCreated }
   // ─── Validaciones por paso ──────────────────────────────────────────────────
   const sourceValid = !isImport || (!!importFile && !!phoneColumn);
   const step0Valid = !!name.trim() && !!template && !!analysis && analysis.unsupported.length === 0 && sourceValid;
+  // El botón URL de la plantilla tiene la base fija en Meta (ej. "https://gen-meetings.netlify.app/{{1}}"):
+  // solo se puede enviar la parte final. Un link completo de la misma base se recorta
+  // solo; uno de otro dominio quedaría pegado detrás de la base ("…netlify.app/https://otro…").
+  const buttonUrlError = (slot: { kind: string; urlPrefix?: string }, value?: string) => {
+    const v = (value || "").trim();
+    if (slot.kind !== "button_url" || !slot.urlPrefix || !/^https?:\/\//i.test(v) || v.startsWith(slot.urlPrefix)) return null;
+    return `El botón solo admite links de ${slot.urlPrefix}: escribe la parte final (ej. event/...) o un link que empiece así. Los links de otro dominio (ej. acortadores) van en el cuerpo del mensaje.`;
+  };
+
   const mappingErrors = useMemo(() => {
     if (!analysis) return [];
     const validFields = new Set(fieldOptions.map((f) => f.value));
@@ -278,6 +302,7 @@ export default function NewWaCampaignModal({ opened, onClose, event, onCreated }
       else if (m.source === "fixed" && !m.value?.trim()) errors.push(slot.label);
       else if (m.source === "field" && (!m.field || !validFields.has(m.field))) errors.push(slot.label);
       else if (slot.kind === "header_media" && !/^https:\/\//i.test(m.value || "")) errors.push(`${slot.label}: URL https`);
+      else if (m.source === "fixed" && buttonUrlError(slot, m.value)) errors.push(`${slot.label}: link de otro dominio`);
     }
     if (!isImport && responseField && !RESPONSE_FIELD_RE.test(responseField))
       errors.push("Campo para guardar la respuesta");
@@ -288,6 +313,40 @@ export default function NewWaCampaignModal({ opened, onClose, event, onCreated }
 
   const updateMapping = (key: string, patch: Partial<SlotMapping>) =>
     setMapping((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } as SlotMapping }));
+
+  // Prueba: se arma el mensaje como para un asistente ficticio con el nombre
+  // indicado; las variables de campos que no tenga quedan con "Prueba".
+  const handleSendTest = async () => {
+    if (!template || !analysis) return;
+    const to = toWhatsAppNumber(testPhone, testCountry);
+    if (!to) {
+      setTestResult({ ok: false, message: "Número no válido" });
+      return;
+    }
+    const stub: any = { id: "prueba", nombre: testName.trim() || "Prueba" };
+    if (isImport && nameColumn) stub.__row = { [nameColumn]: stub.nombre };
+    const testMapping = Object.fromEntries(
+      Object.entries(mapping).map(([k, m]) => [k, m.source === "field" && !m.fallback ? { ...m, fallback: "Prueba" } : m]),
+    );
+    const { components } = buildRecipientMessage({
+      template,
+      analysis,
+      mapping: testMapping,
+      attendee: stub,
+      ctx,
+      campaignId: "prueba",
+    });
+    setTestSending(true);
+    setTestResult(null);
+    try {
+      const r = await sendWaTemplateTest({ eventId: event.id, to, template, components });
+      setTestResult({ ok: true, message: `Enviado a +${r.to}. Revisa el WhatsApp de ese número.` });
+    } catch (e: any) {
+      setTestResult({ ok: false, message: e.message || String(e) });
+    } finally {
+      setTestSending(false);
+    }
+  };
 
   const toggleExcluded = (id: string) =>
     setExcluded((prev) => {
@@ -541,15 +600,29 @@ export default function NewWaCampaignModal({ opened, onClose, event, onCreated }
               const m = mapping[slot.key];
               if (!m) return null;
               if (slot.kind === "header_media") {
+                const eventImage = slot.mediaFormat === "IMAGE" ? getEventImageUrl(event) : "";
                 return (
-                  <TextInput
-                    key={slot.key}
-                    label={slot.label}
-                    description="URL pública (https) del archivo"
-                    placeholder="https://..."
-                    value={m.value || ""}
-                    onChange={(e) => updateMapping(slot.key, { value: e.currentTarget.value })}
-                  />
+                  <Stack key={slot.key} gap={4}>
+                    <TextInput
+                      label={slot.label}
+                      description={
+                        eventImage
+                          ? "URL pública (https) del archivo. Por defecto, la imagen del evento."
+                          : "URL pública (https) del archivo"
+                      }
+                      placeholder="https://..."
+                      value={m.value || ""}
+                      onChange={(e) => updateMapping(slot.key, { value: e.currentTarget.value })}
+                    />
+                    {eventImage && m.value !== eventImage && (
+                      <Button size="compact-xs" variant="subtle" w="fit-content" onClick={() => updateMapping(slot.key, { value: eventImage })}>
+                        Usar la imagen del evento
+                      </Button>
+                    )}
+                    {/^https:\/\//i.test(m.value || "") && (
+                      <img src={m.value} alt="" style={{ maxHeight: 90, maxWidth: 220, objectFit: "contain", borderRadius: 4 }} />
+                    )}
+                  </Stack>
                 );
               }
               return (
@@ -585,9 +658,15 @@ export default function NewWaCampaignModal({ opened, onClose, event, onCreated }
                     </Group>
                   ) : (
                     <TextInput
-                      placeholder="Texto que verán todos"
+                      placeholder={slot.kind === "button_url" && slot.urlPrefix ? `Parte final de ${slot.urlPrefix}…` : "Texto que verán todos"}
+                      description={
+                        slot.kind === "button_url" && slot.urlPrefix
+                          ? `El link del botón siempre empieza por ${slot.urlPrefix} (fijo en Meta): escribe lo que va después, o pega un link completo de ese mismo dominio.`
+                          : undefined
+                      }
                       value={m.value || ""}
                       onChange={(e) => updateMapping(slot.key, { value: e.currentTarget.value })}
+                      error={buttonUrlError(slot, m.value)}
                     />
                   )}
                 </Stack>
@@ -608,6 +687,54 @@ export default function NewWaCampaignModal({ opened, onClose, event, onCreated }
                 onChange={(e) => setResponseField(e.currentTarget.value.trim())}
                 error={responseField && !RESPONSE_FIELD_RE.test(responseField) ? "Solo letras, números, _ y puntos" : null}
               />
+            )}
+
+            {template && analysis && (
+              <Stack gap={6} p="sm" style={{ border: "1px solid var(--mantine-color-default-border)", borderRadius: 8 }}>
+                <Text size="sm" fw={600}>
+                  Enviar prueba
+                </Text>
+                <Text size="xs" c="dimmed">
+                  Envía este mensaje, con las variables de arriba, a un solo número para revisarlo antes del envío masivo.
+                  Los campos del asistente se llenan como si se llamara como indiques aquí.
+                </Text>
+                <Group gap="xs" align="flex-end" wrap="wrap">
+                  <Select
+                    label="País"
+                    data={COUNTRY_OPTIONS}
+                    value={testCountry}
+                    onChange={(v) => setTestCountry(v || "co")}
+                    searchable
+                    w={180}
+                  />
+                  <TextInput
+                    label="WhatsApp"
+                    placeholder="3001234567"
+                    value={testPhone}
+                    onChange={(e) => setTestPhone(e.currentTarget.value)}
+                    w={170}
+                  />
+                  <TextInput label="Nombre" value={testName} onChange={(e) => setTestName(e.currentTarget.value)} w={150} />
+                  <Button
+                    variant="light"
+                    onClick={handleSendTest}
+                    loading={testSending}
+                    disabled={!testPhone.trim() || mappingErrors.length > 0}
+                  >
+                    Enviar prueba
+                  </Button>
+                </Group>
+                {mappingErrors.length > 0 && (
+                  <Text size="xs" c="dimmed">
+                    Completa las variables para poder enviar la prueba.
+                  </Text>
+                )}
+                {testResult && (
+                  <Alert color={testResult.ok ? "teal" : "red"} p="xs">
+                    {testResult.message}
+                  </Alert>
+                )}
+              </Stack>
             )}
           </Stack>
         </Stepper.Step>

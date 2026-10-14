@@ -23,6 +23,7 @@ import {
   DocumentReference,
 } from "firebase/firestore";
 import { auth, db } from "../firebase/firebaseConfig";
+import { buildAccessLink } from "./accessLink";
 
 // ─── Tipos de plantillas de Meta ─────────────────────────────────────────────
 
@@ -150,6 +151,7 @@ export interface FieldOption {
 const SPECIAL_FIELDS: FieldOption[] = [
   { value: "$evento.nombre", label: "Nombre del evento", group: "Evento" },
   { value: "$link.credencial", label: "Link de su credencial (QR)", group: "Links" },
+  { value: "$link.acceso", label: "Link de acceso directo (inicia su sesión)", group: "Links" },
   { value: "$link.dashboard", label: "Link del dashboard del evento", group: "Links" },
   { value: "$link.registro", label: "Link de registro del evento", group: "Links" },
 ];
@@ -176,7 +178,7 @@ export function getFieldOptions(event: any, importColumns?: string[]): FieldOpti
   if (importColumns) {
     return [
       ...importColumns.map((c) => ({ value: `${COLUMN_FIELD_PREFIX}${c}`, label: c, group: "Columnas del archivo" })),
-      ...SPECIAL_FIELDS.filter((f) => f.value !== "$link.credencial"),
+      ...SPECIAL_FIELDS.filter((f) => f.value !== "$link.credencial" && f.value !== "$link.acceso"),
     ];
   }
   const seen = new Set(BASE_FIELDS.map((f) => f.value));
@@ -219,6 +221,9 @@ export function resolveField(attendee: any, field: string, ctx: ResolveContext):
       break;
     case "$link.credencial":
       raw = `${ctx.origin}/badge/${eventId}/${attendee.id}`;
+      break;
+    case "$link.acceso":
+      raw = buildAccessLink(eventId, attendee.id, ctx.origin);
       break;
     case "$link.dashboard":
       raw = `${ctx.origin}/dashboard/${eventId}`;
@@ -467,6 +472,23 @@ export const newCampaignRef = (eventId: string) => doc(campaignsCollection(event
 
 const BATCH_SIZE = 400;
 
+/**
+ * Quita las propiedades `undefined` (Firestore las rechaza), recorriendo objetos
+ * planos y arreglos. Ej.: una variable en "Texto fijo" conserva `field: undefined`
+ * de cuando era "Campo".
+ */
+const stripUndefined = <T,>(value: T): T => {
+  if (Array.isArray(value)) return value.map(stripUndefined) as T;
+  if (value && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => [k, stripUndefined(v)]),
+    ) as T;
+  }
+  return value;
+};
+
 export async function createAndQueueCampaign(params: {
   ref: DocumentReference;
   campaign: Omit<WaCampaign, "id" | "status" | "counts" | "createdAt" | "createdBy">;
@@ -476,7 +498,7 @@ export async function createAndQueueCampaign(params: {
   const user = auth.currentUser;
 
   await setDoc(ref, {
-    ...campaign,
+    ...stripUndefined(campaign),
     status: "draft",
     counts: { total: recipients.length, sent: 0, failed: 0, responded: 0 },
     responseCounts: {},
@@ -488,7 +510,7 @@ export async function createAndQueueCampaign(params: {
     const batch = writeBatch(db);
     for (const r of recipients.slice(i, i + BATCH_SIZE)) {
       batch.set(doc(ref, "recipients", r.userId), {
-        ...r,
+        ...stripUndefined(r),
         status: "pending",
         attempts: 0,
         createdAt: serverTimestamp(),
@@ -555,6 +577,40 @@ export const isCampaignStale = (c: WaCampaign) => {
 
 const LIST_TEMPLATES_URL =
   (import.meta.env.VITE_WA_TEMPLATES_URL as string) || "https://listwatemplates-6eaymlz5eq-uc.a.run.app";
+
+const TEST_SEND_URL =
+  (import.meta.env.VITE_WA_TEST_URL as string) ||
+  `https://us-central1-${import.meta.env.VITE_FIREBASE_PROJECT_ID}.cloudfunctions.net/sendWaTemplateTest`;
+
+/** Envía la plantilla con los componentes ya armados a un solo número (prueba antes del envío masivo) */
+export async function sendWaTemplateTest(params: {
+  eventId: string;
+  to: string;
+  template: WaTemplate;
+  components: any[];
+}): Promise<{ messageId: string | null; to: string }> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Debes iniciar sesión como administrador");
+  const token = await user.getIdToken();
+  const res = await fetch(TEST_SEND_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      eventId: params.eventId,
+      to: params.to,
+      templateName: params.template.name,
+      languageCode: params.template.language,
+      components: params.components,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error([data.error || `Error ${res.status}`, data.code ? `(código ${data.code})` : ""].filter(Boolean).join(" "));
+  return { messageId: data.messageId || null, to: data.to || params.to };
+}
+
+/** Imagen del evento para el encabezado de las plantillas con imagen */
+export const getEventImageUrl = (event: any): string =>
+  event?.eventImage || event?.config?.landingTitleImage || event?.dashboardLogo || "";
 
 export async function fetchWaTemplates(eventId: string): Promise<WaTemplate[]> {
   const user = auth.currentUser;

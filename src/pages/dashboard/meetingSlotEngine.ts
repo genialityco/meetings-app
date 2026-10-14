@@ -522,6 +522,9 @@ export async function computeAvailableSlots(
     .map((d) => ({ id: d.id, ...(d.data() as Omit<AgendaSlot, "id">) }))
     .filter((slot) => {
       if (slot.date && slot.date !== eventDayISO) return false;
+      // Bloqueado como descanso desde el panel de agenda: nunca se ofrece, aunque
+      // algún flujo lo haya dejado con available: true
+      if (slot.isBreak) return false;
       if (blockedTimes.has(slot.startTime)) return false;
 
       const [h, m] = slot.startTime.split(":").map(Number);

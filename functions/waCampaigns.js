@@ -214,6 +214,51 @@ export const getWaMessageAnalytics = analyticsProxy("/api/message-analytics", "-
  */
 export const getWaTemplateAnalytics = analyticsProxy("/api/template-analytics", "Z");
 
+/**
+ * sendWaTemplateTest
+ * POST { eventId, to, templateName, languageCode, components } (Authorization: Bearer <idToken de admin>)
+ * Envía una plantilla, con los componentes ya armados por el asistente de
+ * campañas, a un solo número para probarla antes del envío masivo. No crea
+ * campaña ni registra destinatarios.
+ */
+export const sendWaTemplateTest = onRequest(
+  {
+    region: "us-central1",
+    memory: "256MiB",
+    cors: true,
+    secrets: [WHATSAPP_API_V2, WA_CAMPAIGN_API_KEY],
+  },
+  async (req, res) => {
+    if (req.method !== "POST") {
+      res.status(405).json({ error: "Method not allowed" });
+      return;
+    }
+    const { eventId, to, templateName, languageCode, components } = req.body || {};
+    const phone = String(to || "").replace(/\D/g, "");
+    if (!eventId || !templateName || !languageCode || !Array.isArray(components) || phone.length < 10 || phone.length > 15) {
+      res.status(400).json({ error: "Faltan eventId, templateName, languageCode, components o un número válido (con indicativo)" });
+      return;
+    }
+
+    try {
+      await assertCanManageEvent(req, eventId);
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.message });
+      return;
+    }
+
+    const result = await sendToRecipient(
+      { template: { name: templateName, language: languageCode } },
+      { phone, components }
+    );
+    if (result.ok) {
+      res.status(200).json({ ok: true, messageId: result.messageId, to: phone });
+    } else {
+      res.status(502).json({ error: result.error, code: result.code });
+    }
+  }
+);
+
 // ----------------------------------------------------------------------------
 // Envío de un destinatario
 // ----------------------------------------------------------------------------

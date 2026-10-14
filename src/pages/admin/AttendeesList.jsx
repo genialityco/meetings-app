@@ -18,6 +18,7 @@ import ImportWizard from "./ImportWizard";
 import { isComprador, isVendedor } from "../../utils/attendeeRole";
 import { uploadCompanyLogo } from "../../utils/companyStorage";
 import { getTableLabel } from "../dashboard/meetingSlotEngine";
+import { buildAccessLink } from "../../utils/accessLink";
 
 // Utilidad para obtener campos configurados para el evento (omite foto y consentimiento)
 const getEventTableFields = (event, entityType = "users") => {
@@ -1437,6 +1438,24 @@ function parseFirestoreTimestamp(input) {
                           title="Regenerar vector y recalcular afinidades"
                         >
                           Regenerar Vector
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          color="grape"
+                          style={{ marginRight: 8 }}
+                          title="Copia un link que inicia la sesión de este asistente sin pedir correo"
+                          onClick={async () => {
+                            const url = buildAccessLink(event.id, a.id);
+                            try {
+                              await navigator.clipboard.writeText(url);
+                              setGlobalMessage(`Link de acceso de ${a.nombre || "el asistente"} copiado`);
+                            } catch {
+                              window.prompt("Copia el link de acceso:", url);
+                            }
+                          }}
+                        >
+                          Copiar acceso
                         </Button>
                         <Button
                           color="red"

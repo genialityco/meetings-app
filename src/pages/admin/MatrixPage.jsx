@@ -44,6 +44,7 @@ import {
   updateDoc,
   runTransaction,
   setDoc,
+  deleteDoc,
 } from "firebase/firestore";
 import { DEFAULT_SURVEY_FIELDS, getRatingData } from "./ConfigureSurveyModal";
 import { useParams } from "react-router-dom";
@@ -507,6 +508,56 @@ function haySolapamiento(slotA, slotB) {
   const bEndMin = toMinutes(bEnd);
   return aStartMin < bEndMin && bStartMin < aEndMin;
 }
+
+// ── Consistencia de las reuniones que crea/mueve/cancela la matriz ──
+// Igual que el dashboard: una reunión aceptada lleva meetingDate, slotId,
+// startMinutes/endMinutes y lockIds (locks anti doble agenda por persona y
+// horario, mismo formato que buildLockId de cancelAndReassign).
+const buildLockId = (eventId, userId, dateISO, start, end) =>
+  `${eventId}_${userId}_${String(dateISO || "").replace(/-/g, "")}_${start}-${end}`;
+
+const hhmmToMinutes = (hhmm) => {
+  const [h, m] = String(hhmm || "").split(":").map(Number);
+  return h * 60 + (m || 0);
+};
+
+/** Campos de agenda de una reunión que ocupa `slot` el día `dateISO` */
+function meetingSlotFields(eventId, participants, slot, dateISO) {
+  return {
+    meetingDate: dateISO || null,
+    slotId: slot?.id || null,
+    startMinutes: hhmmToMinutes(slot.startTime),
+    endMinutes: hhmmToMinutes(slot.endTime),
+    lockIds: dateISO
+      ? participants.map((uid) => buildLockId(eventId, uid, dateISO, slot.startTime, slot.endTime))
+      : [],
+  };
+}
+
+async function writeMeetingLocks(eventId, meetingId, participants, slot, dateISO) {
+  if (!dateISO) return;
+  await Promise.all(
+    participants.map((uid) =>
+      setDoc(doc(db, "locks", buildLockId(eventId, uid, dateISO, slot.startTime, slot.endTime)), {
+        eventId,
+        userId: uid,
+        meetingId,
+        date: dateISO,
+        start: slot.startTime,
+        end: slot.endTime,
+        createdAt: new Date(),
+      }),
+    ),
+  );
+}
+
+async function deleteMeetingLocks(lockIds = []) {
+  await Promise.all(lockIds.map((id) => deleteDoc(doc(db, "locks", id)).catch(() => {})));
+}
+
+/** Datos para liberar un slot: si estaba bloqueado como descanso, sigue bloqueado */
+const releasedSlotData = (slot) =>
+  slot?.isBreak ? { available: false, meetingId: null } : { available: true, meetingId: null };
 
 function getColor(status) {
   switch (status) {
@@ -1120,6 +1171,19 @@ const MatrixPage = () => {
   };
 
   // ------------ FUNCIONES DE CREACION, EDICIÓN, CANCELACIÓN, INTERCAMBIO ------------
+  // ¿La persona ya tiene una reunión activa (incluidas las libres) que se cruce con
+  // ese horario ese día? Se valida siempre, no solo con "validar duplicados".
+  const tieneConflictoHorario = (userId, dateISO, slotStr, excludeMeetingId) =>
+    meetings.some(
+      (m) =>
+        (m.status === "accepted" || m.status === "standby") &&
+        m.id !== excludeMeetingId &&
+        (m.participants || []).includes(userId) &&
+        (!dateISO || !m.meetingDate || m.meetingDate === dateISO) &&
+        haySolapamiento(m.timeSlot, slotStr),
+    );
+
+  const nombreAsistente = (id) => asistentes.find((a) => a.id === id)?.nombre?.trim() || "Un participante";
   const handleQuickCreateMeeting = async ({
     user1,
     user2,
@@ -1152,6 +1216,19 @@ const MatrixPage = () => {
           return;
         }
       }
+      const conflictoCrear = [user1, user2].find((u) =>
+        tieneConflictoHorario(u, meetingDate, `${slot.startTime} - ${slot.endTime}`),
+      );
+      if (conflictoCrear) {
+        setGlobalMessage(`${nombreAsistente(conflictoCrear)} ya tiene una reunión en ese horario.`);
+        setCreatingMeeting(false);
+        return;
+      }
+      if (slot.isBreak) {
+        setGlobalMessage("Ese horario está bloqueado como descanso.");
+        setCreatingMeeting(false);
+        return;
+      }
       const meetingRef = await addDoc(
         collection(db, "events", eventId, "meetings"),
         {
@@ -1163,12 +1240,14 @@ const MatrixPage = () => {
           timeSlot: `${slot.startTime} - ${slot.endTime}`,
           tableAssigned: slot.tableNumber.toString(),
           participants: [user1, user2],
+          ...meetingSlotFields(eventId, [user1, user2], slot, meetingDate),
         },
       );
       await updateDoc(doc(db, "events", eventId, "agenda", slot.id), {
         available: false,
         meetingId: meetingRef.id,
       });
+      await writeMeetingLocks(eventId, meetingRef.id, [user1, user2], slot, meetingDate);
 
       // --- Notificar a ambos participantes ---
       const receiver = asistentes.find((a) => a.id === user2);
@@ -1258,35 +1337,22 @@ const MatrixPage = () => {
         }
       }
 
-      // Buscar reuniones aceptadas que tengan conflicto con el nuevo slot para user1 y user2
-      const reunionesAceptadas = meetings.filter(
-        (m) => m.status === "accepted" && m.id !== meetingId,
-      );
-
+      // Conflicto de horario de cualquiera de los dos ese día (siempre se valida:
+      // mover sin esta validación dejaba a una persona con dos reuniones a la vez)
       const nuevoSlotStr = `${slot.startTime} - ${slot.endTime}`;
-
-      const hayConflicto = (userId) =>
-        reunionesAceptadas.some(
-          (m) =>
-            m.participants.includes(userId) &&
-            haySolapamiento(m.timeSlot, nuevoSlotStr),
-        );
-
-      if (checkDuplicates) {
-        if (hayConflicto(user1)) {
-          setGlobalMessage(
-            `El participante 1 no está disponible en el horario seleccionado.`,
-          );
-          setCreatingMeeting(false);
-          return;
-        }
-        if (hayConflicto(user2)) {
-          setGlobalMessage(
-            `El participante 2 no está disponible en el horario seleccionado.`,
-          );
-          setCreatingMeeting(false);
-          return;
-        }
+      const nuevaFecha = slot.date || selectedDate || null;
+      const conflictoMover = [user1, user2].find((u) =>
+        tieneConflictoHorario(u, nuevaFecha, nuevoSlotStr, meetingId),
+      );
+      if (conflictoMover) {
+        setGlobalMessage(`${nombreAsistente(conflictoMover)} no está disponible en el horario seleccionado.`);
+        setCreatingMeeting(false);
+        return;
+      }
+      if (slot.isBreak) {
+        setGlobalMessage("Ese horario está bloqueado como descanso.");
+        setCreatingMeeting(false);
+        return;
       }
 
       // Obtener la reunión actual para liberar su slot anterior
@@ -1298,13 +1364,10 @@ const MatrixPage = () => {
         return;
       }
 
-      // Buscar slot agenda actual (para liberar)
-      const slotActual = agenda.find(
-        (s) =>
-          s.meetingId === meetingId &&
-          s.tableNumber === Number(meetingActual.tableAssigned) &&
-          s.startTime === meetingActual.timeSlot.split(" - ")[0],
-      );
+      // Slot que ocupa hoy la reunión (para liberarlo), aunque su hora/mesa ya no coincidan
+      const slotActual =
+        agenda.find((s) => s.id === meetingActual.slotId && s.meetingId === meetingId) ||
+        agenda.find((s) => s.meetingId === meetingId);
 
       // Determinar si el nuevo slot ya está ocupado por OTRA reunión
       // Si checkDuplicates es falso, se pudo haber seleccionado un slot ocupado
@@ -1318,9 +1381,12 @@ const MatrixPage = () => {
         receiverId: user2,
         timeSlot: nuevoSlotStr,
         tableAssigned: slot.tableNumber.toString(),
+        ...meetingSlotFields(eventId, [user1, user2], slot, nuevaFecha),
+        updatedAt: new Date(),
       };
 
       if (isTargetSlotOccupied) {
+        updateData.slotId = null; // reunión libre: no ocupa el slot de otra
         updateData.isExternal = true;
         updateData.motivoMatch = "Libre";
         updateData.razonMatch = "Reunión convertida a libre por solapamiento";
@@ -1338,12 +1404,19 @@ const MatrixPage = () => {
       );
 
       // Liberar slot anterior si existe y no es el mismo que el nuevo
+      // (si era un descanso bloqueado, sigue bloqueado)
       if (slotActual && slotActual.id !== slot.id) {
-        await updateDoc(doc(db, "events", eventId, "agenda", slotActual.id), {
-          available: true,
-          meetingId: null,
-        });
+        await updateDoc(
+          doc(db, "events", eventId, "agenda", slotActual.id),
+          releasedSlotData(slotActual),
+        );
       }
+
+      // Locks: se reemplazan los del horario anterior por los del nuevo
+      await deleteMeetingLocks(
+        (meetingActual.lockIds || []).filter((id) => !(updateData.lockIds || []).includes(id)),
+      );
+      await writeMeetingLocks(eventId, meetingId, [user1, user2], slot, nuevaFecha);
 
       // Marcar nuevo slot como ocupado SOLO si no lo convertimos a reunión libre
       if (!isTargetSlotOccupied) {
@@ -1476,15 +1549,17 @@ const MatrixPage = () => {
       );
       await updateDoc(doc(db, "events", eventId, "meetings", meetingId), {
         status: "cancelled",
+        updatedAt: new Date(),
       });
+      await deleteMeetingLocks(cancelledMeeting.lockIds || []);
 
-      // 2. Libera el slot
+      // 2. Libera el slot (si era un descanso bloqueado, sigue bloqueado)
       if (slotId) {
         console.log("[handleCancelMeeting] Liberando slot en agenda:", slotId);
-        await updateDoc(doc(db, "events", eventId, "agenda", slotId), {
-          available: true,
-          meetingId: null,
-        });
+        await updateDoc(
+          doc(db, "events", eventId, "agenda", slotId),
+          releasedSlotData(agenda.find((s) => s.id === slotId)),
+        );
       }
 
       // 3. Busca solicitudes pendientes y re-agenda en el slot liberado
@@ -1508,19 +1583,20 @@ const MatrixPage = () => {
         ? `${slotLiberado.startTime} - ${slotLiberado.endTime}`
         : null;
 
-      if (slotLiberado && slotStr) {
+      // No se reagenda en un slot bloqueado como descanso
+      if (slotLiberado && slotStr && !slotLiberado.isBreak) {
+        const fechaLiberada = slotLiberado.date || selectedDate || null;
         for (const solicitud of pendientesRecibidas) {
           const requesterId = solicitud.requesterId;
-          const solicitanteOcupado = reunionesAceptadas.some(
-            (m) =>
-              m.participants.includes(requesterId) &&
-              haySolapamiento(m.timeSlot, slotStr),
-          );
-          const receiverOcupado = reunionesAceptadas.some(
-            (m) =>
-              m.participants.includes(userId) &&
-              haySolapamiento(m.timeSlot, slotStr),
-          );
+          const ocupado = (uid) =>
+            reunionesAceptadas.some(
+              (m) =>
+                (m.participants || []).includes(uid) &&
+                (!fechaLiberada || !m.meetingDate || m.meetingDate === fechaLiberada) &&
+                haySolapamiento(m.timeSlot, slotStr),
+            );
+          const solicitanteOcupado = ocupado(requesterId);
+          const receiverOcupado = ocupado(userId);
 
           if (!solicitanteOcupado && !receiverOcupado) {
             console.log(
@@ -1533,8 +1609,12 @@ const MatrixPage = () => {
                 status: "accepted",
                 timeSlot: slotStr,
                 tableAssigned: slotLiberado.tableNumber.toString(),
+                participants: [requesterId, userId],
+                ...meetingSlotFields(eventId, [requesterId, userId], slotLiberado, fechaLiberada),
+                updatedAt: new Date(),
               },
             );
+            await writeMeetingLocks(eventId, solicitud.id, [requesterId, userId], slotLiberado, fechaLiberada);
             await updateDoc(
               doc(db, "events", eventId, "agenda", slotLiberado.id),
               {

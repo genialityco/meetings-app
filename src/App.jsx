@@ -34,6 +34,7 @@ const RaffleScanPage = lazy(() => import("./pages/RaffleScanPage.tsx"));
 const RafflePage = lazy(() => import("./pages/admin/RafflePage.tsx"));
 const WaTrackingPage = lazy(() => import("./pages/admin/WaTrackingPage.tsx"));
 const StandVisitScanPage = lazy(() => import("./pages/StandVisitScanPage.tsx"));
+const AutoLoginPage = lazy(() => import("./pages/AutoLoginPage.tsx"));
 
 const App = () => {
   // Trackear automáticamente todas las vistas de página
@@ -96,6 +97,7 @@ const App = () => {
         />
         <Route path="/raffle-scan/:eventId/:meetingId" element={<RaffleScanPage />} />
         <Route path="/stand-visit/:eventId/:companyNit" element={<StandVisitScanPage />} />
+        <Route path="/acceso/:eventId/:userId" element={<AutoLoginPage />} />
         <Route
           path="/admin/event/:eventId/raffle"
           element={<ProtectedAdminRoute><RafflePage /></ProtectedAdminRoute>}
