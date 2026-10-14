@@ -2814,57 +2814,77 @@ const MatrixPage = () => {
                     )}
                   </Group>
 
-                  <Menu withinPortal position="bottom-start">
-                    <Menu.Target>
-                      <Button
-                        variant="light"
-                        size="xs"
-                        color="yellow"
-                        mb="sm"
-                        disabled={
-                          !pendingMeetings.some(
-                            (m) => m.receiverId === asistente.id,
-                          )
-                        }
-                      >
-                        Solicitudes pendientes (
-                        {
-                          pendingMeetings.filter(
-                            (m) => m.receiverId === asistente.id,
-                          ).length
-                        }
-                        )
-                      </Button>
-                    </Menu.Target>
-                    <Menu.Dropdown>
-                      {pendingMeetings
-                        .filter((m) => m.receiverId === asistente.id)
-                        .map((m) => {
-                          const requester = asistentes.find(
-                            (a) => a.id === m.requesterId,
-                          );
-                          return (
-                            <Menu.Item key={m.id}>
-                              <div>
-                                <b>
-                                  {requester
-                                    ? `${requester.empresa} (${requester.nombre})`
-                                    : m.requesterId}
-                                </b>
-                                <div style={{ fontSize: 11, color: "#777" }}>
-                                  {m.timeSlot || "Sin horario"}
-                                </div>
-                              </div>
-                            </Menu.Item>
-                          );
-                        })}
-                      {pendingMeetings.filter(
-                        (m) => m.receiverId === asistente.id,
-                      ).length === 0 && (
-                        <Menu.Item disabled>No hay pendientes</Menu.Item>
-                      )}
-                    </Menu.Dropdown>
-                  </Menu>
+                  {(() => {
+                    // Directas a este representante vs. dirigidas a la empresa
+                    // (receiverId null, sin reclamar aún por ningún representante).
+                    const personPending = pendingMeetings.filter(
+                      (m) => m.receiverId === asistente.id,
+                    );
+                    const companyPending = pendingMeetings.filter(
+                      (m) =>
+                        !m.receiverId &&
+                        m.companyId &&
+                        asistente.companyId &&
+                        normCompanyKey(m.companyId) ===
+                          normCompanyKey(asistente.companyId),
+                    );
+                    const renderItem = (m) => {
+                      const requester = asistentes.find(
+                        (a) => a.id === m.requesterId,
+                      );
+                      return (
+                        <Menu.Item key={m.id}>
+                          <div>
+                            <b>
+                              {requester
+                                ? `${requester.empresa} (${requester.nombre})`
+                                : m.requesterId}
+                            </b>
+                            <div style={{ fontSize: 11, color: "#777" }}>
+                              {m.timeSlot || "Sin horario"}
+                            </div>
+                          </div>
+                        </Menu.Item>
+                      );
+                    };
+                    return (
+                      <Menu withinPortal position="bottom-start">
+                        <Menu.Target>
+                          <Button
+                            variant="light"
+                            size="xs"
+                            color="yellow"
+                            mb="sm"
+                            disabled={
+                              personPending.length === 0 &&
+                              companyPending.length === 0
+                            }
+                          >
+                            Persona ({personPending.length}) / Empresa (
+                            {companyPending.length})
+                          </Button>
+                        </Menu.Target>
+                        <Menu.Dropdown>
+                          {personPending.length === 0 &&
+                            companyPending.length === 0 && (
+                              <Menu.Item disabled>No hay pendientes</Menu.Item>
+                            )}
+                          {personPending.length > 0 && (
+                            <Menu.Label>
+                              Persona ({personPending.length})
+                            </Menu.Label>
+                          )}
+                          {personPending.map(renderItem)}
+                          {companyPending.length > 0 && (
+                            <Menu.Label>
+                              Empresa ({companyPending.length})
+                            </Menu.Label>
+                          )}
+                          {companyPending.map(renderItem)}
+                        </Menu.Dropdown>
+                      </Menu>
+                    );
+                  })()}
 
                   <Divider mb="sm" />
                   <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
