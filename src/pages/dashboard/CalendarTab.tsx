@@ -318,28 +318,27 @@ export default function CalendarTab({
 
   // Bloquear slot
   const handleBlockSlot = async (time: string) => {
+    // El bloqueo es personal (solo se usa su startTime para excluir la franja al
+    // agendar): no reserva mesa, así que no depende de que quede un slot libre en
+    // el evento. Si hay uno, se guarda como referencia.
     const slot = agendaSlots.find(
-      (s) => s.startTime === time && s.available
+      (s) => s.startTime === time && s.available && !s.isBreak
     );
-    
-    if (!slot) {
-      showNotification({
-        title: "Error",
-        message: "No se encontró un slot disponible para bloquear",
-        color: "red",
-      });
-      return;
-    }
+    const [h, m] = time.split(":").map(Number);
+    const endMin = h * 60 + m + (eventConfig?.meetingDuration || 30);
+    const endTime =
+      slot?.endTime ||
+      `${String(Math.floor(endMin / 60)).padStart(2, "0")}:${String(endMin % 60).padStart(2, "0")}`;
 
     try {
       // Agregar a la subcolección de slots bloqueados del usuario
       await addDoc(collection(db, "users", uid, "blockedSlots"), {
         eventId,
         date: currentDate,
-        startTime: slot.startTime,
-        endTime: slot.endTime,
-        tableNumber: slot.tableNumber,
-        slotId: slot.id,
+        startTime: time,
+        endTime,
+        tableNumber: slot?.tableNumber ?? null,
+        slotId: slot?.id ?? null,
         createdAt: new Date(),
       });
       
@@ -648,9 +647,6 @@ export default function CalendarTab({
                 {timeSlots.map((time) => {
                   const meetings = meetingsByTime[time] || [];
                   const isBlocked = blockedSlots.some((s) => s.startTime === time);
-                  const hasAvailableSlot = agendaSlots.some(
-                    (s) => s.startTime === time && s.available && !s.isBreak
-                  );
 
                   return (
                     <Group key={time} wrap="nowrap" align="stretch" gap="sm">
@@ -695,19 +691,17 @@ export default function CalendarTab({
                             <Text c="dimmed" size="sm">
                               Disponible
                             </Text>
-                            {hasAvailableSlot && (
-                              <Button
-                                variant="subtle"
-                                color="gray"
-                                size="compact-xs"
-                                leftSection={<IconLock size={12} />}
-                                onClick={() => runSlotAction(time, handleBlockSlot)}
-                                loading={slotActionTime === time}
-                                disabled={!!slotActionTime && slotActionTime !== time}
-                              >
-                                Bloquear franja
-                              </Button>
-                            )}
+                            <Button
+                              variant="subtle"
+                              color="gray"
+                              size="compact-xs"
+                              leftSection={<IconLock size={12} />}
+                              onClick={() => runSlotAction(time, handleBlockSlot)}
+                              loading={slotActionTime === time}
+                              disabled={!!slotActionTime && slotActionTime !== time}
+                            >
+                              Bloquear franja
+                            </Button>
                           </Group>
                         ) : (
                           <Stack gap={6}>

@@ -16,6 +16,8 @@ import {
   Box,
   Paper,
   Grid,
+  SegmentedControl,
+  Select,
   useMantineTheme,
 } from "@mantine/core";
 import {
@@ -55,6 +57,10 @@ interface RequestsTabProps {
   cancelSentMeeting: (meetingId: string, action: string) => void | Promise<void>;
   prepareSlotSelection: (meetingId: string) => void;
   prepareSlotSelectionLoading?: boolean;
+  /** Filtro de día global del dashboard (useDashboardData); acceptedRequests ya llega filtrado por él */
+  globalDateFilter?: string | null;
+  setGlobalDateFilter?: (date: string | null) => void;
+  eventConfig?: any;
 }
 
 // Nombres ya mostrados en el header de la card (avatar + nombre + cargo/empresa) o que
@@ -292,8 +298,31 @@ export default function RequestsTab({
   cancelSentMeeting,
   prepareSlotSelection,
   prepareSlotSelectionLoading = false,
+  globalDateFilter = null,
+  setGlobalDateFilter,
+  eventConfig,
 }: RequestsTabProps) {
   const theme = useMantineTheme();
+
+  // Selector de día para "Aceptadas" en eventos multi-día. Controla el filtro global del
+  // dashboard (que arranca en el día de hoy durante el evento); su otro selector vivía en
+  // la sub-tab "Reuniones", hoy oculta, así que sin este no había forma de ver otros días.
+  const eventDates: string[] = [
+    ...new Set<string>(eventConfig?.eventDates || (eventConfig?.eventDate ? [eventConfig.eventDate] : [])),
+  ];
+  const showDaySelector = eventDates.length > 1 && !!setGlobalDateFilter;
+  const dayOptions = [
+    { value: "all", label: "Todos" },
+    ...eventDates.map((date) => {
+      const [y, m, d] = date.split("-").map(Number);
+      return {
+        value: date,
+        label: new Date(y, m - 1, d).toLocaleDateString("es-ES", { weekday: "short", day: "numeric", month: "short" }),
+      };
+    }),
+  ];
+  const dayValue = globalDateFilter && eventDates.includes(globalDateFilter) ? globalDateFilter : "all";
+  const onDayChange = (v: string | null) => setGlobalDateFilter?.(!v || v === "all" ? null : v);
   const findUser = (id: string) => assistants.find((u) => u.id === id);
   const findCompany = (nit?: string | null) => companies.find((c) => c.nitNorm === nit);
 
@@ -502,6 +531,18 @@ export default function RequestsTab({
           Aceptadas ({acceptedRequests.length})
         </Accordion.Control>
         <Accordion.Panel>
+          {showDaySelector && (
+            <Group gap="xs" mb="sm" wrap="wrap">
+              <Text size="sm" c="dimmed">
+                Día:
+              </Text>
+              {dayOptions.length <= 5 ? (
+                <SegmentedControl size="xs" radius="xl" data={dayOptions} value={dayValue} onChange={onDayChange} />
+              ) : (
+                <Select size="xs" data={dayOptions} value={dayValue} onChange={onDayChange} allowDeselect={false} w={200} />
+              )}
+            </Group>
+          )}
           <Grid gutter="sm">
             {acceptedRequests.length > 0 ? (
               acceptedRequests.map((request) => {
@@ -565,7 +606,9 @@ export default function RequestsTab({
               <Grid.Col span={12}>
                 <Paper withBorder radius="lg" p="lg">
                   <Text c="dimmed" ta="center">
-                    No tienes solicitudes aceptadas.
+                    {showDaySelector && dayValue !== "all"
+                      ? "No tienes solicitudes aceptadas este día. Elige otro día o \"Todos\"."
+                      : "No tienes solicitudes aceptadas."}
                   </Text>
                 </Paper>
               </Grid.Col>

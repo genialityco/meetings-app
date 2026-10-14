@@ -106,6 +106,7 @@ export default function CompanyLanding() {
     groupedSlots,
     tableOptions,
     chosenSlot,
+    prepareSlotSelectionLoading,
     createProduct,
     updateProduct,
     deleteProduct,
@@ -748,6 +749,7 @@ export default function CompanyLanding() {
             prepareSlotSelectionForRequest(pendingMeetingRequest.receiverId, date);
           }
         }}
+        slotsLoading={prepareSlotSelectionLoading}
         description={
           pendingMeetingRequest
             ? `Vas a solicitar una reunión con ${

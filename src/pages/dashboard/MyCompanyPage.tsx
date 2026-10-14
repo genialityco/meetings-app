@@ -89,6 +89,7 @@ export default function MyCompanyPage() {
         eventDates={[...new Set(dashboard.eventConfig?.eventDates || (dashboard.eventConfig?.eventDate ? [dashboard.eventConfig.eventDate] : []))]}
         selectedDate={dashboard.selectedDate}
         onDateChange={dashboard.handleDateChange}
+        slotsLoading={dashboard.prepareSlotSelectionLoading}
         description={
           dashboard.pendingMeetingRequest
             ? `Vas a solicitar una reunión con ${dashboard.currentRequesterName || "..."}.`
