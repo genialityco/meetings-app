@@ -1,6 +1,13 @@
 /** Clave usada como único "día" para eventos sin eventDates/eventDate configurados. */
 export const DEFAULT_CHECKIN_DAY = "unico";
 
+/** Fecha de hoy (YYYY-MM-DD) según el reloj local del dispositivo. No usar
+ * toISOString(): da la fecha UTC, que en Colombia ya es "mañana" desde las 7 p. m. */
+export function localTodayISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 /** Lista de fechas (YYYY-MM-DD) del evento, a partir de event.config. */
 export function getEventDayKeys(eventConfig: any): string[] {
   if (eventConfig?.eventDates?.length) return eventConfig.eventDates;

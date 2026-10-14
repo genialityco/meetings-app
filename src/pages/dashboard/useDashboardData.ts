@@ -17,7 +17,7 @@ import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
 import { Assistant, Meeting, Notification, Company, EventPolicies, DEFAULT_POLICIES, MeetingContext } from "./types";
 import { normalizeTipoAsistente, isVendedor, canDiscoverAttendee } from "../../utils/attendeeRole";
-import { getEventDayKeys } from "../../utils/eventDays";
+import { getEventDayKeys, localTodayISO } from "../../utils/eventDays";
 import { showNotification, notifications as mantineNotifications } from "@mantine/notifications";
 import { serverTimestamp } from "firebase/firestore";
 import { sendWhatsAppMessage as sendWhatsAppAPI } from "../../utils/whatsappService";
@@ -341,7 +341,7 @@ export function useDashboardData(eventId?: string) {
     if (didAutoSelectGlobalDay.current || !eventConfig) return;
     didAutoSelectGlobalDay.current = true;
     const days = getEventDayKeys(eventConfig);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localTodayISO();
     if (days.length > 1 && days.includes(today)) {
       setGlobalDateFilter(today);
     }
@@ -2316,14 +2316,22 @@ export function useDashboardData(eventId?: string) {
   };
 
   // Filtrar reuniones y solicitudes por fecha global
+  // Filtro global por día: solo descarta lo que tiene otra fecha. Las solicitudes
+  // pendientes/enviadas/rechazadas no tienen meetingDate (aún no tienen horario),
+  // así que siempre se muestran; antes el filtro las ocultaba durante el evento.
+  const matchesGlobalDay = (m: { meetingDate?: string | null }) =>
+    !globalDateFilter || !m.meetingDate || m.meetingDate === globalDateFilter;
+
   const filteredAcceptedMeetings = useMemo(() => {
     if (!globalDateFilter) return acceptedMeetings;
-    return acceptedMeetings.filter(m => m.meetingDate === globalDateFilter);
+    return acceptedMeetings.filter(matchesGlobalDay);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [acceptedMeetings, globalDateFilter]);
 
   const filteredCancelledMeetings = useMemo(() => {
     if (!globalDateFilter) return cancelledMeetings;
-    return cancelledMeetings.filter(m => m.meetingDate === globalDateFilter);
+    return cancelledMeetings.filter(matchesGlobalDay);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cancelledMeetings, globalDateFilter]);
 
   const filteredPendingRequests = useMemo(() => {
@@ -2336,27 +2344,32 @@ export function useDashboardData(eventId?: string) {
     });
     const combined = [...pendingRequests, ...companyVisible];
     if (!globalDateFilter) return combined;
-    return combined.filter(m => m.meetingDate === globalDateFilter);
+    return combined.filter(matchesGlobalDay);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingRequests, companyPendingRequests, globalDateFilter, assistants, policies.discoveryMode, currentUser?.data?.tipoAsistente]);
 
   const filteredSentRequests = useMemo(() => {
     if (!globalDateFilter) return sentRequests;
-    return sentRequests.filter(m => m.meetingDate === globalDateFilter);
+    return sentRequests.filter(matchesGlobalDay);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sentRequests, globalDateFilter]);
 
   const filteredAcceptedRequests = useMemo(() => {
     if (!globalDateFilter) return acceptedRequests;
-    return acceptedRequests.filter(m => m.meetingDate === globalDateFilter);
+    return acceptedRequests.filter(matchesGlobalDay);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [acceptedRequests, globalDateFilter]);
 
   const filteredRejectedRequests = useMemo(() => {
     if (!globalDateFilter) return rejectedRequests;
-    return rejectedRequests.filter(m => m.meetingDate === globalDateFilter);
+    return rejectedRequests.filter(matchesGlobalDay);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rejectedRequests, globalDateFilter]);
 
   const filteredSentRejectedRequests = useMemo(() => {
     if (!globalDateFilter) return sentRejectedRequests;
-    return sentRejectedRequests.filter(m => m.meetingDate === globalDateFilter);
+    return sentRejectedRequests.filter(matchesGlobalDay);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sentRejectedRequests, globalDateFilter]);
 
   // ---------------------- RETORNO ----------------------
@@ -2370,6 +2383,9 @@ export function useDashboardData(eventId?: string) {
     acceptedMeetings: filteredAcceptedMeetings,
     standbyMeetings,
     cancelledMeetings: filteredCancelledMeetings,
+    // Sin el filtro global por día: la Agenda (CalendarTab) tiene su propio selector de día
+    allAcceptedMeetings: acceptedMeetings,
+    allCancelledMeetings: cancelledMeetings,
     loadingMeetings,
     loadingState: {
       event: !eventLoaded,

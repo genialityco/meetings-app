@@ -42,7 +42,7 @@ import { DEFAULT_SURVEY_FIELDS, getRatingData } from "../admin/ConfigureSurveyMo
 import OptimisticCheckbox from "../../components/OptimisticCheckbox";
 import RaffleQrModal from "./RaffleQrModal";
 import { normalizeTipoAsistente } from "../../utils/attendeeRole";
-import { isCheckedInOnDay, resolveCheckInDay } from "../../utils/eventDays";
+import { isCheckedInOnDay, localTodayISO, resolveCheckInDay } from "../../utils/eventDays";
 import { trackEvent } from "../../utils/analytics";
 import { logWhatsAppClick } from "../../utils/eventStats";
 import classes from "./CalendarTab.module.css";
@@ -156,7 +156,7 @@ export default function CalendarTab({
 
   // Usar la fecha seleccionada, o si no hay ninguna, el día actual del evento (si hoy es
   // uno de sus días) y si no la primera fecha disponible.
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localTodayISO();
   const defaultDate = eventDates.includes(today) ? today : eventDates[0] || "";
   const currentDate = selectedDate || defaultDate;
 

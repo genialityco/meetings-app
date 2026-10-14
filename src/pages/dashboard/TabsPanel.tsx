@@ -378,8 +378,10 @@ export default function TabsPanel({
 
           <Tabs.Panel value="agenda" pt="md">
             <CalendarTab
-              acceptedMeetings={dashboard.acceptedMeetings}
-              cancelledMeetings={dashboard.cancelledMeetings}
+              // La Agenda filtra por su propio selector de día: recibe las listas
+              // completas, no las ya recortadas por el filtro global del dashboard
+              acceptedMeetings={dashboard.allAcceptedMeetings}
+              cancelledMeetings={dashboard.allCancelledMeetings}
               standbyMeetings={dashboard.standbyMeetings || []}
               pendingRequests={dashboard.pendingRequests}
               sentRequests={dashboard.sentRequests}
