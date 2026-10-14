@@ -1,4 +1,4 @@
-import { Modal, LoadingOverlay, Stack, Select, Button, Text, Textarea } from "@mantine/core";
+import { Modal, LoadingOverlay, Stack, Select, Button, Text, Textarea, Loader } from "@mantine/core";
 import { useMemo, useEffect } from "react";
 
 const MAX_MESSAGE_LENGTH = 200;
@@ -19,6 +19,9 @@ interface SlotModalProps {
   eventDates?: string[]; // Array de fechas del evento
   selectedDate?: string | null;
   onDateChange?: (date: string) => void;
+  /** Cargando los horarios del día elegido: muestra un loader en vez del estado
+   *  vacío, que si no seguía mostrando los horarios (o el "no hay horarios") del día anterior */
+  slotsLoading?: boolean;
   /** Texto describiendo con quién/qué se va a agendar (ej. "Vas a solicitar una
    *  reunión con Juan de Geniality."). Si se pasa, este modal actúa como el
    *  único paso de la solicitud (horario + mesa + mensaje opcional). */
@@ -44,6 +47,7 @@ export default function SlotModal({
   eventDates = [],
   selectedDate,
   onDateChange,
+  slotsLoading = false,
   description,
   message,
   onMessageChange,
@@ -115,12 +119,19 @@ export default function SlotModal({
             data={dayOptions}
             value={currentDate}
             onChange={(value) => onDateChange?.(value || eventDates[0])}
-            disabled={confirmLoading}
+            disabled={confirmLoading || slotsLoading}
             allowDeselect={false}
           />
         </Stack>
       )}
-      {availableSlots.length === 0 ? (
+      {slotsLoading ? (
+        <Stack align="center" gap="xs" p="xl">
+          <Loader size="sm" />
+          <Text size="sm" c="dimmed">
+            Cargando horarios disponibles…
+          </Text>
+        </Stack>
+      ) : availableSlots.length === 0 ? (
         <Text ta="center" p="md">
           {hasMultipleDays
             ? "No hay horarios disponibles este día. Prueba con otro día."

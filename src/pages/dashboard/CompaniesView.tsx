@@ -336,6 +336,17 @@ export default function CompaniesView({
     });
   }, [filteredAssistants, allAssistants, currentUser, myUid, policies.groupByRazonSocial, policies.discoveryMode]);
 
+  // Campo "País" del formulario del evento (su name es dinámico, p. ej. custom_pas_8769):
+  // se reconoce por la etiqueta. El registro lo guarda en el doc de empresa y en el usuario.
+  const countryFieldName = useMemo(() => {
+    const norm = (s: unknown) =>
+      String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+    const field = (formFields || []).find(
+      (f: any) => ["pais", "country"].includes(norm(f?.label)) || ["pais", "country"].includes(norm(f?.name)),
+    );
+    return (field?.name as string | undefined) || null;
+  }, [formFields]);
+
   // Agrupar asistentes por empresa
   const companiesData = useMemo(() => {
     const grouped = new Map<string, Assistant[]>();
@@ -376,13 +387,28 @@ export default function CompaniesView({
       const empresa =
         policies.groupByRazonSocial ? keyStr : (companyDoc?.razonSocial || asistentes[0]?.empresa?.trim() || "Sin empresa");
 
+      // País: `pais` explícito del doc, si no el campo "País" del formulario en el doc
+      // de empresa y, si tampoco está, el más común entre sus representantes.
+      let pais: string | null = (companyDoc as any)?.pais || null;
+      if (!pais && countryFieldName) {
+        pais = String((companyDoc as any)?.[countryFieldName] || "").trim() || null;
+        if (!pais) {
+          const counts = new Map<string, number>();
+          asistentes.forEach((a) => {
+            const v = String((a as any)[countryFieldName] || "").trim();
+            if (v) counts.set(v, (counts.get(v) || 0) + 1);
+          });
+          pais = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+        }
+      }
+
       return {
         nit: keyStr, // Used as ID
         nitLookup: nitForLookup, // NIT real del doc de empresa (puede diferir de keyStr con groupByRazonSocial)
         empresa,
         logoUrl: companyDoc?.logoUrl || null,
         fixedTable: companyDoc?.fixedTable || null,
-        pais: companyDoc?.pais || null,
+        pais,
         asistentes,
         // Cualquier miembro de la empresa cuenta como "asesor" para la solicitud
         // dirigida a la empresa, sin importar su tipoAsistente (ver getCompanyAdvisors).
@@ -398,18 +424,27 @@ export default function CompaniesView({
         similarity: undefined as number | undefined,
       };
     });
-  }, [assistantsWithMe, companiesByNit, policies.groupByRazonSocial, myUid]);
+  }, [assistantsWithMe, companiesByNit, policies.groupByRazonSocial, myUid, countryFieldName]);
 
-  // Países presentes entre las empresas del evento (hoy solo se puebla vía
-  // backfill/inferencia para eventos binacionales); si ninguna empresa tiene
-  // país asignado, no hay nada que filtrar y el selector no se muestra.
-  const availableCountries = useMemo(() => {
-    const set = new Set<string>();
+  // Países de las empresas del evento (doc.pais o campo "País" del formulario). Se
+  // listan los que tienen 2+ empresas; los demás (casos aislados) se agrupan en
+  // "Otros países" para no llenar el selector. Sin países, el selector no se muestra.
+  const OTHER_COUNTRIES = "__otros__";
+  const { availableCountries, mainCountries } = useMemo(() => {
+    const counts = new Map<string, number>();
     companiesData.forEach((c) => {
-      if (c.pais) set.add(c.pais);
+      if (c.pais) counts.set(c.pais, (counts.get(c.pais) || 0) + 1);
     });
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
+    const main = [...counts.entries()].filter(([, n]) => n >= 2).map(([p]) => p)
+      .sort((a, b) => a.localeCompare(b, "es"));
+    const hasOthers = [...counts.values()].some((n) => n < 2);
+    const options = main.map((p) => ({ value: p, label: p }));
+    if (hasOthers) options.push({ value: OTHER_COUNTRIES, label: "Otros países" });
+    return { availableCountries: options.length > 1 ? options : [], mainCountries: new Set(main) };
   }, [companiesData]);
+  const matchesCountry = (pais: string | null) =>
+    !countryFilter ||
+    (countryFilter === OTHER_COUNTRIES ? !!pais && !mainCountries.has(pais) : pais === countryFilter);
 
   // Roles presentes en el listado: el filtro por rol solo se ofrece si hay
   // empresas de ambos roles (p. ej. un comprador que solo ve expositores no lo necesita).
@@ -431,7 +466,7 @@ export default function CompaniesView({
   const roleCounts = useMemo(() => {
     const counts = { all: 0, vendedor: 0, comprador: 0 };
     companiesData.forEach((c) => {
-      if (countryFilter && c.pais !== countryFilter) return;
+      if (!matchesCountry(c.pais)) return;
       counts.all++;
       const roles = new Set(c.asistentes.map((a: any) => normalizeTipoAsistente(a.tipoAsistente)));
       if (roles.has("vendedor")) counts.vendedor++;
@@ -466,7 +501,7 @@ export default function CompaniesView({
 
   const companiesDataFiltered = useMemo(() => {
     return companiesData.filter((c) => {
-      if (countryFilter && c.pais !== countryFilter) return false;
+      if (!matchesCountry(c.pais)) return false;
       // Una empresa es "expositora"/"asistente" si tiene al menos un representante con ese rol
       if (showRoleFilter && roleFilter !== "all") {
         return c.asistentes.some((a: any) => normalizeTipoAsistente(a.tipoAsistente) === roleFilter);
