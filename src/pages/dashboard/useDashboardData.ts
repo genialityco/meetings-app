@@ -17,7 +17,6 @@ import { db } from "../../firebase/firebaseConfig";
 import { UserContext } from "../../context/UserContext";
 import { Assistant, Meeting, Notification, Company, EventPolicies, DEFAULT_POLICIES, MeetingContext } from "./types";
 import { normalizeTipoAsistente, isVendedor, canDiscoverAttendee } from "../../utils/attendeeRole";
-import { getEventDayKeys } from "../../utils/eventDays";
 import { showNotification, notifications as mantineNotifications } from "@mantine/notifications";
 import { serverTimestamp } from "firebase/firestore";
 import { sendWhatsAppMessage as sendWhatsAppAPI } from "../../utils/whatsappService";
@@ -332,20 +331,11 @@ export function useDashboardData(eventId?: string) {
     });
   }, [eventId]);
 
-  // 1a. Al cargar un evento multi-día, "Mis reuniones"/"Solicitudes" arrancan filtradas
-  // en el día actual del evento (en vez de "Todos los días") si hoy es uno de sus días.
-  // Solo se auto-selecciona una vez: si el asistente cambia el filtro después (incluido
-  // volver a "Todos los días"), no se lo pisamos en el siguiente snapshot de eventConfig.
-  const didAutoSelectGlobalDay = useRef(false);
-  useEffect(() => {
-    if (didAutoSelectGlobalDay.current || !eventConfig) return;
-    didAutoSelectGlobalDay.current = true;
-    const days = getEventDayKeys(eventConfig);
-    const today = new Date().toISOString().slice(0, 10);
-    if (days.length > 1 && days.includes(today)) {
-      setGlobalDateFilter(today);
-    }
-  }, [eventConfig]);
+  // El filtro de día global arranca en "Todos los días" (null) y NO se auto-selecciona
+  // en el día actual: su único selector vivía en la sub-tab "Reuniones" (MeetingsTab),
+  // hoy oculta, así que quedaba fijo en hoy y vaciaba las reuniones de los demás días
+  // en la Agenda (que filtra por su propio selector de día encima de esta lista) y en
+  // Solicitudes → Aceptadas.
 
   // 1b. Suscripción real-time a empresas del evento
   useEffect(() => {
