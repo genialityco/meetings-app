@@ -2323,7 +2323,10 @@ export function useDashboardData(eventId?: string) {
 
   const filteredCancelledMeetings = useMemo(() => {
     if (!globalDateFilter) return cancelledMeetings;
-    return cancelledMeetings.filter(m => m.meetingDate === globalDateFilter);
+    // A diferencia de accepted/cancelled con fecha, una solicitud cancelada
+    // mientras aún estaba pendiente (cancelSentMeeting) nunca tuvo meetingDate:
+    // esas deben verse siempre, no solo cuando coincide el día seleccionado.
+    return cancelledMeetings.filter(m => !m.meetingDate || m.meetingDate === globalDateFilter);
   }, [cancelledMeetings, globalDateFilter]);
 
   // Pendientes/enviadas/rechazadas nunca llegan a tener meetingDate (solo se

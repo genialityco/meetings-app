@@ -53,7 +53,7 @@ import EditFreeMeetingModal from "./EditFreeMeetingModal";
 import CreateFreeMeetingModal from "./CreateFreeMeetingModal";
 import { useDashboardData } from "../dashboard/useDashboardData";
 import { formatPhoneForWhatsApp } from "../../utils/whatsappService";
-import { getTableLabel } from "../dashboard/meetingSlotEngine";
+import { getTableLabel, normCompanyKey } from "../dashboard/meetingSlotEngine";
 import { normalizeTipoAsistente } from "../../utils/attendeeRole";
 import {
   IconClipboard,
