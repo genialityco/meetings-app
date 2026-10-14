@@ -328,7 +328,7 @@ export default function NewWaCampaignModal({ opened, onClose, event, onCreated }
     const testMapping = Object.fromEntries(
       Object.entries(mapping).map(([k, m]) => [k, m.source === "field" && !m.fallback ? { ...m, fallback: "Prueba" } : m]),
     );
-    const { components } = buildRecipientMessage({
+    const { components, missing } = buildRecipientMessage({
       template,
       analysis,
       mapping: testMapping,
@@ -336,6 +336,10 @@ export default function NewWaCampaignModal({ opened, onClose, event, onCreated }
       ctx,
       campaignId: "prueba",
     });
+    if (missing.length) {
+      setTestResult({ ok: false, message: `No se puede enviar: ${missing.join(", ")}` });
+      return;
+    }
     setTestSending(true);
     setTestResult(null);
     try {

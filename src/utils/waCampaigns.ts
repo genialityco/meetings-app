@@ -340,6 +340,10 @@ export function buildRecipientMessage(params: {
     }
     values[slot.key] = v;
     if (!v) missing.push(slot.label);
+    // Un link completo de otro dominio quedaría pegado detrás de la base fija del
+    // botón ("…netlify.app/http://localhost…", p. ej. si la campaña se arma desde
+    // localhost sin VITE_PUBLIC_APP_URL): ese destinatario no se envía
+    else if (slot.kind === "button_url" && /^https?:\/\//i.test(v)) missing.push(`${slot.label} (link de otro dominio)`);
   }
 
   const textParam = (slot: TemplateSlot) => ({
