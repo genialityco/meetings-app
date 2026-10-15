@@ -34,6 +34,7 @@ const RaffleScanPage = lazy(() => import("./pages/RaffleScanPage.tsx"));
 const RafflePage = lazy(() => import("./pages/admin/RafflePage.tsx"));
 const WaTrackingPage = lazy(() => import("./pages/admin/WaTrackingPage.tsx"));
 const CompanyMeetingCountPage = lazy(() => import("./pages/admin/CompanyMeetingCountPage.tsx"));
+const AttendeeSurveyFillPage = lazy(() => import("./pages/admin/AttendeeSurveyFillPage.tsx"));
 const StandVisitScanPage = lazy(() => import("./pages/StandVisitScanPage.tsx"));
 const AutoLoginPage = lazy(() => import("./pages/AutoLoginPage.tsx"));
 
@@ -111,6 +112,11 @@ const App = () => {
           path="/admin/event/:eventId/conteo-reuniones"
           // Sin login de admin (como /matrix): lo usa el equipo de piso para anotar el conteo
           element={<CompanyMeetingCountPage />}
+        />
+        <Route
+          path="/admin/event/:eventId/encuestas-asistente"
+          // Sin login de admin (como /matrix): el equipo llena encuestas a nombre del asistente
+          element={<AttendeeSurveyFillPage />}
         />
         <Route
           path="/admin/event/:eventId/optimize-agenda"
