@@ -109,7 +109,8 @@ const App = () => {
         />
         <Route
           path="/admin/event/:eventId/conteo-reuniones"
-          element={<ProtectedAdminRoute><CompanyMeetingCountPage /></ProtectedAdminRoute>}
+          // Sin login de admin (como /matrix): lo usa el equipo de piso para anotar el conteo
+          element={<CompanyMeetingCountPage />}
         />
         <Route
           path="/admin/event/:eventId/optimize-agenda"

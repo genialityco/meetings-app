@@ -21,8 +21,9 @@ import {
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import { IconArrowLeft, IconCheck, IconSearch } from "@tabler/icons-react";
-import { collection, doc, getDoc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
+import { collection, doc, getDoc, onSnapshot, query, serverTimestamp, updateDoc, where } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
+import { normalizeTipoAsistente } from "../../utils/attendeeRole";
 
 interface CompanyRow {
   nit: string;
@@ -95,6 +96,10 @@ export default function CompanyMeetingCountPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
+  const [roleFilter, setRoleFilter] = useState("all");
+  // Roles presentes en cada empresa (según sus personas): una empresa con expositores
+  // y asistentes aparece en ambos filtros; una sin personas solo en "Todos".
+  const [rolesByCompany, setRolesByCompany] = useState<Record<string, Set<string>>>({});
 
   useEffect(() => {
     if (!eventId) return;
@@ -117,17 +122,34 @@ export default function CompanyMeetingCountPage() {
     });
   }, [eventId]);
 
+  useEffect(() => {
+    if (!eventId) return;
+    return onSnapshot(query(collection(db, "users"), where("eventId", "==", eventId)), (snap) => {
+      const map: Record<string, Set<string>> = {};
+      snap.docs.forEach((d) => {
+        const u = d.data();
+        const role = normalizeTipoAsistente(u.tipoAsistente);
+        if (u.companyId && role) (map[u.companyId] ||= new Set()).add(role);
+      });
+      setRolesByCompany(map);
+    });
+  }, [eventId]);
+
   const visible = useMemo(() => {
     const q = norm(search).trim();
     return companies.filter((c) => {
       if (filter === "pending" && c.reportadas != null) return false;
       if (filter === "done" && c.reportadas == null) return false;
+      if (roleFilter !== "all" && !rolesByCompany[c.nit]?.has(roleFilter)) return false;
       return !q || norm(c.empresa).includes(q) || norm(c.nit).includes(q);
     });
-  }, [companies, search, filter]);
+  }, [companies, search, filter, roleFilter, rolesByCompany]);
 
-  const conConteo = companies.filter((c) => c.reportadas != null).length;
-  const total = companies.reduce((s, c) => s + (c.reportadas ?? 0), 0);
+  // Totales del rol elegido (no dependen del buscador ni del filtro de conteo)
+  const roleScoped =
+    roleFilter === "all" ? companies : companies.filter((c) => rolesByCompany[c.nit]?.has(roleFilter));
+  const conConteo = roleScoped.filter((c) => c.reportadas != null).length;
+  const total = roleScoped.reduce((s, c) => s + (c.reportadas ?? 0), 0);
 
   return (
     <Container size="md" py="lg">
@@ -163,6 +185,17 @@ export default function CompanyMeetingCountPage() {
               <SegmentedControl
                 size="xs"
                 radius="xl"
+                value={roleFilter}
+                onChange={setRoleFilter}
+                data={[
+                  { value: "all", label: "Todos" },
+                  { value: "vendedor", label: "Expositores" },
+                  { value: "comprador", label: "Asistentes" },
+                ]}
+              />
+              <SegmentedControl
+                size="xs"
+                radius="xl"
                 value={filter}
                 onChange={setFilter}
                 data={[
@@ -177,7 +210,7 @@ export default function CompanyMeetingCountPage() {
                 Total: {total} reuniones
               </Badge>
               <Badge variant="light" size="lg">
-                {conConteo} / {companies.length} empresas
+                {conConteo} / {roleScoped.length} empresas
               </Badge>
             </Group>
           </Group>
