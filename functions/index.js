@@ -4350,3 +4350,7 @@ export {
 // aceptada, para los eventos del secret MEETING_REMINDER_EVENT_ID: ver
 // meetingReminders.js
 export { sendMeetingReminders } from "./meetingReminders.js";
+
+// Invitación de calendario (.ics) por correo al aceptar/mover/cancelar una
+// reunión (policy calendarInvitesEnabled): ver calendarInvites.js
+export { onMeetingCalendarInvite } from "./calendarInvites.js";

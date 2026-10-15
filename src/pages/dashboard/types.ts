@@ -175,6 +175,13 @@ export interface EventPolicies {
    * que recibe "event/<eventId>?ingresar=1". Sin plantilla, en v2 esos avisos solo
    * quedan como notificación in-app. */
   advisorNoticeTemplate?: { name: string; language: string } | null;
+  /** Invitación de calendario por correo (Cloud Function onMeetingCalendarInvite →
+   * wa-multi-session-backend /api/email/meeting-invite): al aceptarse una reunión cada
+   * participante recibe un .ics que la agrega a su calendario. Una sola vez por reunión:
+   * los cambios posteriores (horario, mesa, cancelación) no se reenvían. */
+  calendarInvitesEnabled?: boolean;
+  /** Lugar del evento que se muestra en la invitación, junto a la mesa (ej. "Corferias, Pabellón 3") */
+  calendarInvitesLocation?: string;
   /** Recordatorio automático (Cloud Function sendPendingRequestReminders) a quienes tienen solicitudes "pending" por aceptar: directas (receiverId) o a su empresa (todos sus asesores). Un resumen por destinatario cada N horas. */
   pendingRemindersEnabled?: boolean;
   /** Horas mínimas entre recordatorios a un mismo destinatario */
@@ -300,6 +307,8 @@ export const DEFAULT_POLICIES: EventPolicies = {
   standVisitAllowSellerScan: false,
   qrOnlyModeEnabled: false,
   advisorNoticeTemplate: null,
+  calendarInvitesEnabled: false,
+  calendarInvitesLocation: "",
   pendingRemindersEnabled: false,
   pendingRemindersEveryHours: 12,
   pendingRemindersMinAgeHours: 2,

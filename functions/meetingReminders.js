@@ -68,22 +68,32 @@ const BOGOTA_OFFSET = "-05:00";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Día de la reunión: meetingDate, o la fecha única del evento (reuniones legacy)
-function meetingDay(meeting, event) {
+export function meetingDay(meeting, event) {
   if (meeting.meetingDate) return String(meeting.meetingDate).slice(0, 10);
   const dates = Array.isArray(event.eventDates) ? event.eventDates : [];
   if (dates.length === 1) return String(dates[0]).slice(0, 10);
   return event.config?.eventDate ? String(event.config.eventDate).slice(0, 10) : null;
 }
 
-// Inicio de la reunión en ms (epoch) o null si no se puede calcular
-function meetingStartMs(meeting, event) {
+// Inicio y fin de la reunión en ms (epoch), o null si no se pueden calcular.
+// Sin hora de fin válida, el fin es null.
+export function meetingRangeMs(meeting, event) {
   const day = meetingDay(meeting, event);
-  const start = String(meeting.timeSlot || "").split("-")[0].trim();
-  const m = start.match(/^(\d{1,2}):(\d{2})$/);
-  if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day) || !m) return null;
-  const ms = Date.parse(`${day}T${m[1].padStart(2, "0")}:${m[2]}:00${BOGOTA_OFFSET}`);
-  return isNaN(ms) ? null : ms;
+  if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const toMs = (hm) => {
+    const m = String(hm || "").trim().match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return null;
+    const ms = Date.parse(`${day}T${m[1].padStart(2, "0")}:${m[2]}:00${BOGOTA_OFFSET}`);
+    return isNaN(ms) ? null : ms;
+  };
+  const [startStr, endStr] = String(meeting.timeSlot || "").split("-");
+  const start = toMs(startStr);
+  if (start === null) return null;
+  const end = toMs(endStr);
+  return { start, end: end !== null && end > start ? end : null };
 }
+
+const meetingStartMs = (meeting, event) => meetingRangeMs(meeting, event)?.start ?? null;
 
 const reminderKey = (meeting, event) => `${meetingDay(meeting, event)} ${meeting.timeSlot}`;
 

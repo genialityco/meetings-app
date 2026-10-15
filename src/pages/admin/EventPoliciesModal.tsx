@@ -176,6 +176,8 @@ export default function EventPoliciesModal({
   const [qrOnlyModeEnabled, setQrOnlyModeEnabled] = useState(false);
   const [advisorNoticeTemplateName, setAdvisorNoticeTemplateName] = useState("");
   const [advisorNoticeTemplateLanguage, setAdvisorNoticeTemplateLanguage] = useState("es");
+  const [calendarInvitesEnabled, setCalendarInvitesEnabled] = useState(false);
+  const [calendarInvitesLocation, setCalendarInvitesLocation] = useState("");
   const [pendingReminders, setPendingReminders] = useState<PendingRemindersConfig>(readPendingReminders());
   // Evento cuyas políticas ya se volcaron al estado (para detectar cambios sin guardar)
   const [loadedEvent, setLoadedEvent] = useState<any>(null);
@@ -246,6 +248,8 @@ export default function EventPoliciesModal({
     setQrOnlyModeEnabled(p.qrOnlyModeEnabled ?? false);
     setAdvisorNoticeTemplateName(p.advisorNoticeTemplate?.name ?? "");
     setAdvisorNoticeTemplateLanguage(p.advisorNoticeTemplate?.language || "es");
+    setCalendarInvitesEnabled(p.calendarInvitesEnabled ?? false);
+    setCalendarInvitesLocation(p.calendarInvitesLocation ?? "");
     setPendingReminders(readPendingReminders(p));
     setLoadedEvent(event);
   }, [event]);
@@ -379,6 +383,8 @@ export default function EventPoliciesModal({
     standVisitsEnabled,
     standVisitAllowSellerScan,
     qrOnlyModeEnabled,
+    calendarInvitesEnabled,
+    calendarInvitesLocation: calendarInvitesLocation.trim(),
     advisorNoticeTemplate: advisorNoticeTemplateName.trim()
       ? {
           name: advisorNoticeTemplateName.trim(),
@@ -842,10 +848,11 @@ export default function EventPoliciesModal({
               icon={<IconBell size={20} />}
               color="green"
               title="Notificaciones"
-              description="WhatsApp, correo, avisos en el dashboard y recordatorios de pendientes"
+              description="WhatsApp, correo, calendario, avisos en el dashboard y recordatorios de pendientes"
               badges={[
                 { label: whatsappNotificationsEnabled ? `WhatsApp ${whatsappApiVersion.toUpperCase()}` : "WhatsApp off", color: whatsappNotificationsEnabled ? "green" : "gray" },
                 ...(pendingReminders.pendingRemindersEnabled ? [{ label: "Recordatorios", color: "green" }] : []),
+                ...(calendarInvitesEnabled ? [{ label: "Calendario", color: "green" }] : []),
               ]}
             />
           </Accordion.Control>
@@ -897,6 +904,25 @@ export default function EventPoliciesModal({
                       </Group>
                     )}
                   </Stack>
+                )}
+              </SettingsCard>
+
+              <SettingsCard title="Calendario">
+                <Switch
+                  label="Invitación de calendario por correo"
+                  description="Al aceptarse una reunión, cada participante recibe un correo con la invitación (.ics) para agregarla a su Google Calendar, Outlook o Apple. Se envía una sola vez: los cambios posteriores de horario o la cancelación no se reenvían."
+                  checked={calendarInvitesEnabled}
+                  onChange={(e) => setCalendarInvitesEnabled(e.currentTarget.checked)}
+                />
+                {calendarInvitesEnabled && (
+                  <TextInput
+                    pl="xl"
+                    label="Lugar del evento"
+                    description="Se muestra en la invitación junto a la mesa asignada"
+                    placeholder="Corferias, Pabellón 3"
+                    value={calendarInvitesLocation}
+                    onChange={(e) => setCalendarInvitesLocation(e.currentTarget.value)}
+                  />
                 )}
               </SettingsCard>
 
