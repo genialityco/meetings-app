@@ -97,14 +97,21 @@ export default function AttendeeSurveyFillPage() {
   const [modal, setModal] = useState<{ meeting: any; respondentId: string } | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [eventLoaded, setEventLoaded] = useState(false);
+  const [usersLoaded, setUsersLoaded] = useState(false);
+  // Estado de las encuestas aún sin llegar: no mostrar "Pendiente" a una encuesta que sí está llena
+  const [surveysLoading, setSurveysLoading] = useState(false);
   const [checkInBusy, setCheckInBusy] = useState<string | null>(null); // día en curso
 
   useEffect(() => {
     if (!eventId) return;
-    getDoc(doc(db, "events", eventId)).then((s) => setEvent(s.data() || null));
-    return onSnapshot(query(collection(db, "users"), where("eventId", "==", eventId)), (snap) =>
-      setUsers(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-    );
+    getDoc(doc(db, "events", eventId))
+      .then((s) => setEvent(s.data() || null))
+      .finally(() => setEventLoaded(true));
+    return onSnapshot(query(collection(db, "users"), where("eventId", "==", eventId)), (snap) => {
+      setUsers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setUsersLoaded(true);
+    });
   }, [eventId]);
 
   const usersById = useMemo(() => Object.fromEntries(users.map((u) => [u.id, u])), [users]);
@@ -173,14 +180,17 @@ export default function AttendeeSurveyFillPage() {
     const ids = meetingIdsKey ? meetingIdsKey.split(",") : [];
     if (!ids.length) {
       setSurveys({});
+      setSurveysLoading(false);
       return;
     }
+    setSurveysLoading(true);
     const chunks: string[][] = [];
     for (let i = 0; i < ids.length; i += 30) chunks.push(ids.slice(i, i + 30));
     const parts: Record<number, Record<string, any>> = {};
     const unsubs = chunks.map((chunk, idx) =>
       onSnapshot(query(collection(db, "meetingSurveys"), where("meetingId", "in", chunk)), (snap) => {
         parts[idx] = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]));
+        if (Object.keys(parts).length === chunks.length) setSurveysLoading(false);
         setSurveys(Object.assign({}, ...Object.values(parts)));
       }),
     );
@@ -277,14 +287,24 @@ export default function AttendeeSurveyFillPage() {
             <TextInput
               autoFocus
               size="md"
-              placeholder="Buscar por nombre, correo, empresa o teléfono"
+              disabled={!usersLoaded || !eventLoaded}
+              rightSection={!usersLoaded || !eventLoaded ? <Loader size="xs" /> : null}
+              placeholder={!usersLoaded || !eventLoaded ? "Cargando asistentes…" : "Buscar por nombre, correo, empresa o teléfono"}
               leftSection={<IconSearch size={18} />}
               value={search}
               onChange={(e) => setSearch(e.currentTarget.value)}
               radius="md"
             />
             <Stack gap={6} mt="md">
-              {search.trim().length >= 2 && results.length === 0 && (
+              {(!usersLoaded || !eventLoaded) && (
+                <Group justify="center" gap="xs" py="md">
+                  <Loader size="sm" />
+                  <Text c="dimmed" size="sm">
+                    Cargando asistentes del evento…
+                  </Text>
+                </Group>
+              )}
+              {usersLoaded && eventLoaded && search.trim().length >= 2 && results.length === 0 && (
                 <Text c="dimmed" ta="center" py="md">
                   No se encontraron asistentes.
                 </Text>
@@ -427,7 +447,9 @@ export default function AttendeeSurveyFillPage() {
                                   {pid === selected.id ? "Encuesta de " : "Contraparte: "}
                                   {(person?.nombre || "").split(" ")[0]}
                                 </Text>
-                                {filled ? (
+                                {surveysLoading ? (
+                                  <Loader size={14} />
+                                ) : filled ? (
                                   <Badge color="green" leftSection={<IconCheck size={12} />}>
                                     Llena
                                   </Badge>
@@ -440,7 +462,7 @@ export default function AttendeeSurveyFillPage() {
                                   size="compact-xs"
                                   variant={filled ? "default" : "filled"}
                                   leftSection={<IconClipboardText size={12} />}
-                                  disabled={!person}
+                                  disabled={!person || surveysLoading}
                                   onClick={() => openSurvey(m, pid)}
                                 >
                                   {filled ? "Editar" : "Llenar"}
