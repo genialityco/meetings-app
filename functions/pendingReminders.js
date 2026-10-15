@@ -55,11 +55,11 @@ const INTERVAL_TOLERANCE_MS = 10 * 60 * 1000;
 // Máximo de solicitudes listadas en el correo
 const MAX_EMAIL_ITEMS = 25;
 const PLACEHOLDER_RE = /\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g;
-const HAS_PLACEHOLDER = /\{\{\s*[A-Za-z0-9_]+\s*\}\}/;
+export const HAS_PLACEHOLDER = /\{\{\s*[A-Za-z0-9_]+\s*\}\}/;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const escapeHtml = (s) =>
+export const escapeHtml = (s) =>
   String(s ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -106,7 +106,7 @@ function lastEventDay(event) {
 
 // Equivalente servidor de toWhatsAppNumber (src/utils/phoneUtils.ts), simplificado:
 // indicativo + número nacional, solo dígitos; "" si no es válido.
-function toWhatsAppNumber(raw) {
+export function toWhatsAppNumber(raw) {
   const value = String(raw ?? "")
     .replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, "")
     .split(/[/;,|]/)[0]
@@ -186,7 +186,7 @@ async function collectRecipients(db, eventId, cfg) {
 // ----------------------------------------------------------------------------
 // WhatsApp
 // ----------------------------------------------------------------------------
-async function fetchTemplate(cfg) {
+export async function fetchTemplate(cfg) {
   const response = await fetch(`${WHATSAPP_API_V2.value()}/api/templates`, {
     headers: { "x-api-key": WA_CAMPAIGN_API_KEY.value() },
   });
@@ -198,7 +198,7 @@ async function fetchTemplate(cfg) {
   return tpl;
 }
 
-const extractPlaceholders = (text = "") => {
+export const extractPlaceholders = (text = "") => {
   const names = [];
   for (const m of text.matchAll(PLACEHOLDER_RE)) if (!names.includes(m[1])) names.push(m[1]);
   if (names.every((n) => /^\d+$/.test(n))) names.sort((a, b) => Number(a) - Number(b));
@@ -236,7 +236,7 @@ function buildComponents(template, values, buttonSuffix) {
   return components;
 }
 
-async function sendWhatsApp(phone, template, components) {
+export async function sendWhatsApp(phone, template, components) {
   try {
     const response = await fetch(`${WHATSAPP_API_V2.value()}/api/campaign/send`, {
       method: "POST",
@@ -312,7 +312,7 @@ function buildEmailHtml({ event, eventId, recipient, users, origin, greetingName
   </body></html>`;
 }
 
-async function sendEmail(to, subject, html) {
+export async function sendEmail(to, subject, html) {
   try {
     const response = await fetch(EMAIL_API_URL.value(), {
       method: "POST",

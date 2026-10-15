@@ -18,6 +18,7 @@ export type WaMessageType =
   | "welcome"
   | "advisor_notice"
   | "pending_reminder"
+  | "meeting_reminder"
   | "campaign";
 
 /**
@@ -36,6 +37,7 @@ export const WA_MESSAGE_TYPE_LABELS: Record<WaMessageType, string> = {
   welcome: "Bienvenida",
   advisor_notice: "Aviso a compañero de empresa",
   pending_reminder: "Recordatorio de pendientes",
+  meeting_reminder: "Recordatorio de reunión próxima",
   campaign: "Campaña",
 };
 

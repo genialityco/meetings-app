@@ -1,4 +1,3 @@
-import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onRequest } from "firebase-functions/v2/https";
 import { onDocumentCreated, onDocumentUpdated, onDocumentWritten } from "firebase-functions/v2/firestore";
 import { initializeApp } from "firebase-admin/app";
@@ -18,121 +17,6 @@ const WHATSAPP_ACCOUNT_ID = defineSecret("WHATSAPP_ACCOUNT_ID");
 const VECTOR_FIELDS = ['descripcion'];
 // Configuración: Campos a utilizar para generar el vector de búsqueda (search_vector)
 const VECTOR_SEARCH_FIELDS = ['descripcion'];
-
-export const notifyMeetingsScheduled = onSchedule(
-  {
-    schedule: "every 5 minutes",
-    timeZone: "America/Bogota",
-    memory: "256MiB",
-    region: "us-central1",
-    secrets: [WHATSAPP_API_V1, WHATSAPP_API_V2, WHATSAPP_ACCOUNT_ID],
-  },
-  async () => {
-    const db = getFirestore();
-    const eventId = "DKyGhDkDlzXRBfnCxnrk";
-
-    const nowUTC = new Date();
-    const nowBogota = new Date(nowUTC.toLocaleString("en-US", { timeZone: "America/Bogota" }));
-
-    console.log("🕒 Buscando reuniones para el evento:", eventId);
-    console.log("⏰ Hora actual en Bogotá:", nowBogota.toLocaleString("es-CO"));
-
-    try {
-      const eventRef = db.collection("events").doc(eventId);
-      const eventDoc = await eventRef.get();
-
-      if (!eventDoc.exists) {
-        console.log("❌ Evento no encontrado");
-        return null;
-      }
-
-      const eventData = eventDoc.data();
-      const eventDate = new Date(eventData.config.eventDate);
-      const whatsappApiVersion = eventData.config?.policies?.whatsappApiVersion || "v1";
-      
-      console.log(`📱 Usando WhatsApp API: ${whatsappApiVersion}`);
-
-      const meetingsRef = eventRef.collection("meetings");
-      const meetingsSnap = await meetingsRef.where("status", "==", "accepted").get();
-
-      if (meetingsSnap.empty) {
-        console.log("❌ No hay reuniones aceptadas");
-        return null;
-      }
-
-      const notifications = [];
-
-      for (const doc of meetingsSnap.docs) {
-        const meeting = doc.data();
-        const [startStr] = meeting.timeSlot.split(" - ");
-        const [hour, minute] = startStr.split(":").map(Number);
-
-        const meetingStart = new Date(eventDate);
-        meetingStart.setHours(hour, minute, 0, 0);
-
-        const diff = meetingStart.getTime() - nowBogota.getTime();
-        const diffMinutes = Math.round(diff / 60000);
-
-        console.log(`⏰ Reunión ${doc.id}: ${diffMinutes} minutos`);
-
-        if (diff > 0 && diff <= 5 * 60 * 1000) {
-          console.log(`📅 Notificando reunión ${doc.id}`);
-
-          for (const uid of meeting.participants) {
-            const userDoc = await db.collection("users").doc(uid).get();
-
-            if (!userDoc.exists) {
-              console.log(`⚠️ Usuario no encontrado: ${uid}`);
-              continue;
-            }
-
-            const user = userDoc.data();
-            const phone = user.telefono?.replace(/\D/g, "");
-
-            if (!phone) {
-              console.log(`⚠️ Usuario ${user.nombre} no tiene teléfono`);
-              continue;
-            }
-
-            const message = `👋 Hola ${user.nombre?.trim() || "asistente"}!
-Recuerde que tiene una reunión asignada (${meeting.timeSlot}) y su reunión de networking ${eventData.eventName.toUpperCase() || "START"} empezará en menos de 5 minutos.
-Por favor diríjase a su mesa asignada (${meeting.tableAssigned}).`;
-
-            console.log(`📲 Enviando WhatsApp a ${user.nombre} (${phone})...`);
-
-            try {
-              const success = await sendWhatsAppMessage(
-                whatsappApiVersion,
-                phone,
-                message,
-                {
-                  eventName: eventData.eventName,
-                  requesterName: user.nombre,
-                  requesterCompany: user.empresa || user.company_razonSocial,
-                }
-              );
-
-              if (success) {
-                console.log(`✅ WhatsApp enviado a ${user.nombre}`);
-                notifications.push({ uid, phone, meetingId: doc.id });
-              } else {
-                console.log(`❌ Error enviando WhatsApp a ${user.nombre}`);
-              }
-            } catch (err) {
-              console.error(`💥 Error en WhatsApp:`, err);
-            }
-          }
-        }
-      }
-
-      console.log(`✅ Notificaciones enviadas: ${notifications.length}`);
-      return null;
-    } catch (error) {
-      console.error("💥 Error:", error);
-      throw error;
-    }
-  }
-);
 
 /**
  * Función HTTP para validar si un correo ya está registrado en un evento
@@ -4461,3 +4345,8 @@ export {
   sendPendingRequestReminders,
   runPendingReminders,
 } from "./pendingReminders.js";
+
+// Recordatorio por WhatsApp (API oficial) + correo 15 min antes de cada reunión
+// aceptada, para los eventos del secret MEETING_REMINDER_EVENT_ID: ver
+// meetingReminders.js
+export { sendMeetingReminders } from "./meetingReminders.js";

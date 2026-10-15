@@ -33,6 +33,21 @@ firebase functions:secrets:set WHATSAPP_ACCOUNT_ID
 # Valor: Tu account ID de la API de WhatsApp
 ```
 
+### 3. Recordatorio de reunión próxima (`sendMeetingReminders`)
+```bash
+firebase functions:secrets:set MEETING_REMINDER_EVENT_ID
+# Valor: id del evento (o varios separados por coma: id1,id2)
+
+firebase functions:secrets:set WA_CAMPAIGN_API_KEY
+# Valor: el mismo CAMPAIGN_API_KEY de wa-multi-session-backend (si no está ya configurado)
+```
+Params (en `functions/.env.<projectId>`):
+```
+MEETING_REMINDER_TEMPLATE=notificacion_reunion_networking   # default; vacío = solo correo
+MEETING_REMINDER_TEMPLATE_LANG=es
+MEETING_REMINDER_MINUTES=15
+```
+
 ## Verificar Secrets Configurados
 
 Para ver todos los secrets configurados:
