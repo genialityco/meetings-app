@@ -1392,6 +1392,9 @@ const EventAdmin = () => {
           <Button component={Link} to={`/admin/event/${event.id}/whatsapp`} variant="default">
             Tracking WhatsApp
           </Button>
+          <Button component={Link} to={`/admin/event/${event.id}/conteo-reuniones`} variant="default">
+            Conteo de reuniones
+          </Button>
           <Button component={Link} to={`/admin/event/${event.id}/optimize-agenda`} variant="filled" color="orange">
             Optimizar Agenda
           </Button>

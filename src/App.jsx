@@ -33,6 +33,7 @@ const QuickCheckInPage = lazy(() => import("./pages/admin/QuickCheckInPage.tsx")
 const RaffleScanPage = lazy(() => import("./pages/RaffleScanPage.tsx"));
 const RafflePage = lazy(() => import("./pages/admin/RafflePage.tsx"));
 const WaTrackingPage = lazy(() => import("./pages/admin/WaTrackingPage.tsx"));
+const CompanyMeetingCountPage = lazy(() => import("./pages/admin/CompanyMeetingCountPage.tsx"));
 const StandVisitScanPage = lazy(() => import("./pages/StandVisitScanPage.tsx"));
 const AutoLoginPage = lazy(() => import("./pages/AutoLoginPage.tsx"));
 
@@ -105,6 +106,10 @@ const App = () => {
         <Route
           path="/admin/event/:eventId/whatsapp"
           element={<ProtectedAdminRoute><WaTrackingPage /></ProtectedAdminRoute>}
+        />
+        <Route
+          path="/admin/event/:eventId/conteo-reuniones"
+          element={<ProtectedAdminRoute><CompanyMeetingCountPage /></ProtectedAdminRoute>}
         />
         <Route
           path="/admin/event/:eventId/optimize-agenda"
