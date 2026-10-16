@@ -15,6 +15,7 @@ import {
   Modal,
   NumberInput,
   Paper,
+  SegmentedControl,
   Select,
   Stack,
   Text,
@@ -102,6 +103,7 @@ export default function AttendeeSurveyFillPage() {
   // Estado de las encuestas aún sin llegar: no mostrar "Pendiente" a una encuesta que sí está llena
   const [surveysLoading, setSurveysLoading] = useState(false);
   const [checkInBusy, setCheckInBusy] = useState<string | null>(null); // día en curso
+  const [completedBusy, setCompletedBusy] = useState<string | null>(null); // meetingId en curso
 
   useEffect(() => {
     if (!eventId) return;
@@ -119,6 +121,26 @@ export default function AttendeeSurveyFillPage() {
   const eventDays = useMemo(() => getEventDayKeys(event?.config), [event]);
   const today = localTodayISO();
   const currentDay = resolveCheckInDay(event?.config);
+
+  // Estado de realización, con la misma convención que MeetingConfirmationGuard y la matriz:
+  // completed true = realizada, false = no realizada, sin campo = sin confirmar.
+  const setCompleted = async (meeting: any, value: "unset" | "yes" | "no") => {
+    if (!eventId) return;
+    setCompletedBusy(meeting.id);
+    try {
+      await updateDoc(
+        doc(db, "events", eventId, "meetings", meeting.id),
+        value === "unset"
+          ? { completed: deleteField(), confirmedAt: deleteField(), confirmedByAdmin: deleteField() }
+          : { completed: value === "yes", confirmedAt: new Date(), confirmedByAdmin: true },
+      );
+    } catch (e) {
+      console.error("Error marcando la reunión:", e);
+      showNotification({ color: "red", title: "No se pudo actualizar la reunión", message: "Intenta de nuevo." });
+    } finally {
+      setCompletedBusy(null);
+    }
+  };
 
   const toggleCheckIn = async (day: string) => {
     if (!selected || !eventId) return;
@@ -433,7 +455,22 @@ export default function AttendeeSurveyFillPage() {
                               </Badge>
                             )}
                             {m.isExternal && <Badge variant="light" color="grape">Libre</Badge>}
-                            {m.completed && <Badge variant="light" color="teal">Realizada</Badge>}
+                          </Group>
+                          <Group gap={6} mt={8} wrap="nowrap">
+                            <SegmentedControl
+                              size="xs"
+                              radius="xl"
+                              disabled={completedBusy === m.id}
+                              value={m.completed === true ? "yes" : m.completed === false ? "no" : "unset"}
+                              onChange={(v) => setCompleted(m, v as "unset" | "yes" | "no")}
+                              color={m.completed === true ? "teal" : m.completed === false ? "red" : "gray"}
+                              data={[
+                                { value: "unset", label: "Sin marcar" },
+                                { value: "yes", label: "Realizada" },
+                                { value: "no", label: "No realizada" },
+                              ]}
+                            />
+                            {completedBusy === m.id && <Loader size={14} />}
                           </Group>
                         </div>
                         {/* Encuesta de cada participante: el asistente buscado y su contraparte */}
