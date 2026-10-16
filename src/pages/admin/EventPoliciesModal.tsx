@@ -178,6 +178,7 @@ export default function EventPoliciesModal({
   const [advisorNoticeTemplateLanguage, setAdvisorNoticeTemplateLanguage] = useState("es");
   const [calendarInvitesEnabled, setCalendarInvitesEnabled] = useState(false);
   const [calendarInvitesLocation, setCalendarInvitesLocation] = useState("");
+  const [calendarFeedEnabled, setCalendarFeedEnabled] = useState(false);
   const [pendingReminders, setPendingReminders] = useState<PendingRemindersConfig>(readPendingReminders());
   // Evento cuyas políticas ya se volcaron al estado (para detectar cambios sin guardar)
   const [loadedEvent, setLoadedEvent] = useState<any>(null);
@@ -250,6 +251,7 @@ export default function EventPoliciesModal({
     setAdvisorNoticeTemplateLanguage(p.advisorNoticeTemplate?.language || "es");
     setCalendarInvitesEnabled(p.calendarInvitesEnabled ?? false);
     setCalendarInvitesLocation(p.calendarInvitesLocation ?? "");
+    setCalendarFeedEnabled(p.calendarFeedEnabled ?? false);
     setPendingReminders(readPendingReminders(p));
     setLoadedEvent(event);
   }, [event]);
@@ -385,6 +387,7 @@ export default function EventPoliciesModal({
     qrOnlyModeEnabled,
     calendarInvitesEnabled,
     calendarInvitesLocation: calendarInvitesLocation.trim(),
+    calendarFeedEnabled,
     advisorNoticeTemplate: advisorNoticeTemplateName.trim()
       ? {
           name: advisorNoticeTemplateName.trim(),
@@ -852,7 +855,7 @@ export default function EventPoliciesModal({
               badges={[
                 { label: whatsappNotificationsEnabled ? `WhatsApp ${whatsappApiVersion.toUpperCase()}` : "WhatsApp off", color: whatsappNotificationsEnabled ? "green" : "gray" },
                 ...(pendingReminders.pendingRemindersEnabled ? [{ label: "Recordatorios", color: "green" }] : []),
-                ...(calendarInvitesEnabled ? [{ label: "Calendario", color: "green" }] : []),
+                ...(calendarInvitesEnabled || calendarFeedEnabled ? [{ label: "Calendario", color: "green" }] : []),
               ]}
             />
           </Accordion.Control>
@@ -914,11 +917,17 @@ export default function EventPoliciesModal({
                   checked={calendarInvitesEnabled}
                   onChange={(e) => setCalendarInvitesEnabled(e.currentTarget.checked)}
                 />
-                {calendarInvitesEnabled && (
+                <Switch
+                  label="Sincronizar con el calendario personal"
+                  description="Muestra en la Agenda el botón “Sincronizar con mi calendario”: el asistente agrega una sola vez su agenda a Google Calendar, Outlook o Apple y las reuniones nuevas, cambios y cancelaciones se actualizan solos (Google puede tardar 12-24 h en reflejar un cambio)."
+                  checked={calendarFeedEnabled}
+                  onChange={(e) => setCalendarFeedEnabled(e.currentTarget.checked)}
+                />
+                {(calendarInvitesEnabled || calendarFeedEnabled) && (
                   <TextInput
                     pl="xl"
                     label="Lugar del evento"
-                    description="Se muestra en la invitación junto a la mesa asignada"
+                    description="Se muestra en el calendario junto a la mesa asignada"
                     placeholder="Corferias, Pabellón 3"
                     value={calendarInvitesLocation}
                     onChange={(e) => setCalendarInvitesLocation(e.currentTarget.value)}

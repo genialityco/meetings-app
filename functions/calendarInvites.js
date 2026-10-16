@@ -108,7 +108,8 @@ export const onMeetingCalendarInvite = onDocumentWritten(
       }
       const other = users.get(recipients.find((p) => p !== uid));
       results[uid] = await postInvite({
-        method: "REQUEST",
+        // PUBLISH: Gmail muestra "Agregar al calendario" en vez de Sí/No/Quizás
+        method: "PUBLISH",
         uid: `${eventId}-${meetingId}@gen-meetings.geniality.com.co`,
         sequence: 0,
         start: new Date(range.start).toISOString(),

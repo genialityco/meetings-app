@@ -47,6 +47,7 @@ import { trackEvent } from "../../utils/analytics";
 import { logWhatsAppClick } from "../../utils/eventStats";
 import classes from "./CalendarTab.module.css";
 import { ListSkeleton } from "./DashboardSkeletons";
+import CalendarSyncButton from "./CalendarSyncButton";
 
 interface CalendarTabProps {
   acceptedMeetings: any[];
@@ -65,6 +66,7 @@ interface CalendarTabProps {
   cancelMeeting?: (meeting: any) => Promise<any>;
   /** Primera carga de reuniones aceptadas en curso */
   loadingMeetings?: boolean;
+  eventName?: string;
 }
 
 function InfoRow({
@@ -107,6 +109,7 @@ export default function CalendarTab({
   sendWhatsAppMessage,
   cancelMeeting,
   loadingMeetings = false,
+  eventName,
 }: CalendarTabProps) {
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
   const [modalOpened, setModalOpened] = useState(false);
@@ -590,6 +593,10 @@ export default function CalendarTab({
                   {formatDate(currentDate)}
                 </Text>
               </Box>
+
+              {policies?.calendarFeedEnabled && uid && eventId && (
+                <CalendarSyncButton eventId={eventId} uid={uid} currentUser={currentUser} eventName={eventName} />
+              )}
 
               {/* Selector de día para eventos multi-día */}
               {isMultiDay &&

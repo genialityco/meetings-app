@@ -4354,3 +4354,7 @@ export { sendMeetingReminders } from "./meetingReminders.js";
 // Invitación de calendario (.ics) por correo al aceptar/mover/cancelar una
 // reunión (policy calendarInvitesEnabled): ver calendarInvites.js
 export { onMeetingCalendarInvite } from "./calendarInvites.js";
+
+// Suscripción al calendario personal (feed iCalendar por asistente, policy
+// calendarFeedEnabled): ver calendarFeed.js
+export { calendarFeed } from "./calendarFeed.js";

@@ -395,6 +395,7 @@ export default function TabsPanel({
               sendWhatsAppMessage={dashboard.sendWhatsAppMessage}
               cancelMeeting={dashboard.cancelMeeting}
               loadingMeetings={dashboard.loadingState?.meetings}
+              eventName={dashboard.eventName}
             />
           </Tabs.Panel>
           {!hideSolicitudes && (

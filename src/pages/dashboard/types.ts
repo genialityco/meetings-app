@@ -180,8 +180,12 @@ export interface EventPolicies {
    * participante recibe un .ics que la agrega a su calendario. Una sola vez por reunión:
    * los cambios posteriores (horario, mesa, cancelación) no se reenvían. */
   calendarInvitesEnabled?: boolean;
-  /** Lugar del evento que se muestra en la invitación, junto a la mesa (ej. "Corferias, Pabellón 3") */
+  /** Lugar del evento que se muestra en la invitación y en la suscripción, junto a la mesa (ej. "Corferias, Pabellón 3") */
   calendarInvitesLocation?: string;
+  /** Suscripción al calendario: botón "Sincronizar con mi calendario" en la Agenda que agrega
+   * un feed iCalendar (Cloud Function calendarFeed) con las reuniones aceptadas del asistente;
+   * su calendario lo actualiza solo (Google cada 12-24 h). El link usa users/{uid}.calendarFeedToken. */
+  calendarFeedEnabled?: boolean;
   /** Recordatorio automático (Cloud Function sendPendingRequestReminders) a quienes tienen solicitudes "pending" por aceptar: directas (receiverId) o a su empresa (todos sus asesores). Un resumen por destinatario cada N horas. */
   pendingRemindersEnabled?: boolean;
   /** Horas mínimas entre recordatorios a un mismo destinatario */
@@ -309,6 +313,7 @@ export const DEFAULT_POLICIES: EventPolicies = {
   advisorNoticeTemplate: null,
   calendarInvitesEnabled: false,
   calendarInvitesLocation: "",
+  calendarFeedEnabled: false,
   pendingRemindersEnabled: false,
   pendingRemindersEveryHours: 12,
   pendingRemindersMinAgeHours: 2,
