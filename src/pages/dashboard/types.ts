@@ -1,3 +1,4 @@
+import type { CompanySurveyConfig } from "../../utils/companySurvey";
 // Dashboard/types.ts
 
 export interface Contacto {
@@ -186,6 +187,13 @@ export interface EventPolicies {
    * un feed iCalendar (Cloud Function calendarFeed) con las reuniones aceptadas del asistente;
    * su calendario lo actualiza solo (Google cada 12-24 h). El link usa users/{uid}.calendarFeedToken. */
   calendarFeedEnabled?: boolean;
+  /** Encuesta de resultados por empresa (src/utils/companySurvey.ts): modal obligatorio al
+   * entrar al dashboard con dos preguntas (reuniones realizadas y valor de negocios en USD).
+   * Una respuesta por empresa en events/{eventId}/companySurveys/{companyId}: cuando alguien
+   * de la empresa responde (aquí o por el link de WhatsApp) deja de bloquear a los demás. */
+  companySurveyEnabled?: boolean;
+  /** Textos y público de la encuesta por empresa (ver CompanySurveyConfig) */
+  companySurvey?: Partial<CompanySurveyConfig>;
   /** Recordatorio automático (Cloud Function sendPendingRequestReminders) a quienes tienen solicitudes "pending" por aceptar: directas (receiverId) o a su empresa (todos sus asesores). Un resumen por destinatario cada N horas. */
   pendingRemindersEnabled?: boolean;
   /** Horas mínimas entre recordatorios a un mismo destinatario */
@@ -314,6 +322,7 @@ export const DEFAULT_POLICIES: EventPolicies = {
   calendarInvitesEnabled: false,
   calendarInvitesLocation: "",
   calendarFeedEnabled: false,
+  companySurveyEnabled: false,
   pendingRemindersEnabled: false,
   pendingRemindersEveryHours: 12,
   pendingRemindersMinAgeHours: 2,

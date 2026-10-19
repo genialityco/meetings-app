@@ -152,6 +152,7 @@ const SPECIAL_FIELDS: FieldOption[] = [
   { value: "$evento.nombre", label: "Nombre del evento", group: "Evento" },
   { value: "$link.credencial", label: "Link de su credencial (QR)", group: "Links" },
   { value: "$link.acceso", label: "Link de acceso directo (inicia su sesión)", group: "Links" },
+  { value: "$link.encuestaEmpresa", label: "Link de la encuesta por empresa", group: "Links" },
   { value: "$link.dashboard", label: "Link del dashboard del evento", group: "Links" },
   { value: "$link.registro", label: "Link de registro del evento", group: "Links" },
 ];
@@ -178,7 +179,7 @@ export function getFieldOptions(event: any, importColumns?: string[]): FieldOpti
   if (importColumns) {
     return [
       ...importColumns.map((c) => ({ value: `${COLUMN_FIELD_PREFIX}${c}`, label: c, group: "Columnas del archivo" })),
-      ...SPECIAL_FIELDS.filter((f) => f.value !== "$link.credencial" && f.value !== "$link.acceso"),
+      ...SPECIAL_FIELDS.filter((f) => f.value !== "$link.credencial" && f.value !== "$link.acceso" && f.value !== "$link.encuestaEmpresa"),
     ];
   }
   const seen = new Set(BASE_FIELDS.map((f) => f.value));
@@ -224,6 +225,9 @@ export function resolveField(attendee: any, field: string, ctx: ResolveContext):
       break;
     case "$link.acceso":
       raw = buildAccessLink(eventId, attendee.id, ctx.origin);
+      break;
+    case "$link.encuestaEmpresa":
+      raw = `${ctx.origin}/encuesta-empresa/${eventId}/${attendee.id}`;
       break;
     case "$link.dashboard":
       raw = `${ctx.origin}/dashboard/${eventId}`;

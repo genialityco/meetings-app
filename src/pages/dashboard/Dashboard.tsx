@@ -13,6 +13,7 @@ import { isVendedor } from "../../utils/attendeeRole";
 import SlotModal from "./SlotModal";
 import ConfirmModal from "./ConfirmModal";
 import MeetingConfirmationGuard from "./MeetingConfirmationGuard";
+import CompanySurveyGuard from "./CompanySurveyGuard";
 import { useCallback, useContext, useMemo, useState, useEffect } from "react";
 import { UserContext } from "../../context/UserContext";
 import DashboardHeader from "../../components/DashboardHeader";
@@ -311,6 +312,15 @@ export default function Dashboard() {
           eventId={eventId}
           enabled={!!dashboard.eventConfig?.policies?.meetingConfirmationEnabled}
           eventConfig={dashboard.eventConfig}
+        />
+      )}
+
+      {currentUser?.uid && eventId && (
+        <CompanySurveyGuard
+          eventId={eventId}
+          uid={currentUser.uid}
+          userData={currentUser.data}
+          policies={dashboard.eventConfig?.policies}
         />
       )}
 

@@ -20,6 +20,7 @@ import {
   ThemeIcon,
   SimpleGrid,
   SegmentedControl,
+  Textarea,
 } from "@mantine/core";
 import {
   IconArrowUp,
@@ -34,6 +35,7 @@ import {
   IconClipboardCheck,
   IconQrcode,
   IconDeviceFloppy,
+  IconReportMoney,
 } from "@tabler/icons-react";
 import { doc, setDoc, collection, getDocs, query, where, writeBatch } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
@@ -41,6 +43,7 @@ import { DEFAULT_POLICIES } from "../dashboard/types";
 import type { EventPolicies, Company } from "../dashboard/types";
 import { normalizeTipoAsistente, DEFAULT_ROLE_URL_PARAM_NAME } from "../../utils/attendeeRole";
 import PendingRemindersSettings, { type PendingRemindersConfig } from "./PendingRemindersSettings";
+import { getCompanySurveyConfig, type CompanySurveyConfig } from "../../utils/companySurvey";
 
 const readPendingReminders = (p: Partial<EventPolicies> = {}): PendingRemindersConfig => ({
   pendingRemindersEnabled: p.pendingRemindersEnabled ?? false,
@@ -179,6 +182,8 @@ export default function EventPoliciesModal({
   const [calendarInvitesEnabled, setCalendarInvitesEnabled] = useState(false);
   const [calendarInvitesLocation, setCalendarInvitesLocation] = useState("");
   const [calendarFeedEnabled, setCalendarFeedEnabled] = useState(false);
+  const [companySurveyEnabled, setCompanySurveyEnabled] = useState(false);
+  const [companySurvey, setCompanySurvey] = useState<CompanySurveyConfig>(() => getCompanySurveyConfig({}));
   const [pendingReminders, setPendingReminders] = useState<PendingRemindersConfig>(readPendingReminders());
   // Evento cuyas políticas ya se volcaron al estado (para detectar cambios sin guardar)
   const [loadedEvent, setLoadedEvent] = useState<any>(null);
@@ -252,6 +257,8 @@ export default function EventPoliciesModal({
     setCalendarInvitesEnabled(p.calendarInvitesEnabled ?? false);
     setCalendarInvitesLocation(p.calendarInvitesLocation ?? "");
     setCalendarFeedEnabled(p.calendarFeedEnabled ?? false);
+    setCompanySurveyEnabled(p.companySurveyEnabled ?? false);
+    setCompanySurvey(getCompanySurveyConfig(p));
     setPendingReminders(readPendingReminders(p));
     setLoadedEvent(event);
   }, [event]);
@@ -388,6 +395,8 @@ export default function EventPoliciesModal({
     calendarInvitesEnabled,
     calendarInvitesLocation: calendarInvitesLocation.trim(),
     calendarFeedEnabled,
+    companySurveyEnabled,
+    companySurvey,
     advisorNoticeTemplate: advisorNoticeTemplateName.trim()
       ? {
           name: advisorNoticeTemplateName.trim(),
@@ -1191,6 +1200,94 @@ export default function EventPoliciesModal({
                   allowDeselect={false}
                 />
               </SimpleGrid>
+            </SettingsCard>
+          </Accordion.Panel>
+        </Accordion.Item>
+
+        {/* ------------------------------------------------ Encuesta por empresa */}
+        <Accordion.Item value="companySurvey">
+          <Accordion.Control>
+            <SectionHeader
+              icon={<IconReportMoney size={20} />}
+              color="teal"
+              title="Encuesta de resultados por empresa"
+              description="Modal obligatorio al entrar: reuniones realizadas y negocios proyectados (USD), una respuesta por empresa"
+              badges={companySurveyEnabled ? [{ label: "Activa", color: "teal" }] : []}
+            />
+          </Accordion.Control>
+          <Accordion.Panel>
+            <SettingsCard>
+              <Switch
+                label="Pedir la encuesta al entrar al dashboard"
+                description="El asistente no puede usar la plataforma hasta que alguien de su empresa la responda. Si un compañero ya la respondió (en la plataforma o por el link de WhatsApp), no se le vuelve a pedir. Para WhatsApp usa en una campaña la variable “Link de la encuesta por empresa”."
+                checked={companySurveyEnabled}
+                onChange={(e) => setCompanySurveyEnabled(e.currentTarget.checked)}
+              />
+              {companySurveyEnabled && (
+                <Stack gap="sm" pl="xl">
+                  <Select
+                    label="Pedirla a"
+                    data={[
+                      { value: "all", label: "Todos los asistentes" },
+                      { value: "vendedor", label: "Solo expositores / vendedores" },
+                      { value: "comprador", label: "Solo compradores" },
+                    ]}
+                    value={companySurvey.targetRole}
+                    onChange={(v) =>
+                      setCompanySurvey((prev) => ({ ...prev, targetRole: (v as CompanySurveyConfig["targetRole"]) || "all" }))
+                    }
+                    allowDeselect={false}
+                  />
+                  <TextInput
+                    label="Título"
+                    value={companySurvey.title}
+                    onChange={(e) => {
+                      const title = e.currentTarget.value;
+                      setCompanySurvey((prev) => ({ ...prev, title }));
+                    }}
+                  />
+                  <Textarea
+                    label="Texto antes de las preguntas"
+                    autosize
+                    minRows={3}
+                    value={companySurvey.intro}
+                    onChange={(e) => {
+                      const intro = e.currentTarget.value;
+                      setCompanySurvey((prev) => ({ ...prev, intro }));
+                    }}
+                  />
+                  <Textarea
+                    label="Pregunta 1 (número de reuniones)"
+                    autosize
+                    minRows={2}
+                    value={companySurvey.meetingsQuestion}
+                    onChange={(e) => {
+                      const meetingsQuestion = e.currentTarget.value;
+                      setCompanySurvey((prev) => ({ ...prev, meetingsQuestion }));
+                    }}
+                  />
+                  <Textarea
+                    label="Pregunta 2 (valor en USD)"
+                    autosize
+                    minRows={2}
+                    value={companySurvey.valueQuestion}
+                    onChange={(e) => {
+                      const valueQuestion = e.currentTarget.value;
+                      setCompanySurvey((prev) => ({ ...prev, valueQuestion }));
+                    }}
+                  />
+                  <Textarea
+                    label="Texto después de las preguntas"
+                    autosize
+                    minRows={3}
+                    value={companySurvey.outro}
+                    onChange={(e) => {
+                      const outro = e.currentTarget.value;
+                      setCompanySurvey((prev) => ({ ...prev, outro }));
+                    }}
+                  />
+                </Stack>
+              )}
             </SettingsCard>
           </Accordion.Panel>
         </Accordion.Item>

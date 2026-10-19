@@ -19,6 +19,7 @@ import { isComprador, isVendedor } from "../../utils/attendeeRole";
 import { uploadCompanyLogo } from "../../utils/companyStorage";
 import { getTableLabel } from "../dashboard/meetingSlotEngine";
 import { buildAccessLink } from "../../utils/accessLink";
+import { COMPANY_SURVEY_CHANNEL_LABELS } from "../../utils/companySurvey";
 
 // Utilidad para obtener campos configurados para el evento (omite foto y consentimiento)
 const getEventTableFields = (event, entityType = "users") => {
@@ -353,6 +354,18 @@ function parseFirestoreTimestamp(input) {
     }
     // eslint-disable-next-line
   }, [event]);
+
+  // Encuesta de resultados por empresa (policy companySurveyEnabled): respuestas
+  // por companyId, mostradas como dos columnas en la tabla de empresas
+  const companySurveyEnabled = event?.config?.policies?.companySurveyEnabled === true;
+  const [companySurveys, setCompanySurveys] = useState({});
+  useEffect(() => {
+    if (!event?.id || activeTab !== "empresas" || !companySurveyEnabled) return;
+    getDocs(collection(db, "events", event.id, "companySurveys"))
+      .then((snap) => setCompanySurveys(Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]))))
+      .catch((err) => console.error("Error al obtener la encuesta por empresa:", err));
+  }, [event?.id, activeTab, companySurveyEnabled]);
+  const formatUSD = (n) => `USD ${Number(n || 0).toLocaleString("es-CO", { maximumFractionDigits: 2 })}`;
 
   useEffect(() => {
     if (event && activeTab === "empresas" && companies.length === 0) {
@@ -1125,6 +1138,9 @@ function parseFirestoreTimestamp(input) {
       { name: "citasRechazadas", label: "Citas Rechazadas" },
       { name: "citasTotales", label: "Total Citas" },
     ];
+    const surveyHeaders = companySurveyEnabled
+      ? ["Encuesta: reuniones", "Encuesta: negocios proyectados (USD)", "Encuesta: canal", "Encuesta: respondió"]
+      : [];
     
     // Calcular conteos de citas por empresa (suma de todos sus usuarios)
     const getCompanyMeetingCounts = (companyId) => {
@@ -1144,15 +1160,26 @@ function parseFirestoreTimestamp(input) {
     };
     
     const wsData = [
-      allFields.map((f) => f.label),
+      [...allFields.map((f) => f.label), ...surveyHeaders],
       ...companies.map((c) => {
         const counts = getCompanyMeetingCounts(c.id);
+        const survey = companySurveys[c.id];
         return [
           ...allFields.slice(0, -4).map((f) => getValue(c, f.name)),
           counts.pending,
           counts.accepted,
           counts.rejected,
           counts.total,
+          ...(companySurveyEnabled
+            ? survey
+              ? [
+                  survey.reuniones,
+                  survey.valorUSD,
+                  COMPANY_SURVEY_CHANNEL_LABELS[survey.channel] || survey.channel,
+                  survey.respondedByName || "",
+                ]
+              : ["", "", "", ""]
+            : []),
         ];
       }),
     ];
@@ -1541,6 +1568,12 @@ function parseFirestoreTimestamp(input) {
                         <Table.Th key={f.name}>{f.label}</Table.Th>
                       ))}
                     <Table.Th>Mesa asignada</Table.Th>
+                    {companySurveyEnabled && (
+                      <>
+                        <Table.Th>Reuniones (encuesta)</Table.Th>
+                        <Table.Th>Negocios proyectados (USD)</Table.Th>
+                      </>
+                    )}
                     <Table.Th>Acciones</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
@@ -1563,6 +1596,30 @@ function parseFirestoreTimestamp(input) {
                           <Text size="sm" c="dimmed">Sin asignar</Text>
                         )}
                       </Table.Td>
+                      {companySurveyEnabled && (
+                        <>
+                          <Table.Td>
+                            {companySurveys[c.id] ? (
+                              <Text size="sm" fw={600}>{companySurveys[c.id].reuniones}</Text>
+                            ) : (
+                              <Text size="sm" c="dimmed">Sin responder</Text>
+                            )}
+                          </Table.Td>
+                          <Table.Td>
+                            {companySurveys[c.id] ? (
+                              <>
+                                <Text size="sm" fw={600}>{formatUSD(companySurveys[c.id].valorUSD)}</Text>
+                                <Text size="xs" c="dimmed">
+                                  {COMPANY_SURVEY_CHANNEL_LABELS[companySurveys[c.id].channel] || companySurveys[c.id].channel}
+                                  {companySurveys[c.id].respondedByName ? ` · ${companySurveys[c.id].respondedByName}` : ""}
+                                </Text>
+                              </>
+                            ) : (
+                              <Text size="sm" c="dimmed">—</Text>
+                            )}
+                          </Table.Td>
+                        </>
+                      )}
                       <Table.Td>
                         <Button
                           size="xs"
