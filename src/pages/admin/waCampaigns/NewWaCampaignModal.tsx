@@ -108,6 +108,8 @@ export default function NewWaCampaignModal({ opened, onClose, event, onCreated }
   const [testCountry, setTestCountry] = useState<string>("co");
   const [testPhone, setTestPhone] = useState("");
   const [testName, setTestName] = useState("Prueba");
+  // Prueba con un asistente registrado: datos reales y respuestas con el flujo completo
+  const [testAttendeeId, setTestAttendeeId] = useState<string | null>(null);
   const [testSending, setTestSending] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
@@ -141,6 +143,7 @@ export default function NewWaCampaignModal({ opened, onClose, event, onCreated }
     setTestCountry(defaultIso2);
     setTestPhone("");
     setTestName("Prueba");
+    setTestAttendeeId(null);
     setTestResult(null);
     setSource("event");
     setImportFile(null);
@@ -314,17 +317,31 @@ export default function NewWaCampaignModal({ opened, onClose, event, onCreated }
   const updateMapping = (key: string, patch: Partial<SlotMapping>) =>
     setMapping((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } as SlotMapping }));
 
-  // Prueba: se arma el mensaje como para un asistente ficticio con el nombre
-  // indicado; las variables de campos que no tenga quedan con "Prueba".
+  const testAttendee = !isImport && testAttendeeId ? attendees.find((a) => a.id === testAttendeeId) || null : null;
+  const testAttendeePhone = testAttendee ? toWhatsAppNumber(getAttendeePhone(testAttendee), defaultIso2) : "";
+  const testAttendeeOptions = useMemo(
+    () =>
+      attendees
+        .map((a) => ({
+          value: a.id,
+          label: [a.nombre || "Sin nombre", a.company_razonSocial || a.empresa, getAttendeePhone(a)].filter(Boolean).join(" · "),
+        }))
+        .sort((x, y) => x.label.localeCompare(y.label)),
+    [attendees]
+  );
+
+  // Prueba: con un asistente registrado se arma con sus datos reales y el envío
+  // queda registrado (sus respuestas por chat siguen el flujo real); si no, como
+  // para un asistente ficticio con el nombre indicado ("Prueba" en lo que falte).
   const handleSendTest = async () => {
     if (!template || !analysis) return;
-    const to = toWhatsAppNumber(testPhone, testCountry);
+    const to = testAttendee ? testAttendeePhone : toWhatsAppNumber(testPhone, testCountry);
     if (!to) {
-      setTestResult({ ok: false, message: "Número no válido" });
+      setTestResult({ ok: false, message: testAttendee ? "El asistente no tiene un WhatsApp válido" : "Número no válido" });
       return;
     }
-    const stub: any = { id: "prueba", nombre: testName.trim() || "Prueba" };
-    if (isImport && nameColumn) stub.__row = { [nameColumn]: stub.nombre };
+    const stub: any = testAttendee || { id: "prueba", nombre: testName.trim() || "Prueba" };
+    if (!testAttendee && isImport && nameColumn) stub.__row = { [nameColumn]: stub.nombre };
     const testMapping = Object.fromEntries(
       Object.entries(mapping).map(([k, m]) => [k, m.source === "field" && !m.fallback ? { ...m, fallback: "Prueba" } : m]),
     );
@@ -343,8 +360,13 @@ export default function NewWaCampaignModal({ opened, onClose, event, onCreated }
     setTestSending(true);
     setTestResult(null);
     try {
-      const r = await sendWaTemplateTest({ eventId: event.id, to, template, components });
-      setTestResult({ ok: true, message: `Enviado a +${r.to}. Revisa el WhatsApp de ese número.` });
+      const r = await sendWaTemplateTest({ eventId: event.id, to, template, components, userId: testAttendee?.id });
+      setTestResult({
+        ok: true,
+        message: testAttendee
+          ? `Enviado a ${testAttendee.nombre || "el asistente"} (+${r.to}). Responde desde ese WhatsApp para probar el flujo completo.`
+          : `Enviado a +${r.to}. Revisa el WhatsApp de ese número.`,
+      });
     } catch (e: any) {
       setTestResult({ ok: false, message: e.message || String(e) });
     } finally {
@@ -700,30 +722,59 @@ export default function NewWaCampaignModal({ opened, onClose, event, onCreated }
                 </Text>
                 <Text size="xs" c="dimmed">
                   Envía este mensaje, con las variables de arriba, a un solo número para revisarlo antes del envío masivo.
-                  Los campos del asistente se llenan como si se llamara como indiques aquí.
+                  {isImport
+                    ? " Los campos se llenan como si el contacto se llamara como indiques aquí."
+                    : " Elige un asistente registrado para usar sus datos reales y probar el flujo completo (sus respuestas por chat se procesan como en la campaña), o escribe un número cualquiera."}
                 </Text>
-                <Group gap="xs" align="flex-end" wrap="wrap">
+                {!isImport && (
                   <Select
-                    label="País"
-                    data={COUNTRY_OPTIONS}
-                    value={testCountry}
-                    onChange={(v) => setTestCountry(v || "co")}
+                    label="Asistente registrado (opcional)"
+                    placeholder={loadingAttendees ? "Cargando asistentes…" : "Buscar por nombre, empresa o teléfono"}
+                    data={testAttendeeOptions}
+                    value={testAttendeeId}
+                    onChange={(v) => {
+                      setTestAttendeeId(v);
+                      setTestResult(null);
+                    }}
                     searchable
-                    w={180}
+                    clearable
+                    limit={50}
+                    nothingFoundMessage="Sin coincidencias"
+                    description={
+                      testAttendee
+                        ? testAttendeePhone
+                          ? `Se enviará a +${testAttendeePhone} con los datos de este asistente.`
+                          : "Este asistente no tiene un WhatsApp válido."
+                        : undefined
+                    }
                   />
-                  <TextInput
-                    label="WhatsApp"
-                    placeholder="3001234567"
-                    value={testPhone}
-                    onChange={(e) => setTestPhone(e.currentTarget.value)}
-                    w={170}
-                  />
-                  <TextInput label="Nombre" value={testName} onChange={(e) => setTestName(e.currentTarget.value)} w={150} />
+                )}
+                <Group gap="xs" align="flex-end" wrap="wrap">
+                  {!testAttendee && (
+                    <>
+                      <Select
+                        label="País"
+                        data={COUNTRY_OPTIONS}
+                        value={testCountry}
+                        onChange={(v) => setTestCountry(v || "co")}
+                        searchable
+                        w={180}
+                      />
+                      <TextInput
+                        label="WhatsApp"
+                        placeholder="3001234567"
+                        value={testPhone}
+                        onChange={(e) => setTestPhone(e.currentTarget.value)}
+                        w={170}
+                      />
+                      <TextInput label="Nombre" value={testName} onChange={(e) => setTestName(e.currentTarget.value)} w={150} />
+                    </>
+                  )}
                   <Button
                     variant="light"
                     onClick={handleSendTest}
                     loading={testSending}
-                    disabled={!testPhone.trim() || mappingErrors.length > 0}
+                    disabled={(testAttendee ? !testAttendeePhone : !testPhone.trim()) || mappingErrors.length > 0}
                   >
                     Enviar prueba
                   </Button>

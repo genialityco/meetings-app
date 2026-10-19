@@ -24,7 +24,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * Arma el documento de un envío hecho desde Cloud Functions.
  * @returns {{ ref: FirebaseFirestore.DocumentReference, data: object }}
  */
-export function waMessageDoc(db, { eventId, type, to, userId, meetingId, meetingIds, campaignId, result }) {
+export function waMessageDoc(db, { eventId, type, to, userId, meetingId, meetingIds, campaignId, templateName, test, result }) {
   const col = db.collection("events").doc(String(eventId)).collection("waMessages");
   const ok = !!result?.ok;
   const messageId = (ok && result?.messageId) || null;
@@ -44,6 +44,9 @@ export function waMessageDoc(db, { eventId, type, to, userId, meetingId, meeting
   if (ok) data.statusAt = { sent: FieldValue.serverTimestamp() };
   if (meetingIds?.length) data.meetingIds = meetingIds.slice(0, 50);
   if (campaignId) data.campaignId = campaignId;
+  if (templateName) data.templateName = templateName;
+  // Envío de prueba del asistente de campañas (sendWaTemplateTest)
+  if (test) data.test = true;
   return { ref: messageId ? col.doc(messageId) : col.doc(), data };
 }
 

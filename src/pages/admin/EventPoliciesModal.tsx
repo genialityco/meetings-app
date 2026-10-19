@@ -1276,6 +1276,16 @@ export default function EventPoliciesModal({
                       setCompanySurvey((prev) => ({ ...prev, valueQuestion }));
                     }}
                   />
+                  <TextInput
+                    label="Plantilla de WhatsApp para responder por chat"
+                    description="Nombre de la plantilla de Meta que se envía como campaña. Quien la recibe puede responder escribiendo los 2 números (ej. “5 20000”) y su respuesta se guarda con canal WhatsApp. Vacío = no se leen respuestas por chat."
+                    placeholder="encuesta_final_networking"
+                    value={companySurvey.waTemplate}
+                    onChange={(e) => {
+                      const waTemplate = e.currentTarget.value.replace(/\s/g, "");
+                      setCompanySurvey((prev) => ({ ...prev, waTemplate }));
+                    }}
+                  />
                   <Textarea
                     label="Texto después de las preguntas"
                     autosize

@@ -596,6 +596,8 @@ export async function sendWaTemplateTest(params: {
   to: string;
   template: WaTemplate;
   components: any[];
+  /** Asistente registrado: el envío queda registrado y sus respuestas siguen el flujo real */
+  userId?: string;
 }): Promise<{ messageId: string | null; to: string }> {
   const user = auth.currentUser;
   if (!user) throw new Error("Debes iniciar sesión como administrador");
@@ -609,6 +611,7 @@ export async function sendWaTemplateTest(params: {
       templateName: params.template.name,
       languageCode: params.template.language,
       components: params.components,
+      ...(params.userId ? { userId: params.userId } : {}),
     }),
   });
   const data = await res.json().catch(() => ({}));

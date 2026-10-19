@@ -11,8 +11,9 @@ import { normalizeTipoAsistente } from "./attendeeRole";
  * el link de WhatsApp), los demás asistentes de su empresa ya no quedan bloqueados.
  *
  * Canales: "web" (modal obligatorio del dashboard, CompanySurveyGuard) y
- * "whatsapp" (página /encuesta-empresa/:eventId/:userId, enlazada desde una
- * campaña de WhatsApp con la variable $link.encuestaEmpresa).
+ * "whatsapp": respuesta por chat ("5 20000") a la campaña de la plantilla
+ * waTemplate (functions/companySurveyWa.js), o la página
+ * /encuesta-empresa/:eventId/:userId (variable de campaña $link.encuestaEmpresa).
  */
 
 export type CompanySurveyChannel = "web" | "whatsapp";
@@ -28,6 +29,10 @@ export interface CompanySurveyConfig {
   valueQuestion: string;
   /** Texto después de las preguntas (admite saltos de línea) */
   outro: string;
+  /** Plantilla de Meta enviada como campaña para responder por chat ("5 20000"):
+   * las respuestas de quienes la recibieron se guardan como canal whatsapp
+   * (functions/companySurveyWa.js). Vacío = no se leen respuestas por chat. */
+  waTemplate: string;
 }
 
 export const DEFAULT_COMPANY_SURVEY: CompanySurveyConfig = {
@@ -37,6 +42,7 @@ export const DEFAULT_COMPANY_SURVEY: CompanySurveyConfig = {
   meetingsQuestion: "¿Cuántas reuniones realizaste a partir de los contactos de la plataforma?",
   valueQuestion: "En dólares (USD), ¿cuál es el valor estimado de los negocios proyectados a partir de estos contactos y reuniones?",
   outro: "",
+  waTemplate: "",
 };
 
 export interface CompanySurveyResponse {
@@ -69,6 +75,7 @@ export function getCompanySurveyConfig(policies: any): CompanySurveyConfig {
     meetingsQuestion: pick("meetingsQuestion") as string,
     valueQuestion: pick("valueQuestion") as string,
     outro: typeof saved.outro === "string" ? saved.outro : DEFAULT_COMPANY_SURVEY.outro,
+    waTemplate: typeof saved.waTemplate === "string" ? saved.waTemplate.trim() : "",
   };
 }
 

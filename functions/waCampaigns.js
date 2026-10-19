@@ -28,7 +28,8 @@ import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
 import { defineSecret, defineString } from "firebase-functions/params";
-import { saveWaStatus, waMessageDoc } from "./waTracking.js";
+import { logWaMessageServer, saveWaStatus, waMessageDoc } from "./waTracking.js";
+import { saveCompanySurveyTextReply } from "./companySurveyWa.js";
 
 // URL base de wa-multi-session-backend (mismo secret que usan las notificaciones)
 const WHATSAPP_API_V2 = defineSecret("WHATSAPP_API_V2");
@@ -216,10 +217,13 @@ export const getWaTemplateAnalytics = analyticsProxy("/api/template-analytics", 
 
 /**
  * sendWaTemplateTest
- * POST { eventId, to, templateName, languageCode, components } (Authorization: Bearer <idToken de admin>)
+ * POST { eventId, to, templateName, languageCode, components, userId? } (Authorization: Bearer <idToken de admin>)
  * Envía una plantilla, con los componentes ya armados por el asistente de
  * campañas, a un solo número para probarla antes del envío masivo. No crea
- * campaña ni registra destinatarios.
+ * campaña ni registra destinatarios. Con userId (asistente registrado del
+ * evento) el envío queda en waMessages (type "campaign", test, templateName):
+ * así las respuestas por chat de ese número siguen el flujo real (p. ej. la
+ * encuesta por empresa, companySurveyWa.js).
  */
 export const sendWaTemplateTest = onRequest(
   {
@@ -233,7 +237,7 @@ export const sendWaTemplateTest = onRequest(
       res.status(405).json({ error: "Method not allowed" });
       return;
     }
-    const { eventId, to, templateName, languageCode, components } = req.body || {};
+    const { eventId, to, templateName, languageCode, components, userId } = req.body || {};
     const phone = String(to || "").replace(/\D/g, "");
     if (!eventId || !templateName || !languageCode || !Array.isArray(components) || phone.length < 10 || phone.length > 15) {
       res.status(400).json({ error: "Faltan eventId, templateName, languageCode, components o un número válido (con indicativo)" });
@@ -247,10 +251,30 @@ export const sendWaTemplateTest = onRequest(
       return;
     }
 
+    const db = getFirestore();
+    if (userId) {
+      const userSnap = await db.collection("users").doc(String(userId)).get();
+      if (!userSnap.exists || userSnap.data().eventId !== eventId) {
+        res.status(400).json({ error: "El asistente de prueba no pertenece a este evento" });
+        return;
+      }
+    }
+
     const result = await sendToRecipient(
       { template: { name: templateName, language: languageCode } },
       { phone, components }
     );
+    if (userId) {
+      await logWaMessageServer(db, {
+        eventId,
+        type: "campaign",
+        to: phone,
+        userId: String(userId),
+        templateName,
+        test: true,
+        result,
+      });
+    }
     if (result.ok) {
       res.status(200).json({ ok: true, messageId: result.messageId, to: phone });
     } else {
@@ -616,7 +640,9 @@ async function handleWhatsappReply(req, res) {
     const { status, json } =
       body.type === "status"
         ? await saveWaStatus(db, body)
-        : body.type === "campaign"
+        : body.type === "text"
+          ? await saveCompanySurveyTextReply(db, body)
+          : body.type === "campaign"
           ? await saveCampaignReply(db, body)
           : await saveLegacySurveyReply(db, body);
     res.status(status).json(json);
@@ -631,6 +657,9 @@ async function handleWhatsappReply(req, res) {
  * Webhook llamado por wa-multi-session-backend cuando un contacto toca un botón
  * quick reply de una plantilla (campañas o encuesta legacy de valor de negocio)
  * y con cada estado de entrega de Meta (type "status", ver waTracking.js).
+ * También recibe los textos entrantes con dígitos (type "text"): respuestas por
+ * chat a la encuesta por empresa (ver companySurveyWa.js); responde
+ * { handled, reply? } y el backend envía `reply` al contacto.
  * Auth: header x-webhook-secret = SURVEY_WEBHOOK_SECRET.
  */
 export const guardarRespuestaWhatsapp = onRequest(
