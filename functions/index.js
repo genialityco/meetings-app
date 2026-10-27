@@ -4358,3 +4358,7 @@ export { onMeetingCalendarInvite } from "./calendarInvites.js";
 // Suscripción al calendario personal (feed iCalendar por asistente, policy
 // calendarFeedEnabled): ver calendarFeed.js
 export { calendarFeed } from "./calendarFeed.js";
+
+// Ingreso por empresa + teléfono para quienes no saben con qué correo los
+// registraron (policy companyLoginEnabled): ver companyLogin.js
+export { companyLoginCandidates, companyLoginVerify } from "./companyLogin.js";

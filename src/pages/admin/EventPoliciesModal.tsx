@@ -177,6 +177,7 @@ export default function EventPoliciesModal({
   const [standVisitsEnabled, setStandVisitsEnabled] = useState(false);
   const [standVisitAllowSellerScan, setStandVisitAllowSellerScan] = useState(false);
   const [qrOnlyModeEnabled, setQrOnlyModeEnabled] = useState(false);
+  const [companyLoginEnabled, setCompanyLoginEnabled] = useState(false);
   const [advisorNoticeTemplateName, setAdvisorNoticeTemplateName] = useState("");
   const [advisorNoticeTemplateLanguage, setAdvisorNoticeTemplateLanguage] = useState("es");
   const [calendarInvitesEnabled, setCalendarInvitesEnabled] = useState(false);
@@ -252,6 +253,7 @@ export default function EventPoliciesModal({
     setStandVisitsEnabled(p.standVisitsEnabled ?? false);
     setStandVisitAllowSellerScan(p.standVisitAllowSellerScan ?? false);
     setQrOnlyModeEnabled(p.qrOnlyModeEnabled ?? false);
+    setCompanyLoginEnabled(p.companyLoginEnabled ?? false);
     setAdvisorNoticeTemplateName(p.advisorNoticeTemplate?.name ?? "");
     setAdvisorNoticeTemplateLanguage(p.advisorNoticeTemplate?.language || "es");
     setCalendarInvitesEnabled(p.calendarInvitesEnabled ?? false);
@@ -392,6 +394,7 @@ export default function EventPoliciesModal({
     standVisitsEnabled,
     standVisitAllowSellerScan,
     qrOnlyModeEnabled,
+    companyLoginEnabled,
     calendarInvitesEnabled,
     calendarInvitesLocation: calendarInvitesLocation.trim(),
     calendarFeedEnabled,
@@ -538,6 +541,7 @@ export default function EventPoliciesModal({
                 ...(isBuyerSeller && forceBuyerRoleOnRegistration ? [{ label: "Registro → Comprador" }] : []),
                 ...(isBuyerSeller && forceSellerRoleOnRegistration ? [{ label: "Registro → Vendedor" }] : []),
                 ...(isBuyerSeller && roleUrlParamEnabled ? [{ label: "Rol por URL" }] : []),
+                ...(companyLoginEnabled ? [{ label: "Ingreso por empresa" }] : []),
               ]}
             />
           </Accordion.Control>
@@ -663,6 +667,15 @@ export default function EventPoliciesModal({
                   description="Al registrarse, cada asistente recibe un número visible en el header (ej: 1C para comprador, 1V para vendedor)"
                   checked={attendeeIdEnabled}
                   onChange={(e) => setAttendeeIdEnabled(e.currentTarget.checked)}
+                />
+              </SettingsCard>
+
+              <SettingsCard title="Ingreso">
+                <Switch
+                  label="Ingresar con la empresa y el teléfono"
+                  description="Para quien no sabe con qué correo lo registraron: elige su empresa (NIT o nombre), su nombre y escribe completo el teléfono registrado, del que solo ve los últimos 4 dígitos"
+                  checked={companyLoginEnabled}
+                  onChange={(e) => setCompanyLoginEnabled(e.currentTarget.checked)}
                 />
               </SettingsCard>
             </Stack>

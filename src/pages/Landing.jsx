@@ -27,6 +27,7 @@ import {
   ActionIcon,
   Tooltip,
   ThemeIcon,
+  Anchor,
 } from "@mantine/core";
 import { buildEventTheme } from "../theme.js";
 import { RichTextEditor, Link } from "@mantine/tiptap";
@@ -75,6 +76,7 @@ import { getEventDayKeys, formatDayLabel } from "../utils/eventDays";
 import { getForcedRegistrationRole } from "../utils/attendeeRole";
 import { withRoleLabel } from "../utils/attendeeFields";
 import SupportButton from "../components/SupportButton";
+import CompanyLoginFlow from "../components/CompanyLoginFlow";
 
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
 
@@ -243,6 +245,8 @@ const Landing = () => {
   const [loginEmail, setLoginEmail] = useState("");
   const [loginError, setLoginError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
+  // "company": ingreso por empresa + teléfono (policy companyLoginEnabled)
+  const [loginMode, setLoginMode] = useState("email");
 
   // Form state
   const [formValues, setFormValues] = useState({});
@@ -709,6 +713,23 @@ const Landing = () => {
       setLoginLoading(false);
     }
   }, [loginByEmail, loginEmail, eventId, navigate]);
+
+  const companyLoginEnabled =
+    !!eventId && event?.config?.policies?.companyLoginEnabled === true;
+  const companyLoginLink = companyLoginEnabled ? (
+    <Anchor
+      component="button"
+      type="button"
+      size="sm"
+      ta="center"
+      onClick={() => {
+        setLoginError("");
+        setLoginMode("company");
+      }}
+    >
+      ¿No sabes con qué correo te registraron? Ingresa con tu empresa
+    </Anchor>
+  ) : null;
 
   // Función para mejorar descripción con IA
   const handleImproveDescription = useCallback(async () => {
@@ -1954,6 +1975,15 @@ const Landing = () => {
 
                     {/* Panels (mobile) */}
                     <Tabs.Panel value="login" pt="md">
+                      {companyLoginEnabled && loginMode === "company" ? (
+                        <CompanyLoginFlow
+                          eventId={eventId}
+                          groupByRazonSocial={
+                            event?.config?.policies?.groupByRazonSocial
+                          }
+                          onCancel={() => setLoginMode("email")}
+                        />
+                      ) : (
                       <Stack gap="sm">
                         <TextInput
                           label="Correo electrónico"
@@ -1984,7 +2014,9 @@ const Landing = () => {
                         >
                           INGRESAR
                         </Button>
+                        {companyLoginLink}
                       </Stack>
+                      )}
                     </Tabs.Panel>
 
                     <Tabs.Panel value="register" pt="md">
@@ -2568,6 +2600,15 @@ const Landing = () => {
                       {/* LOGIN */}
                       <Tabs.Panel value="login">
                         <Box style={{ maxWidth: 520, margin: "0 auto" }}>
+                          {companyLoginEnabled && loginMode === "company" ? (
+                            <CompanyLoginFlow
+                              eventId={eventId}
+                              groupByRazonSocial={
+                                event?.config?.policies?.groupByRazonSocial
+                              }
+                              onCancel={() => setLoginMode("email")}
+                            />
+                          ) : (
                           <Stack gap="sm">
                             <TextInput
                               label="Correo electrónico"
@@ -2601,7 +2642,9 @@ const Landing = () => {
                             >
                               INGRESAR
                             </Button>
+                            {companyLoginLink}
                           </Stack>
+                          )}
                         </Box>
                       </Tabs.Panel>
 
