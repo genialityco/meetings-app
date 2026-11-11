@@ -1220,7 +1220,13 @@ export async function createMeetingRequestDoc(
     receiverData = receiverSnap.data();
   }
 
-  const effectiveCompanyNit = companyNit || context?.companyId || null;
+  // Con colleagueTakeoverEnabled toda solicitud a una persona con empresa queda ligada a
+  // esa empresa (p. ej. las enviadas desde el Directorio, que no traen companyId), para
+  // que sus compañeros reciban el aviso y puedan tomarla
+  const effectiveCompanyNit =
+    companyNit ||
+    context?.companyId ||
+    (policies.colleagueTakeoverEnabled ? receiverData?.companyId || null : null);
 
   const data: any = {
     eventId,
@@ -1314,8 +1320,16 @@ export async function createMeetingRequestDoc(
       });
     }
 
-    // Fan-out informativo al resto de asesores de su empresa (Etapa 1)
+    // Fan-out al resto de asesores de su empresa: informativo, y con colleagueTakeoverEnabled
+    // les indica que pueden tomarla si la persona solicitada no responde a tiempo
     if (effectiveCompanyNit) {
+      const targetName = receiverData?.nombre?.trim() || "";
+      const takeoverHours = Math.max(0, Number(policies.colleagueTakeoverAfterHours ?? 4) || 0);
+      const takeoverLine = policies.colleagueTakeoverEnabled
+        ? takeoverHours === 0
+          ? ` Si ${targetName || "tu compañero"} no puede atenderla, puedes tomarla desde "Solicitudes" en la plataforma.`
+          : ` Si ${targetName || "tu compañero"} no responde en ${takeoverHours} h, podrás tomarla desde "Solicitudes" en la plataforma.`
+        : "";
       await notifyCompanyAdvisors({
         eventId,
         companyNit: effectiveCompanyNit,
@@ -1327,7 +1341,8 @@ export async function createMeetingRequestDoc(
           phone: advisor.telefono || "",
           message:
             `${requesterName || "Alguien"}${requesterCompany ? ` (${requesterCompany})` : ""} solicitó una reunión ` +
-            (receiverData?.nombre?.trim() ? `con tu compañero ${receiverData.nombre.trim()}.` : "con tu compañero de empresa."),
+            (targetName ? `con tu compañero ${targetName}.` : "con tu compañero de empresa.") +
+            takeoverLine,
           fallbackInfo: {
             enabled: fallbackEnabled,
             email: advisor.correo || "",
@@ -1337,7 +1352,9 @@ export async function createMeetingRequestDoc(
         }),
         dashboardNotif: {
           title: "Nueva solicitud de reunión",
-          message: `${requesterName || "Alguien"} solicitó una reunión con tu compañero de empresa.`,
+          message:
+            `${requesterName || "Alguien"} solicitó una reunión con ${targetName ? `tu compañero ${targetName}` : "tu compañero de empresa"}.` +
+            takeoverLine,
           type: "meeting_request",
         },
       });
@@ -1473,4 +1490,124 @@ export async function pickAvailableCompanyAdvisor(
   }
 
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Tomar una solicitud dirigida a un compañero (policy colleagueTakeoverEnabled)
+// ---------------------------------------------------------------------------
+
+/** createdAt de una reunión (Timestamp de Firestore, Date o ISO) → ms; null si no hay */
+export function meetingCreatedAtMs(createdAt: any): number | null {
+  if (!createdAt) return null;
+  if (typeof createdAt.toMillis === "function") return createdAt.toMillis();
+  if (typeof createdAt.seconds === "number") return createdAt.seconds * 1000;
+  const ms = new Date(createdAt).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * Desde cuándo (ms) un compañero puede tomar una solicitud dirigida a otro representante.
+ * null = nunca (policy apagada o la solicitud no está pendiente / no va a una persona).
+ */
+export function colleagueTakeoverAvailableAt(
+  meeting: { status?: string; receiverId?: string | null; createdAt?: any },
+  policies: Pick<EventPolicies, "colleagueTakeoverEnabled" | "colleagueTakeoverAfterHours">,
+): number | null {
+  if (!policies.colleagueTakeoverEnabled) return null;
+  if (meeting.status !== "pending" || !meeting.receiverId) return null;
+  const created = meetingCreatedAtMs(meeting.createdAt) ?? 0;
+  const hours = Math.max(0, Number(policies.colleagueTakeoverAfterHours ?? 4) || 0);
+  return created + hours * 3600 * 1000;
+}
+
+export class TakeoverNotAllowedError extends Error {
+  handled = true;
+  constructor(message: string) {
+    super(message);
+    this.name = "TakeoverNotAllowedError";
+  }
+}
+
+/**
+ * Transfiere a `newReceiverId` una solicitud pendiente dirigida a un compañero de su
+ * misma empresa. Valida dentro de una transacción que siga pendiente, que siga dirigida
+ * a la misma persona, que ambos sean de la misma empresa y que ya pasó el tiempo de
+ * prioridad. Después de tomarla, el flujo normal de aceptación (prepareSlotSelection →
+ * confirmAcceptWithSlot) la agenda con la agenda de quien la tomó.
+ */
+export async function takeOverMeetingRequest(params: {
+  eventId: string;
+  meetingId: string;
+  newReceiverId: string;
+  policies: EventPolicies;
+}): Promise<{ previousReceiverId: string; requesterId: string }> {
+  const { eventId, meetingId, newReceiverId, policies } = params;
+  const mtgRef = doc(db, "events", eventId, "meetings", meetingId);
+  const meRef = doc(db, "users", newReceiverId);
+
+  const result = await runTransaction(db, async (tx) => {
+    const [mtgSnap, meSnap] = await Promise.all([tx.get(mtgRef), tx.get(meRef)]);
+    if (!mtgSnap.exists()) throw new TakeoverNotAllowedError("La solicitud ya no existe.");
+    const mtg = mtgSnap.data() as any;
+    if (mtg.status !== "pending") {
+      throw new TakeoverNotAllowedError("Esta solicitud ya fue respondida o cancelada.");
+    }
+    const previousReceiverId: string | null = mtg.receiverId || null;
+    if (!previousReceiverId) {
+      throw new TakeoverNotAllowedError("Es una solicitud para toda la empresa: acéptala directamente.");
+    }
+    if (previousReceiverId === newReceiverId) {
+      throw new TakeoverNotAllowedError("Esta solicitud ya está a tu nombre.");
+    }
+    const prevSnap = await tx.get(doc(db, "users", previousReceiverId));
+    const myCompany = meSnap.exists() ? (meSnap.data() as any).companyId : null;
+    const theirCompany = prevSnap.exists() ? (prevSnap.data() as any).companyId : null;
+    if (!myCompany || myCompany !== theirCompany) {
+      throw new TakeoverNotAllowedError("Solo un compañero de la misma empresa puede tomar esta solicitud.");
+    }
+    const availableAt = colleagueTakeoverAvailableAt(mtg, policies);
+    if (availableAt == null) throw new TakeoverNotAllowedError("Este evento no permite tomar solicitudes de compañeros.");
+    if (Date.now() < availableAt) {
+      throw new TakeoverNotAllowedError("Todavía es el turno de la persona solicitada. Intenta más tarde.");
+    }
+
+    tx.update(mtgRef, {
+      receiverId: newReceiverId,
+      participants: [mtg.requesterId, newReceiverId],
+      companyId: mtg.companyId || myCompany,
+      takenFrom: previousReceiverId,
+      takenAt: serverTimestamp(),
+    });
+    return {
+      previousReceiverId,
+      requesterId: mtg.requesterId as string,
+      meName: String((meSnap.data() as any)?.nombre || "").trim(),
+      prevName: String((prevSnap.data() as any)?.nombre || "").trim(),
+    };
+  });
+
+  // Avisos in-app (la confirmación por WhatsApp llega al aceptar, con el nombre de quien la tomó)
+  if (policies.dashboardNotificationsEnabled !== false) {
+    const who = result.meName || "Un compañero de tu empresa";
+    await Promise.all([
+      addDoc(collection(db, "notifications"), {
+        userId: result.previousReceiverId,
+        title: "Un compañero tomó tu solicitud",
+        message: `${who} tomó una solicitud de reunión que te habían enviado y la atenderá.`,
+        timestamp: new Date(),
+        read: false,
+        type: "meeting_request",
+      }),
+      addDoc(collection(db, "notifications"), {
+        userId: result.requesterId,
+        title: "Tu solicitud será atendida por otra persona",
+        message: `${who}, compañero de ${result.prevName || "la persona que solicitaste"}, atenderá tu solicitud de reunión.`,
+        timestamp: new Date(),
+        read: false,
+        type: "meeting_request",
+      }),
+    ]).catch((e) => console.error("[takeOverMeetingRequest] Error creando notificaciones:", e));
+  }
+
+  return { previousReceiverId: result.previousReceiverId, requesterId: result.requesterId };
 }

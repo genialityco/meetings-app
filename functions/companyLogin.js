@@ -180,3 +180,72 @@ export const companyLoginVerify = onRequest(
     }
   }
 );
+
+// ============================================================================
+// TELÉFONO YA REGISTRADO (registro en la Landing y "Registrar compañero")
+// ============================================================================
+//
+// POST checkPhoneAvailability { eventId, phone, currentUserId? }
+//   → { registered: false } | { registered: true, nombreMask, empresa, correoMask }
+//
+// Evita multicuentas con el mismo teléfono: el cliente bloquea el registro y ofrece
+// ingresar con la cuenta existente. Solo devuelve datos enmascarados. Compara con
+// phoneMatches (con o sin indicativo), porque los teléfonos se guardaron en formatos
+// distintos y una consulta por igualdad no los encuentra.
+
+// "Juan Pérez" → "J*** P****"
+const maskName = (name) =>
+  String(name || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w[0].toUpperCase() + "*".repeat(Math.max(2, Math.min(w.length - 1, 5))))
+    .join(" ");
+
+// "juan.perez@gmail.com" → "ju*******@gmail.com"
+function maskEmail(email) {
+  const [user, domain] = String(email || "").trim().split("@");
+  if (!user || !domain) return null;
+  return `${user.slice(0, 2)}${"*".repeat(Math.max(3, user.length - 2))}@${domain}`;
+}
+
+export const checkPhoneAvailability = onRequest(
+  { region: "us-central1", memory: "256MiB" },
+  async (req, res) => {
+    setCors(req, res);
+    if (req.method === "OPTIONS") return res.status(204).send("");
+    if (req.method !== "POST") return res.status(405).send({ error: "Method not allowed" });
+
+    const eventId = String(req.body?.eventId || "");
+    const currentUserId = String(req.body?.currentUserId || "");
+    const input = phoneDigits(req.body?.phone);
+    if (!eventId || input.length < 7) {
+      return res.status(400).send({ error: "Parámetros inválidos" });
+    }
+
+    const db = getFirestore();
+    try {
+      const snap = await db
+        .collection("users")
+        .where("eventId", "==", eventId)
+        .select("telefono", "contacto", "nombre", "empresa", "company_razonSocial", "correo")
+        .get();
+
+      const match = snap.docs.find(
+        (d) => d.id !== currentUserId && userPhones(d.data()).some((p) => phoneMatches(p, input))
+      );
+      if (!match) return res.status(200).send({ registered: false });
+
+      const u = match.data();
+      return res.status(200).send({
+        registered: true,
+        nombreMask: maskName(u.nombre) || null,
+        empresa: (u.company_razonSocial || u.empresa || "").trim() || null,
+        correoMask: maskEmail(u.correo),
+      });
+    } catch (error) {
+      console.error("checkPhoneAvailability error:", error);
+      return res.status(500).send({ error: "Internal error" });
+    }
+  }
+);

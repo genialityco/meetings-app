@@ -178,6 +178,9 @@ export default function EventPoliciesModal({
   const [standVisitAllowSellerScan, setStandVisitAllowSellerScan] = useState(false);
   const [qrOnlyModeEnabled, setQrOnlyModeEnabled] = useState(false);
   const [companyLoginEnabled, setCompanyLoginEnabled] = useState(false);
+  const [colleagueRegistrationEnabled, setColleagueRegistrationEnabled] = useState(false);
+  const [colleagueTakeoverEnabled, setColleagueTakeoverEnabled] = useState(false);
+  const [colleagueTakeoverAfterHours, setColleagueTakeoverAfterHours] = useState<number>(4);
   const [advisorNoticeTemplateName, setAdvisorNoticeTemplateName] = useState("");
   const [advisorNoticeTemplateLanguage, setAdvisorNoticeTemplateLanguage] = useState("es");
   const [calendarInvitesEnabled, setCalendarInvitesEnabled] = useState(false);
@@ -254,6 +257,9 @@ export default function EventPoliciesModal({
     setStandVisitAllowSellerScan(p.standVisitAllowSellerScan ?? false);
     setQrOnlyModeEnabled(p.qrOnlyModeEnabled ?? false);
     setCompanyLoginEnabled(p.companyLoginEnabled ?? false);
+    setColleagueRegistrationEnabled(p.colleagueRegistrationEnabled ?? false);
+    setColleagueTakeoverEnabled(p.colleagueTakeoverEnabled ?? false);
+    setColleagueTakeoverAfterHours(p.colleagueTakeoverAfterHours ?? 4);
     setAdvisorNoticeTemplateName(p.advisorNoticeTemplate?.name ?? "");
     setAdvisorNoticeTemplateLanguage(p.advisorNoticeTemplate?.language || "es");
     setCalendarInvitesEnabled(p.calendarInvitesEnabled ?? false);
@@ -395,6 +401,9 @@ export default function EventPoliciesModal({
     standVisitAllowSellerScan,
     qrOnlyModeEnabled,
     companyLoginEnabled,
+    colleagueRegistrationEnabled,
+    colleagueTakeoverEnabled,
+    colleagueTakeoverAfterHours,
     calendarInvitesEnabled,
     calendarInvitesLocation: calendarInvitesLocation.trim(),
     calendarFeedEnabled,
@@ -677,6 +686,12 @@ export default function EventPoliciesModal({
                   checked={companyLoginEnabled}
                   onChange={(e) => setCompanyLoginEnabled(e.currentTarget.checked)}
                 />
+                <Switch
+                  label="Registrar compañeros desde la cuenta"
+                  description="En Mi empresa, cualquier representante puede registrar a otra persona de su empresa (misma empresa y rol) sin cerrar sesión, y compartirle su link de acceso directo"
+                  checked={colleagueRegistrationEnabled}
+                  onChange={(e) => setColleagueRegistrationEnabled(e.currentTarget.checked)}
+                />
               </SettingsCard>
             </Stack>
           </Accordion.Panel>
@@ -778,6 +793,30 @@ export default function EventPoliciesModal({
                       </Text>
                     )}
                   </Paper>
+                )}
+              </SettingsCard>
+
+              <SettingsCard title="Solicitudes a empresas">
+                <Switch
+                  label="Los compañeros pueden tomar solicitudes dirigidas a otro representante"
+                  description="Toda solicitud a un representante aparece en Solicitudes de toda su empresa marcada como «Dirigida a …». Pasado el tiempo indicado sin respuesta, cualquier compañero puede tomarla y aceptarla con su agenda; se avisa al solicitante y a la persona original"
+                  checked={colleagueTakeoverEnabled}
+                  onChange={(e) => setColleagueTakeoverEnabled(e.currentTarget.checked)}
+                />
+                {colleagueTakeoverEnabled && (
+                  <NumberInput
+                    label="Horas de prioridad para la persona solicitada"
+                    description="Durante este tiempo solo la persona solicitada puede aceptarla. 0 = cualquier compañero puede tomarla de inmediato"
+                    min={0}
+                    max={168}
+                    step={1}
+                    allowDecimal={false}
+                    allowNegative={false}
+                    clampBehavior="strict"
+                    value={colleagueTakeoverAfterHours}
+                    onChange={(v) => setColleagueTakeoverAfterHours(v === "" ? 0 : Number(v))}
+                    maw={320}
+                  />
                 )}
               </SettingsCard>
 

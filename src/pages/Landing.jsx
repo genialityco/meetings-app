@@ -75,8 +75,14 @@ import { sendWelcomeNotification } from "../utils/whatsappService";
 import { getEventDayKeys, formatDayLabel } from "../utils/eventDays";
 import { getForcedRegistrationRole } from "../utils/attendeeRole";
 import { withRoleLabel } from "../utils/attendeeFields";
+import { normalizeNit } from "../utils/nit";
+import { usePhoneAvailability } from "../hooks/usePhoneAvailability";
+
+const PHONE_TAKEN_MSG =
+  "Este número ya está registrado en el evento. Ingresa con esa cuenta.";
 import SupportButton from "../components/SupportButton";
 import CompanyLoginFlow from "../components/CompanyLoginFlow";
+import CompanyNitSearchInput from "../components/CompanyNitSearchInput";
 
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
 
@@ -105,10 +111,6 @@ const uploadPdfDocument = async (file, eventId, uid, fieldName) => {
 const isValidEmail = (v = "") =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim());
 
-const normalizeNit = (v = "") =>
-  String(v || "")
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "");
 
 const stripHtmlTags = (html) => {
   if (!html) return "";
@@ -355,6 +357,18 @@ const Landing = () => {
     return map;
   }, [formFields]);
 
+  // Teléfono ya registrado por otro asistente del evento: se bloquea el registro
+  // (evita multicuentas) y se ofrece ingresar con la cuenta existente.
+  const primaryPhoneField = useMemo(
+    () => formFields.find((f) => isPhoneField(f)) || null,
+    [formFields],
+  );
+  const { state: phoneCheck, verifyNow: verifyPhoneNow } = usePhoneAvailability(
+    eventId,
+    primaryPhoneField ? formValues[primaryPhoneField.name] : "",
+    currentUser?.uid,
+  );
+
   const registrationForm = event?.config?.registrationForm || null;
   const steps =
     registrationForm?.mode === "stepper" ? registrationForm.steps || [] : null;
@@ -503,6 +517,12 @@ const Landing = () => {
 
         const err = validateField(def, value);
         if (err) errors[def.name] = err;
+        else if (
+          def.name === primaryPhoneField?.name &&
+          phoneCheck.status === "registered"
+        ) {
+          errors[def.name] = PHONE_TAKEN_MSG;
+        }
       });
 
       const isLast = steps && activeStep === steps.length - 1;
@@ -527,6 +547,8 @@ const Landing = () => {
       activeStep,
       formValues,
       pdfFiles,
+      primaryPhoneField,
+      phoneCheck.status,
       event?.eventType,
       forcedRole,
     ],
@@ -630,10 +652,13 @@ const Landing = () => {
     }
   }, []);
 
-  const lookupCompanyByNit = useCallback(async () => {
+  // nitOverride: NIT elegido en el buscador (onBlur llega con el evento, no con un string)
+  const lookupCompanyByNit = useCallback(async (nitOverride) => {
     if (!eventId) return;
 
-    const nitNorm = normalizeNit(formValues.company_nit || "");
+    const nitNorm = normalizeNit(
+      typeof nitOverride === "string" ? nitOverride : formValues.company_nit || "",
+    );
     if (!nitNorm) return;
 
     setCompanyLookupLoading(true);
@@ -805,6 +830,27 @@ const Landing = () => {
         }
       }
       return;
+    }
+
+    // Revalida el teléfono sin esperar el debounce (pudo escribirlo y enviar de una vez)
+    if (primaryPhoneField && formValues[primaryPhoneField.name]) {
+      const phoneResult = await verifyPhoneNow();
+      if (phoneResult.status === "registered") {
+        setFormErrors((prev) => ({
+          ...prev,
+          [primaryPhoneField.name]: PHONE_TAKEN_MSG,
+        }));
+        setSubmitError(
+          "Este teléfono ya está registrado en el evento. Ingresa con esa cuenta en lugar de crear una nueva.",
+        );
+        if (steps) {
+          const phoneStep = steps.findIndex((st) =>
+            (st.fields || []).includes(primaryPhoneField.name),
+          );
+          if (phoneStep >= 0) setActiveStep(phoneStep);
+        }
+        return;
+      }
     }
     console.log("Validación exitosa. Guardando...");
 
@@ -1153,6 +1199,8 @@ const Landing = () => {
     event,
     formFields.length,
     forcedRole,
+    primaryPhoneField,
+    verifyPhoneNow,
   ]);
 
   const renderFieldsForNames = useCallback(
@@ -1437,22 +1485,26 @@ const Landing = () => {
 
         if (field.name === "company_nit") {
           return (
-            <TextInput
+            <CompanyNitSearchInput
               key={field.name}
+              eventId={eventId}
               label={field.label}
-              placeholder={field.placeholder || "Letras y números, sin guion"}
-              value={getValueForField(field.name)}
-              onChange={(e) => {
-                const normalized = normalizeNit(e.target.value);
+              placeholder={field.placeholder || "Escribe tu NIT (sin guion) o el nombre de tu empresa"}
+              value={getValueForField(field.name) || ""}
+              onChange={(normalized) => {
                 handleDynamicChange(field.name, normalized);
                 const error = validateField(field, normalized);
                 setFormErrors((prev) => ({ ...prev, [field.name]: error }));
               }}
+              onSelectCompany={(company) => {
+                handleDynamicChange(field.name, company.id);
+                setFormErrors((prev) => ({ ...prev, [field.name]: null }));
+                lookupCompanyByNit(company.id);
+              }}
               onBlur={lookupCompanyByNit}
-              rightSection={companyLookupLoading ? <Loader size="xs" /> : null}
+              loading={companyLookupLoading}
               required={field.required}
               error={fieldError}
-              radius="md"
             />
           );
         }
@@ -1583,8 +1635,51 @@ const Landing = () => {
                   error={fieldError}
                   style={{ flex: 1 }}
                   radius="md"
+                  rightSection={
+                    field.name === primaryPhoneField?.name &&
+                    phoneCheck.status === "checking" ? (
+                      <Loader size="xs" />
+                    ) : null
+                  }
                 />
               </Group>
+              {field.name === primaryPhoneField?.name &&
+                phoneCheck.status === "registered" && (
+                  <Alert color="orange" radius="md" mt="xs" p="sm">
+                    <Text size="sm">
+                      Este número ya está registrado en el evento
+                      {phoneCheck.nombreMask
+                        ? ` a nombre de ${phoneCheck.nombreMask}`
+                        : ""}
+                      {phoneCheck.empresa ? ` (${phoneCheck.empresa})` : ""}
+                      {phoneCheck.correoMask
+                        ? `, con el correo ${phoneCheck.correoMask}`
+                        : ""}
+                      . No crees una cuenta nueva: ingresa con la que ya
+                      tienes.
+                    </Text>
+                    <Button
+                      size="xs"
+                      radius="md"
+                      mt="xs"
+                      onClick={() => {
+                        setLoginError("");
+                        if (companyLoginEnabled) setLoginMode("company");
+                        setActiveTab("login");
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }}
+                    >
+                      Ingresar con esa cuenta
+                    </Button>
+                  </Alert>
+                )}
+              {field.name === primaryPhoneField?.name &&
+                phoneCheck.status === "available" &&
+                !currentUser?.data?.createdAt && (
+                  <Text size="xs" c="teal.7" mt={4}>
+                    Número disponible
+                  </Text>
+                )}
             </Box>
           );
         }
@@ -1647,6 +1742,11 @@ const Landing = () => {
       editor,
       lookupCompanyByNit,
       companyLookupLoading,
+      eventId,
+      primaryPhoneField,
+      phoneCheck,
+      companyLoginEnabled,
+      currentUser?.data?.createdAt,
       companyLogoFile,
       companyLogoPreview,
       isFieldVisible,

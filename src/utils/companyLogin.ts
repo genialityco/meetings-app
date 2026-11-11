@@ -58,3 +58,25 @@ export const normalizeSearch = (s: unknown) =>
     .toLowerCase()
     .replace(/\s+/g, " ")
     .trim();
+
+const PHONE_CHECK_URL =
+  (import.meta.env.VITE_PHONE_CHECK_URL as string) || `${FUNCTIONS_BASE}/checkPhoneAvailability`;
+
+export type PhoneAvailability =
+  | { registered: false }
+  | { registered: true; nombreMask: string | null; empresa: string | null; correoMask: string | null };
+
+/** ¿Ya hay un asistente del evento (distinto de currentUserId) con este teléfono? (functions/companyLogin.js) */
+export async function checkPhoneAvailability(
+  eventId: string,
+  phone: string,
+  currentUserId?: string | null,
+): Promise<PhoneAvailability> {
+  const res = await fetch(PHONE_CHECK_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ eventId, phone, currentUserId: currentUserId || "" }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}

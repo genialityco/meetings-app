@@ -4361,4 +4361,4 @@ export { calendarFeed } from "./calendarFeed.js";
 
 // Ingreso por empresa + teléfono para quienes no saben con qué correo los
 // registraron (policy companyLoginEnabled): ver companyLogin.js
-export { companyLoginCandidates, companyLoginVerify } from "./companyLogin.js";
+export { companyLoginCandidates, companyLoginVerify, checkPhoneAvailability } from "./companyLogin.js";

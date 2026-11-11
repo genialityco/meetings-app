@@ -42,6 +42,8 @@ import {
   createProductDoc,
   updateProductDoc,
   deleteProductDoc,
+  takeOverMeetingRequest,
+  TakeoverNotAllowedError,
   type ProductPayload,
 } from "./meetingSlotEngine";
 
@@ -845,6 +847,77 @@ export function useDashboardData(eventId?: string) {
       );
     });
   }, [eventId, isCompanyAdvisor, myCompanyNit]);
+
+  // Solicitudes pendientes dirigidas a un compañero de mi empresa (policy
+  // colleagueTakeoverEnabled): se muestran como "Dirigida a X" y, pasado el tiempo de
+  // prioridad, se pueden tomar (takeOverMeetingRequest). Los compañeros se leen de
+  // users y no de `assistants`, que viene filtrado por discoveryMode.
+  const [colleagueRequests, setColleagueRequests] = useState<Meeting[]>([]);
+  const colleagueTakeoverEnabled = policies.colleagueTakeoverEnabled === true;
+  useEffect(() => {
+    if (!eventId || !uid || !isCompanyAdvisor || !myCompanyNit || !colleagueTakeoverEnabled) {
+      setColleagueRequests([]);
+      return;
+    }
+    let cancelled = false;
+    let unsubs: (() => void)[] = [];
+    (async () => {
+      try {
+        const usersSnap = await getDocs(
+          query(collection(db, "users"), where("eventId", "==", eventId), where("companyId", "==", myCompanyNit)),
+        );
+        if (cancelled) return;
+        const colleagueIds = usersSnap.docs.map((d) => d.id).filter((id) => id !== uid);
+        const results: Record<number, Meeting[]> = {};
+        const chunks: string[][] = [];
+        for (let i = 0; i < colleagueIds.length; i += 30) chunks.push(colleagueIds.slice(i, i + 30));
+        if (!chunks.length) {
+          setColleagueRequests([]);
+          return;
+        }
+        unsubs = chunks.map((chunk, idx) =>
+          onSnapshot(
+            query(
+              collection(db, "events", eventId, "meetings"),
+              where("receiverId", "in", chunk),
+              where("status", "==", "pending"),
+            ),
+            (snap) => {
+              results[idx] = snap.docs.map(
+                (d) => ({ id: d.id, ...(d.data() as any), isColleagueRequest: true }) as Meeting,
+              );
+              setColleagueRequests(Object.values(results).flat());
+              // Datos del compañero al que va dirigida (para "Dirigida a X")
+              for (const m of results[idx]) {
+                const rid = m.receiverId;
+                if (rid && !participantsInfo[rid]) {
+                  getDoc(doc(db, "users", rid))
+                    .then((s) => s.exists() && setParticipantsInfo((prev) => ({ ...prev, [rid]: s.data() as Assistant })))
+                    .catch(() => {});
+                }
+              }
+            },
+          ),
+        );
+      } catch (e) {
+        console.error("[useDashboardData] Error cargando solicitudes de compañeros:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unsubs.forEach((u) => u());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventId, uid, isCompanyAdvisor, myCompanyNit, colleagueTakeoverEnabled]);
+
+  // Solo las de solicitantes con los que mi rol puede reunirse
+  const visibleColleagueRequests = useMemo(() => {
+    const myTipo = currentUser?.data?.tipoAsistente;
+    return colleagueRequests.filter((m) => {
+      const requester = assistants.find((a) => a.id === m.requesterId);
+      return !requester || canDiscoverAttendee(policies.discoveryMode, myTipo, requester.tipoAsistente);
+    });
+  }, [colleagueRequests, assistants, policies.discoveryMode, currentUser?.data?.tipoAsistente]);
 
   // Notifica (WhatsApp + notificación in-app) a los demás asesores de una empresa cuando
   // una reunión con companyId cambia de estado (creada/aceptada/cancelada/rechazada).
@@ -1734,6 +1807,26 @@ export function useDashboardData(eventId?: string) {
     }
   };
 
+  // Tomar una solicitud dirigida a un compañero de empresa: se transfiere a mí y se abre
+  // de una vez el selector de horario (el mismo flujo de "Aceptar").
+  const takeOverRequest = async (meetingId: string) => {
+    if (!eventId || !uid) return;
+    try {
+      await takeOverMeetingRequest({ eventId, meetingId, newReceiverId: uid, policies });
+      trackEvent({ name: "meeting_accepted", params: { meeting_id: meetingId, via: "colleague_takeover" } } as any);
+      await prepareSlotSelection(meetingId);
+    } catch (e) {
+      const handled = e instanceof TakeoverNotAllowedError;
+      if (!handled) trackError(e instanceof Error ? e.message : String(e), "useDashboardData.takeOverRequest");
+      mantineNotifications.show({
+        title: "No se pudo tomar la solicitud",
+        message: handled ? (e as Error).message : "Ocurrió un error. Intenta de nuevo.",
+        color: "orange",
+        autoClose: 6000,
+      });
+    }
+  };
+
   // Igual que prepareSlotSelection pero para una solicitud nueva (aún no existe
   // el documento de la reunión): el requester es el usuario actual.
   const prepareSlotSelectionForRequest = async (receiverId: string, selectedDate?: string) => {
@@ -2398,6 +2491,8 @@ export function useDashboardData(eventId?: string) {
       meetings: loadingMeetings,
     },
     pendingRequests: filteredPendingRequests,
+    colleagueRequests: visibleColleagueRequests,
+    takeOverRequest,
     cancelSentMeeting,
     sentRequests: filteredSentRequests,
     // Alias usado por la vista de empresas/productos para marcar "Solicitud enviada".

@@ -18,6 +18,7 @@ import {
   Grid,
   SegmentedControl,
   Select,
+  Tooltip,
   useMantineTheme,
 } from "@mantine/core";
 import {
@@ -37,7 +38,8 @@ import {
   IconUsers,
   IconNote,
 } from "@tabler/icons-react";
-import { Assistant, Meeting, Company } from "./types";
+import { Assistant, Meeting, Company, EventPolicies } from "./types";
+import { colleagueTakeoverAvailableAt } from "./meetingSlotEngine";
 import { trackEvent } from "../../utils/analytics";
 import { logWhatsAppClick } from "../../utils/eventStats";
 import { splitAttendeeFields, getFieldLabel } from "../../utils/attendeeFields";
@@ -61,7 +63,21 @@ interface RequestsTabProps {
   globalDateFilter?: string | null;
   setGlobalDateFilter?: (date: string | null) => void;
   eventConfig?: any;
+  /** Pendientes dirigidas a compañeros de mi empresa (policy colleagueTakeoverEnabled) */
+  colleagueRequests?: Meeting[];
+  takeOverRequest?: (meetingId: string) => Promise<void>;
+  policies?: EventPolicies;
+  participantsInfo?: Record<string, Assistant>;
 }
+
+const firstName = (u?: { nombre?: string } | null) => (u?.nombre || "").trim().split(/\s+/)[0] || "";
+
+const formatTakeoverTime = (ms: number) => {
+  const d = new Date(ms);
+  const sameDay = d.toDateString() === new Date().toDateString();
+  const time = d.toLocaleTimeString("es-CO", { hour: "numeric", minute: "2-digit" });
+  return sameDay ? `hoy a las ${time}` : `${d.toLocaleDateString("es-CO", { weekday: "short", day: "numeric", month: "short" })} ${time}`;
+};
 
 // Nombres ya mostrados en el header de la card (avatar + nombre + cargo/empresa) o que
 // no tiene sentido listar como fila suelta (logo, NIT). El resto de formFields del
@@ -301,8 +317,22 @@ export default function RequestsTab({
   globalDateFilter = null,
   setGlobalDateFilter,
   eventConfig,
+  colleagueRequests = [],
+  takeOverRequest,
+  policies,
+  participantsInfo = {},
 }: RequestsTabProps) {
   const theme = useMantineTheme();
+  const takeoverEnabled = policies?.colleagueTakeoverEnabled === true;
+  const takeoverHours = Math.max(0, Number(policies?.colleagueTakeoverAfterHours ?? 4) || 0);
+  // Reloj para habilitar "Tomar solicitud" cuando vence el tiempo de prioridad
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!takeoverEnabled || colleagueRequests.length === 0) return;
+    const t = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, [takeoverEnabled, colleagueRequests.length]);
+  const [takingId, setTakingId] = useState<string | null>(null);
 
   // Selector de día para "Aceptadas" en eventos multi-día. Controla el filtro global del
   // dashboard (que arranca en el día de hoy durante el evento); su otro selector vivía en
@@ -369,9 +399,28 @@ export default function RequestsTab({
                       formFields={formFields}
                       statusBadge={
                         (request as any).isCompanyRequest ? (
-                          <Badge color="blue" variant="light" radius="xl">
-                            Solicitud de empresa
-                          </Badge>
+                          <Tooltip label="Enviada a tu empresa: cualquier representante puede aceptarla y el primero se la queda" withArrow multiline w={240}>
+                            <Badge color="blue" variant="light" radius="xl">
+                              Para tu empresa
+                            </Badge>
+                          </Tooltip>
+                        ) : takeoverEnabled ? (
+                          <Tooltip
+                            label={
+                              (request as any).takenFrom
+                                ? "La tomaste de un compañero"
+                                : takeoverHours === 0
+                                  ? "Te la pidieron a ti; tus compañeros también pueden tomarla"
+                                  : `Te la pidieron a ti. Si no respondes en ${takeoverHours} h, un compañero podrá tomarla`
+                            }
+                            withArrow
+                            multiline
+                            w={240}
+                          >
+                            <Badge color="grape" variant="light" radius="xl">
+                              {(request as any).takenFrom ? "Tomada de un compañero" : "Dirigida a ti"}
+                            </Badge>
+                          </Tooltip>
                         ) : undefined
                       }
                       actions={
@@ -454,6 +503,96 @@ export default function RequestsTab({
           </Grid>
         </Accordion.Panel>
       </Accordion.Item>
+
+      {/* Dirigidas a compañeros de mi empresa */}
+      {takeoverEnabled && (
+        <Accordion.Item value="companeros">
+          <Accordion.Control>
+            <Group gap={8} wrap="nowrap">
+              Solicitudes a tus compañeros de empresa
+              <Badge size="sm" variant="light" color="grape" circle>
+                {colleagueRequests.length}
+              </Badge>
+            </Group>
+          </Accordion.Control>
+          <Accordion.Panel>
+            <Text size="sm" c="dimmed" mb="sm">
+              Solicitudes que le enviaron a otra persona de tu empresa.{" "}
+              {takeoverHours === 0
+                ? "Si no puede atenderla, puedes tomarla y agendarla con tu agenda."
+                : `Si no responde en ${takeoverHours} h, puedes tomarla y agendarla con tu agenda.`}
+            </Text>
+            <Grid gutter="sm">
+              {colleagueRequests.length > 0 ? (
+                colleagueRequests.map((request) => {
+                  const requester = findUser(request.requesterId);
+                  const target = participantsInfo[request.receiverId] || findUser(request.receiverId);
+                  const targetName = (target?.nombre || "").trim() || "un compañero";
+                  const availableAt = colleagueTakeoverAvailableAt(request, policies || {});
+                  const canTake = availableAt != null && now >= availableAt;
+                  return (
+                    <Grid.Col span={{ base: 12, sm: 6, lg: 4 }} key={request.id}>
+                      <RequestCard
+                        user={requester}
+                        request={request}
+                        formFields={formFields}
+                        statusBadge={
+                          <Badge color="grape" variant="light" radius="xl">
+                            Dirigida a {targetName}
+                          </Badge>
+                        }
+                        actions={
+                          canTake ? (
+                            <Button
+                              fullWidth
+                              color="grape"
+                              size="compact-sm"
+                              radius="md"
+                              leftSection={<IconUsers size={14} />}
+                              loading={takingId === request.id}
+                              disabled={prepareSlotSelectionLoading || (!!takingId && takingId !== request.id)}
+                              onClick={async () => {
+                                if (
+                                  !confirm(
+                                    `¿Tomar esta solicitud en lugar de ${targetName}? Quedará a tu nombre y la agendarás con tu agenda. Se le avisará a ${firstName(target) || "tu compañero"} y al solicitante.`,
+                                  )
+                                )
+                                  return;
+                                setTakingId(request.id);
+                                try {
+                                  await takeOverRequest?.(request.id);
+                                } finally {
+                                  setTakingId(null);
+                                }
+                              }}
+                            >
+                              Tomar solicitud
+                            </Button>
+                          ) : (
+                            <Text size="xs" c="dimmed" ta="center">
+                              {availableAt != null
+                                ? `Podrás tomarla ${formatTakeoverTime(availableAt)} si ${firstName(target) || "tu compañero"} no responde.`
+                                : "Solo la persona solicitada puede responderla."}
+                            </Text>
+                          )
+                        }
+                      />
+                    </Grid.Col>
+                  );
+                })
+              ) : (
+                <Grid.Col span={12}>
+                  <Paper withBorder radius="lg" p="lg">
+                    <Text c="dimmed" ta="center">
+                      Tus compañeros no tienen solicitudes pendientes.
+                    </Text>
+                  </Paper>
+                </Grid.Col>
+              )}
+            </Grid>
+          </Accordion.Panel>
+        </Accordion.Item>
+      )}
 
       {/* Enviadas */}
       <Accordion.Item value="enviadas">

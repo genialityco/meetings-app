@@ -174,6 +174,15 @@ export interface EventPolicies {
    * empresa (NIT o nombre), su nombre y escribe completo el teléfono registrado, del que solo ve
    * los últimos 4 dígitos (Cloud Functions companyLoginCandidates / companyLoginVerify). */
   companyLoginEnabled?: boolean;
+  /** "Registrar compañero" en Mi empresa: un representante crea la cuenta de otra persona
+   * de su empresa (misma empresa y rol) sin cerrar sesión y le comparte su link /acceso
+   * (RegisterColleagueModal.tsx). */
+  colleagueRegistrationEnabled?: boolean;
+  /** Solicitudes dirigidas a un representante: sus compañeros de empresa las ven en
+   * "Solicitudes" ("Dirigida a X") y, pasadas `colleagueTakeoverAfterHours` sin respuesta
+   * (0 = de inmediato), cualquiera puede tomarla (takeOverMeetingRequest en meetingSlotEngine). */
+  colleagueTakeoverEnabled?: boolean;
+  colleagueTakeoverAfterHours?: number;
   /** Plantilla de Meta (API v2) para los avisos informativos a compañeros de empresa
    * (solicitud/aceptación/rechazo/cancelación de la reunión de un compañero). Cuerpo:
    * {{1}} nombre del asesor, {{2}} evento, {{3}} texto del aviso; botón URL opcional
@@ -323,6 +332,9 @@ export const DEFAULT_POLICIES: EventPolicies = {
   standVisitAllowSellerScan: false,
   qrOnlyModeEnabled: false,
   companyLoginEnabled: false,
+  colleagueRegistrationEnabled: false,
+  colleagueTakeoverEnabled: false,
+  colleagueTakeoverAfterHours: 4,
   advisorNoticeTemplate: null,
   calendarInvitesEnabled: false,
   calendarInvitesLocation: "",

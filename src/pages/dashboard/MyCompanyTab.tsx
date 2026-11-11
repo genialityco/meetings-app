@@ -36,7 +36,9 @@ import {
   IconPencil,
   IconPlus,
   IconTrash,
+  IconUserPlus,
 } from "@tabler/icons-react";
+import RegisterColleagueModal from "./RegisterColleagueModal";
 import { db } from "../../firebase/firebaseConfig";
 import { useCompanyData } from "./useCompanyData";
 import { getTableLabel } from "./meetingSlotEngine";
@@ -73,8 +75,14 @@ export default function MyCompanyTab({
     lookupAttendeeForVisit,
     confirmVisit,
     loading,
+    eventName,
+    eventImage,
     sendMeetingRequest: companySendMeetingRequest,
   } = useCompanyData(eventId, companyNit, { subscribeToVisits: true });
+
+  const colleagueRegistrationEnabled =
+    (policies?.colleagueRegistrationEnabled ?? eventConfig?.policies?.colleagueRegistrationEnabled) === true;
+  const [colleagueModalOpened, setColleagueModalOpened] = useState(false);
 
   const [loadingId, setLoadingId] = useState<string | null>(null);
   // Abre el modal "Editar perfil" de DashboardHeader (formulario de registro, incluye logo de la empresa)
@@ -522,6 +530,21 @@ export default function MyCompanyTab({
               </Group>
             }
           />
+          {colleagueRegistrationEnabled && (
+            <Group justify="space-between" wrap="wrap" gap="xs">
+              <Text size="sm" c="dimmed">
+                ¿Viene alguien más de tu empresa? Regístralo desde aquí, sin cerrar tu sesión.
+              </Text>
+              <Button
+                size="compact-sm"
+                variant="light"
+                leftSection={<IconUserPlus size={14} />}
+                onClick={() => setColleagueModalOpened(true)}
+              >
+                Registrar compañero
+              </Button>
+            </Group>
+          )}
           <Grid gutter="sm">
             {representatives.map((rep) => {
               const isSelf = rep.id === myUid;
@@ -695,6 +718,19 @@ export default function MyCompanyTab({
         onConfirm={attendeeScan.handleConfirm}
         onCancel={attendeeScan.closeReview}
       />
+
+      {colleagueRegistrationEnabled && eventId && (
+        <RegisterColleagueModal
+          opened={colleagueModalOpened}
+          onClose={() => setColleagueModalOpened(false)}
+          eventId={eventId}
+          eventConfig={eventConfig}
+          eventName={eventName}
+          eventImage={eventImage}
+          currentUser={currentUser}
+          companyName={company?.razonSocial}
+        />
+      )}
     </Stack>
     </>
   );
