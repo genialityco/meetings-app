@@ -1,0 +1,19 @@
+/* Pantalla de carga (Landing mientras se resuelve la sesión).
+   La imagen es horizontal (1920x1080): en pantallas horizontales la cubre toda;
+   en celular vertical se muestra completa para no recortar el logo, sobre un
+   fondo del mismo tono oscuro de la imagen. */
+.splash-screen {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background-color: #0e1117;
+  background-image: url("/splash-magnetic.jpg");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+@media (orientation: portrait) {
+  .splash-screen {
+    background-size: contain;
+  }
+}

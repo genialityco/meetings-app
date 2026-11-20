@@ -1857,18 +1857,7 @@ const Landing = () => {
   }, [event.backgroundImage, event.backgroundMobileImage, isMobile]);
 
   if (userLoading)
-    return (
-      <div
-        style={{
-          minHeight: "100vh",
-          backgroundColor: "#0d0d0f",
-          backgroundImage: "url('/splash-magnetic.jpg')",
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          backgroundRepeat: "no-repeat",
-        }}
-      />
-    );
+    return <div className="splash-screen" role="img" aria-label="Magnetic" />;
 
   if (!eventId) {
     return (
@@ -2308,11 +2297,26 @@ const Landing = () => {
     </Tabs.Panel>
   );
 
+  // Pie de la tarjeta: logos Magnetic + "Powered by GEN.iality", enlazado a la
+  // página de GEN.iality (reemplaza el antiguo texto "Powered by Magnetic")
   const helperText = (
-    <Text ta="center" size="sm" c="dimmed">
-      Ingresa con tu correo, número de identidad o celular registrado, o
-      regístrate si es tu primera vez.
-    </Text>
+    <Box ta="center">
+      <a
+        href="https://geniality.com.co/"
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Ir a GEN.iality"
+        style={{ display: "inline-block", maxWidth: isMobile ? 260 : 340 }}
+      >
+        <img
+          src="/footer-magnetic-geniality.png"
+          alt="Magnetic · Powered by GEN.iality"
+          width={600}
+          height={150}
+          style={{ width: "100%", height: "auto", display: "block" }}
+        />
+      </a>
+    </Box>
   );
 
   return (
@@ -2451,17 +2455,6 @@ const Landing = () => {
               </Tabs>
             </Box>
           </Paper>
-
-          <Text ta="center" mt="md" c="rgba(255,255,255,0.85)" size="sm">
-            <a
-              href="https://geniality.com.co/"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: "inherit", textDecoration: "underline" }}
-            >
-              Powered by Magnetic
-            </a>
-          </Text>
         </Container>
       </Box>
       <SupportButton eventName={event?.eventName} />
