@@ -170,10 +170,6 @@ export interface EventPolicies {
   standVisitAllowSellerScan?: boolean;
   /** Modo "Solo QR": el dashboard del asistente muestra únicamente su código de asistencia (sin tabs de reuniones, asistentes, empresas, etc). Pensado para eventos que solo usan la app para control de acceso/check-in. */
   qrOnlyModeEnabled?: boolean;
-  /** Ingreso por empresa: en la Landing, quien no sabe con qué correo lo registraron elige su
-   * empresa (NIT o nombre), su nombre y escribe completo el teléfono registrado, del que solo ve
-   * los últimos 4 dígitos (Cloud Functions companyLoginCandidates / companyLoginVerify). */
-  companyLoginEnabled?: boolean;
   /** "Registrar compañero" en Mi empresa: un representante crea la cuenta de otra persona
    * de su empresa (misma empresa y rol) sin cerrar sesión y le comparte su link /acceso
    * (RegisterColleagueModal.tsx). */
@@ -331,7 +327,6 @@ export const DEFAULT_POLICIES: EventPolicies = {
   standVisitsEnabled: false,
   standVisitAllowSellerScan: false,
   qrOnlyModeEnabled: false,
-  companyLoginEnabled: false,
   colleagueRegistrationEnabled: false,
   colleagueTakeoverEnabled: false,
   colleagueTakeoverAfterHours: 4,

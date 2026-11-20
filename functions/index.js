@@ -4359,6 +4359,6 @@ export { onMeetingCalendarInvite } from "./calendarInvites.js";
 // calendarFeedEnabled): ver calendarFeed.js
 export { calendarFeed } from "./calendarFeed.js";
 
-// Ingreso por empresa + teléfono para quienes no saben con qué correo los
-// registraron (policy companyLoginEnabled): ver companyLogin.js
-export { companyLoginCandidates, companyLoginVerify, checkPhoneAvailability } from "./companyLogin.js";
+// Ingreso con el celular (Landing) y chequeo de teléfono ya registrado en el
+// registro: ver phoneLogin.js
+export { phoneLogin, checkPhoneAvailability } from "./phoneLogin.js";

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { checkPhoneAvailability, type PhoneAvailability } from "../utils/companyLogin";
+import { checkPhoneAvailability, type PhoneAvailability } from "../utils/phoneLogin";
 import { toWhatsAppNumber } from "../utils/phoneUtils";
 
 export type PhoneCheckState =

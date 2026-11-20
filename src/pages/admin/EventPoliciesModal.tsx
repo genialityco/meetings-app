@@ -177,7 +177,6 @@ export default function EventPoliciesModal({
   const [standVisitsEnabled, setStandVisitsEnabled] = useState(false);
   const [standVisitAllowSellerScan, setStandVisitAllowSellerScan] = useState(false);
   const [qrOnlyModeEnabled, setQrOnlyModeEnabled] = useState(false);
-  const [companyLoginEnabled, setCompanyLoginEnabled] = useState(false);
   const [colleagueRegistrationEnabled, setColleagueRegistrationEnabled] = useState(false);
   const [colleagueTakeoverEnabled, setColleagueTakeoverEnabled] = useState(false);
   const [colleagueTakeoverAfterHours, setColleagueTakeoverAfterHours] = useState<number>(4);
@@ -256,7 +255,6 @@ export default function EventPoliciesModal({
     setStandVisitsEnabled(p.standVisitsEnabled ?? false);
     setStandVisitAllowSellerScan(p.standVisitAllowSellerScan ?? false);
     setQrOnlyModeEnabled(p.qrOnlyModeEnabled ?? false);
-    setCompanyLoginEnabled(p.companyLoginEnabled ?? false);
     setColleagueRegistrationEnabled(p.colleagueRegistrationEnabled ?? false);
     setColleagueTakeoverEnabled(p.colleagueTakeoverEnabled ?? false);
     setColleagueTakeoverAfterHours(p.colleagueTakeoverAfterHours ?? 4);
@@ -400,7 +398,6 @@ export default function EventPoliciesModal({
     standVisitsEnabled,
     standVisitAllowSellerScan,
     qrOnlyModeEnabled,
-    companyLoginEnabled,
     colleagueRegistrationEnabled,
     colleagueTakeoverEnabled,
     colleagueTakeoverAfterHours,
@@ -550,7 +547,6 @@ export default function EventPoliciesModal({
                 ...(isBuyerSeller && forceBuyerRoleOnRegistration ? [{ label: "Registro → Comprador" }] : []),
                 ...(isBuyerSeller && forceSellerRoleOnRegistration ? [{ label: "Registro → Vendedor" }] : []),
                 ...(isBuyerSeller && roleUrlParamEnabled ? [{ label: "Rol por URL" }] : []),
-                ...(companyLoginEnabled ? [{ label: "Ingreso por empresa" }] : []),
               ]}
             />
           </Accordion.Control>
@@ -680,12 +676,6 @@ export default function EventPoliciesModal({
               </SettingsCard>
 
               <SettingsCard title="Ingreso">
-                <Switch
-                  label="Ingresar con la empresa y el teléfono"
-                  description="Para quien no sabe con qué correo lo registraron: elige su empresa (NIT o nombre), su nombre y escribe completo el teléfono registrado, del que solo ve los últimos 4 dígitos"
-                  checked={companyLoginEnabled}
-                  onChange={(e) => setCompanyLoginEnabled(e.currentTarget.checked)}
-                />
                 <Switch
                   label="Registrar compañeros desde la cuenta"
                   description="En Mi empresa, cualquier representante puede registrar a otra persona de su empresa (misma empresa y rol) sin cerrar sesión, y compartirle su link de acceso directo"

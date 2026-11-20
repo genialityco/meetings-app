@@ -15,7 +15,7 @@ import {
 } from "@mantine/core";
 import { IconBuilding, IconInfoCircle } from "@tabler/icons-react";
 import { db } from "../firebase/firebaseConfig";
-import { normalizeSearch } from "../utils/companyLogin";
+import { normalizeSearch } from "../utils/phoneLogin";
 import { NIT_VARIANT_MESSAGES, findNitVariants, formatNit, normalizeNit } from "../utils/nit";
 
 export interface CompanySearchOption {

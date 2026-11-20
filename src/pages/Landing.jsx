@@ -27,7 +27,6 @@ import {
   ActionIcon,
   Tooltip,
   ThemeIcon,
-  Anchor,
 } from "@mantine/core";
 import { buildEventTheme } from "../theme.js";
 import { RichTextEditor, Link } from "@mantine/tiptap";
@@ -58,7 +57,8 @@ import {
   IconPhoto,
 } from "@tabler/icons-react";
 
-import { db } from "../firebase/firebaseConfig";
+import { auth, db } from "../firebase/firebaseConfig";
+import { signInAnonymously } from "firebase/auth";
 import { storage } from "../firebase/firebaseConfig";
 import { UserContext } from "../context/UserContext";
 import { uploadCompanyLogo } from "../utils/companyStorage";
@@ -81,7 +81,8 @@ import { usePhoneAvailability } from "../hooks/usePhoneAvailability";
 const PHONE_TAKEN_MSG =
   "Este número ya está registrado en el evento. Ingresa con esa cuenta.";
 import SupportButton from "../components/SupportButton";
-import CompanyLoginFlow from "../components/CompanyLoginFlow";
+import PhoneMatchPickerModal from "../components/PhoneMatchPickerModal";
+import { findAttendeesByPhone } from "../utils/phoneLogin";
 import CompanyNitSearchInput from "../components/CompanyNitSearchInput";
 
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
@@ -233,6 +234,7 @@ const Landing = () => {
     userLoading,
     loginByEmail,
     loginByCedula,
+    loginAsUser,
     currentUser,
     updateUser,
     logout,
@@ -254,8 +256,8 @@ const Landing = () => {
   const [loginIdentifier, setLoginIdentifier] = useState("");
   const [loginError, setLoginError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
-  // "company": ingreso por empresa + teléfono (policy companyLoginEnabled)
-  const [loginMode, setLoginMode] = useState("email");
+  // Varias personas con el celular escrito: modal para elegir (null = cerrado)
+  const [phoneMatches, setPhoneMatches] = useState(null);
 
   // Form state
   const [formValues, setFormValues] = useState({});
@@ -713,44 +715,89 @@ const Landing = () => {
     }
   }, [eventId, formValues.company_nit, companyStepFields]);
 
+  // Ingreso con el celular: el servidor (phoneLogin) ya ubicó al asistente por su
+  // teléfono; aquí se abre la sesión igual que en /acceso (AutoLoginPage).
+  const loginWithPhoneMatch = useCallback(
+    async (uid) => {
+      setPhoneMatches(null);
+      setLoginLoading(true);
+      try {
+        // Las reglas exigen una sesión de Firebase para escribir
+        if (!auth.currentUser) await signInAnonymously(auth);
+        const snap = await getDoc(doc(db, "users", uid));
+        if (!snap.exists() || snap.data().eventId !== eventId) {
+          setLoginError("No se encontró un participante con este celular para este evento.");
+          return;
+        }
+        trackEvent({ name: "login", params: { method: "phone" } });
+        loginAsUser(uid, snap.data());
+        setDoc(doc(db, "users", uid), { lastConnection: new Date() }, { merge: true }).catch(
+          (e) => console.warn("No se pudo actualizar lastConnection:", e),
+        );
+        navigate(`/dashboard/${eventId}`);
+      } catch (e) {
+        console.error(e);
+        setLoginError("Ocurrió un error al intentar ingresar.");
+      } finally {
+        setLoginLoading(false);
+      }
+    },
+    [eventId, loginAsUser, navigate],
+  );
+
   const handleLogin = useCallback(async () => {
     setLoginError("");
     const identifier = loginIdentifier.trim();
-    // Con "@" es un correo; si no, se trata como número de identidad (cédula)
+    // Con "@" es un correo; si no, se busca como cédula y, si no aparece, como celular
     const byEmail = identifier.includes("@");
+    const digits = identifier.replace(/\D/g, "");
     if (byEmail) {
       if (!isValidEmail(identifier)) {
         setLoginError("Por favor ingresa un correo válido.");
         return;
       }
-    } else if (identifier.replace(/\D/g, "").length < 5) {
-      setLoginError(
-        "Ingresa tu correo electrónico o tu número de identidad.",
-      );
+    } else if (digits.length < 5) {
+      setLoginError("Ingresa tu correo, tu número de identidad o tu celular.");
       return;
     }
 
-    // Track login attempt
-    trackEvent({
-      name: "login",
-      params: {
-        method: byEmail ? "email" : "cedula",
-      },
-    });
+    if (byEmail) trackEvent({ name: "login", params: { method: "email" } });
 
     setLoginLoading(true);
     try {
-      const result = byEmail
-        ? await loginByEmail(identifier, eventId)
-        : await loginByCedula(identifier, eventId);
+      if (byEmail) {
+        const result = await loginByEmail(identifier, eventId);
+        if (result?.success) navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
+        else setLoginError("No se encontró un participante con este correo para este evento.");
+        return;
+      }
+
+      const result = await loginByCedula(identifier, eventId);
       if (result?.success) {
+        trackEvent({ name: "login", params: { method: "cedula" } });
         navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
-      } else {
+        return;
+      }
+
+      const notFound =
+        "No encontramos un participante con este número de identidad o celular para este evento.";
+      if (!eventId || digits.length < 7) {
+        setLoginError(notFound);
+        return;
+      }
+      const byPhone = await findAttendeesByPhone(eventId, identifier);
+      if (!byPhone.ok) {
         setLoginError(
-          byEmail
-            ? "No se encontró un participante con este correo para este evento."
-            : "No se encontró un participante con este número de identidad para este evento.",
+          `Demasiados intentos sin resultado. Intenta de nuevo en ${Math.ceil(
+            byPhone.retryAfterSec / 60,
+          )} minutos o escríbenos con el botón de Soporte.`,
         );
+      } else if (byPhone.matches.length === 1) {
+        await loginWithPhoneMatch(byPhone.matches[0].uid);
+      } else if (byPhone.matches.length > 1) {
+        setPhoneMatches(byPhone.matches);
+      } else {
+        setLoginError(notFound);
       }
     } catch (e) {
       console.error(e);
@@ -758,24 +805,7 @@ const Landing = () => {
     } finally {
       setLoginLoading(false);
     }
-  }, [loginByEmail, loginByCedula, loginIdentifier, eventId, navigate]);
-
-  const companyLoginEnabled =
-    !!eventId && event?.config?.policies?.companyLoginEnabled === true;
-  const companyLoginLink = companyLoginEnabled ? (
-    <Anchor
-      component="button"
-      type="button"
-      size="sm"
-      ta="center"
-      onClick={() => {
-        setLoginError("");
-        setLoginMode("company");
-      }}
-    >
-      ¿No sabes con qué correo te registraron? Ingresa con tu empresa
-    </Anchor>
-  ) : null;
+  }, [loginByEmail, loginByCedula, loginWithPhoneMatch, loginIdentifier, eventId, navigate]);
 
   // Función para mejorar descripción con IA
   const handleImproveDescription = useCallback(async () => {
@@ -1685,7 +1715,6 @@ const Landing = () => {
                       mt="xs"
                       onClick={() => {
                         setLoginError("");
-                        if (companyLoginEnabled) setLoginMode("company");
                         setActiveTab("login");
                         window.scrollTo({ top: 0, behavior: "smooth" });
                       }}
@@ -1766,7 +1795,6 @@ const Landing = () => {
       eventId,
       primaryPhoneField,
       phoneCheck,
-      companyLoginEnabled,
       currentUser?.data?.createdAt,
       companyLogoFile,
       companyLogoPreview,
@@ -2096,19 +2124,10 @@ const Landing = () => {
 
                     {/* Panels (mobile) */}
                     <Tabs.Panel value="login" pt="md">
-                      {companyLoginEnabled && loginMode === "company" ? (
-                        <CompanyLoginFlow
-                          eventId={eventId}
-                          groupByRazonSocial={
-                            event?.config?.policies?.groupByRazonSocial
-                          }
-                          onCancel={() => setLoginMode("email")}
-                        />
-                      ) : (
                       <Stack gap="sm">
                         <TextInput
-                          label="Correo electrónico o número de identidad"
-                          placeholder="tu@empresa.com o 1020345678"
+                          label="Correo, número de identidad o celular"
+                          placeholder="tu@empresa.com o 3001234567"
                           value={loginIdentifier}
                           onChange={(e) =>
                             setLoginIdentifier(e.target.value.toLowerCase())
@@ -2135,9 +2154,7 @@ const Landing = () => {
                         >
                           INGRESAR
                         </Button>
-                        {companyLoginLink}
                       </Stack>
-                      )}
                     </Tabs.Panel>
 
                     <Tabs.Panel value="register" pt="md">
@@ -2721,19 +2738,10 @@ const Landing = () => {
                       {/* LOGIN */}
                       <Tabs.Panel value="login">
                         <Box style={{ maxWidth: 520, margin: "0 auto" }}>
-                          {companyLoginEnabled && loginMode === "company" ? (
-                            <CompanyLoginFlow
-                              eventId={eventId}
-                              groupByRazonSocial={
-                                event?.config?.policies?.groupByRazonSocial
-                              }
-                              onCancel={() => setLoginMode("email")}
-                            />
-                          ) : (
                           <Stack gap="sm">
                             <TextInput
-                              label="Correo electrónico o número de identidad"
-                              placeholder="tu@empresa.com o 1020345678"
+                              label="Correo, número de identidad o celular"
+                              placeholder="tu@empresa.com o 3001234567"
                               value={loginIdentifier}
                               onChange={(e) =>
                                 setLoginIdentifier(e.target.value.toLowerCase())
@@ -2763,9 +2771,7 @@ const Landing = () => {
                             >
                               INGRESAR
                             </Button>
-                            {companyLoginLink}
                           </Stack>
-                          )}
                         </Box>
                       </Tabs.Panel>
 
@@ -3110,6 +3116,11 @@ const Landing = () => {
         </Container>
       </Box>
       <SupportButton eventName={event?.eventName} />
+      <PhoneMatchPickerModal
+        matches={phoneMatches}
+        onPick={(m) => loginWithPhoneMatch(m.uid)}
+        onClose={() => setPhoneMatches(null)}
+      />
     </MantineProvider>
   );
 };

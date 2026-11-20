@@ -32,7 +32,6 @@
 // Estado por destinatario: events/{eventId}/pendingReminders/{userId}
 // (lastSentAt, lastPendingCount, lastWhatsapp, lastEmail, sendCount).
 
-/* global Intl */
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onRequest } from "firebase-functions/v2/https";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
