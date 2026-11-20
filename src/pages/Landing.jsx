@@ -229,7 +229,14 @@ const Landing = () => {
   const navigate = useNavigate();
   const { eventId } = useParams();
   const [searchParams] = useSearchParams();
-  const { userLoading, loginByEmail, currentUser, updateUser, logout } =
+  const {
+    userLoading,
+    loginByEmail,
+    loginByCedula,
+    currentUser,
+    updateUser,
+    logout,
+  } =
     useContext(UserContext);
 
   const [event, setEvent] = useState({});
@@ -244,7 +251,7 @@ const Landing = () => {
   const isMobile = useMediaQuery("(max-width: 600px)");
 
   // Login state
-  const [loginEmail, setLoginEmail] = useState("");
+  const [loginIdentifier, setLoginIdentifier] = useState("");
   const [loginError, setLoginError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   // "company": ingreso por empresa + teléfono (policy companyLoginEnabled)
@@ -708,8 +715,18 @@ const Landing = () => {
 
   const handleLogin = useCallback(async () => {
     setLoginError("");
-    if (!isValidEmail(loginEmail)) {
-      setLoginError("Por favor ingresa un correo válido.");
+    const identifier = loginIdentifier.trim();
+    // Con "@" es un correo; si no, se trata como número de identidad (cédula)
+    const byEmail = identifier.includes("@");
+    if (byEmail) {
+      if (!isValidEmail(identifier)) {
+        setLoginError("Por favor ingresa un correo válido.");
+        return;
+      }
+    } else if (identifier.replace(/\D/g, "").length < 5) {
+      setLoginError(
+        "Ingresa tu correo electrónico o tu número de identidad.",
+      );
       return;
     }
 
@@ -717,18 +734,22 @@ const Landing = () => {
     trackEvent({
       name: "login",
       params: {
-        method: "email",
+        method: byEmail ? "email" : "cedula",
       },
     });
 
     setLoginLoading(true);
     try {
-      const result = await loginByEmail(loginEmail.trim(), eventId);
+      const result = byEmail
+        ? await loginByEmail(identifier, eventId)
+        : await loginByCedula(identifier, eventId);
       if (result?.success) {
         navigate(eventId ? `/dashboard/${eventId}` : "/dashboard");
       } else {
         setLoginError(
-          "No se encontró un participante con este correo para este evento.",
+          byEmail
+            ? "No se encontró un participante con este correo para este evento."
+            : "No se encontró un participante con este número de identidad para este evento.",
         );
       }
     } catch (e) {
@@ -737,7 +758,7 @@ const Landing = () => {
     } finally {
       setLoginLoading(false);
     }
-  }, [loginByEmail, loginEmail, eventId, navigate]);
+  }, [loginByEmail, loginByCedula, loginIdentifier, eventId, navigate]);
 
   const companyLoginEnabled =
     !!eventId && event?.config?.policies?.companyLoginEnabled === true;
@@ -2086,11 +2107,11 @@ const Landing = () => {
                       ) : (
                       <Stack gap="sm">
                         <TextInput
-                          label="Correo electrónico"
-                          placeholder="tu@empresa.com"
-                          value={loginEmail}
+                          label="Correo electrónico o número de identidad"
+                          placeholder="tu@empresa.com o 1020345678"
+                          value={loginIdentifier}
                           onChange={(e) =>
-                            setLoginEmail(e.target.value.toLowerCase())
+                            setLoginIdentifier(e.target.value.toLowerCase())
                           }
                           onKeyDown={(e) => e.key === "Enter" && handleLogin()}
                           required
@@ -2711,11 +2732,11 @@ const Landing = () => {
                           ) : (
                           <Stack gap="sm">
                             <TextInput
-                              label="Correo electrónico"
-                              placeholder="tu@empresa.com"
-                              value={loginEmail}
+                              label="Correo electrónico o número de identidad"
+                              placeholder="tu@empresa.com o 1020345678"
+                              value={loginIdentifier}
                               onChange={(e) =>
-                                setLoginEmail(e.target.value.toLowerCase())
+                                setLoginIdentifier(e.target.value.toLowerCase())
                               }
                               onKeyDown={(e) =>
                                 e.key === "Enter" && handleLogin()
@@ -3067,8 +3088,8 @@ const Landing = () => {
                     <Divider my={2} />
 
                     <Text ta="center" size="sm" c="dimmed">
-                      Ingresa con el correo registrado de la empresa o
-                      regístrate si es tu primera vez.
+                      Ingresa con tu correo o número de identidad
+                      registrado, o regístrate si es tu primera vez.
                     </Text>
                   </Stack>
                 )}

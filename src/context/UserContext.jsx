@@ -215,10 +215,20 @@ export const UserProvider = ({ children }) => {
     try {
       setUserLoading(true);
 
-      // Consulta: filtra cédula y eventId
+      // La cédula puede estar guardada tal como se escribió (registro, carga de
+      // Excel o edición de perfil): probamos el valor escrito, solo dígitos, con
+      // puntos de miles y como número, para que "1.020.345" y "1020345" coincidan.
+      const raw = String(cedula || "").trim();
+      const digits = raw.replace(/\D/g, "");
+      const variants = new Set([raw]);
+      if (digits) {
+        variants.add(digits);
+        variants.add(digits.replace(/\B(?=(\d{3})+(?!\d))/g, "."));
+        if (digits.length <= 15) variants.add(Number(digits));
+      }
       const q = query(
         collection(db, "users"),
-        where("cedula", "==", cedula.trim()),
+        where("cedula", "in", [...variants]),
         where("eventId", "==", eventId)
       );
       const querySnapshot = await getDocs(q);
