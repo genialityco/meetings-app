@@ -37,60 +37,198 @@ export const COUNTRY_CODES: { value: string; label: string; dialCode: string }[]
     dialCode: `+${c.dialCode}`,
   }));
 
-// Minimal timezone → iso2 map as fallback when locale has no region
-const TIMEZONE_ISO2: Record<string, string> = {
-  "America/Bogota": "co",
-  "America/New_York": "us",
-  "America/Chicago": "us",
-  "America/Denver": "us",
-  "America/Los_Angeles": "us",
-  "America/Phoenix": "us",
-  "America/Mexico_City": "mx",
-  "America/Buenos_Aires": "ar",
-  "America/Argentina/Buenos_Aires": "ar",
-  "America/Sao_Paulo": "br",
-  "America/Santiago": "cl",
-  "America/Lima": "pe",
-  "America/Caracas": "ve",
-  "America/Guayaquil": "ec",
-  "America/Guatemala": "gt",
-  "America/Costa_Rica": "cr",
-  "America/El_Salvador": "sv",
-  "America/Panama": "pa",
-  "Europe/Madrid": "es",
-  "Europe/London": "gb",
-  "Europe/Paris": "fr",
-  "Europe/Berlin": "de",
-  "Europe/Rome": "it",
-  "Europe/Lisbon": "pt",
-  "Asia/Kolkata": "in",
-  "Asia/Calcutta": "in",
-  "Asia/Shanghai": "cn",
-  "Asia/Tokyo": "jp",
-  "Asia/Seoul": "kr",
-  "Australia/Sydney": "au",
+// País → zonas horarias IANA (America/* ya sin prefijo). Se invierte abajo.
+// Cubre toda América (público principal) y las zonas más comunes del resto.
+const AMERICA_ZONES: Record<string, string[]> = {
+  co: ["Bogota"],
+  ve: ["Caracas"],
+  ec: ["Guayaquil"],
+  pe: ["Lima"],
+  bo: ["La_Paz"],
+  cl: ["Santiago", "Punta_Arenas"],
+  ar: [
+    "Buenos_Aires", "Cordoba", "Catamarca", "Jujuy", "Mendoza", "Rosario",
+    "Argentina/Buenos_Aires", "Argentina/Cordoba", "Argentina/Salta",
+    "Argentina/Jujuy", "Argentina/Tucuman", "Argentina/Catamarca",
+    "Argentina/La_Rioja", "Argentina/San_Juan", "Argentina/Mendoza",
+    "Argentina/San_Luis", "Argentina/Rio_Gallegos", "Argentina/Ushuaia",
+  ],
+  uy: ["Montevideo"],
+  py: ["Asuncion"],
+  br: [
+    "Sao_Paulo", "Noronha", "Belem", "Fortaleza", "Recife", "Araguaina",
+    "Maceio", "Bahia", "Campo_Grande", "Cuiaba", "Santarem", "Porto_Velho",
+    "Boa_Vista", "Manaus", "Eirunepe", "Rio_Branco",
+  ],
+  gy: ["Guyana"],
+  sr: ["Paramaribo"],
+  gf: ["Cayenne"],
+  mx: [
+    "Mexico_City", "Cancun", "Merida", "Monterrey", "Matamoros", "Chihuahua",
+    "Ciudad_Juarez", "Ojinaga", "Mazatlan", "Bahia_Banderas", "Hermosillo",
+    "Tijuana",
+  ],
+  gt: ["Guatemala"],
+  sv: ["El_Salvador"],
+  hn: ["Tegucigalpa"],
+  ni: ["Managua"],
+  cr: ["Costa_Rica"],
+  pa: ["Panama"],
+  bz: ["Belize"],
+  cu: ["Havana"],
+  do: ["Santo_Domingo"],
+  pr: ["Puerto_Rico"],
+  jm: ["Jamaica"],
+  ht: ["Port-au-Prince"],
+  tt: ["Port_of_Spain"],
+  bs: ["Nassau"],
+  bb: ["Barbados"],
+  aw: ["Aruba"],
+  cw: ["Curacao"],
+  us: [
+    "New_York", "Detroit", "Kentucky/Louisville", "Kentucky/Monticello",
+    "Indiana/Indianapolis", "Indiana/Vincennes", "Indiana/Winamac",
+    "Indiana/Marengo", "Indiana/Petersburg", "Indiana/Vevay", "Chicago",
+    "Indiana/Tell_City", "Indiana/Knox", "Menominee", "North_Dakota/Center",
+    "North_Dakota/New_Salem", "North_Dakota/Beulah", "Denver", "Boise",
+    "Phoenix", "Los_Angeles", "Anchorage", "Juneau", "Sitka", "Metlakatla",
+    "Yakutat", "Nome", "Adak",
+  ],
+  ca: [
+    "Toronto", "Montreal", "Vancouver", "Edmonton", "Winnipeg", "Halifax",
+    "St_Johns", "Regina", "Moncton", "Glace_Bay", "Goose_Bay", "Whitehorse",
+    "Dawson", "Iqaluit", "Yellowknife", "Swift_Current", "Cambridge_Bay",
+    "Rankin_Inlet", "Resolute", "Inuvik", "Creston", "Dawson_Creek",
+    "Fort_Nelson", "Atikokan", "Blanc-Sablon", "Nipigon", "Thunder_Bay",
+    "Rainy_River", "Pangnirtung",
+  ],
 };
 
+const OTHER_ZONES: Record<string, string[]> = {
+  ec: ["Pacific/Galapagos"],
+  cl: ["Pacific/Easter"],
+  us: ["Pacific/Honolulu"],
+  es: ["Europe/Madrid", "Atlantic/Canary", "Africa/Ceuta"],
+  pt: ["Europe/Lisbon", "Atlantic/Madeira", "Atlantic/Azores"],
+  fr: ["Europe/Paris"],
+  de: ["Europe/Berlin"],
+  it: ["Europe/Rome"],
+  gb: ["Europe/London"],
+  ie: ["Europe/Dublin"],
+  nl: ["Europe/Amsterdam"],
+  be: ["Europe/Brussels"],
+  ch: ["Europe/Zurich"],
+  at: ["Europe/Vienna"],
+  pl: ["Europe/Warsaw"],
+  se: ["Europe/Stockholm"],
+  no: ["Europe/Oslo"],
+  dk: ["Europe/Copenhagen"],
+  fi: ["Europe/Helsinki"],
+  gr: ["Europe/Athens"],
+  cz: ["Europe/Prague"],
+  hu: ["Europe/Budapest"],
+  ro: ["Europe/Bucharest"],
+  ua: ["Europe/Kyiv", "Europe/Kiev"],
+  ru: ["Europe/Moscow"],
+  tr: ["Europe/Istanbul"],
+  il: ["Asia/Jerusalem", "Asia/Tel_Aviv"],
+  ae: ["Asia/Dubai"],
+  sa: ["Asia/Riyadh"],
+  in: ["Asia/Kolkata", "Asia/Calcutta"],
+  cn: ["Asia/Shanghai"],
+  hk: ["Asia/Hong_Kong"],
+  tw: ["Asia/Taipei"],
+  jp: ["Asia/Tokyo"],
+  kr: ["Asia/Seoul"],
+  sg: ["Asia/Singapore"],
+  my: ["Asia/Kuala_Lumpur"],
+  th: ["Asia/Bangkok"],
+  id: ["Asia/Jakarta"],
+  ph: ["Asia/Manila"],
+  au: [
+    "Australia/Sydney", "Australia/Melbourne", "Australia/Brisbane",
+    "Australia/Perth", "Australia/Adelaide", "Australia/Hobart",
+    "Australia/Darwin",
+  ],
+  nz: ["Pacific/Auckland"],
+  za: ["Africa/Johannesburg"],
+  eg: ["Africa/Cairo"],
+  ng: ["Africa/Lagos"],
+  ma: ["Africa/Casablanca"],
+  ke: ["Africa/Nairobi"],
+};
+
+const TIMEZONE_ISO2: Record<string, string> = {};
+Object.entries(AMERICA_ZONES).forEach(([iso2, zones]) =>
+  zones.forEach((z) => (TIMEZONE_ISO2[`America/${z}`] = iso2)),
+);
+Object.entries(OTHER_ZONES).forEach(([iso2, zones]) =>
+  zones.forEach((z) => (TIMEZONE_ISO2[z] = iso2)),
+);
+
+const isKnownIso2 = (iso2: string) => COUNTRY_CODES.some((c) => c.value === iso2);
+
+/**
+ * País por defecto del selector de teléfono:
+ * 1. Zona horaria del dispositivo (refleja dónde está la persona; no pide permisos).
+ * 2. Región de los idiomas del navegador ("es-MX" → mx). Va después porque mucha
+ *    gente en Latinoamérica tiene el navegador en "en-US".
+ * 3. Colombia.
+ */
 export const detectDefaultIso2 = (): string => {
   try {
-    const lang = navigator.language || "";
-    const parts = lang.split("-");
-    if (parts.length > 1) {
-      const region = parts[parts.length - 1].toLowerCase();
-      if (COUNTRY_CODES.some((c) => c.value === region)) return region;
-    }
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    return TIMEZONE_ISO2[tz] || "co";
+    const byTz = TIMEZONE_ISO2[tz];
+    if (byTz && isKnownIso2(byTz)) return byTz;
   } catch {
-    return "co";
+    /* sin Intl: sigue con el idioma */
   }
+  try {
+    const langs = navigator.languages?.length
+      ? navigator.languages
+      : [navigator.language || ""];
+    for (const lang of langs) {
+      const region = lang.split("-").slice(1).find((p) => /^[a-z]{2}$/i.test(p));
+      if (region && isKnownIso2(region.toLowerCase())) return region.toLowerCase();
+    }
+  } catch {
+    /* ignore */
+  }
+  return "co";
 };
 
 export const getDialCodeForIso2 = (iso2: string): string =>
   COUNTRY_CODES.find((c) => c.value === iso2)?.dialCode || "+57";
 
-export const getIso2ForDialCode = (dialCode: string): string =>
-  COUNTRY_CODES.find((c) => c.dialCode === dialCode)?.value || "co";
+// País principal cuando varios comparten indicativo (la lista está en orden
+// alfabético: sin esto "+1" resolvía a Canadá y "+44" a Guernsey)
+const MAIN_ISO2_FOR_DIAL: Record<string, string> = {
+  "+1": "us",
+  "+7": "ru",
+  "+39": "it",
+  "+44": "gb",
+  "+47": "no",
+  "+61": "au",
+  "+64": "nz",
+  "+212": "ma",
+  "+262": "re",
+  "+358": "fi",
+  "+590": "gp",
+  "+599": "cw",
+};
+
+/**
+ * País de un indicativo. `preferredIso2` (el que la persona eligió o el detectado)
+ * gana si comparte ese indicativo: así elegir Canadá (+1) no salta a EE. UU.
+ */
+export const getIso2ForDialCode = (dialCode: string, preferredIso2?: string): string => {
+  if (preferredIso2 && getDialCodeForIso2(preferredIso2) === dialCode) return preferredIso2;
+  return (
+    MAIN_ISO2_FOR_DIAL[dialCode] ||
+    COUNTRY_CODES.find((c) => c.dialCode === dialCode)?.value ||
+    "co"
+  );
+};
 
 export const parsePhoneValue = (
   value: string,
@@ -103,7 +241,7 @@ export const parsePhoneValue = (
   const m = String(value).trim().match(/^(\+\d{1,4})\s?(.*)/);
   if (m) {
     const dialCode = m[1];
-    const iso2 = getIso2ForDialCode(dialCode);
+    const iso2 = getIso2ForDialCode(dialCode, defaultIso2);
     return { iso2, dialCode, number: m[2] };
   }
   return {

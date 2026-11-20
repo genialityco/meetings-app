@@ -39,6 +39,8 @@ export function buildEventTheme(primaryColorHex) {
     createTheme({
       colors: { eventPrimary: generateColors(primaryColorHex) },
       primaryColor: "eventPrimary",
+      // Texto oscuro sobre colores de evento claros (amarillo, verde lima…)
+      autoContrast: true,
     }),
   );
 }

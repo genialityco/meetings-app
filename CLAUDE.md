@@ -73,7 +73,7 @@ Form fields (`event.config.formFields[]`) may carry `labelByRole: { comprador?, 
 ### Key Directories
 
 - `src/firebase/firebaseConfig.js` — Firebase init, exports `db`, `auth`, `storage`, `messaging`
-- `src/context/UserContext.jsx` — Auth state (anonymous auth + manual login by cedula/email), exports `UserProvider` and `UserContext`
+- `src/context/UserContext.jsx` — Auth state (anonymous auth + manual login by cedula/email/phone, `loginAsUser` for server-resolved logins), exports `UserProvider` and `UserContext`
 - `src/context/AdminAuthContext.tsx` — Separate admin auth layer (Firebase email/password). Exports `AdminAuthProvider`, `useAdminAuth`. Checks `admins/{uid}` collection to verify admin status and `isSuperAdmin` flag. Firebase auth persistence is shared across tabs, so a transient `null` from `onAuthStateChanged` with the `adminSession` localStorage flag set gets a 1.5s grace timer before clearing admin state — don't "simplify" this away or new tabs will kick existing admin tabs to login.
 - `src/utils/companyStorage.ts` — Logo upload to Firebase Storage
 - `src/utils/analytics.ts` — Centralized GA4 event tracking (typed `AnalyticsEvent` union, used via `TrackedButton` and direct `trackEvent()` calls)
@@ -85,7 +85,7 @@ Form fields (`event.config.formFields[]`) may carry `labelByRole: { comprador?, 
 - `src/hooks/usePageTracking.ts` — GA4 page view tracking on route changes
 - `src/hooks/useVersionCheck.ts` — mounted in `App.jsx`; compares the loaded `/assets/index-<hash>.js` with the one referenced by the deployed `index.html` (Netlify, `max-age=0`) and auto-reloads stale tabs once the user isn't typing / in a modal
 - `src/hooks/useAttendeeScanFlow.ts` — shared "scan → review card → confirm → keep scanning" state machine used by admin check-in (`CheckInTab.jsx`) and seller stand-visit scanning (`MyCompanyTab.tsx`), built on `QrScannerModal.tsx` (camera scanner; stays open between reads with a 2s same-code debounce; imports html5-qrcode dynamically so the ~100 kB lib only loads when a scanner opens) + `AttendeeScanReviewModal.tsx`/`AttendeeInfoCard.tsx`
-- `src/pages/admin/` — Admin panel: organizations, event management, attendees, meetings, policies config. `AdminLogin.tsx` / `AdminRegister.tsx` for admin auth. `AdminsManagementModal.tsx` for superadmin to approve/reject admin requests. `MatrixPage.jsx` and `EventAdmin.jsx` are the largest files (~3900 and ~2400 lines).
+- `src/pages/admin/` — Admin panel: organizations, event management, attendees, meetings, policies config. `AdminLogin.tsx` / `AdminRegister.tsx` for admin auth. `AdminsManagementModal.tsx` for superadmin to approve/reject admin requests. `MatrixPage.jsx` and `EventAdmin.jsx` are the largest files (~4000 and ~2400 lines).
 - `src/pages/dashboard/` — Attendee dashboard with discovery views + activity tabs. `AssistantsTab.tsx` for AI assistant view.
 - `src/components/` — Shared components (UserProfile, DashboardHeader, TrackedButton, ProtectedAdminRoute, OptimisticCheckbox). Note: `components/NotificationMenu.jsx` is an empty, unreferenced file — the real one is `pages/dashboard/NotificationsMenu.tsx`.
 - `src/pages/Dashboard_old.jsx` — legacy pre-rewrite dashboard, unused/dead code; the live dashboard is `src/pages/dashboard/Dashboard.tsx`.
@@ -164,6 +164,9 @@ Bulk send of Meta-approved templates to an event's attendees (templates are crea
 - Configurable multi-step (stepper) or flat form driven by `event.config.registrationForm`
 - Company step: NIT input (`CompanyNitSearchInput.tsx`) searches the event's companies by NIT/name as the user types, and suggests an existing company when the NIT differs only in the verification digit (`findNitVariants`/`computeNitDV` in `src/utils/nit.ts`) → auto-fill razón social + logo preview
 - Phone: `usePhoneAvailability` → Cloud Function `checkPhoneAvailability` (`functions/phoneLogin.js`, masked result) blocks registering a phone already used by another attendee of the event and offers to log in instead
+- Welcome message above the form: `event.config.registrationWelcome` (`general` / `vendedor` / `comprador` variant by forced role; empty = defaults in `src/utils/registrationWelcome.ts`, rendered by `RegistrationWelcome.tsx`), edited in the "Campos" tab together with the consent checkbox (`tratamientoDatosLabel` = checkbox text, `tratamientoDatosText` = legal text shown below it)
+- Mobile and desktop layouts share the same blocks (event info, tabs, login/register panels); only the arrangement differs — change a block once, not per layout
+- Phone country default: `detectDefaultIso2` (device timezone → browser language region → Colombia); shared dial codes (+1, +44…) resolve via the chosen/detected country, then `MAIN_ISO2_FOR_DIAL`
 - Optional company logo upload to Firebase Storage (`companies/{eventId}/{nitNorm}/logo.{ext}`)
 - On submit: creates/updates company doc + creates user + associates user↔company via companyId
 
@@ -233,7 +236,7 @@ Node.js scripts using Firebase Admin SDK. Require `scripts/serviceAccountKey.jso
 
 ### Cloud Functions (`functions/`, ESM)
 
-`functions/index.js` (~4450 lines) holds the original functions and re-exports the newer modules `waCampaigns.js`, `pendingReminders.js`, `meetingReminders.js`, `calendarInvites.js`, `calendarFeed.js`, `phoneLogin.js` (plus the shared `waTracking.js` logger) — put new functions in their own module and re-export them from `index.js`.
+`functions/index.js` (~4350 lines) holds the original functions and re-exports the newer modules `waCampaigns.js`, `pendingReminders.js`, `meetingReminders.js`, `calendarInvites.js`, `calendarFeed.js`, `phoneLogin.js` (plus the shared `waTracking.js` logger; `companySurveyWa.js` exports no functions — it's a helper imported by `waCampaigns.js`) — put new functions in their own module and re-export them from `index.js`, otherwise they won't deploy.
 
 - `sendMeetingReminders` (`functions/meetingReminders.js`): every 5 min, for the event id(s) in secret `MEETING_REMINDER_EVENT_ID` (comma-separated), notifies both participants of each `accepted` meeting starting within `MEETING_REMINDER_MINUTES` (param, default 15) by WhatsApp (Meta template `MEETING_REMINDER_TEMPLATE`/`_LANG` params, default `notificacion_reunion_networking`/`es`, via `/api/campaign/send`; body vars nombre/evento/fecha/hora/contraparte/empresaContraparte/mesa/link, where link is the `/acceso/:eventId/:uid` auto-login URL — the URL button gets the same link minus the button's fixed prefix) and email. Claims the meeting in a transaction setting `reminderNotified: true` + `reminderNotifiedFor: "<date> <timeSlot>"` (a rescheduled meeting is notified again) and stores `reminderResults`. Secrets: `WHATSAPP_API_V2`, `WA_CAMPAIGN_API_KEY`, `MEETING_REMINDER_EVENT_ID`.
 - `aiProxy`: HTTP function for chatbot backend. Uses Google Gemini API for intent classification (greeting, search_query, general_question, meeting_related) and context-aware search across attendees, products, companies. Requires secrets: `GEMINI_API_KEY`, `GEMINI_API_URL`, `DEFAULT_AI_MODEL`.
