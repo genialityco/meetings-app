@@ -2184,10 +2184,11 @@ const Landing = () => {
           description={consent.text || undefined}
           checked={!!formValues[consent.name]}
           onChange={(e) => {
-            handleDynamicChange(consent.name, e.currentTarget.checked);
+            const checked = e.currentTarget.checked;
+            handleDynamicChange(consent.name, checked);
             setFormErrors((prev) => ({
               ...prev,
-              [consent.name]: consent.required && !e.currentTarget.checked
+              [consent.name]: consent.required && !checked
                 ? `Debes aceptar: ${consent.label}`
                 : null,
             }));

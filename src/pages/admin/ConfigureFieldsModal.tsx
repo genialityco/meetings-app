@@ -1468,25 +1468,27 @@ export default function ConfigureFieldsModal({
                   description="Lo que acepta el asistente al marcarla"
                   placeholder={index === 0 ? DEFAULT_CONSENT_LABEL : "Ej: Acepto recibir comunicaciones"}
                   value={consent.label}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const value = e.currentTarget.value;
                     setConsentimientos((items) =>
                       items.map((item, itemIndex) =>
-                        itemIndex === index ? { ...item, label: e.currentTarget.value } : item,
+                        itemIndex === index ? { ...item, label: value } : item,
                       ),
-                    )
-                  }
+                    );
+                  }}
                 />
                 <Textarea
                   label="Texto legal o explicación"
                   description="Se muestra debajo de la casilla"
                   value={consent.text}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const value = e.currentTarget.value;
                     setConsentimientos((items) =>
                       items.map((item, itemIndex) =>
-                        itemIndex === index ? { ...item, text: e.currentTarget.value } : item,
+                        itemIndex === index ? { ...item, text: value } : item,
                       ),
-                    )
-                  }
+                    );
+                  }}
                   autosize
                   minRows={2}
                   maxRows={6}
@@ -1495,15 +1497,16 @@ export default function ConfigureFieldsModal({
                   <Switch
                     label="Obligatorio"
                     checked={consent.required !== false}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      const checked = e.currentTarget.checked;
                       setConsentimientos((items) =>
                         items.map((item, itemIndex) =>
                           itemIndex === index
-                            ? { ...item, required: e.currentTarget.checked }
+                            ? { ...item, required: checked }
                             : item,
                         ),
-                      )
-                    }
+                      );
+                    }}
                   />
                   {index > 0 && (
                     <Button
