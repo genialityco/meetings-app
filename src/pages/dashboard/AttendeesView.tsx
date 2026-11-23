@@ -38,9 +38,10 @@ import {
   IconHeart,
   IconFileTypePdf,
   IconSparkles,
+  IconEye,
 } from "@tabler/icons-react";
 import type { Assistant, EventPolicies } from "./types";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import MeetingRequestModal from "./MeetingRequestModal";
 import { normalizeTipoAsistente, isVendedor, isComprador } from "../../utils/attendeeRole";
 import { getFieldLabel } from "../../utils/attendeeFields";
