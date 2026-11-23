@@ -59,6 +59,7 @@ import { isCheckedInOnDay, resolveCheckInDay } from "../../utils/eventDays";
 import { normalizeTipoAsistente, canDiscoverAttendee, getRoleDisplayLabel } from "../../utils/attendeeRole";
 import { getFieldLabel } from "../../utils/attendeeFields";
 import CompanyLinks from "./CompanyLinks";
+import { buildAgendaLink } from "../../utils/agendaLink";
 import { CardGridSkeleton } from "./DashboardSkeletons";
 
 const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
@@ -1204,10 +1205,18 @@ export default function CompaniesView({
 
                       {companyMeeting && (
                         <Badge
+                          component="button"
+                          type="button"
                           variant="light"
                           color="blue"
                           radius="xl"
                           leftSection={<IconCalendarEvent size={12} />}
+                          title="Ver en mi agenda"
+                          style={{ cursor: "pointer", border: "none" }}
+                          onClick={(e: React.MouseEvent) => {
+                            e.stopPropagation();
+                            navigate(buildAgendaLink(eventId || "", companyMeeting));
+                          }}
                         >
                           {meetingBadgeLabel(companyMeeting, eventConfig)}
                         </Badge>

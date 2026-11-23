@@ -1,6 +1,7 @@
 import { Tabs, SegmentedControl, Stack, Badge, Group } from "@mantine/core";
 import { useState, useEffect, useRef } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
+import { AGENDA_DATE_PARAM, AGENDA_MEETING_PARAM, type AgendaFocus } from "../../utils/agendaLink";
 import {
   IconCalendarEvent,
   IconInbox,
@@ -171,6 +172,25 @@ export default function TabsPanel({
       }, 10000);
     }
   }, [viewRequest?._k]);
+
+  // Link a una reunión de la Agenda (?agendaMeeting=<id>&agendaDate=<fecha>, ver
+  // buildAgendaLink): lo usan el badge "Reunión" de Empresas y la landing de
+  // empresa. Abre Mis reuniones → Agenda en ese día y luego limpia los params.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [agendaFocus, setAgendaFocus] = useState<AgendaFocus | null>(null);
+  useEffect(() => {
+    const meetingId = searchParams.get(AGENDA_MEETING_PARAM);
+    const date = searchParams.get(AGENDA_DATE_PARAM);
+    if (!meetingId && !date) return;
+    autoLandedMyStand.current = true; // no saltar luego a "Mi stand"
+    setTopView("activity");
+    setActivityDefaultTab("agenda");
+    setAgendaFocus({ meetingId: meetingId || undefined, date: date || undefined, _k: Date.now() });
+    const next = new URLSearchParams(searchParams);
+    next.delete(AGENDA_MEETING_PARAM);
+    next.delete(AGENDA_DATE_PARAM);
+    setSearchParams(next, { replace: true });
+  }, [searchParams]);
 
   // Solo solicitudes recibidas pendientes por aceptar (incluye las dirigidas a la empresa)
   const requestsCount = dashboard.pendingRequests?.length || 0;
@@ -396,6 +416,7 @@ export default function TabsPanel({
               cancelMeeting={dashboard.cancelMeeting}
               loadingMeetings={dashboard.loadingState?.meetings}
               eventName={dashboard.eventName}
+              focus={agendaFocus}
             />
           </Tabs.Panel>
           {!hideSolicitudes && (

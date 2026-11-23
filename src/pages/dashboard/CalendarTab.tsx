@@ -48,6 +48,7 @@ import { logWhatsAppClick } from "../../utils/eventStats";
 import classes from "./CalendarTab.module.css";
 import { ListSkeleton } from "./DashboardSkeletons";
 import CalendarSyncButton from "./CalendarSyncButton";
+import type { AgendaFocus } from "../../utils/agendaLink";
 
 interface CalendarTabProps {
   acceptedMeetings: any[];
@@ -67,6 +68,8 @@ interface CalendarTabProps {
   /** Primera carga de reuniones aceptadas en curso */
   loadingMeetings?: boolean;
   eventName?: string;
+  /** Reunión a enfocar (desde el badge de Empresas o la landing de empresa) */
+  focus?: AgendaFocus | null;
 }
 
 function InfoRow({
@@ -110,6 +113,7 @@ export default function CalendarTab({
   cancelMeeting,
   loadingMeetings = false,
   eventName,
+  focus,
 }: CalendarTabProps) {
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
   const [modalOpened, setModalOpened] = useState(false);
@@ -162,6 +166,29 @@ export default function CalendarTab({
   const today = localTodayISO();
   const defaultDate = eventDates.includes(today) ? today : eventDates[0] || "";
   const currentDate = selectedDate || defaultDate;
+
+  // Enfocar una reunión pedida desde fuera (Empresas / landing de empresa): se
+  // selecciona su día, se hace scroll hasta ella y se resalta unos segundos.
+  const [focusedMeetingId, setFocusedMeetingId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!focus) return;
+    if (focus.date && eventDates.includes(focus.date)) setSelectedDate(focus.date);
+    if (focus.meetingId) setFocusedMeetingId(focus.meetingId);
+  }, [focus?._k]);
+  useEffect(() => {
+    if (!focusedMeetingId) return;
+    // Esperar a que la agenda del día se pinte antes de hacer scroll
+    const scrollTimer = setTimeout(() => {
+      document
+        .getElementById(`agenda-meeting-${focusedMeetingId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 400);
+    const clearTimer = setTimeout(() => setFocusedMeetingId(null), 4000);
+    return () => {
+      clearTimeout(scrollTimer);
+      clearTimeout(clearTimer);
+    };
+  }, [focusedMeetingId]);
 
   // Cargar slots bloqueados del usuario
   const loadBlockedSlots = useCallback(async () => {
@@ -718,6 +745,7 @@ export default function CalendarTab({
                               return (
                                 <Paper
                                   key={idx}
+                                  id={meeting.id ? `agenda-meeting-${meeting.id}` : undefined}
                                   withBorder
                                   radius="md"
                                   p="xs"
@@ -734,6 +762,12 @@ export default function CalendarTab({
                                   }}
                                   style={{
                                     borderLeft: `4px solid var(--mantine-color-${statusColor}-6)`,
+                                    ...(focusedMeetingId && meeting.id === focusedMeetingId
+                                      ? {
+                                          boxShadow: "0 0 0 3px var(--mantine-color-teal-4)",
+                                          backgroundColor: "var(--mantine-color-teal-0)",
+                                        }
+                                      : null),
                                   }}
                                 >
                                   <Group gap="sm" justify="space-between" wrap="nowrap">

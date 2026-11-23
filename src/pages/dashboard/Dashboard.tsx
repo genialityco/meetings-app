@@ -21,6 +21,8 @@ import SupportButton from "../../components/SupportButton";
 import type { Notification, NotificationType } from "./types";
 import { DEFAULT_POLICIES } from "./types";
 import { Modal, Text, Button, TextInput, Stack, Group, Loader } from "@mantine/core";
+import { showNotification } from "@mantine/notifications";
+import { sendWelcomeMessages } from "../../utils/welcomeNotification";
 
 const NOTIF_NAV_MAP: Record<string, { view: string; tab?: string }> = {
   meeting_request: { view: "activity", tab: "solicitudes" },
@@ -30,26 +32,6 @@ const NOTIF_NAV_MAP: Record<string, { view: string; tab?: string }> = {
   meeting_modified: { view: "activity", tab: "reuniones" },
   high_affinity: { view: "matches" }, // Navega a vista de matches
 };
-
-function formatTime(timeString?: string) {
-  if (!timeString) return "";
-  const [hourStr, minuteStr] = timeString.split(":");
-  let hour = parseInt(hourStr, 10);
-  const minute = parseInt(minuteStr, 10);
-  const suffix = hour >= 12 ? "p. m." : "a. m.";
-  hour = hour % 12 || 12;
-  return `${hour}:${minute.toString().padStart(2, "0")} ${suffix}`;
-}
-
-function formatDate(dateString?: string) {
-  if (!dateString) return "";
-  const [year, month, day] = dateString.split("-").map(Number);
-  const months = [
-    "enero", "febrero", "marzo", "abril", "mayo", "junio",
-    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
-  ];
-  return `${day} de ${months[month - 1]} de ${year}`;
-}
 
 export default function Dashboard() {
   const { eventId } = useParams();
@@ -75,6 +57,8 @@ export default function Dashboard() {
   const [phoneError, setPhoneError] = useState("");
   const [emailError, setEmailError] = useState("");
   const [isSendingWelcome, setIsSendingWelcome] = useState(false);
+  // "ask": ¿te llegó el mensaje? (dos botones) · "fix": corregir datos y reenviar
+  const [welcomeStep, setWelcomeStep] = useState<"ask" | "fix">("ask");
   // Mensaje opcional capturado en el mismo modal de selección de horario
   // (solo aplica al flujo de "solicitar reunión", no al de aceptar/reagendar).
   const [requestMessage, setRequestMessage] = useState("");
@@ -102,7 +86,25 @@ export default function Dashboard() {
     }
   }, [currentUser?.data, dashboard.policies?.welcomeMessageEnabled]);
 
-  const handleCloseWelcomeModal = async () => {
+  // "Sí me llegó, continuar": solo marca el pop-up como visto
+  const handleWelcomeReceived = async () => {
+    setIsSendingWelcome(true);
+    try {
+      if (currentUser?.uid) {
+        await updateUser(currentUser.uid, { welcomePopupSeen: true });
+      }
+    } catch (err) {
+      console.error("Error actualizando welcomePopupSeen:", err);
+    } finally {
+      // Cerrar de todos modos para no bloquear al usuario
+      setIsSendingWelcome(false);
+      setWelcomeModalOpened(false);
+    }
+  };
+
+  // "No me llegó": guarda el teléfono/correo corregidos y reenvía la bienvenida
+  // (WhatsApp + correo, el mismo envío del registro)
+  const handleWelcomeResend = async () => {
     const cleanedPhone = welcomePhone.replace(/\D/g, "");
     if (!cleanedPhone || cleanedPhone.length < 10) {
       setPhoneError("Por favor ingresa un número de teléfono válido (mínimo 10 dígitos).");
@@ -113,25 +115,37 @@ export default function Dashboard() {
       return;
     }
 
-    setIsSendingWelcome(true);
+    const telefono = welcomePhone.trim();
+    // loginByEmail busca el correo en minúsculas
+    const correo = welcomeEmail.trim().toLowerCase();
 
+    setIsSendingWelcome(true);
     try {
-      if (currentUser?.uid) {
-        await updateUser(currentUser.uid, { 
-          welcomePopupSeen: true,
-          telefono: welcomePhone.trim(),
-          // loginByEmail busca el correo en minúsculas
-          correo: welcomeEmail.trim().toLowerCase()
+      if (currentUser?.uid && eventId) {
+        await updateUser(currentUser.uid, { welcomePopupSeen: true, telefono, correo });
+        await sendWelcomeMessages({
+          eventId,
+          uid: currentUser.uid,
+          event: {
+            eventName: dashboard.eventName,
+            eventImage: dashboard.eventImage,
+            config: dashboard.eventConfig,
+          },
+          nombre: currentUser.data?.nombre,
+          telefono,
+          correo,
+        });
+        showNotification({
+          color: "green",
+          title: "Mensaje reenviado",
+          message: "Te volvimos a enviar la bienvenida por WhatsApp y correo electrónico.",
         });
       }
-      
-      setWelcomeModalOpened(false);
     } catch (err) {
-      console.error("Error updating welcomePopupSeen or sending message:", err);
-      // Cerrar de todos modos para no bloquear al usuario
-      setWelcomeModalOpened(false);
+      console.error("Error reenviando la bienvenida:", err);
     } finally {
       setIsSendingWelcome(false);
+      setWelcomeModalOpened(false);
     }
   };
 
@@ -336,45 +350,88 @@ export default function Dashboard() {
         radius="md"
         overlayProps={{ blur: 3 }}
       >
-        <Stack gap="md">
-          {isSellerWelcome ? (
-            <>
-              <WelcomeSellerMessage />
-              <Text size="sm">
-                Revisa tu WhatsApp y correo electrónico para verificar si te llegó el mensaje de bienvenida. Si no lo has recibido, por favor <b>corrige tu teléfono o tu correo</b> a continuación. Así garantizamos que recibirás todas tus notificaciones de reuniones.
-              </Text>
-            </>
-          ) : (
-            // El texto de comprador ya incluye el aviso de verificar WhatsApp/correo.
-            <WelcomeBuyerMessage
-              nombre={currentUser?.data?.nombre}
-              companiesTabEnabled={companiesTabEnabled}
+        {welcomeStep === "ask" ? (
+          <Stack gap="md">
+            {isSellerWelcome ? (
+              <>
+                <WelcomeSellerMessage />
+                <Text size="sm">
+                  Revisa tu WhatsApp y correo electrónico para verificar si te llegó el mensaje de bienvenida. Si no lo has recibido, pulsa <b>"No me llegó"</b> para corregir tu teléfono o tu correo y te lo volvemos a enviar. Así garantizamos que recibirás todas tus notificaciones de reuniones.
+                </Text>
+              </>
+            ) : (
+              // El texto de comprador ya incluye el aviso de verificar WhatsApp/correo.
+              <WelcomeBuyerMessage
+                nombre={currentUser?.data?.nombre}
+                companiesTabEnabled={companiesTabEnabled}
+              />
+            )}
+            <Text fw={700} ta="center">
+              ¿Te llegó el mensaje de bienvenida?
+            </Text>
+            <Group grow wrap="wrap">
+              <Button
+                onClick={handleWelcomeReceived}
+                color={dashboard.eventConfig?.primaryColor || "blue"}
+                loading={isSendingWelcome}
+              >
+                Sí me llegó, continuar
+              </Button>
+              <Button
+                variant="light"
+                color={dashboard.eventConfig?.primaryColor || "blue"}
+                disabled={isSendingWelcome}
+                onClick={() => setWelcomeStep("fix")}
+              >
+                No me llegó, volver a enviar
+              </Button>
+            </Group>
+          </Stack>
+        ) : (
+          <Stack gap="md">
+            <Text size="sm">
+              Verifica tu número de WhatsApp y tu correo electrónico. Corrige lo que esté mal y te
+              volvemos a enviar el mensaje de bienvenida.
+            </Text>
+            <TextInput
+              label="Número de WhatsApp"
+              description="Incluye el indicativo del país"
+              placeholder="Ej: +573001234567"
+              value={welcomePhone}
+              onChange={(e) => {
+                setWelcomePhone(e.currentTarget.value);
+                setPhoneError("");
+              }}
+              error={phoneError}
             />
-          )}
-          <TextInput
-            label="Número de WhatsApp"
-            placeholder="Ej: +573001234567"
-            value={welcomePhone}
-            onChange={(e) => {
-              setWelcomePhone(e.currentTarget.value);
-              setPhoneError("");
-            }}
-            error={phoneError}
-          />
-          <TextInput
-            label="Correo electrónico"
-            placeholder="tu@empresa.com"
-            value={welcomeEmail}
-            onChange={(e) => {
-              setWelcomeEmail(e.currentTarget.value);
-              setEmailError("");
-            }}
-            error={emailError}
-          />
-          <Button fullWidth onClick={handleCloseWelcomeModal} color={dashboard.eventConfig?.primaryColor || "blue"} loading={isSendingWelcome}>
-            Confirmar y Entrar
-          </Button>
-        </Stack>
+            <TextInput
+              label="Correo electrónico"
+              placeholder="tu@empresa.com"
+              value={welcomeEmail}
+              onChange={(e) => {
+                setWelcomeEmail(e.currentTarget.value);
+                setEmailError("");
+              }}
+              error={emailError}
+            />
+            <Group grow wrap="wrap">
+              <Button
+                variant="default"
+                disabled={isSendingWelcome}
+                onClick={() => setWelcomeStep("ask")}
+              >
+                Volver
+              </Button>
+              <Button
+                onClick={handleWelcomeResend}
+                color={dashboard.eventConfig?.primaryColor || "blue"}
+                loading={isSendingWelcome}
+              >
+                Guardar y volver a enviar
+              </Button>
+            </Group>
+          </Stack>
+        )}
       </Modal>
     </Container>
     </MantineProvider>
