@@ -92,8 +92,14 @@ const getConsentimientos = (config = {}) => {
     return config.consentimientos
       .map((item, index) => ({
         name: item.name || (index === 0 ? CONSENTIMIENTO_FIELD_NAME : `consentimiento_${index + 1}`),
-        label: String(item.label || "").trim(),
-        text: String(item.text || "").trim(),
+        label: String(
+          item.label ||
+          (index === 0 ? resolveConsentLabel(config.tratamientoDatosLabel) : ""),
+        ).trim(),
+        text: String(
+          item.text ||
+          (index === 0 ? config.tratamientoDatosText || "" : ""),
+        ).trim(),
         required: item.required !== false,
       }))
       .filter((item) => item.label);

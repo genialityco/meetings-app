@@ -672,7 +672,7 @@ export default function ConfigureFieldsModal({
     setWelcome(event?.config?.registrationWelcome || {});
     setEditingName(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opened]);
+  }, [opened, event?.id, event?.config]);
 
   const mode: "flat" | "stepper" =
     registrationForm?.mode === "flat" ? "flat" : "stepper";
@@ -1123,8 +1123,14 @@ export default function ConfigureFieldsModal({
       const normalizedConsentimientos = consentimientos
         .map((consent, index) => ({
           name: consent.name || (index === 0 ? CONSENTIMIENTO_FIELD.name : `consentimiento_${index + 1}`),
-          label: String(consent.label || "").trim(),
-          text: String(consent.text || "").trim(),
+          label: String(
+            consent.label ||
+            (index === 0 ? consentimientoLabel.trim() || DEFAULT_CONSENT_LABEL : ""),
+          ).trim(),
+          text: String(
+            consent.text ||
+            (index === 0 ? tratamientoText : ""),
+          ).trim(),
           required: consent.required !== false,
         }))
         .filter((consent) => consent.label);
