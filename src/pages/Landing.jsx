@@ -1769,6 +1769,26 @@ const Landing = () => {
           );
         }
 
+        if (field.type === "date") {
+          return (
+            <TextInput
+              key={field.name}
+              type="date"
+              label={field.label}
+              placeholder={field.placeholder || undefined}
+              value={getValueForField(field.name) || ""}
+              onChange={(e) => {
+                handleDynamicChange(field.name, e.target.value);
+                const error = validateField(field, e.target.value);
+                setFormErrors((prev) => ({ ...prev, [field.name]: error }));
+              }}
+              required={field.required}
+              error={fieldError}
+              radius="md"
+            />
+          );
+        }
+
         // Campos de texto tipo "descripción" se muestran como área de texto
         // (2+ líneas visibles) para invitar a escribir más detalle
         const isLongText = /descrip/i.test(

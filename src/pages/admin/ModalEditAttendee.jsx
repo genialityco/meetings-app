@@ -242,6 +242,18 @@ const ModalEditAttendee = ({
         />
       );
     }
+    if (f.type === "date") {
+      return (
+        <TextInput
+          key={f.name}
+          type="date"
+          label={f.label}
+          value={values[f.name] || ""}
+          onChange={(e) => handleChange(f.name, e.currentTarget.value)}
+          required={f.required}
+        />
+      );
+    }
     if (f.type === "image") {
       const isUploading = uploadingField === f.name;
       const isDragOver = dragOverField === f.name;

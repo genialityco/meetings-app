@@ -331,7 +331,7 @@ const fieldDisplayLabel = (field: any) =>
   field?.name ||
   "";
 
-type NewFieldType = "text" | "select" | "multiselect" | "checkbox" | "pdf";
+type NewFieldType = "text" | "date" | "select" | "multiselect" | "checkbox" | "pdf";
 
 // --------- Fila de un campo (arrastrable) -------------
 function FieldRow({
@@ -1702,6 +1702,7 @@ export default function ConfigureFieldsModal({
             onChange={(v) => setNewFieldType((v as NewFieldType) || "text")}
             data={[
               { value: "text", label: "Texto" },
+              { value: "date", label: "Fecha" },
               { value: "select", label: "Selección (una opción)" },
               { value: "multiselect", label: "Selección múltiple" },
               { value: "checkbox", label: "Casilla (sí / no)" },
