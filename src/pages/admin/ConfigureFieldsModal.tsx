@@ -616,6 +616,14 @@ export default function ConfigureFieldsModal({
   const [consentimientoLabel, setConsentimientoLabel] = useState(
     resolveConsentLabel(event?.config?.tratamientoDatosLabel),
   );
+  const [consentimientos, setConsentimientos] = useState<any[]>([
+    {
+      name: CONSENTIMIENTO_FIELD.name,
+      label: resolveConsentLabel(event?.config?.tratamientoDatosLabel),
+      text: event?.config?.tratamientoDatosText || CONSENTIMIENTO_FIELD.legalText,
+      required: true,
+    },
+  ]);
   const [registrationForm, setRegistrationForm] = useState<any>(
     event?.config?.registrationForm || DEFAULT_REGISTRATION_FORM,
   );
@@ -644,6 +652,22 @@ export default function ConfigureFieldsModal({
       event?.config?.tratamientoDatosText || CONSENTIMIENTO_FIELD.legalText,
     );
     setConsentimientoLabel(resolveConsentLabel(event?.config?.tratamientoDatosLabel));
+    const configuredConsents = event?.config?.consentimientos;
+    setConsentimientos(
+      Array.isArray(configuredConsents) && configuredConsents.length > 0
+        ? configuredConsents.map((consent: any, index: number) => ({
+            name: consent.name || (index === 0 ? CONSENTIMIENTO_FIELD.name : `consentimiento_${index + 1}`),
+            label: String(consent.label || "").trim(),
+            text: String(consent.text || "").trim(),
+            required: consent.required !== false,
+          }))
+        : [{
+            name: CONSENTIMIENTO_FIELD.name,
+            label: resolveConsentLabel(event?.config?.tratamientoDatosLabel),
+            text: event?.config?.tratamientoDatosText || CONSENTIMIENTO_FIELD.legalText,
+            required: true,
+          }],
+    );
     setRegistrationForm(event?.config?.registrationForm || DEFAULT_REGISTRATION_FORM);
     setWelcome(event?.config?.registrationWelcome || {});
     setEditingName(null);
@@ -1096,10 +1120,21 @@ export default function ConfigureFieldsModal({
         },
       };
 
+      const normalizedConsentimientos = consentimientos
+        .map((consent, index) => ({
+          name: consent.name || (index === 0 ? CONSENTIMIENTO_FIELD.name : `consentimiento_${index + 1}`),
+          label: String(consent.label || "").trim(),
+          text: String(consent.text || "").trim(),
+          required: consent.required !== false,
+        }))
+        .filter((consent) => consent.label);
+      const primaryConsent = normalizedConsentimientos[0];
+
       await updateDoc(doc(db, "events", event.id), {
         "config.formFields": sanitizedFields,
-        "config.tratamientoDatosText": tratamientoText,
-        "config.tratamientoDatosLabel": consentimientoLabel.trim() || DEFAULT_CONSENT_LABEL,
+        "config.tratamientoDatosText": primaryConsent?.text || tratamientoText,
+        "config.tratamientoDatosLabel": primaryConsent?.label || consentimientoLabel.trim() || DEFAULT_CONSENT_LABEL,
+        "config.consentimientos": normalizedConsentimientos,
         "config.registrationForm": sanitizedRegistrationForm,
         // Solo los textos escritos; lo vacío usa el texto por defecto
         "config.registrationWelcome": Object.fromEntries(
@@ -1412,29 +1447,94 @@ export default function ConfigureFieldsModal({
         <Group gap="xs" mb="xs" wrap="nowrap">
           <IconLock size={16} color="var(--mantine-color-dimmed)" />
           <Text fw={600} size="sm">
-            Consentimiento de tratamiento de datos
+            Consentimientos
           </Text>
           <Badge size="xs" variant="light" color="gray">
-            Siempre al final · obligatorio
+            Siempre al final
           </Badge>
         </Group>
-        <Stack gap="xs">
-          <TextInput
-            label="Texto de la casilla"
-            description="Lo que acepta el asistente al marcarla"
-            placeholder={DEFAULT_CONSENT_LABEL}
-            value={consentimientoLabel}
-            onChange={(e) => setConsentimientoLabel(e.currentTarget.value)}
-          />
-          <Textarea
-            label="Texto legal"
-            description="Se muestra en letra pequeña debajo de la casilla"
-            value={tratamientoText}
-            onChange={(e) => setTratamientoText(e.currentTarget.value)}
-            autosize
-            minRows={2}
-            maxRows={6}
-          />
+        <Stack gap="md">
+          {consentimientos.map((consent, index) => (
+            <Paper key={consent.name} withBorder radius="md" p="xs" bg="gray.0">
+              <Stack gap="xs">
+                <TextInput
+                  label={`Consentimiento ${index + 1} - texto de la casilla`}
+                  description="Lo que acepta el asistente al marcarla"
+                  placeholder={index === 0 ? DEFAULT_CONSENT_LABEL : "Ej: Acepto recibir comunicaciones"}
+                  value={consent.label}
+                  onChange={(e) =>
+                    setConsentimientos((items) =>
+                      items.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, label: e.currentTarget.value } : item,
+                      ),
+                    )
+                  }
+                />
+                <Textarea
+                  label="Texto legal o explicación"
+                  description="Se muestra debajo de la casilla"
+                  value={consent.text}
+                  onChange={(e) =>
+                    setConsentimientos((items) =>
+                      items.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, text: e.currentTarget.value } : item,
+                      ),
+                    )
+                  }
+                  autosize
+                  minRows={2}
+                  maxRows={6}
+                />
+                <Group justify="space-between">
+                  <Switch
+                    label="Obligatorio"
+                    checked={consent.required !== false}
+                    onChange={(e) =>
+                      setConsentimientos((items) =>
+                        items.map((item, itemIndex) =>
+                          itemIndex === index
+                            ? { ...item, required: e.currentTarget.checked }
+                            : item,
+                        ),
+                      )
+                    }
+                  />
+                  {index > 0 && (
+                    <Button
+                      variant="subtle"
+                      color="red"
+                      size="xs"
+                      leftSection={<IconTrash size={14} />}
+                      onClick={() =>
+                        setConsentimientos((items) =>
+                          items.filter((_, itemIndex) => itemIndex !== index),
+                        )
+                      }
+                    >
+                      Eliminar
+                    </Button>
+                  )}
+                </Group>
+              </Stack>
+            </Paper>
+          ))}
+          <Button
+            variant="light"
+            leftSection={<IconPlus size={16} />}
+            onClick={() =>
+              setConsentimientos((items) => [
+                ...items,
+                {
+                  name: `consentimiento_${Date.now()}`,
+                  label: "",
+                  text: "",
+                  required: true,
+                },
+              ])
+            }
+          >
+            Agregar consentimiento
+          </Button>
         </Stack>
       </Paper>
 

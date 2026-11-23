@@ -87,6 +87,24 @@ import RegistrationWelcome from "../components/RegistrationWelcome";
 import { resolveConsentLabel } from "../utils/registrationWelcome";
 
 const CONSENTIMIENTO_FIELD_NAME = "aceptaTratamiento";
+const getConsentimientos = (config = {}) => {
+  if (Array.isArray(config.consentimientos) && config.consentimientos.length > 0) {
+    return config.consentimientos
+      .map((item, index) => ({
+        name: item.name || (index === 0 ? CONSENTIMIENTO_FIELD_NAME : `consentimiento_${index + 1}`),
+        label: String(item.label || "").trim(),
+        text: String(item.text || "").trim(),
+        required: item.required !== false,
+      }))
+      .filter((item) => item.label);
+  }
+  return [{
+    name: CONSENTIMIENTO_FIELD_NAME,
+    label: resolveConsentLabel(config.tratamientoDatosLabel),
+    text: config.tratamientoDatosText || "",
+    required: true,
+  }];
+};
 
 // Selector de código de país del teléfono en el registro público: mismo listado
 // completo que usa el panel admin (ModalEditAttendee.jsx/AttendeesList.jsx).
@@ -243,6 +261,10 @@ const Landing = () => {
     useContext(UserContext);
 
   const [event, setEvent] = useState({});
+  const consentimientos = useMemo(
+    () => getConsentimientos(event?.config),
+    [event?.config],
+  );
   const [registrationEnabled, setRegistrationEnabled] = useState(true);
 
   // UI state
@@ -413,19 +435,20 @@ const Landing = () => {
     (errors) => {
       const names = Object.keys(errors).filter((n) => errors[n]);
       if (names.length === 0) return "";
+      const consentNames = new Set(consentimientos.map((item) => item.name));
       const labels = names
-        .filter((n) => n !== CONSENTIMIENTO_FIELD_NAME)
+        .filter((n) => !consentNames.has(n))
         .map((n) => fieldsByName.get(n)?.label || n);
       const parts = [];
       if (labels.length) {
         parts.push(`Revisa los campos marcados en rojo: ${labels.join(", ")}.`);
       }
-      if (errors[CONSENTIMIENTO_FIELD_NAME]) {
-        parts.push(errors[CONSENTIMIENTO_FIELD_NAME]);
-      }
+      names
+        .filter((n) => consentNames.has(n))
+        .forEach((n) => parts.push(errors[n]));
       return parts.join(" ");
     },
-    [fieldsByName],
+    [consentimientos, fieldsByName],
   );
 
   const validateForm = useCallback(() => {
@@ -468,10 +491,11 @@ const Landing = () => {
       if (error) errors[field.name] = error;
     });
 
-    if (!formValues[CONSENTIMIENTO_FIELD_NAME]) {
-      errors[CONSENTIMIENTO_FIELD_NAME] =
-        "Debes aceptar el tratamiento de datos para continuar.";
-    }
+    consentimientos.forEach((consent) => {
+      if (consent.required && !formValues[consent.name]) {
+        errors[consent.name] = `Debes aceptar: ${consent.label}`;
+      }
+    });
 
     console.log("ERRORES DE VALIDACION:", errors);
     console.log("VALORES DEL FORMULARIO:", formValues);
@@ -488,6 +512,7 @@ const Landing = () => {
     pdfFiles,
     companyLogoFile,
     companyLogoPreview,
+    consentimientos,
   ]);
 
   const validateStep = useCallback(
@@ -539,9 +564,12 @@ const Landing = () => {
       });
 
       const isLast = steps && activeStep === steps.length - 1;
-      if (isLast && !formValues[CONSENTIMIENTO_FIELD_NAME]) {
-        errors[CONSENTIMIENTO_FIELD_NAME] =
-          "Debes aceptar el tratamiento de datos para continuar.";
+      if (isLast) {
+        consentimientos.forEach((consent) => {
+          if (consent.required && !formValues[consent.name]) {
+            errors[consent.name] = `Debes aceptar: ${consent.label}`;
+          }
+        });
       }
 
       setFormErrors((prev) => ({ ...prev, ...errors }));
@@ -561,6 +589,7 @@ const Landing = () => {
       formValues,
       pdfFiles,
       primaryPhoneField,
+      consentimientos,
       phoneCheck.status,
       event?.eventType,
       forcedRole,
@@ -2141,21 +2170,28 @@ const Landing = () => {
 
   // Casilla de consentimiento: etiqueta corta + texto legal debajo
   const consentBlock = (
-    <Checkbox
-      mt="sm"
-      label={resolveConsentLabel(event.config?.tratamientoDatosLabel)}
-      description={
-        event.config?.tratamientoDatosText ||
-        "Al utilizar este aplicativo, autorizo a GEN.IALITY SAS identificada con NIT 901555490, ..."
-      }
-      checked={!!formValues[CONSENTIMIENTO_FIELD_NAME]}
-      onChange={(e) =>
-        handleDynamicChange(CONSENTIMIENTO_FIELD_NAME, e.currentTarget.checked)
-      }
-      error={formErrors[CONSENTIMIENTO_FIELD_NAME] || undefined}
-      required
-      styles={{ label: { fontWeight: 600 } }}
-    />
+    <Stack gap="sm" mt="sm">
+      {consentimientos.map((consent) => (
+        <Checkbox
+          key={consent.name}
+          label={consent.label}
+          description={consent.text || undefined}
+          checked={!!formValues[consent.name]}
+          onChange={(e) => {
+            handleDynamicChange(consent.name, e.currentTarget.checked);
+            setFormErrors((prev) => ({
+              ...prev,
+              [consent.name]: consent.required && !e.currentTarget.checked
+                ? `Debes aceptar: ${consent.label}`
+                : null,
+            }));
+          }}
+          error={formErrors[consent.name] || undefined}
+          required={consent.required}
+          styles={{ label: { fontWeight: 600 } }}
+        />
+      ))}
+    </Stack>
   );
 
   const currentStepFields = steps ? steps[activeStep]?.fields || [] : [];
@@ -2163,7 +2199,7 @@ const Landing = () => {
     ? Object.entries(formErrors).filter(
         ([k, msg]) =>
           msg &&
-          k !== CONSENTIMIENTO_FIELD_NAME &&
+          !consentimientos.some((consent) => consent.name === k) &&
           !currentStepFields.includes(k),
       )
     : [];

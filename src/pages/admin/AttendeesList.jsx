@@ -66,6 +66,15 @@ const getEventTableFields = (event, entityType = "users") => {
         })),
       // aceptaTratamiento no está en formFields pero siempre debe exportarse
       ...(entityType === "users" ? [{ name: "aceptaTratamiento", label: "Acepta Tratamiento", type: "text" }] : []),
+      ...(entityType === "users"
+        ? (event?.config?.consentimientos || [])
+            .filter((consent, index) => consent.name && consent.name !== "aceptaTratamiento" && index > 0)
+            .map((consent) => ({
+              name: consent.name,
+              label: consent.label || consent.name,
+              type: "text",
+            }))
+        : []),
     ];
   }
   
@@ -163,8 +172,8 @@ const getValue = (a, fieldName) => {
     // admin o los legados pueden traer company_nit, por eso queda de respaldo.
     return a.companyId || a.company_nit || "";
   }
-  if (fieldName === "aceptaTratamiento") {
-    const val = a.aceptaTratamiento;
+  if (fieldName === "aceptaTratamiento" || fieldName.startsWith("consentimiento_")) {
+    const val = fieldName === "aceptaTratamiento" ? a.aceptaTratamiento : a[fieldName];
     if (val === true || val === "true" || val === 1) return "Sí";
     if (val === false || val === "false" || val === 0) return "No";
     return "";
