@@ -14,6 +14,7 @@ import PropTypes from "prop-types";
 import * as XLSX from "xlsx";
 import { IconSearch, IconX } from "@tabler/icons-react";
 import ModalEditAttendee from "./ModalEditAttendee";
+import ChangeAttendeeCompanyModal from "./ChangeAttendeeCompanyModal";
 import ImportWizard from "./ImportWizard";
 import { isComprador, isVendedor } from "../../utils/attendeeRole";
 import { uploadCompanyLogo } from "../../utils/companyStorage";
@@ -215,6 +216,8 @@ const AttendeesList = ({ event, setGlobalMessage }) => {
   const [attendees, setAttendees] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [products, setProducts] = useState([]);
+  // Asistente al que se le está cambiando la empresa (ChangeAttendeeCompanyModal)
+  const [attendeeToMove, setAttendeeToMove] = useState(null);
   const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -1466,6 +1469,16 @@ function parseFirestoreTimestamp(input) {
                         <Button
                           size="xs"
                           variant="outline"
+                          color="indigo"
+                          onClick={() => setAttendeeToMove(a)}
+                          style={{ marginRight: 8 }}
+                          title="Mover a este asistente a otra empresa del evento"
+                        >
+                          Cambiar empresa
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="outline"
                           color="cyan"
                           onClick={() => handleRegenerateUserVector(a.id)}
                           loading={regeneratingVector === a.id}
@@ -1832,6 +1845,18 @@ function parseFirestoreTimestamp(input) {
           } catch (err) {
             setGlobalMessage(isNewAttendee ? "Error al registrar el asistente." : "Error al actualizar el asistente.");
           }
+        }}
+      />
+
+      <ChangeAttendeeCompanyModal
+        opened={!!attendeeToMove}
+        onClose={() => setAttendeeToMove(null)}
+        eventId={event?.id}
+        attendee={attendeeToMove}
+        onChanged={(msg) => {
+          setGlobalMessage(msg);
+          fetchAttendees();
+          fetchProducts();
         }}
       />
 

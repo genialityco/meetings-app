@@ -48,8 +48,8 @@ export default function WelcomeBuyerMessage({ nombre, companiesTabEnabled }: Pro
             bienvenida.
           </Text>
           <Text size="sm" c="dimmed" mt={6}>
-            Si no lo recibiste, verifica y actualiza tu número de teléfono y correo electrónico en
-            tu perfil.
+            Si no lo recibiste, pulsa <b>"No me llegó"</b> para corregir tu número de teléfono o
+            tu correo electrónico y te lo volvemos a enviar.
           </Text>
           <Text size="sm" c="dimmed" mt={6}>
             Así te aseguramos que puedas recibir correctamente las notificaciones y solicitudes de

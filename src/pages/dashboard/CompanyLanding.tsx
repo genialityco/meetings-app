@@ -35,7 +35,17 @@ import {
   IconPencil,
   IconTrash,
   IconClockHour4,
+  IconCalendarEvent,
+  IconChevronRight,
 } from "@tabler/icons-react";
+import { buildAgendaLink } from "../../utils/agendaLink";
+
+/** "2026-11-23" → "23/11" */
+function shortDate(iso?: string): string {
+  if (!iso) return "";
+  const [, m, d] = iso.split("-").map(Number);
+  return d && m ? `${d}/${m}` : "";
+}
 import { useCompanyData } from "./useCompanyData";
 import { useDashboardData } from "./useDashboardData";
 import DashboardHeader from "../../components/DashboardHeader";
@@ -164,6 +174,30 @@ export default function CompanyLanding() {
       normCompanyKey(companyNit),
     );
   }, [isMyCompany, companyNit, representatives, userMeetings, myUid]);
+
+  // Mis reuniones confirmadas con esta empresa (dirigidas a la empresa o con
+  // cualquiera de sus representantes), ordenadas por fecha y hora.
+  const myMeetingsWithCompany = useMemo(() => {
+    if (isMyCompany || !companyNit || !myUid) return [];
+    const repsById = new Map(representatives.map((r) => [r.id, r]));
+    const target = normCompanyKey(companyNit);
+    return (userMeetings || [])
+      .filter((m: any) => m.status === "accepted" || m.status === "standby")
+      .filter((m: any) => {
+        if (m.companyId && normCompanyKey(m.companyId) === target) return true;
+        const otherId = m.requesterId === myUid ? m.receiverId : m.requesterId;
+        return !!otherId && repsById.has(otherId);
+      })
+      .map((m: any) => {
+        const otherId = m.requesterId === myUid ? m.receiverId : m.requesterId;
+        return { ...m, _rep: repsById.get(otherId) };
+      })
+      .sort((a: any, b: any) =>
+        `${a.meetingDate || ""} ${a.timeSlot || ""}`.localeCompare(`${b.meetingDate || ""} ${b.timeSlot || ""}`),
+      );
+  }, [isMyCompany, companyNit, myUid, representatives, userMeetings]);
+  const eventIsMultiDay =
+    [...new Set(eventConfig?.eventDates || [])].length > 1;
 
   const allowImageUpload = eventConfig?.policies?.allowProductImageUpload !== false;
   // Cualquier miembro de la empresa cuenta como "asesor", sin importar su tipoAsistente.
@@ -446,6 +480,70 @@ export default function CompanyLanding() {
             )}
           </Paper>
 
+          {/* Mis reuniones con esta empresa: cada una lleva a la Agenda en su día */}
+          {myMeetingsWithCompany.length > 0 && (
+            <Paper withBorder radius="lg" p="md">
+              <Group gap={6} mb="sm">
+                <IconCalendarEvent size={18} />
+                <Text fw={700}>
+                  {myMeetingsWithCompany.length === 1
+                    ? "Tienes una reunión con esta empresa"
+                    : `Tienes ${myMeetingsWithCompany.length} reuniones con esta empresa`}
+                </Text>
+              </Group>
+              <Stack gap="xs">
+                {myMeetingsWithCompany.map((m: any) => {
+                  const when = [
+                    eventIsMultiDay ? shortDate(m.meetingDate) : "",
+                    m.timeSlot || "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ");
+                  const table = m.tableAssigned
+                    ? getTableLabel(m.tableAssigned, eventConfig?.tableNames)
+                    : "";
+                  return (
+                    <Paper
+                      key={m.id}
+                      withBorder
+                      radius="md"
+                      p="sm"
+                      role="button"
+                      tabIndex={0}
+                      style={{ cursor: "pointer" }}
+                      onClick={() => navigate(buildAgendaLink(eventId || "", m))}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          navigate(buildAgendaLink(eventId || "", m));
+                        }
+                      }}
+                    >
+                      <Group justify="space-between" wrap="nowrap" gap="sm">
+                        <Box style={{ minWidth: 0 }}>
+                          <Text size="sm" fw={600}>
+                            {when || "Reunión agendada"}
+                            {table ? ` · ${table}` : ""}
+                          </Text>
+                          <Text size="xs" c="dimmed" lineClamp={1}>
+                            {m._rep?.nombre ? `Con ${m._rep.nombre}` : "Con la empresa"}
+                            {m.status === "standby" ? " · en espera de check-in" : ""}
+                          </Text>
+                        </Box>
+                        <Group gap={4} wrap="nowrap" style={{ flexShrink: 0 }}>
+                          <Text size="xs" c="blue" fw={600}>
+                            Ver en mi agenda
+                          </Text>
+                          <IconChevronRight size={16} color="var(--mantine-color-blue-6)" />
+                        </Group>
+                      </Group>
+                    </Paper>
+                  );
+                })}
+              </Stack>
+            </Paper>
+          )}
+
           {/* CTA de solicitud dirigida a la empresa (cualquier asesor la puede reclamar).
               Oculto si la empresa no tiene ningún vendedor registrado. */}
           {hasAdvisor && !isMyCompany && !representatives.some((r) => r.id === myUid) && (
@@ -549,9 +647,9 @@ export default function CompanyLanding() {
                             buttonText = "Tu empresa";
                             isDisabled = true;
                           } else if (isAccepted) {
-                            buttonText = "Reunión aceptada";
+                            buttonText = "Reunión aceptada · ver en mi agenda";
                             buttonColor = "teal";
-                            isDisabled = true;
+                            onClick = async () => navigate(buildAgendaLink(eventId || "", existingMeeting));
                           } else if (isPendingReceiver) {
                             buttonText = "Aceptar solicitud";
                             buttonColor = "green";

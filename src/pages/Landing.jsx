@@ -70,7 +70,7 @@ import {
   isPhoneField,
   cleanLocalPhoneNumber,
 } from "../utils/phoneUtils";
-import { sendWelcomeNotification } from "../utils/whatsappService";
+import { formatDate, formatTime, sendWelcomeMessages } from "../utils/welcomeNotification";
 import { getEventDayKeys, formatDayLabel } from "../utils/eventDays";
 import { getForcedRegistrationRole } from "../utils/attendeeRole";
 import { withRoleLabel } from "../utils/attendeeFields";
@@ -145,35 +145,6 @@ const stripHtmlTags = (html) => {
   return tmp.textContent || tmp.innerText || "";
 };
 
-function formatTime(timeString) {
-  if (!timeString) return "";
-  const [hourStr, minuteStr] = timeString.split(":");
-  let hour = parseInt(hourStr, 10);
-  const minute = parseInt(minuteStr, 10);
-  const suffix = hour >= 12 ? "p. m." : "a. m.";
-  hour = hour % 12 || 12;
-  return `${hour}:${minute.toString().padStart(2, "0")} ${suffix}`;
-}
-
-function formatDate(dateString) {
-  if (!dateString) return "";
-  const [year, month, day] = dateString.split("-").map(Number);
-  const months = [
-    "enero",
-    "febrero",
-    "marzo",
-    "abril",
-    "mayo",
-    "junio",
-    "julio",
-    "agosto",
-    "septiembre",
-    "octubre",
-    "noviembre",
-    "diciembre",
-  ];
-  return `${day} de ${months[month - 1]} de ${year}`;
-}
 
 const validateField = (field, value) => {
   const { validation = {} } = field;
@@ -1185,74 +1156,14 @@ const Landing = () => {
 
         // Enviar mensaje de WhatsApp y Correo de bienvenida al registrarse por primera vez (solo si la política lo permite)
         if (event?.config?.policies?.welcomeMessageEnabled === true) {
-          try {
-            const eventName = event?.eventName || "el evento";
-
-            const badgeUrl = `badge/${eventId}/${uid}`;
-
-            // Format date for notification
-            let formattedDate = "Por definir";
-            let formattedTime = "Por definir";
-
-            if (
-              event?.config?.eventDates &&
-              event.config.eventDates.length > 0
-            ) {
-              formattedDate = formatDate(event.config.eventDates[0]);
-              const firstDayConfig =
-                event.config.dailyConfig?.[event.config.eventDates[0]];
-              if (firstDayConfig?.startTime) {
-                formattedTime = formatTime(firstDayConfig.startTime);
-              }
-            } else if (event?.config?.eventDate) {
-              formattedDate = formatDate(event.config.eventDate);
-              if (event?.config?.eventStartTime) {
-                formattedTime = formatTime(event.config.eventStartTime);
-              }
-            }
-
-            // 1. Enviar a WhatsApp
-            if (dataToUpdate.telefono) {
-              await sendWelcomeNotification({
-                phone: dataToUpdate.telefono,
-                name: dataToUpdate.nombre || "Asistente",
-                eventName: eventName,
-                eventId,
-                badgeUrl,
-                headerImageUrl:
-                  event?.eventImage || event?.config?.landingTitleImage,
-                date: formattedDate,
-                time: formattedTime,
-                fallbackInfo: { enabled: false, email: "", subject: "" }, // Evitar doble correo
-                tracking: { eventId, userId: uid },
-              });
-            }
-
-            // 2. Forzar envío de Correo
-            if (dataToUpdate.correo) {
-              await sendWelcomeNotification({
-                phone: "+570000000000", // Teléfono falso para forzar fallback al correo
-                name: dataToUpdate.nombre || "Asistente",
-                eventName: eventName,
-                eventId,
-                badgeUrl,
-                headerImageUrl:
-                  event?.eventImage || event?.config?.landingTitleImage,
-                date: formattedDate,
-                time: formattedTime,
-                fallbackInfo: {
-                  enabled: true,
-                  email: dataToUpdate.correo,
-                  subject: `Bienvenido a ${eventName}`,
-                },
-              });
-            }
-          } catch (err) {
-            console.error(
-              "No se pudo enviar la notificación de bienvenida:",
-              err,
-            );
-          }
+          await sendWelcomeMessages({
+            eventId,
+            uid,
+            event,
+            nombre: dataToUpdate.nombre,
+            telefono: dataToUpdate.telefono,
+            correo: dataToUpdate.correo,
+          });
         }
       } else {
         trackEvent({

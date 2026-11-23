@@ -182,7 +182,6 @@ export default function AttendeesView({
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [modalOpened, setModalOpened] = useState(false);
   const [selectedAssistant, setSelectedAssistant] = useState<Assistant | null>(null);
-  const [sortBy, setSortBy] = useState<"affinity" | "date">("affinity");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
   const [vectorResults, setVectorResults] = useState<any[]>([]);
@@ -219,6 +218,26 @@ export default function AttendeesView({
   const navigate = useNavigate();
   const { eventId: eventIdFromParams } = useParams<{ eventId: string }>();
   const eventId = currentUser?.eventId || eventIdFromParams;
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // DashboardHeader abre "Editar perfil" con ?editProfile=1 (igual que en Empresas)
+  const openEditProfile = () => {
+    const next = new URLSearchParams(searchParams);
+    next.set("editProfile", "1");
+    setSearchParams(next);
+  };
+
+  // Tarjeta propia: vista previa de cómo ven los demás al asistente. La lista del
+  // directorio excluye al usuario, así que se arma desde su propio documento.
+  const myAssistant = useMemo<Assistant | null>(() => {
+    if (!myUid || !currentUser?.data) return null;
+    const data = currentUser.data;
+    return {
+      ...data,
+      id: myUid,
+      empresa: data.empresa || data.company_razonSocial || "",
+    } as Assistant;
+  }, [myUid, currentUser?.data]);
 
   // Búsqueda por vectores con debounce
   useEffect(() => {
@@ -303,17 +322,10 @@ export default function AttendeesView({
     }
     
     if (!term) {
-      let results = [...baseAssistants];
-      if (sortBy === "affinity") {
-        results.sort((a, b) => (affinityScores[b.id] || 0) - (affinityScores[a.id] || 0));
-      } else {
-        results.sort((a, b) => {
-          const timeA = a.createdAt?.toMillis?.() || 0;
-          const timeB = b.createdAt?.toMillis?.() || 0;
-          return timeB - timeA;
-        });
-      }
-      return results;
+      // Siempre por afinidad
+      return [...baseAssistants].sort(
+        (a, b) => (affinityScores[b.id] || 0) - (affinityScores[a.id] || 0),
+      );
     }
 
     const exactMatches = baseAssistants.filter((a) => {
@@ -349,7 +361,7 @@ export default function AttendeesView({
     }
 
     return [...exactMatches, ...semanticMatches];
-  }, [filteredAssistants, searchTerm, formFields, showOnlyToday, sortBy, affinityScores, vectorResults, filterByRole, isRuedaNegocios, currentUser]);
+  }, [filteredAssistants, searchTerm, formFields, showOnlyToday, affinityScores, vectorResults, filterByRole, isRuedaNegocios, currentUser]);
 
   const handleOpenModal = async (assistant: Assistant) => {
     // Con "sin aceptación" (requester_picks), se salta el modal de mensaje: se
@@ -495,27 +507,6 @@ export default function AttendeesView({
                 )}
               </Group>
 
-              <Group gap="xs">
-                <Button
-                  variant={sortBy === "affinity" ? "filled" : "light"}
-                  color="teal"
-                  size="xs"
-                  leftSection={<IconHeart size={14} />}
-                  onClick={() => setSortBy("affinity")}
-                >
-                  Por afinidad
-                </Button>
-                <Button
-                  variant={sortBy === "date" ? "filled" : "light"}
-                  color="gray"
-                  size="xs"
-                  leftSection={<IconCalendarCheck size={14} />}
-                  onClick={() => setSortBy("date")}
-                >
-                  Por fecha
-                </Button>
-              </Group>
-
               <Text size="sm" c="dimmed">
                 Máximo:{" "}
                 <Text span fw={800}>
@@ -552,8 +543,7 @@ export default function AttendeesView({
         <CardGridSkeleton label="Cargando asistentes…" />
       ) : (
       <Grid gutter="sm">
-        {displayedAssistants.length > 0 ? (
-          displayedAssistants.map((assistant) => {
+        {(myAssistant ? [myAssistant, ...displayedAssistants] : displayedAssistants).map((assistant) => {
             const isMine = !!myUid && assistant.id === myUid;
             const disabled =
               !solicitarReunionHabilitado ||
@@ -583,12 +573,56 @@ export default function AttendeesView({
                     display: "flex",
                     flexDirection: "column",
                     position: "relative",
-                    border: isHighlighted ? "3px solid var(--mantine-color-teal-5)" : undefined,
+                    border: isHighlighted
+                      ? "3px solid var(--mantine-color-teal-5)"
+                      : isMine
+                        ? "2px solid var(--mantine-color-green-5)"
+                        : undefined,
                     boxShadow: isHighlighted ? "0 0 20px rgba(20, 184, 166, 0.4)" : undefined,
                     animation: isHighlighted ? "pulse 2s ease-in-out 3" : undefined,
                   }}
                 >
+                  {/* Tarjeta propia: aviso de que es una vista previa de cómo lo ven los demás */}
+                  {isMine && (
+                    <Paper
+                      radius="md"
+                      p="sm"
+                      mb="md"
+                      mt={isRuedaNegocios && assistant.tipoAsistente ? 12 : 0}
+                      style={{
+                        background: "var(--mantine-color-green-0)",
+                        border: "1px solid var(--mantine-color-green-2)",
+                      }}
+                    >
+                      <Group gap="sm" wrap="nowrap" align="flex-start">
+                        <ThemeIcon color="green" variant="filled" radius="xl" size={30} style={{ flexShrink: 0 }}>
+                          <IconEye size={17} />
+                        </ThemeIcon>
+                        <Box style={{ minWidth: 0 }}>
+                          <Text fw={700} size="sm" c="green.9">
+                            Así te ven los demás asistentes
+                          </Text>
+                          <Text size="xs" c="green.9" style={{ opacity: 0.85 }}>
+                            Revisa que tu información esté completa y actualizada.{" "}
+                            <Text
+                              span
+                              size="xs"
+                              fw={700}
+                              c="green.8"
+                              td="underline"
+                              style={{ cursor: "pointer" }}
+                              onClick={openEditProfile}
+                            >
+                              Editar ahora
+                            </Text>
+                          </Text>
+                        </Box>
+                      </Group>
+                    </Paper>
+                  )}
+
                   {/* Badge de afinidad */}
+                  {!isMine && (
                   <Badge
                       variant="gradient"
                       gradient={{ from: 'teal', to: 'green', deg: 90 }}
@@ -604,6 +638,7 @@ export default function AttendeesView({
                     >
                       {affinityScores[assistant.id] || 0}% afinidad
                     </Badge>
+                  )}
 
                   {/* Badge Búsqueda Inteligente */}
                   {(assistant as any)._isSemantic && (
@@ -771,27 +806,39 @@ export default function AttendeesView({
                   </Stack>
 
                   {/* CTA */}
-                  <Button
-                    mt="md"
-                    radius="md"
-                    size="sm"
-                    fullWidth
-                    color={theme.primaryColor}
-                    onClick={() => handleOpenModal(assistant)}
-                    disabled={disabled}
-                    loading={loadingId === assistant.id}
-                  >
-                    {!solicitarReunionHabilitado
-                      ? "Solicitudes deshabilitadas"
-                      : isMine
-                        ? "Tu perfil"
+                  {isMine ? (
+                    <Button
+                      mt="md"
+                      radius="md"
+                      size="sm"
+                      fullWidth
+                      variant="light"
+                      color="green"
+                      onClick={openEditProfile}
+                    >
+                      Editar mi perfil
+                    </Button>
+                  ) : (
+                    <Button
+                      mt="md"
+                      radius="md"
+                      size="sm"
+                      fullWidth
+                      color={theme.primaryColor}
+                      onClick={() => handleOpenModal(assistant)}
+                      disabled={disabled}
+                      loading={loadingId === assistant.id}
+                    >
+                      {!solicitarReunionHabilitado
+                        ? "Solicitudes deshabilitadas"
                         : "Solicitar reunión"}
-                  </Button>
+                    </Button>
+                  )}
                 </Card>
               </Grid.Col>
             );
-          })
-        ) : (
+          })}
+        {displayedAssistants.length === 0 && (
           <Grid.Col span={12}>
             <Paper withBorder radius="lg" p="lg" style={{ textAlign: "center" }}>
               <Text c="dimmed" mb="md">
