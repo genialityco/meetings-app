@@ -43,6 +43,7 @@ import { DEFAULT_POLICIES } from "../dashboard/types";
 import type { EventPolicies, Company } from "../dashboard/types";
 import { normalizeTipoAsistente, DEFAULT_ROLE_URL_PARAM_NAME } from "../../utils/attendeeRole";
 import PendingRemindersSettings, { type PendingRemindersConfig } from "./PendingRemindersSettings";
+import SmartSearchSettings from "./SmartSearchSettings";
 import { getCompanySurveyConfig, type CompanySurveyConfig } from "../../utils/companySurvey";
 
 const readPendingReminders = (p: Partial<EventPolicies> = {}): PendingRemindersConfig => ({
@@ -185,6 +186,8 @@ export default function EventPoliciesModal({
   const [calendarInvitesEnabled, setCalendarInvitesEnabled] = useState(false);
   const [calendarInvitesLocation, setCalendarInvitesLocation] = useState("");
   const [calendarFeedEnabled, setCalendarFeedEnabled] = useState(false);
+  const [smartSearchEnabled, setSmartSearchEnabled] = useState(false);
+  const [smartSearchExplanationsEnabled, setSmartSearchExplanationsEnabled] = useState(false);
   const [companySurveyEnabled, setCompanySurveyEnabled] = useState(false);
   const [companySurvey, setCompanySurvey] = useState<CompanySurveyConfig>(() => getCompanySurveyConfig({}));
   const [pendingReminders, setPendingReminders] = useState<PendingRemindersConfig>(readPendingReminders());
@@ -263,6 +266,8 @@ export default function EventPoliciesModal({
     setCalendarInvitesEnabled(p.calendarInvitesEnabled ?? false);
     setCalendarInvitesLocation(p.calendarInvitesLocation ?? "");
     setCalendarFeedEnabled(p.calendarFeedEnabled ?? false);
+    setSmartSearchEnabled(p.smartSearchEnabled ?? false);
+    setSmartSearchExplanationsEnabled(p.smartSearchExplanationsEnabled ?? false);
     setCompanySurveyEnabled(p.companySurveyEnabled ?? false);
     setCompanySurvey(getCompanySurveyConfig(p));
     setPendingReminders(readPendingReminders(p));
@@ -404,6 +409,8 @@ export default function EventPoliciesModal({
     calendarInvitesEnabled,
     calendarInvitesLocation: calendarInvitesLocation.trim(),
     calendarFeedEnabled,
+    smartSearchEnabled,
+    smartSearchExplanationsEnabled,
     companySurveyEnabled,
     companySurvey,
     advisorNoticeTemplate: advisorNoticeTemplateName.trim()
@@ -1051,6 +1058,19 @@ export default function EventPoliciesModal({
                   onChange={(e) => setAllowProductImageUpload(e.currentTarget.checked)}
                 />
               </SettingsCard>
+
+              {event?.id && (
+                <SettingsCard title="Búsqueda">
+                  <SmartSearchSettings
+                    eventId={event.id}
+                    enabled={smartSearchEnabled}
+                    explanationsEnabled={smartSearchExplanationsEnabled}
+                    onEnabledChange={setSmartSearchEnabled}
+                    onExplanationsChange={setSmartSearchExplanationsEnabled}
+                    savedEnabled={event?.config?.policies?.smartSearchEnabled === true}
+                  />
+                </SettingsCard>
+              )}
 
               <SimpleGrid cols={{ base: 1, sm: 2 }}>
                 <SettingsCard title="Vistas habilitadas">

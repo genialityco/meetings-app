@@ -93,8 +93,11 @@ service cloud.firestore {
       // waCampaigns y waMessages (WhatsApp, con teléfonos de destinatarios) no
       // son públicas: solo las leen quienes administran el evento. loginAttempts
       // (búsquedas fallidas del ingreso con celular, por IP) solo lo escribe la Cloud Function.
+      // searchIndex* (textos + embeddings de la búsqueda inteligente) y searchExplainCache los
+      // escriben y leen las Cloud Functions de smartSearch.js; el cliente no los necesita.
       match /{subcollection}/{document=**} {
-        allow read: if !(subcollection in ["waCampaigns", "waMessages", "companySurveys", "loginAttempts"]) ||
+        allow read: if !(subcollection in ["waCampaigns", "waMessages", "companySurveys", "loginAttempts",
+                                "searchIndexCompanies", "searchIndexAttendees", "searchExplainCache"]) ||
           (request.auth != null && canManageEvent(request.auth.uid, eventId));
         allow write: if request.auth != null && canManageEvent(request.auth.uid, eventId);
       }

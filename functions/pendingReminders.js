@@ -73,6 +73,7 @@ const toDate = (v) => {
 };
 
 // Fecha (YYYY-MM-DD) y hora actuales en Bogotá
+/* global Intl -- built-in de JS; el eslint.config.js de la raíz (que también aplica a functions/) no lo declara */
 function nowInBogota() {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-CA", {

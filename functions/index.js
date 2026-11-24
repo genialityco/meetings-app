@@ -4362,3 +4362,15 @@ export { calendarFeed } from "./calendarFeed.js";
 // Ingreso con el celular (Landing) y chequeo de teléfono ya registrado en el
 // registro: ver phoneLogin.js
 export { phoneLogin, checkPhoneAvailability } from "./phoneLogin.js";
+
+// Búsqueda inteligente de empresas y asistentes (índice con embeddings por
+// empresa/asistente, findNearest en el servidor, "¿Por qué este resultado?";
+// policies smartSearchEnabled / smartSearchExplanationsEnabled): ver smartSearch.js
+export {
+  smartSearch,
+  reindexSmartSearch,
+  explainSmartSearchMatch,
+  smartSearchOnCompanyWrite,
+  smartSearchOnProductWrite,
+  smartSearchOnUserWrite,
+} from "./smartSearch.js";

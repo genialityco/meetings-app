@@ -46,6 +46,9 @@ import MeetingRequestModal from "./MeetingRequestModal";
 import { normalizeTipoAsistente, isVendedor, isComprador } from "../../utils/attendeeRole";
 import { getFieldLabel } from "../../utils/attendeeFields";
 import { CardGridSkeleton } from "./DashboardSkeletons";
+import { useSmartSearch } from "../../hooks/useSmartSearch";
+import SmartSearchExplanation from "../../components/SmartSearchExplanation";
+import { containsAllWords, EXACT_BONUS, highlightWords, searchWords } from "../../utils/smartSearch";
 
 interface MeetingContext {
   contextNote?: string;
@@ -128,7 +131,7 @@ function InfoRow({
   icon: React.ReactNode;
   label: string;
   value?: string | null;
-  highlightText?: string;
+  highlightText?: string | string[];
 }) {
   return (
     <Group gap={8} wrap="nowrap" align="flex-start">
@@ -240,11 +243,19 @@ export default function AttendeesView({
     } as Assistant;
   }, [myUid, currentUser?.data]);
 
-  // Búsqueda por vectores con debounce
+  // Búsqueda inteligente (política smartSearchEnabled): índice por asistente con su descripción,
+  // empresa, productos y campos, ordenado en el servidor. Sin la política, la búsqueda anterior.
+  const smartEnabled = policies?.smartSearchEnabled === true;
+  const smart = useSmartSearch(eventId, "attendees", searchTerm, smartEnabled);
+  const semanticLoading = smartEnabled ? smart.loading : isVectorSearching;
+  const semanticActive = smartEnabled ? smart.scores.size > 0 : vectorResults.length > 0;
+  const highlightTerm = smartEnabled ? highlightWords(searchTerm) : searchTerm;
+
+  // Búsqueda por vectores con debounce (búsqueda anterior, sin smartSearchEnabled)
   useEffect(() => {
     const trimmed = searchTerm.trim();
-    
-    if (!trimmed || trimmed.length < 3) {
+
+    if (smartEnabled || !trimmed || trimmed.length < 3) {
       setVectorResults([]);
       setHasSearchedVector(false);
       return;
@@ -289,7 +300,7 @@ export default function AttendeesView({
     }, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [searchTerm, eventId]);
+  }, [searchTerm, eventId, smartEnabled]);
 
   const maxMeetingsText = useMemo(() => {
     const n = eventConfig?.maxMeetingsPerUser;
@@ -329,6 +340,34 @@ export default function AttendeesView({
       );
     }
 
+    if (smartEnabled) {
+      // Palabras significativas en cualquier orden, sin tildes; en nombre/empresa pesan más que en
+      // otro campo. Orden: afinidad por significado + ese bonus (ver EXACT_BONUS).
+      const words = searchWords(searchTerm);
+      const scored: any[] = [];
+      baseAssistants.forEach((a) => {
+        const semantic = smart.scores.get(a.id);
+        const nameMatch = containsAllWords(`${a.nombre ?? ""} ${a.empresa ?? ""}`, words);
+        const otherMatch =
+          !nameMatch &&
+          containsAllWords(
+            [a.nombre, a.empresa, a.cargo, ...formFields.map((f) => a[f.name])]
+              .map((v) => (Array.isArray(v) ? v.join(" ") : typeof v === "object" ? "" : String(v ?? "")))
+              .join(" "),
+            words,
+          );
+        let score: number | null = null;
+        if (nameMatch || otherMatch) {
+          score = (semantic ?? smart.cutoff) + (nameMatch ? EXACT_BONUS.name : EXACT_BONUS.other);
+        } else if (semantic !== undefined && semantic >= smart.cutoff) {
+          score = semantic;
+        }
+        if (score === null) return;
+        scored.push({ ...a, _score: score, _similarity: semantic, _isSemantic: !nameMatch && !otherMatch });
+      });
+      return scored.sort((x, y) => y._score - x._score);
+    }
+
     const exactMatches = baseAssistants.filter((a) => {
       return (
         (a.empresa ?? "").toString().toLowerCase().includes(term) ||
@@ -362,7 +401,7 @@ export default function AttendeesView({
     }
 
     return [...exactMatches, ...semanticMatches];
-  }, [filteredAssistants, searchTerm, formFields, showOnlyToday, affinityScores, vectorResults, filterByRole, isRuedaNegocios, currentUser]);
+  }, [filteredAssistants, searchTerm, formFields, showOnlyToday, affinityScores, vectorResults, filterByRole, isRuedaNegocios, currentUser, smartEnabled, smart]);
 
   const handleOpenModal = async (assistant: Assistant) => {
     // Con "sin aceptación" (requester_picks), se salta el modal de mensaje: se
@@ -449,9 +488,9 @@ export default function AttendeesView({
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               leftSection={
-                isVectorSearching ? (
+                semanticLoading ? (
                   <Loader size={16} />
-                ) : vectorResults.length > 0 ? (
+                ) : semanticActive ? (
                   <IconSparkles size={16} style={{ color: "var(--mantine-color-blue-6)" }} />
                 ) : (
                   <IconSearch size={16} />
@@ -656,7 +695,10 @@ export default function AttendeesView({
                         zIndex: 1,
                       }}
                     >
-                      {Math.round(((assistant as any)._similarity || 0) * 100)}% Match IA
+                      {/* Con la búsqueda inteligente el coseno (~0.6–0.8) no es un porcentaje legible */}
+                      {smartEnabled
+                        ? "Relacionado"
+                        : `${Math.round(((assistant as any)._similarity || 0) * 100)}% Match IA`}
                     </Badge>
                   )}
 
@@ -716,13 +758,13 @@ export default function AttendeesView({
                     <Box style={{ minWidth: 0, flex: 1 }}>
                       <Group gap="xs" wrap="nowrap" align="center">
                         <Title order={6} lineClamp={1}>
-                          <Highlight highlight={searchTerm} component="span">
+                          <Highlight highlight={highlightTerm} component="span">
                             {assistant.nombre || "Sin nombre"}
                           </Highlight>
                         </Title>
                       </Group>
                       <Text size="sm" c="dimmed" lineClamp={1} component="div">
-                        <Highlight highlight={searchTerm} component="span" size="sm">
+                        <Highlight highlight={highlightTerm} component="span" size="sm">
                           {assistant.cargo || "Asistente"}
                         </Highlight>
                       </Text>
@@ -740,12 +782,23 @@ export default function AttendeesView({
                             : undefined
                         }
                       >
-                        <Highlight highlight={searchTerm} component="span" size="sm">
+                        <Highlight highlight={highlightTerm} component="span" size="sm">
                           {assistant.empresa || "Sin empresa"}
                         </Highlight>
                       </Text>
                     </Box>
                   </Group>
+
+                  {smartEnabled && policies?.smartSearchExplanationsEnabled && (assistant as any)._isSemantic && eventId && (
+                    <Box mt="sm">
+                      <SmartSearchExplanation
+                        eventId={eventId}
+                        kind="attendees"
+                        id={assistant.id}
+                        query={searchTerm.trim()}
+                      />
+                    </Box>
+                  )}
 
                   <Divider my="sm" />
 
@@ -800,7 +853,7 @@ export default function AttendeesView({
                           icon={<Icon size={14} />}
                           label={label}
                           value={formatFieldValue(fieldName, assistant)}
-                          highlightText={searchTerm}
+                          highlightText={highlightTerm}
                         />
                       );
                     })}

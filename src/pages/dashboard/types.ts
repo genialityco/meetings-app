@@ -196,6 +196,13 @@ export interface EventPolicies {
    * un feed iCalendar (Cloud Function calendarFeed) con las reuniones aceptadas del asistente;
    * su calendario lo actualiza solo (Google cada 12-24 h). El link usa users/{uid}.calendarFeedToken. */
   calendarFeedEnabled?: boolean;
+  /** Búsqueda inteligente en Empresas y Asistentes (functions/smartSearch.js): índice por
+   * empresa/asistente con embeddings (descripción, productos, sector, representantes), ordenado
+   * en el servidor y combinado con la búsqueda exacta por palabras. Al activarla hay que
+   * construir el índice desde el modal de políticas; después se mantiene solo. */
+  smartSearchEnabled?: boolean;
+  /** "¿Por qué este resultado?" en los resultados que aparecen solo por significado (Gemini, con caché) */
+  smartSearchExplanationsEnabled?: boolean;
   /** Encuesta de resultados por empresa (src/utils/companySurvey.ts): modal obligatorio al
    * entrar al dashboard con dos preguntas (reuniones realizadas y valor de negocios en USD).
    * Una respuesta por empresa en events/{eventId}/companySurveys/{companyId}: cuando alguien
@@ -334,6 +341,8 @@ export const DEFAULT_POLICIES: EventPolicies = {
   calendarInvitesEnabled: false,
   calendarInvitesLocation: "",
   calendarFeedEnabled: false,
+  smartSearchEnabled: false,
+  smartSearchExplanationsEnabled: false,
   companySurveyEnabled: false,
   pendingRemindersEnabled: false,
   pendingRemindersEveryHours: 12,

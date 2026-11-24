@@ -61,6 +61,9 @@ import { getFieldLabel } from "../../utils/attendeeFields";
 import CompanyLinks from "./CompanyLinks";
 import { buildAgendaLink } from "../../utils/agendaLink";
 import { CardGridSkeleton } from "./DashboardSkeletons";
+import { useSmartSearch } from "../../hooks/useSmartSearch";
+import SmartSearchExplanation from "../../components/SmartSearchExplanation";
+import { containsAllWords, EXACT_BONUS, highlightWords, normalizeSearchText, searchWords } from "../../utils/smartSearch";
 
 const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
 
@@ -106,7 +109,7 @@ function CompanyDetailFieldRow({
   label: string;
   value: string;
   color: string;
-  highlightText?: string;
+  highlightText?: string | string[];
 }) {
   const [expanded, setExpanded] = useState(false);
   const [isTruncated, setIsTruncated] = useState(false);
@@ -515,6 +518,8 @@ export default function CompaniesView({
     _matchedAssistantId?: string;
     _similarity?: number;
     _isSemantic?: boolean;
+    /** Doc del índice de búsqueda (companyId) con el mejor puntaje del grupo */
+    _semanticId?: string;
   };
 
   // Reunión aceptada ya existente con cada empresa (por NIT o razón social),
@@ -553,11 +558,20 @@ export default function CompaniesView({
     );
   }, [sentPendingRequests, assistantsWithMe, participantsInfo, policies.groupByRazonSocial, myUid]);
 
-  // Búsqueda por vectores con debounce
+  // Búsqueda inteligente (política smartSearchEnabled): índice por empresa con descripción,
+  // productos y representantes, ordenado en el servidor. Sin la política, la búsqueda anterior
+  // por representantes (vectorSearch).
+  const smartEnabled = policies.smartSearchEnabled === true;
+  const smart = useSmartSearch(eventId, "companies", searchTerm, smartEnabled);
+  const semanticLoading = smartEnabled ? smart.loading : isVectorSearching;
+  const semanticActive = smartEnabled ? smart.scores.size > 0 : vectorResults.length > 0;
+  const highlightTerm = smartEnabled ? highlightWords(searchTerm) : searchTerm;
+
+  // Búsqueda por vectores con debounce (búsqueda anterior, sin smartSearchEnabled)
   useEffect(() => {
     const trimmed = searchTerm.trim();
-    
-    if (!trimmed || trimmed.length < 3) {
+
+    if (smartEnabled || !trimmed || trimmed.length < 3) {
       setVectorResults([]);
       setHasSearchedVector(false);
       return;
@@ -605,7 +619,7 @@ export default function CompaniesView({
     }, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [searchTerm, eventId]);
+  }, [searchTerm, eventId, smartEnabled]);
 
   // Filtrar por búsqueda
   const filtered = useMemo((): CompanyMatch[] => {
@@ -637,6 +651,48 @@ export default function CompaniesView({
     // Al buscar se excluye la propia empresa del usuario: solo se fija arriba en la
     // lista sin búsqueda, en los resultados no aporta nada.
     const searchable = companiesDataFiltered.filter((c) => !c.mine);
+
+    if (smartEnabled) {
+      // Palabras significativas en cualquier orden, sin tildes; en el nombre pesan más que en un
+      // representante. El orden es la afinidad por significado + ese bonus (ver EXACT_BONUS).
+      const words = searchWords(searchTerm);
+      const normalizedTerm = normalizeSearchText(searchTerm);
+      const repMatches = (a: any) =>
+        containsAllWords([a.nombre, a.cargo, ...cardFields.map((f) => formatFieldValue(f, a))].join(" "), words);
+      const scored: Array<CompanyMatch & { _score: number }> = [];
+      searchable.forEach((c) => {
+        // Con groupByRazonSocial un grupo reúne varios NIT: cuenta el mejor.
+        let semanticId: string | undefined;
+        let semantic: number | undefined;
+        new Set([c.nit, c.nitLookup, ...c.asistentes.map((a: any) => a.companyId)].filter(Boolean).map(String))
+          .forEach((id) => {
+            const s = smart.scores.get(id);
+            if (s !== undefined && (semantic === undefined || s > semantic)) {
+              semantic = s;
+              semanticId = id;
+            }
+          });
+        const nameMatch = containsAllWords(c.empresa, words) || (!!normalizedTerm && c.nit.includes(normalizedTerm));
+        const matchedAssistant = c.asistentes.find(repMatches);
+        let score: number | null = null;
+        if (nameMatch || matchedAssistant) {
+          score = (semantic ?? smart.cutoff) + (nameMatch ? EXACT_BONUS.name : EXACT_BONUS.other);
+        } else if (semantic !== undefined && semantic >= smart.cutoff) {
+          score = semantic;
+        }
+        if (score === null) return;
+        scored.push({
+          ...c,
+          _score: score,
+          _matchedAssistantId: matchedAssistant?.id,
+          _similarity: semantic,
+          // Solo por significado: nada resaltado lo justifica (puede pedir "¿Por qué?")
+          _isSemantic: !nameMatch && !matchedAssistant,
+          _semanticId: semanticId,
+        });
+      });
+      return scored.sort((a, b) => b._score - a._score || byName(a, b));
+    }
 
     const exactMatches: CompanyMatch[] = [];
     searchable.forEach((c) => {
@@ -670,7 +726,7 @@ export default function CompaniesView({
     }
 
     return [...exactMatches, ...semanticMatches];
-  }, [companiesDataFiltered, searchTerm, vectorResults, cardFields]);
+  }, [companiesDataFiltered, searchTerm, vectorResults, cardFields, smartEnabled, smart]);
 
   const handleOpenModal = async (assistant: Assistant, companyNit: string) => {
     // Con "sin aceptación" (requester_picks), se salta el modal de mensaje: se
@@ -835,9 +891,9 @@ export default function CompaniesView({
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             leftSection={
-              isVectorSearching ? (
+              semanticLoading ? (
                 <Loader size={16} />
-              ) : vectorResults.length > 0 ? (
+              ) : semanticActive ? (
                 <IconSparkles size={16} style={{ color: "var(--mantine-color-blue-6)" }} />
               ) : (
                 <IconSearch size={16} />
@@ -933,7 +989,7 @@ export default function CompaniesView({
       ) : (
       <Grid gutter="sm">
         {filtered.length > 0 ? (
-          filtered.map(({ nit, nitLookup, empresa, logoUrl, fixedTable, pais, asistentes, hasAdvisor, mine, _similarity, _isSemantic, _matchedAssistantId }) => {
+          filtered.map(({ nit, nitLookup, empresa, logoUrl, fixedTable, pais, asistentes, hasAdvisor, mine, _similarity, _isSemantic, _matchedAssistantId, _semanticId }) => {
             const companyKey = nit; // clave estable
             const selectedId = selectedAssistantPerCompany[companyKey];
 
@@ -1019,8 +1075,21 @@ export default function CompaniesView({
                     </Paper>
                   )}
 
-                  {/* Badge de concordancia */}
-                  {hasSimilarity && (
+                  {/* Badge de concordancia. Con la búsqueda inteligente el coseno no es un
+                      porcentaje legible (todo cae en ~0.6–0.8): solo se marca "Relacionada". */}
+                  {smartEnabled && _isSemantic && (
+                    <Badge
+                      variant="gradient"
+                      gradient={{ from: "blue", to: "cyan", deg: 90 }}
+                      size="sm"
+                      radius="md"
+                      leftSection={<IconSparkles size={12} />}
+                      style={{ position: "absolute", top: 40, right: 16, zIndex: 1 }}
+                    >
+                      Relacionada
+                    </Badge>
+                  )}
+                  {!smartEnabled && hasSimilarity && (
                     <Badge
                       variant="gradient"
                       gradient={{ from: 'blue', to: 'cyan', deg: 90 }}
@@ -1116,7 +1185,7 @@ export default function CompaniesView({
                               : undefined
                           }
                         >
-                          <Highlight highlight={searchTerm} component="span" inherit>
+                          <Highlight highlight={highlightTerm} component="span" inherit>
                             {empresa}
                           </Highlight>
                         </Title>
@@ -1235,6 +1304,17 @@ export default function CompaniesView({
                     </Stack>
                   </Group>
 
+                  {smartEnabled && policies.smartSearchExplanationsEnabled && _isSemantic && _semanticId && eventId && (
+                    <Box mt="sm">
+                      <SmartSearchExplanation
+                        eventId={eventId}
+                        kind="companies"
+                        id={_semanticId}
+                        query={searchTerm.trim()}
+                      />
+                    </Box>
+                  )}
+
                   <Box mt="sm">
                     <CompanyLinks compact formFields={formFields} representatives={asistentes} />
                   </Box>
@@ -1282,7 +1362,7 @@ export default function CompaniesView({
                                   </Avatar>
                                   <Box style={{ minWidth: 0, flex: 1 }}>
                                     <Text size="sm" fw={600} lineClamp={1}>
-                                      <Highlight highlight={searchTerm} component="span" inherit>
+                                      <Highlight highlight={highlightTerm} component="span" inherit>
                                         {a.nombre || "Sin nombre"}
                                       </Highlight>
                                       {a.id === myUid && (
@@ -1305,7 +1385,7 @@ export default function CompaniesView({
                                         </Badge>
                                       )}
                                       <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>
-                                        <Highlight highlight={searchTerm} component="span" inherit>
+                                        <Highlight highlight={highlightTerm} component="span" inherit>
                                           {a.cargo || "Representante"}
                                         </Highlight>
                                       </Text>
@@ -1356,7 +1436,7 @@ export default function CompaniesView({
                           label={label}
                           value={value}
                           color={theme.primaryColor}
-                          highlightText={searchTerm}
+                          highlightText={highlightTerm}
                         />
                       );
                     })}
