@@ -77,8 +77,8 @@ export default function SmartSearchSettings({
       {enabled && (
         <Stack gap="sm" pl="xl">
           <Switch
-            label="“¿Por qué aparece?”"
-            description="En los resultados que aparecen solo por significado, la IA explica en una frase la relación con lo buscado (se genera sola al mostrarse el resultado)."
+            label="Explicaciones con IA"
+            description="Arriba de los resultados, un resumen general de lo encontrado; y en los que aparecen solo por significado, “¿Por qué aparece?” con la relación con lo buscado. Se generan solos al mostrarse."
             checked={explanationsEnabled}
             onChange={(e) => onExplanationsChange(e.currentTarget.checked)}
           />

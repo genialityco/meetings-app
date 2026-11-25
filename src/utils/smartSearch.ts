@@ -11,6 +11,8 @@ const SMART_SEARCH_URL =
   (import.meta.env.VITE_SMART_SEARCH_URL as string) || `${FUNCTIONS_BASE}/smartSearch`;
 const EXPLAIN_URL =
   (import.meta.env.VITE_SMART_SEARCH_EXPLAIN_URL as string) || `${FUNCTIONS_BASE}/explainSmartSearchMatch`;
+const SUMMARY_URL =
+  (import.meta.env.VITE_SMART_SEARCH_SUMMARY_URL as string) || `${FUNCTIONS_BASE}/summarizeSmartSearchResults`;
 const REINDEX_URL =
   (import.meta.env.VITE_SMART_SEARCH_REINDEX_URL as string) || `${FUNCTIONS_BASE}/reindexSmartSearch`;
 
@@ -65,6 +67,23 @@ export async function fetchSearchExplanation(
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data?.explanation) throw new Error(data?.error || `HTTP ${res.status}`);
   return String(data.explanation);
+}
+
+/** Resumen general de los primeros resultados mostrados (summarizeSmartSearchResults) */
+export async function fetchSearchSummary(
+  eventId: string,
+  kind: SmartSearchKind,
+  query: string,
+  ids: string[],
+): Promise<string> {
+  const res = await fetch(SUMMARY_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ eventId, kind, query, ids }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.summary) throw new Error(data?.error || `HTTP ${res.status}`);
+  return String(data.summary);
 }
 
 export interface SmartSearchIndexStatus {

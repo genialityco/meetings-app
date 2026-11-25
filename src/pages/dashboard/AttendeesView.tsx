@@ -48,6 +48,7 @@ import { getFieldLabel } from "../../utils/attendeeFields";
 import { CardGridSkeleton } from "./DashboardSkeletons";
 import { useSmartSearch } from "../../hooks/useSmartSearch";
 import SmartSearchExplanation from "../../components/SmartSearchExplanation";
+import SmartSearchSummary, { SUMMARY_MAX_RESULTS } from "../../components/SmartSearchSummary";
 import { containsAllWords, EXACT_BONUS, highlightWords, searchWords } from "../../utils/smartSearch";
 
 interface MeetingContext {
@@ -403,6 +404,16 @@ export default function AttendeesView({
     return [...exactMatches, ...semanticMatches];
   }, [filteredAssistants, searchTerm, formFields, showOnlyToday, affinityScores, vectorResults, filterByRole, isRuedaNegocios, currentUser, smartEnabled, smart]);
 
+  // Resumen general (arriba de la lista): solo cuando lo que se ve corresponde a la búsqueda ya
+  // resuelta (mientras se escribe la lista mezcla el texto nuevo con los puntajes anteriores)
+  const summaryIds = useMemo(
+    () =>
+      smartEnabled && policies?.smartSearchExplanationsEnabled && !smart.loading && smart.query && smart.query === searchTerm.trim()
+        ? displayedAssistants.slice(0, SUMMARY_MAX_RESULTS).map((a: any) => a.id)
+        : [],
+    [smartEnabled, policies?.smartSearchExplanationsEnabled, smart.loading, smart.query, searchTerm, displayedAssistants],
+  );
+
   const handleOpenModal = async (assistant: Assistant) => {
     // Con "sin aceptación" (requester_picks), se salta el modal de mensaje: se
     // va directo al selector de horario (SlotModal), que ya incluye el
@@ -560,6 +571,10 @@ export default function AttendeesView({
           </Grid.Col>
         </Grid>
       </Paper>
+
+      {eventId && summaryIds.length > 0 && (
+        <SmartSearchSummary eventId={eventId} kind="attendees" query={smart.query} ids={summaryIds} />
+      )}
 
       {/* Alert oportunista */}
       {displayedAssistants.length > 0 && displayedAssistants.length <= 10 && (

@@ -63,6 +63,7 @@ import { buildAgendaLink } from "../../utils/agendaLink";
 import { CardGridSkeleton } from "./DashboardSkeletons";
 import { useSmartSearch } from "../../hooks/useSmartSearch";
 import SmartSearchExplanation from "../../components/SmartSearchExplanation";
+import SmartSearchSummary, { SUMMARY_MAX_RESULTS } from "../../components/SmartSearchSummary";
 import { containsAllWords, EXACT_BONUS, highlightWords, normalizeSearchText, searchWords } from "../../utils/smartSearch";
 
 const VECTOR_SEARCH_URL = "https://vectorsearch-6eaymlz5eq-uc.a.run.app";
@@ -728,6 +729,18 @@ export default function CompaniesView({
     return [...exactMatches, ...semanticMatches];
   }, [companiesDataFiltered, searchTerm, vectorResults, cardFields, smartEnabled, smart]);
 
+  // Resumen general (arriba de la lista): solo cuando lo que se ve corresponde a la búsqueda ya
+  // resuelta. Id de índice = companyId (nitNorm); con groupByRazonSocial, el NIT con mejor puntaje.
+  const summaryIds = useMemo(
+    () =>
+      smartEnabled && policies.smartSearchExplanationsEnabled && !smart.loading && smart.query && smart.query === searchTerm.trim()
+        ? filtered
+            .slice(0, SUMMARY_MAX_RESULTS)
+            .map((c) => String(c._semanticId || c.asistentes?.[0]?.companyId || c.nit))
+        : [],
+    [smartEnabled, policies.smartSearchExplanationsEnabled, smart.loading, smart.query, searchTerm, filtered],
+  );
+
   const handleOpenModal = async (assistant: Assistant, companyNit: string) => {
     // Con "sin aceptación" (requester_picks), se salta el modal de mensaje: se
     // va directo al selector de horario (SlotModal, en Dashboard.tsx), que ya
@@ -983,6 +996,10 @@ export default function CompaniesView({
           )}
         </Transition>
       </Affix>
+
+      {eventId && summaryIds.length > 0 && (
+        <SmartSearchSummary eventId={eventId} kind="companies" query={smart.query} ids={summaryIds} />
+      )}
 
       {loading ? (
         <CardGridSkeleton label="Cargando empresas…" />

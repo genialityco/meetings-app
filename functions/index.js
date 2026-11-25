@@ -4370,6 +4370,7 @@ export {
   smartSearch,
   reindexSmartSearch,
   explainSmartSearchMatch,
+  summarizeSmartSearchResults,
   smartSearchOnCompanyWrite,
   smartSearchOnProductWrite,
   smartSearchOnUserWrite,
