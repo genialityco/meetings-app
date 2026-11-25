@@ -80,6 +80,7 @@ import { usePhoneAvailability } from "../hooks/usePhoneAvailability";
 const PHONE_TAKEN_MSG =
   "Este número ya está registrado en el evento. Ingresa con esa cuenta.";
 import SupportButton from "../components/SupportButton";
+import SplashScreen from "../components/SplashScreen";
 import PhoneMatchPickerModal from "../components/PhoneMatchPickerModal";
 import { findAttendeesByPhone } from "../utils/phoneLogin";
 import CompanyNitSearchInput from "../components/CompanyNitSearchInput";
@@ -1823,7 +1824,7 @@ const Landing = () => {
   }, [event.backgroundImage, event.backgroundMobileImage, isMobile]);
 
   if (userLoading)
-    return <div className="splash-screen" role="img" aria-label="Magnetic" />;
+    return <SplashScreen />;
 
   if (!eventId) {
     return (

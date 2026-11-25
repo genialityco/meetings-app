@@ -1,6 +1,6 @@
 import { Suspense, lazy } from "react";
 import { Routes, Route } from "react-router-dom";
-import { LoadingOverlay } from "@mantine/core";
+import SplashScreen from "./components/SplashScreen.tsx";
 import { usePageTracking } from "./hooks/usePageTracking";
 import { useVersionCheck } from "./hooks/useVersionCheck";
 import ProtectedAdminRoute from "./components/ProtectedAdminRoute.tsx";
@@ -52,7 +52,7 @@ const App = () => {
   useVersionCheck();
 
   return (
-    <Suspense fallback={<LoadingOverlay visible />}>
+    <Suspense fallback={<SplashScreen />}>
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/event/:eventId" element={<Landing />} />
