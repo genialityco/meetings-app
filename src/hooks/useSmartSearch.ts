@@ -16,9 +16,11 @@ export interface SmartSearchState {
   loading: boolean;
   /** La búsqueda por significado falló: la vista sigue funcionando con la exacta */
   failed: boolean;
+  /** Consulta a la que corresponden `scores` (mientras se escribe, el texto del buscador ya es otro) */
+  query: string;
 }
 
-const EMPTY: SmartSearchState = { scores: new Map(), cutoff: 1, loading: false, failed: false };
+const EMPTY: SmartSearchState = { scores: new Map(), cutoff: 1, loading: false, failed: false, query: "" };
 
 /**
  * Puntajes por significado de la búsqueda (Cloud Function smartSearch) para la vista de empresas o
@@ -45,7 +47,7 @@ export function useSmartSearch(
     const timer = setTimeout(async () => {
       try {
         const { scores, cutoff } = await fetchSmartSearch(eventId, kind, query, controller.signal);
-        if (!controller.signal.aborted) setState({ scores, cutoff, loading: false, failed: false });
+        if (!controller.signal.aborted) setState({ scores, cutoff, loading: false, failed: false, query });
       } catch (err) {
         if (controller.signal.aborted) return;
         console.error("smartSearch error:", err);

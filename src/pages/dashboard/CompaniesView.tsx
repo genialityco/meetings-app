@@ -1310,7 +1310,7 @@ export default function CompaniesView({
                         eventId={eventId}
                         kind="companies"
                         id={_semanticId}
-                        query={searchTerm.trim()}
+                        query={smart.query}
                       />
                     </Box>
                   )}

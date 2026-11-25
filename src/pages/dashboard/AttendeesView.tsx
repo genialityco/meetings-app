@@ -795,7 +795,7 @@ export default function AttendeesView({
                         eventId={eventId}
                         kind="attendees"
                         id={assistant.id}
-                        query={searchTerm.trim()}
+                        query={smart.query}
                       />
                     </Box>
                   )}
