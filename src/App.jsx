@@ -5,8 +5,14 @@ import { usePageTracking } from "./hooks/usePageTracking";
 import { useVersionCheck } from "./hooks/useVersionCheck";
 import ProtectedAdminRoute from "./components/ProtectedAdminRoute.tsx";
 
-// Eager: landing page (ruta más visitada)
-import Landing from "./pages/Landing";
+// Landing también es lazy: trae el editor (Tiptap), Storage y todo el registro, y si
+// fuera eager lo descargaría cualquier ruta (p.ej. aceptar una reunión desde WhatsApp).
+// En sus propias rutas el chunk se pide ya, en paralelo con el bundle principal.
+const loadLanding = () => import("./pages/Landing");
+if (typeof window !== "undefined" && /^\/(event\/[^/]+\/?)?$/.test(window.location.pathname)) {
+  loadLanding();
+}
+const Landing = lazy(loadLanding);
 
 // Lazy: todas las demás rutas
 const OrganizationsPanel = lazy(() => import("./pages/admin/OrganizationsPanel.tsx"));

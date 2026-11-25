@@ -61,6 +61,127 @@ async function ensureFirebaseAuth() {
   }
 }
 
+const readUser = (uid) =>
+  uid
+    ? getDoc(doc(db, "users", uid)).then((s) => (s.exists() ? s.data() : null))
+    : Promise.resolve(null);
+
+// Mesa fija y agenda compartida de la empresa del receptor (igual que
+// resolveFixedTableForReceiver / resolveReceiverGroupIds del dashboard)
+async function resolveSlotContext(eventId, eventConfig, requesterId, receiverId, receiverData) {
+  const receiverCompanyId = receiverData?.companyId || null;
+  let receiverFixedTable = null;
+  let receiverGroupIds = [receiverId];
+  if (receiverCompanyId) {
+    const companySnap = await getDoc(doc(db, "events", eventId, "companies", receiverCompanyId));
+    const company = companySnap.exists() ? companySnap.data() : null;
+    receiverFixedTable = company?.fixedTable ? String(company.fixedTable) : null;
+    if (company?.sharedAgenda) {
+      const teammates = (await getCompanyAdvisors(eventId, receiverCompanyId))
+        .filter((a) => isVendedor(a.tipoAsistente))
+        .map((a) => a.id);
+      if (teammates.includes(receiverId)) receiverGroupIds = teammates;
+    }
+  }
+  return { eventConfig, requesterId, receiverId, receiverFixedTable, receiverGroupIds };
+}
+
+// Horarios libres de un día, con la misma lógica del dashboard
+// (computeAvailableSlots): reuniones aceptadas de ESE día, descansos del día
+// (dailyConfig), slots bloqueados, horas pasadas, mesa fija y agenda compartida.
+async function computeDaySlots(eventId, ctx, dateISO) {
+  const { slots } = await computeAvailableSlots({
+    eventId,
+    eventConfig: ctx.eventConfig,
+    policies: ctx.eventConfig.policies || {},
+    requesterId: ctx.requesterId,
+    receiverId: ctx.receiverId,
+    selectedDate: dateISO,
+    receiverFixedTable: ctx.receiverFixedTable,
+    receiverGroupIds: ctx.receiverGroupIds,
+  });
+  // Los slots de standby (último recurso del dashboard) no están "available" y la
+  // transacción de aceptación de esta página los rechazaría.
+  return slots
+    .filter((s) => !s.isStandbySlot)
+    .sort(
+      (a, b) =>
+        String(a.startTime).localeCompare(String(b.startTime)) ||
+        Number(a.tableNumber) - Number(b.tableNumber)
+    );
+}
+
+// Días a ofrecer y primer día con horarios. Cada día descarga todos los slots libres
+// de todas las mesas, así que se calcula solo el día inicial (hoy o el primero) y,
+// únicamente si está lleno, el resto. `cache` guarda la promesa de cada día calculado.
+async function loadInitialDays(eventId, ctx) {
+  const eventConfig = ctx.eventConfig;
+  const todayISO = localTodayISO();
+  const allDays = [
+    ...new Set(eventConfig.eventDates || (eventConfig.eventDate ? [eventConfig.eventDate] : [])),
+  ]
+    .filter(Boolean)
+    .sort();
+  const upcoming = allDays.filter((d) => d >= todayISO);
+  const days = upcoming.length ? upcoming : allDays;
+  const cache = new Map();
+  const dayPromise = (d) => {
+    if (!cache.has(d)) cache.set(d, computeDaySlots(eventId, ctx, d));
+    return cache.get(d);
+  };
+
+  const startDay = days.includes(todayISO) ? todayISO : days[0];
+  if (!startDay) return { ctx, days, firstDay: null, slots: [], cache };
+  const startSlots = await dayPromise(startDay);
+  if (startSlots.length) return { ctx, days, firstDay: startDay, slots: startSlots, cache };
+
+  const rest = days.filter((d) => d > startDay);
+  const perDay = await Promise.all(rest.map(dayPromise));
+  const idx = perDay.findIndex((sl) => sl.length > 0);
+  return idx >= 0
+    ? { ctx, days, firstDay: rest[idx], slots: perDay[idx], cache }
+    : { ctx, days, firstDay: startDay, slots: [], cache };
+}
+
+// Lecturas que arrancan apenas se abre el enlace, sin esperar a que UserContext
+// resuelva la sesión (son colecciones de lectura pública): reunión, evento,
+// solicitante, quien recibe el enlace y, al aceptar, los horarios del primer día.
+// La validación y la carga de horarios consumen estas promesas en vez de releer.
+function startPrefetch(eventId, meetingId, advisorId, action) {
+  const meetingP = getDoc(doc(db, "events", eventId, "meetings", meetingId)).then((s) =>
+    s.exists() ? s.data() : null
+  );
+  const eventP = getDoc(doc(db, "events", eventId)).then((s) => (s.exists() ? s.data() : null));
+  const requesterP = meetingP.then((m) => readUser(m?.requesterId));
+  // Destinatario del enlace: el receptor, o en solicitudes a empresa el asesor del link
+  const actingP = meetingP.then((m) => {
+    const uid = m?.receiverId || (m?.companyId ? advisorId : null) || null;
+    return uid ? readUser(uid).then((data) => ({ uid, data })) : null;
+  });
+
+  let slotsP = Promise.resolve(null);
+  if (action === "accept") {
+    slotsP = Promise.all([meetingP, eventP, actingP])
+      .then(async ([m, ev, acting]) => {
+        if (!m || m.status !== "pending" || !ev || !acting?.data) return null;
+        // Asesor del link que no es de la empresa: la validación lo rechazará
+        if (!m.receiverId && acting.data.companyId !== m.companyId) return null;
+        const ctx = await resolveSlotContext(
+          eventId, ev.config || {}, m.requesterId, acting.uid, acting.data
+        );
+        return loadInitialDays(eventId, ctx);
+      })
+      .catch((e) => {
+        console.warn("Precarga de horarios falló; se recalcula tras validar:", e);
+        return null;
+      });
+  }
+
+  // Si la validación termina antes de consumirlas, que no queden rechazos sin manejar
+  [meetingP, eventP, requesterP, actingP].forEach((p) => p.catch(() => {}));
+  return { meetingP, eventP, requesterP, actingP, slotsP };
+}
+
 export default function MeetingAutoResponse() {
   // advisorId (opcional): en solicitudes a una empresa el enlace de WhatsApp lleva el ID del
   // asesor al que se envió, para poder iniciar su sesión sin pedirle ingresar de nuevo.
@@ -71,6 +192,17 @@ export default function MeetingAutoResponse() {
   // estado de forma asíncrona, así que el closure del efecto que carga los slots seguiría
   // viendo la sesión anterior (anónima) si leyera currentUser.
   const actingUidRef = useRef(null);
+  // Datos ya leídos en la validación (reunión, evento, solicitante y quien actúa), para
+  // no repetir esas lecturas al cargar horarios ni al confirmar: en el navegador de
+  // WhatsApp cada ida y vuelta a Firestore cuesta cientos de ms.
+  const loadedRef = useRef({ meeting: null, eventData: null, requesterData: null, actingData: null });
+  // Lecturas iniciales, lanzadas en el primer render (ver startPrefetch)
+  const prefetchRef = useRef(null);
+  if (!prefetchRef.current) {
+    prefetchRef.current = startPrefetch(eventId, meetingId, advisorId, action);
+  }
+  // Promesa de horarios por día ya pedidos (cambiar de día no vuelve a consultar)
+  const dayCacheRef = useRef(new Map());
 
   const [status, setStatus] = useState(
     action === "accept" ? "Cargando horarios..." : "Procesando..."
@@ -152,18 +284,19 @@ export default function MeetingAutoResponse() {
 
       const userId = currentUser?.uid || auth.currentUser?.uid;
 
-      // 2. Obtener datos de la reunión
-      const mtgRef = doc(db, "events", eventId, "meetings", meetingId);
-      const mtgSnap = await getDoc(mtgRef);
+      // 2. Datos de la reunión y el evento (precargados al abrir la página)
+      const prefetch = prefetchRef.current;
+      const [meetingData, eventData] = await Promise.all([prefetch.meetingP, prefetch.eventP]);
+      loadedRef.current.eventData = eventData;
 
-      if (!mtgSnap.exists()) {
+      if (!meetingData) {
         setValidationError("La reunión no existe.");
         setTimeout(() => navigate(`/event/${eventId}`), 3000);
         return false;
       }
 
-      const meetingData = mtgSnap.data();
-      const { receiverId, requesterId, companyId, status: meetingStatus } = meetingData;
+      loadedRef.current.meeting = meetingData;
+      const { receiverId, companyId, status: meetingStatus } = meetingData;
 
       // 3. Validar que la reunión no ha sido procesada aún
       if (meetingStatus && meetingStatus !== "pending") {
@@ -180,16 +313,22 @@ export default function MeetingAutoResponse() {
         return false;
       }
 
+      // Solicitante (precargado en paralelo)
+      const requesterPromise = prefetch.requesterP;
+
       // 4. El destinatario del enlace es siempre receiverId (a su WhatsApp
       // llegó la solicitud). Si la sesión activa no es ya la suya (p.ej.
       // quedó anónima al abrir el link), la reemplazamos por su sesión real
       // para que el redirect final al dashboard lo reconozca ya logueado.
       actingUidRef.current = receiverId || userId;
       if (receiverId && currentUser?.uid !== receiverId) {
-        const receiverSnap = await getDoc(doc(db, "users", receiverId));
-        if (receiverSnap.exists()) {
-          loginAsUser(receiverId, receiverSnap.data());
+        const receiverData = (await prefetch.actingP)?.data;
+        if (receiverData) {
+          loadedRef.current.actingData = receiverData;
+          loginAsUser(receiverId, receiverData);
         }
+      } else if (receiverId) {
+        loadedRef.current.actingData = currentUser?.data || null;
       } else if (!receiverId && companyId) {
         // Solicitud dirigida a una empresa (sin reclamar): no hay un destinatario
         // fijo. Si el enlace trae el ID del asesor al que se envió, se inicia su sesión
@@ -198,19 +337,18 @@ export default function MeetingAutoResponse() {
         let claimerId = userId;
         let myData = null;
         if (advisorId && advisorId !== userId) {
-          const advSnap = await getDoc(doc(db, "users", advisorId));
-          const advData = advSnap.exists() ? advSnap.data() : null;
+          // actingP ya leyó al asesor del enlace (receiverId vacío + companyId)
+          const acting = await prefetch.actingP;
+          const advData = acting?.uid === advisorId ? acting.data : await readUser(advisorId);
           if (advData && advData.companyId === companyId && advData.eventId === eventId) {
             claimerId = advisorId;
             myData = advData;
             loginAsUser(advisorId, advData);
           }
         }
-        if (!myData) {
-          const myUserSnap = await getDoc(doc(db, "users", claimerId));
-          myData = myUserSnap.exists() ? myUserSnap.data() : null;
-        }
+        if (!myData) myData = await readUser(claimerId);
         actingUidRef.current = claimerId;
+        loadedRef.current.actingData = myData;
         const myCompanyNit = myData?.companyId;
         // Cualquier persona asociada a la empresa puede reclamarla, sin importar
         // su tipoAsistente (ver getCompanyAdvisors en meetingSlotEngine.ts).
@@ -226,12 +364,9 @@ export default function MeetingAutoResponse() {
         // Rol: solo puede reclamarla un asesor con el que el solicitante pueda
         // reunirse (misma regla del directorio, policies.discoveryMode)
         if (action === "accept") {
-          const [evSnap, reqSnap] = await Promise.all([
-            getDoc(doc(db, "events", eventId)),
-            getDoc(doc(db, "users", requesterId)),
-          ]);
-          const mode = evSnap.exists() ? evSnap.data().config?.policies?.discoveryMode : undefined;
-          if (!canDiscoverAttendee(mode, myData?.tipoAsistente, reqSnap.exists() ? reqSnap.data().tipoAsistente : "")) {
+          const reqData = await requesterPromise;
+          const mode = eventData?.config?.policies?.discoveryMode;
+          if (!canDiscoverAttendee(mode, myData?.tipoAsistente, reqData?.tipoAsistente || "")) {
             setValidationError(
               "Tu perfil no puede atender esta solicitud; debe aceptarla un compañero de tu empresa con el rol correspondiente."
             );
@@ -241,11 +376,10 @@ export default function MeetingAutoResponse() {
         }
       }
 
-      // 5. Cargar el nombre del solicitante
-      const userSnap = await getDoc(doc(db, "users", requesterId));
-      if (userSnap.exists()) {
-        setRequesterName(userSnap.data().nombre);
-      }
+      // 5. Nombre del solicitante
+      const requesterData = await requesterPromise;
+      loadedRef.current.requesterData = requesterData;
+      if (requesterData) setRequesterName(requesterData.nombre);
 
       setValidationError(null);
       setIsValidating(false);
@@ -279,107 +413,48 @@ export default function MeetingAutoResponse() {
   }, [userLoading]);
 
   // --------------------------------------------------------
-  // cargar y filtrar slots como antes...
+  // Horarios: se usan los precargados (startPrefetch) si corresponden a quien
+  // actúa; si no (sesión de otro asesor, precarga fallida), se calculan aquí.
   // --------------------------------------------------------
-  // Horarios libres de un día, con la misma lógica del dashboard
-  // (computeAvailableSlots): reuniones aceptadas de ESE día, descansos del día
-  // (dailyConfig), slots bloqueados, horas pasadas, mesa fija y agenda compartida.
-  async function computeSlotsForDay(dateISO) {
-    const ctx = slotCtxRef.current;
-    const { slots } = await computeAvailableSlots({
-      eventId,
-      eventConfig: ctx.eventConfig,
-      policies: ctx.eventConfig.policies || {},
-      requesterId: ctx.requesterId,
-      receiverId: ctx.receiverId,
-      selectedDate: dateISO,
-      receiverFixedTable: ctx.receiverFixedTable,
-      receiverGroupIds: ctx.receiverGroupIds,
-    });
-    // Los slots de standby (último recurso del dashboard) no están "available" y la
-    // transacción de aceptación de esta página los rechazaría.
-    return slots
-      .filter((s) => !s.isStandbySlot)
-      .sort(
-        (a, b) =>
-          String(a.startTime).localeCompare(String(b.startTime)) ||
-          Number(a.tableNumber) - Number(b.tableNumber)
-      );
-  }
-
   async function loadSlots() {
     try {
-      const mtgRef = doc(db, "events", eventId, "meetings", meetingId);
-      const mtgSnap = await getDoc(mtgRef);
-      if (!mtgSnap.exists()) throw new Error("Reunión no existe");
-      const { requesterId, receiverId } = mtgSnap.data();
+      const loaded = loadedRef.current;
+      if (!loaded.meeting) throw new Error("Reunión no existe");
+      const { requesterId, receiverId } = loaded.meeting;
       // Solicitud de empresa sin reclamar: quien está viendo esta página (ya validado
       // como asesor de la empresa) es quien efectivamente ocuparía el slot.
       const effectiveReceiverId =
         receiverId || actingUidRef.current || currentUser?.uid || auth.currentUser?.uid;
 
-      const [userSnap, eventSnap, receiverSnap] = await Promise.all([
-        getDoc(doc(db, "users", requesterId)),
-        getDoc(doc(db, "events", eventId)),
-        getDoc(doc(db, "users", effectiveReceiverId)),
-      ]);
-      if (userSnap.exists()) {
-        setRequesterName(userSnap.data().nombre);
-      }
-      const eventConfig = eventSnap.exists() ? eventSnap.data().config || {} : {};
-
-      // Mesa fija y agenda compartida de la empresa del receptor (igual que
-      // resolveFixedTableForReceiver / resolveReceiverGroupIds del dashboard)
-      const receiverCompanyId = receiverSnap.exists() ? receiverSnap.data().companyId : null;
-      let receiverFixedTable = null;
-      let receiverGroupIds = [effectiveReceiverId];
-      if (receiverCompanyId) {
-        const companySnap = await getDoc(doc(db, "events", eventId, "companies", receiverCompanyId));
-        const company = companySnap.exists() ? companySnap.data() : null;
-        receiverFixedTable = company?.fixedTable ? String(company.fixedTable) : null;
-        if (company?.sharedAgenda) {
-          const teammates = (await getCompanyAdvisors(eventId, receiverCompanyId))
-            .filter((a) => isVendedor(a.tipoAsistente))
-            .map((a) => a.id);
-          if (teammates.includes(effectiveReceiverId)) receiverGroupIds = teammates;
+      let result = await prefetchRef.current.slotsP;
+      if (!result || result.ctx.receiverId !== effectiveReceiverId || result.ctx.requesterId !== requesterId) {
+        // Quien actúa ya se leyó en la validación (salvo sesión restaurada sin datos)
+        let receiverData = loaded.actingData;
+        if (!receiverData) {
+          receiverData = await readUser(effectiveReceiverId);
+          loaded.actingData = receiverData;
         }
+        const ctx = await resolveSlotContext(
+          eventId, loaded.eventData?.config || {}, requesterId, effectiveReceiverId, receiverData
+        );
+        result = await loadInitialDays(eventId, ctx);
       }
 
-      slotCtxRef.current = {
-        eventConfig,
-        requesterId,
-        receiverId: effectiveReceiverId,
-        receiverFixedTable,
-        receiverGroupIds,
-      };
-
-      // Días del evento que aún no han pasado; arranca en hoy si es día de evento
-      const todayISO = localTodayISO();
-      const allDays = [
-        ...new Set(eventConfig.eventDates || (eventConfig.eventDate ? [eventConfig.eventDate] : [])),
-      ]
-        .filter(Boolean)
-        .sort();
-      const upcoming = allDays.filter((d) => d >= todayISO);
-      const days = upcoming.length ? upcoming : allDays;
-      setEventDays(days);
-
-      // Primer día con horarios libres (empezando por hoy / el primer día)
-      let firstDay = days.includes(todayISO) ? todayISO : days[0];
-      let slots = await computeSlotsForDay(firstDay);
-      for (const d of days) {
-        if (slots.length > 0 || d <= firstDay) continue;
-        const next = await computeSlotsForDay(d);
-        if (next.length > 0) {
-          firstDay = d;
-          slots = next;
-          break;
-        }
-      }
-
-      setSelectedDate(firstDay || null);
-      setAvailableSlots(slots);
+      slotCtxRef.current = result.ctx;
+      dayCacheRef.current = result.cache;
+      setEventDays(result.days);
+      setSelectedDate(result.firstDay || null);
+      setAvailableSlots(result.slots);
       setStatus("");
+
+      // Los demás días se piden en segundo plano, ya con la página visible, para que
+      // cambiar de día sea inmediato. Si alguno falla, changeDay lo vuelve a pedir.
+      for (const d of result.days) {
+        if (result.cache.has(d)) continue;
+        const p = computeDaySlots(eventId, result.ctx, d);
+        p.catch(() => result.cache.delete(d));
+        result.cache.set(d, p);
+      }
     } catch (e) {
       console.error(e);
       setStatus(`Error cargando horarios (${e?.code || e?.message || "desconocido"}).`);
@@ -394,9 +469,16 @@ export default function MeetingAutoResponse() {
     setSelectedDate(dateISO);
     setLoadingDay(true);
     try {
-      setAvailableSlots(await computeSlotsForDay(dateISO));
+      const cache = dayCacheRef.current;
+      let p = cache.get(dateISO);
+      if (!p) {
+        p = computeDaySlots(eventId, slotCtxRef.current, dateISO);
+        cache.set(dateISO, p);
+      }
+      setAvailableSlots(await p);
     } catch (e) {
       console.error(e);
+      dayCacheRef.current.delete(dateISO);
       setAvailableSlots([]);
     } finally {
       setLoadingDay(false);
@@ -491,17 +573,19 @@ export default function MeetingAutoResponse() {
       const mtgRef = doc(db, "events", eventId, "meetings", meetingId);
       const slotRef = doc(db, "events", eventId, "agenda", slot.id);
 
-      // Obtener la fecha del evento para los lockIds
-      const eventDocSnap = await getDoc(doc(db, "events", eventId));
+      // Evento ya leído en la validación (solo se relee si faltara)
+      let eventDocData = loadedRef.current.eventData;
+      if (!eventDocData) {
+        const evSnap = await getDoc(doc(db, "events", eventId));
+        eventDocData = evSnap.exists() ? evSnap.data() : null;
+      }
       // Eventos multi-día no tienen eventDate: la fecha real es la del slot.
       const eventDateISO =
         String(slot.date || "").trim() ||
-        (eventDocSnap.exists()
-          ? String(eventDocSnap.data()?.eventDate || "").trim()
-          : "") ||
+        String(eventDocData?.eventDate || "").trim() ||
         new Date().toISOString().slice(0, 10);
 
-      let requesterId, receiverId, isCompanyClaim;
+      let requesterId, receiverId, isCompanyClaim, meetingCompanyId;
       const myUid = actingUidRef.current || currentUser?.uid || auth.currentUser?.uid;
 
       // TRANSACCIÓN: valida, crea locks, actualiza meeting y ocupa slot
@@ -524,6 +608,7 @@ export default function MeetingAutoResponse() {
         }
 
         requesterId = mtg.requesterId;
+        meetingCompanyId = mtg.companyId || null;
         // Solicitud de empresa sin reclamar: quien acepta (ya validado como asesor
         // de la empresa) se convierte en el receptor, seteado atómicamente aquí.
         isCompanyClaim = !mtg.receiverId && !!mtg.companyId;
@@ -591,31 +676,43 @@ export default function MeetingAutoResponse() {
         tx.update(slotRef, { available: false, meetingId });
       });
 
-      const mtgData = (await getDoc(mtgRef)).data();
+      // La reunión ya quedó aceptada: se le confirma al usuario de inmediato y las
+      // notificaciones salen en paralelo (antes se esperaba cada envío de WhatsApp,
+      // uno tras otro, antes de mostrar la confirmación).
+      succeeded = true;
+      setStatus("¡Reunión confirmada! Avisando al solicitante...");
 
-      // Obtener datos de ambos participantes (reutilizar eventSnap de arriba)
-      const requesterSnap = await getDoc(doc(db, "users", mtgData.requesterId));
-      const receiverSnap = await getDoc(doc(db, "users", mtgData.receiverId));
-      const requester = requesterSnap.exists() ? requesterSnap.data() : {};
-      const receiver = receiverSnap.exists() ? receiverSnap.data() : {};
+      const mtgData = { requesterId, receiverId, companyId: meetingCompanyId };
 
-      // Reutilizar eventDocSnap que ya fue declarado arriba
-      const evName = eventDocSnap.exists() ? eventDocSnap.data().eventName || "" : "";
-      const eventConfig = eventDocSnap.exists() ? eventDocSnap.data().config || {} : {};
+      // Datos de ambos participantes: los de la validación, si corresponden a ellos
+      const loaded = loadedRef.current;
+      const [requester, receiver] = await Promise.all([
+        loaded.requesterData && loaded.meeting?.requesterId === requesterId
+          ? loaded.requesterData
+          : getDoc(doc(db, "users", requesterId)).then((sn) => (sn.exists() ? sn.data() : {})),
+        loaded.actingData && actingUidRef.current === receiverId
+          ? loaded.actingData
+          : getDoc(doc(db, "users", receiverId)).then((sn) => (sn.exists() ? sn.data() : {})),
+      ]);
+
+      const evName = eventDocData?.eventName || "";
+      const eventConfig = eventDocData?.config || {};
       const evPolicies = eventConfig.policies || {};
       const tableLabel = getTableLabel(slot.tableNumber, eventConfig.tableNames);
       const dayLabel = formatDay(eventDateISO);
 
+      const tasks = [];
+
       // Notificación in-app
       if (evPolicies.dashboardNotificationsEnabled !== false) {
-        await addDoc(collection(db, "notifications"), {
+        tasks.push(addDoc(collection(db, "notifications"), {
           userId: mtgData.requesterId,
           title: "Reunión aceptada",
           message: `${receiver?.nombre || "Un participante"} ha aceptado tu reunión para ${dayLabel ? `el ${dayLabel} a las ` : ""}${slot.startTime} en ${tableLabel}.`,
           timestamp: new Date(),
           read: false,
           type: "meeting_accepted",
-        });
+        }));
       }
 
       // Enviar WhatsApp a ambos participantes
@@ -634,7 +731,7 @@ export default function MeetingAutoResponse() {
           const { sendMeetingConfirmation } = await import("../utils/whatsappService");
 
           if (requester?.telefono) {
-            await sendMeetingConfirmation({
+            tasks.push(sendMeetingConfirmation({
               phone: requester.telefono,
               eventName: evName,
               acceptedBy: accepterName,
@@ -643,11 +740,11 @@ export default function MeetingAutoResponse() {
               schedule: scheduleWithDay,
               table: meetingInfo.tableAssigned,
               tracking: { eventId, userId: mtgData.requesterId, meetingId },
-            });
+            }));
           }
 
           if (receiver?.telefono) {
-            await sendMeetingConfirmation({
+            tasks.push(sendMeetingConfirmation({
               phone: receiver.telefono,
               eventName: evName,
               acceptedBy: accepterName,
@@ -656,7 +753,7 @@ export default function MeetingAutoResponse() {
               schedule: scheduleWithDay,
               table: meetingInfo.tableAssigned,
               tracking: { eventId, userId: mtgData.receiverId, meetingId },
-            });
+            }));
           }
         } else {
           // Usar API v1 (método anterior)
@@ -710,21 +807,22 @@ export default function MeetingAutoResponse() {
       // tipoAsistente: Firestore no puede filtrar ese campo sin distinguir mayúsculas,
       // así que se consulta por empresa y se filtra/normaliza del lado del cliente.
       if (mtgData.companyId) {
-        try {
+        tasks.push((async () => {
           const advisors = await getCompanyAdvisors(eventId, mtgData.companyId);
           const otherAdvisors = advisors.filter(
             (a) => a.id !== mtgData.requesterId && a.id !== mtgData.receiverId
           );
+          const writes = [];
           for (const advisor of otherAdvisors) {
             if (evPolicies.dashboardNotificationsEnabled !== false) {
-              await addDoc(collection(db, "notifications"), {
+              writes.push(addDoc(collection(db, "notifications"), {
                 userId: advisor.id,
                 title: "Reunión aceptada",
                 message: `${receiver?.nombre || "Un compañero"} aceptó una reunión de tu empresa.`,
                 timestamp: new Date(),
                 read: false,
                 type: "meeting_accepted",
-              });
+              }));
             }
             if (evPolicies.whatsappNotificationsEnabled !== false && advisor?.telefono) {
               const advisorPhone = (advisor.telefono || "").toString().replace(/[^\d]/g, "");
@@ -739,18 +837,24 @@ export default function MeetingAutoResponse() {
               }).catch(() => {});
             }
           }
-        } catch {
-          // No bloquear el flujo principal por un fallo en el fan-out
-        }
+          await Promise.all(writes);
+        })());
       }
 
-      succeeded = true;
+      // Se espera a que salgan (sin bloquear la confirmación ya mostrada) para que el
+      // redirect al dashboard no corte envíos en curso. Un fallo aquí no revierte nada.
+      const results = await Promise.allSettled(tasks);
+      results
+        .filter((r) => r.status === "rejected")
+        .forEach((r) => console.error("Notificación de aceptación falló:", r.reason));
       setStatus("Reunión confirmada.");
     } catch (e) {
       console.error(e);
-      // Mostrar el mensaje específico del error de transacción al usuario
+      // La reunión ya quedó aceptada; lo que falló fue algo posterior (avisos)
       const msg = e?.message || "";
-      if (
+      if (succeeded) {
+        setStatus("Reunión confirmada.");
+      } else if (
         msg.includes("ya fue") ||
         msg.includes("ya tienes") ||
         msg.includes("ya fue tomado") ||

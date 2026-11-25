@@ -440,26 +440,58 @@ export async function computeAvailableSlots(
   const isEventToday = todayMid.getTime() === eventMid.getTime();
   const now = new Date();
 
-  // Reuniones aceptadas (mismo día del evento)
-  let accSn;
-  try {
-    accSn = await getDocs(
+  // Las cuatro lecturas (reuniones aceptadas del día, agenda libre del día y slots
+  // bloqueados de ambos) son independientes: se piden en paralelo en vez de una tras
+  // otra, que en móvil sumaba varios cientos de ms por consulta.
+  const accPromise = getDocs(
+    query(
+      collection(db, "events", eventId, "meetings"),
+      where("status", "==", "accepted"),
+      where("participants", "array-contains-any", occupancyParticipants),
+      where("meetingDate", "==", eventDayISO),
+    ),
+  ).catch(() =>
+    getDocs(
       query(
         collection(db, "events", eventId, "meetings"),
         where("status", "==", "accepted"),
         where("participants", "array-contains-any", occupancyParticipants),
-        where("meetingDate", "==", eventDayISO),
       ),
-    );
-  } catch {
-    accSn = await getDocs(
-      query(
-        collection(db, "events", eventId, "meetings"),
-        where("status", "==", "accepted"),
-        where("participants", "array-contains-any", occupancyParticipants),
-      ),
-    );
-  }
+    ),
+  );
+
+  // Agenda de slots disponibles - FILTRAR POR FECHA
+  const agendaPromise = getDocs(
+    query(
+      collection(db, "events", eventId, "agenda"),
+      where("available", "==", true),
+      where("date", "==", eventDayISO),
+      orderBy("startTime"),
+    ),
+  );
+
+  // Slots bloqueados del solicitante y del receptor
+  const blockedReqPromise = getDocs(
+    query(
+      collection(db, "users", requesterId, "blockedSlots"),
+      where("eventId", "==", eventId),
+      where("date", "==", eventDayISO)
+    )
+  );
+  const blockedRecPromise = getDocs(
+    query(
+      collection(db, "users", receiverId, "blockedSlots"),
+      where("eventId", "==", eventId),
+      where("date", "==", eventDayISO)
+    )
+  );
+
+  const [accSn, agSn, blockedSlotsRequester, blockedSlotsReceiver] = await Promise.all([
+    accPromise,
+    agendaPromise,
+    blockedReqPromise,
+    blockedRecPromise,
+  ]);
 
   const occupiedRanges = accSn.docs
     .map((d) => d.data().timeSlot as string | undefined)
@@ -470,43 +502,6 @@ export async function computeAvailableSlots(
       const [eh, em] = e.split(":").map(Number);
       return { start: sh * 60 + sm, end: eh * 60 + em };
     });
-
-  // Agenda de slots disponibles - FILTRAR POR FECHA
-  let agendaQuery = query(
-    collection(db, "events", eventId, "agenda"),
-    where("available", "==", true),
-    orderBy("startTime"),
-  );
-
-  try {
-    agendaQuery = query(
-      collection(db, "events", eventId, "agenda"),
-      where("available", "==", true),
-      where("date", "==", eventDayISO),
-      orderBy("startTime"),
-    );
-  } catch (e) {
-    console.warn("Usando query sin filtro de fecha:", e);
-  }
-
-  const agSn = await getDocs(agendaQuery);
-
-  // Cargar slots bloqueados del usuario actual (requesterId o receiverId)
-  const blockedSlotsRequester = await getDocs(
-    query(
-      collection(db, "users", requesterId, "blockedSlots"),
-      where("eventId", "==", eventId),
-      where("date", "==", eventDayISO)
-    )
-  );
-
-  const blockedSlotsReceiver = await getDocs(
-    query(
-      collection(db, "users", receiverId, "blockedSlots"),
-      where("eventId", "==", eventId),
-      where("date", "==", eventDayISO)
-    )
-  );
 
   const blockedTimes = new Set<string>();
   blockedSlotsRequester.docs.forEach((d) => {
