@@ -41,6 +41,7 @@ import {
   Stack,
   Switch,
   Table,
+  Tabs,
   Text,
   Textarea,
   TextInput,
@@ -134,6 +135,7 @@ export default function SpotlightAdminPage() {
   const [note, setNote] = useState("");
   const [duration, setDuration] = useState("0");
   const [allowMultiple, setAllowMultiple] = useState(false);
+  const [tab, setTab] = useState<string | null>("pending");
 
   // Métricas
   const [metrics, setMetrics] = useState<Record<string, Metrics>>({});
@@ -303,7 +305,7 @@ export default function SpotlightAdminPage() {
       }
       setTargetId(null);
       setNote("");
-    }, activate ? "¡Destacado en vivo!" : "Agregado a la lista");
+    }, activate ? "¡Destacado en vivo!" : "Agregado a la lista de próximos");
 
   const activate = (s: Spotlight) =>
     run(async () => {
@@ -422,8 +424,8 @@ export default function SpotlightAdminPage() {
       Fecha: fmtDateTime(i.createdAt?.toMillis?.() ?? null),
     }));
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Interesados");
-    XLSX.writeFile(wb, `interesados_${interestsModal.spotlight.displayName.replace(/[^\w]+/g, "_")}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Solicitaron contacto");
+    XLSX.writeFile(wb, `solicitaron_contacto_${interestsModal.spotlight.displayName.replace(/[^\w]+/g, "_")}.xlsx`);
   };
 
   const exportMetrics = () => {
@@ -437,7 +439,7 @@ export default function SpotlightAdminPage() {
         "Lo vieron": m?.seen ?? "",
         "Abrieron detalle": m?.opened ?? "",
         "Tocaron Solicitar": m?.requestClicked ?? "",
-        "Me interesa": m?.interested ?? "",
+        "Solicitaron contacto": m?.interested ?? "",
         Solicitudes: m?.requests ?? "",
         "Reuniones aceptadas": m?.accepted ?? "",
       };
@@ -548,220 +550,239 @@ export default function SpotlightAdminPage() {
           </Stack>
         </Paper>
 
-        {/* Agregar */}
-        <Paper withBorder radius="lg" p="md">
-          <Title order={5} mb="sm">
-            Agregar persona o empresa
-          </Title>
-          <Stack gap="sm">
-            <SegmentedControl
-              value={type}
-              onChange={(v) => {
-                setType(v as SpotlightType);
-                setTargetId(null);
-              }}
-              data={[
-                { value: "attendee", label: "Asistente" },
-                { value: "company", label: "Empresa" },
-              ]}
-              fullWidth
-            />
-            <Select
-              placeholder={type === "attendee" ? "Busca por nombre o empresa" : "Busca la empresa"}
-              data={type === "attendee" ? attendeeOptions : companyOptions}
-              value={targetId}
-              onChange={setTargetId}
-              searchable
-              clearable
-              limit={50}
-              nothingFoundMessage="Sin resultados"
-            />
-            <TextInput
-              label="Texto superior"
-              value={headline}
-              onChange={(e) => setHeadline(e.currentTarget.value)}
-              placeholder={DEFAULT_SPOTLIGHT_HEADLINE}
-            />
-            <Textarea
-              label="Nota (opcional)"
-              description="Ej. tema de la charla o dónde encontrarlo"
-              value={note}
-              onChange={(e) => setNote(e.currentTarget.value)}
-              autosize
-              minRows={2}
-              maxLength={200}
-            />
-            <Select
-              label="Apagar automáticamente"
-              data={DURATION_OPTIONS}
-              value={duration}
-              onChange={(v) => setDuration(v || "0")}
-              allowDeselect={false}
-            />
-            <Group grow>
-              <Button variant="default" leftSection={<IconPlus size={16} />} disabled={!targetId} loading={busy} onClick={() => createFromForm(false)}>
-                A la lista
-              </Button>
-              <Button color="red" leftSection={<IconPlayerPlay size={16} />} disabled={!targetId} loading={busy} onClick={() => createFromForm(true)}>
-                Activar ahora
-              </Button>
-            </Group>
-          </Stack>
-        </Paper>
+        <Tabs value={tab} onChange={setTab} radius="md" keepMounted={false}>
+          <Tabs.List grow>
+            <Tabs.Tab value="pending">Por presentar ({queued.length})</Tabs.Tab>
+            <Tabs.Tab value="presented">Presentados ({history.length})</Tabs.Tab>
+          </Tabs.List>
 
-        {/* Lista */}
-        {queued.length > 0 && (
-          <Paper withBorder radius="lg" p="md">
-            <Title order={5} mb="sm">
-              Próximos ({queued.length})
-            </Title>
-            <Stack gap="xs">
-              {queued.map((s, i) => (
-                <Group key={s.id} wrap="nowrap" gap="sm">
-                  <Text fw={700} c="dimmed" w={20} ta="center">
-                    {i + 1}
-                  </Text>
-                  {avatarOf(s, 36)}
-                  <Box style={{ minWidth: 0, flex: 1 }}>
-                    <Text size="sm" fw={600} lineClamp={1}>
-                      {s.displayName}
-                    </Text>
-                    <Text size="xs" c="dimmed" lineClamp={1}>
-                      {s.durationMinutes ? `${s.durationMinutes} min` : "Sin límite"}
-                      {s.note ? ` · ${s.note}` : ""}
-                    </Text>
-                  </Box>
-                  <ActionIcon variant="subtle" disabled={i === 0 || busy} onClick={() => move(i, -1)} aria-label="Subir">
-                    <IconArrowUp size={16} />
-                  </ActionIcon>
-                  <ActionIcon
-                    variant="subtle"
-                    disabled={i === queued.length - 1 || busy}
-                    onClick={() => move(i, 1)}
-                    aria-label="Bajar"
-                  >
-                    <IconArrowDown size={16} />
-                  </ActionIcon>
-                  <ActionIcon variant="light" color="red" onClick={() => activate(s)} disabled={busy} aria-label="Activar">
-                    <IconPlayerPlay size={16} />
-                  </ActionIcon>
-                  <ActionIcon variant="subtle" color="gray" onClick={() => remove(s)} disabled={busy} aria-label="Quitar">
-                    <IconTrash size={16} />
-                  </ActionIcon>
-                </Group>
-              ))}
+          <Tabs.Panel value="pending" pt="md">
+            <Stack gap="md">
+              {/* Agregar */}
+              <Paper withBorder radius="lg" p="md">
+                <Title order={5} mb="sm">
+                  Agregar persona o empresa
+                </Title>
+                <Stack gap="sm">
+                  <SegmentedControl
+                    value={type}
+                    onChange={(v) => {
+                      setType(v as SpotlightType);
+                      setTargetId(null);
+                    }}
+                    data={[
+                      { value: "attendee", label: "Asistente" },
+                      { value: "company", label: "Empresa" },
+                    ]}
+                    fullWidth
+                  />
+                  <Select
+                    placeholder={type === "attendee" ? "Busca por nombre o empresa" : "Busca la empresa"}
+                    data={type === "attendee" ? attendeeOptions : companyOptions}
+                    value={targetId}
+                    onChange={setTargetId}
+                    searchable
+                    clearable
+                    limit={50}
+                    nothingFoundMessage="Sin resultados"
+                  />
+                  <TextInput
+                    label="Texto superior"
+                    value={headline}
+                    onChange={(e) => setHeadline(e.currentTarget.value)}
+                    placeholder={DEFAULT_SPOTLIGHT_HEADLINE}
+                  />
+                  <Textarea
+                    label="Nota (opcional)"
+                    description="Ej. tema de la charla o dónde encontrarlo"
+                    value={note}
+                    onChange={(e) => setNote(e.currentTarget.value)}
+                    autosize
+                    minRows={2}
+                    maxLength={200}
+                  />
+                  <Select
+                    label="Apagar automáticamente"
+                    data={DURATION_OPTIONS}
+                    value={duration}
+                    onChange={(v) => setDuration(v || "0")}
+                    allowDeselect={false}
+                  />
+                  <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="xs">
+                    <Button variant="default" leftSection={<IconPlus size={16} />} disabled={!targetId} loading={busy} onClick={() => createFromForm(false)}>
+                      Agregar a lista de próximos
+                    </Button>
+                    <Button color="red" leftSection={<IconPlayerPlay size={16} />} disabled={!targetId} loading={busy} onClick={() => createFromForm(true)}>
+                      Activar ahora
+                    </Button>
+                  </SimpleGrid>
+                </Stack>
+              </Paper>
+
+              {/* Lista */}
+              {queued.length > 0 && (
+                <Paper withBorder radius="lg" p="md">
+                  <Title order={5} mb="sm">
+                    Próximos ({queued.length})
+                  </Title>
+                  <Stack gap="xs">
+                    {queued.map((s, i) => (
+                      <Group key={s.id} wrap="nowrap" gap="sm">
+                        <Text fw={700} c="dimmed" w={20} ta="center">
+                          {i + 1}
+                        </Text>
+                        {avatarOf(s, 36)}
+                        <Box style={{ minWidth: 0, flex: 1 }}>
+                          <Text size="sm" fw={600} lineClamp={1}>
+                            {s.displayName}
+                          </Text>
+                          <Text size="xs" c="dimmed" lineClamp={1}>
+                            {s.durationMinutes ? `${s.durationMinutes} min` : "Sin límite"}
+                            {s.note ? ` · ${s.note}` : ""}
+                          </Text>
+                        </Box>
+                        <ActionIcon variant="subtle" disabled={i === 0 || busy} onClick={() => move(i, -1)} aria-label="Subir">
+                          <IconArrowUp size={16} />
+                        </ActionIcon>
+                        <ActionIcon
+                          variant="subtle"
+                          disabled={i === queued.length - 1 || busy}
+                          onClick={() => move(i, 1)}
+                          aria-label="Bajar"
+                        >
+                          <IconArrowDown size={16} />
+                        </ActionIcon>
+                        <ActionIcon variant="light" color="red" onClick={() => activate(s)} disabled={busy} aria-label="Activar">
+                          <IconPlayerPlay size={16} />
+                        </ActionIcon>
+                        <ActionIcon variant="subtle" color="gray" onClick={() => remove(s)} disabled={busy} aria-label="Quitar">
+                          <IconTrash size={16} />
+                        </ActionIcon>
+                      </Group>
+                    ))}
+                  </Stack>
+                </Paper>
+              )}
             </Stack>
-          </Paper>
-        )}
+          </Tabs.Panel>
 
-        {/* Historial y métricas */}
-        {history.length > 0 && (
-          <Paper withBorder radius="lg" p="md">
-            <Group justify="space-between" mb="sm">
-              <Title order={5}>Ya se presentaron · métricas</Title>
-              <Group gap="xs">
-                <Tooltip label="Actualizar métricas">
-                  <ActionIcon variant="default" onClick={loadMetrics} loading={metricsLoading} aria-label="Actualizar">
-                    <IconRefresh size={16} />
-                  </ActionIcon>
-                </Tooltip>
-                <Tooltip label="Exportar a Excel">
-                  <ActionIcon variant="default" onClick={exportMetrics} aria-label="Exportar">
-                    <IconDownload size={16} />
-                  </ActionIcon>
-                </Tooltip>
-              </Group>
-            </Group>
+          <Tabs.Panel value="presented" pt="md">
+            {history.length === 0 && (
+              <Text size="sm" c="dimmed" ta="center" py="lg">
+                Todavía nadie se ha presentado. Aquí verás a quienes ya pasaron por el escenario, con sus métricas.
+              </Text>
+            )}
 
-            {(() => {
-              const total = Object.values(metrics).reduce(
-                (acc, m) => ({
-                  requests: acc.requests + m.requests,
-                  accepted: acc.accepted + m.accepted,
-                  interested: acc.interested + m.interested,
-                }),
-                { requests: 0, accepted: 0, interested: 0 },
-              );
-              return (
-                <SimpleGrid cols={3} mb="md">
-                  <MetricTile label="Solicitudes generadas" value={total.requests} />
-                  <MetricTile label="Reuniones aceptadas" value={total.accepted} />
-                  <MetricTile label="Me interesa" value={total.interested} />
-                </SimpleGrid>
-              );
-            })()}
+            {/* Historial y métricas */}
+            {history.length > 0 && (
+              <Paper withBorder radius="lg" p="md">
+                <Group justify="space-between" mb="sm">
+                  <Title order={5}>Ya se presentaron · métricas</Title>
+                  <Group gap="xs">
+                    <Tooltip label="Actualizar métricas">
+                      <ActionIcon variant="default" onClick={loadMetrics} loading={metricsLoading} aria-label="Actualizar">
+                        <IconRefresh size={16} />
+                      </ActionIcon>
+                    </Tooltip>
+                    <Tooltip label="Exportar a Excel">
+                      <ActionIcon variant="default" onClick={exportMetrics} aria-label="Exportar">
+                        <IconDownload size={16} />
+                      </ActionIcon>
+                    </Tooltip>
+                  </Group>
+                </Group>
 
-            <Table.ScrollContainer minWidth={640}>
-              <Table striped highlightOnHover verticalSpacing="xs" fz="sm">
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Destacado</Table.Th>
-                    <Table.Th>Horario</Table.Th>
-                    <Table.Th ta="right">Lo vieron</Table.Th>
-                    <Table.Th ta="right">Abrieron</Table.Th>
-                    <Table.Th ta="right">Tocaron Solicitar</Table.Th>
-                    <Table.Th ta="right">Me interesa</Table.Th>
-                    <Table.Th ta="right">Solicitudes</Table.Th>
-                    <Table.Th ta="right">Aceptadas</Table.Th>
-                    <Table.Th />
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {history.map((s) => {
-                    const m = metrics[s.id];
-                    const cell = (v?: number) => (m ? v : metricsLoading ? "…" : "—");
-                    return (
-                      <Table.Tr key={s.id}>
-                        <Table.Td>
-                          <Group gap="xs" wrap="nowrap">
-                            {avatarOf(s, 28)}
-                            <Text size="sm" fw={600} lineClamp={1}>
-                              {s.displayName}
-                            </Text>
-                          </Group>
-                        </Table.Td>
-                        <Table.Td style={{ whiteSpace: "nowrap" }}>
-                          {fmtDateTime(spotlightStartedMs(s) || null)} – {fmtTime(spotlightEndedMs(s))}
-                        </Table.Td>
-                        <Table.Td ta="right">{cell(m?.seen)}</Table.Td>
-                        <Table.Td ta="right">{cell(m?.opened)}</Table.Td>
-                        <Table.Td ta="right">{cell(m?.requestClicked)}</Table.Td>
-                        <Table.Td ta="right">
-                          {m?.interested ? (
-                            <Button size="compact-xs" variant="light" color="pink" onClick={() => openInterests(s)}>
-                              {m.interested}
-                            </Button>
-                          ) : (
-                            cell(m?.interested)
-                          )}
-                        </Table.Td>
-                        <Table.Td ta="right">{cell(m?.requests)}</Table.Td>
-                        <Table.Td ta="right">{cell(m?.accepted)}</Table.Td>
-                        <Table.Td>
-                          <Tooltip label="Destacar de nuevo">
-                            <ActionIcon variant="subtle" color="red" onClick={() => featureAgain(s)} disabled={busy} aria-label="Destacar de nuevo">
-                              <IconPlayerPlay size={16} />
-                            </ActionIcon>
-                          </Tooltip>
-                        </Table.Td>
+                {(() => {
+                  const total = Object.values(metrics).reduce(
+                    (acc, m) => ({
+                      requests: acc.requests + m.requests,
+                      accepted: acc.accepted + m.accepted,
+                      interested: acc.interested + m.interested,
+                    }),
+                    { requests: 0, accepted: 0, interested: 0 },
+                  );
+                  return (
+                    <SimpleGrid cols={3} mb="md">
+                      <MetricTile label="Solicitudes generadas" value={total.requests} />
+                      <MetricTile label="Reuniones aceptadas" value={total.accepted} />
+                      <MetricTile label="Solicitaron contacto" value={total.interested} />
+                    </SimpleGrid>
+                  );
+                })()}
+
+                <Table.ScrollContainer minWidth={640}>
+                  <Table striped highlightOnHover verticalSpacing="xs" fz="sm">
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th>Destacado</Table.Th>
+                        <Table.Th>Horario</Table.Th>
+                        <Table.Th ta="right">Lo vieron</Table.Th>
+                        <Table.Th ta="right">Abrieron</Table.Th>
+                        <Table.Th ta="right">Tocaron Solicitar</Table.Th>
+                        <Table.Th ta="right">Contacto</Table.Th>
+                        <Table.Th ta="right">Solicitudes</Table.Th>
+                        <Table.Th ta="right">Aceptadas</Table.Th>
+                        <Table.Th />
                       </Table.Tr>
-                    );
-                  })}
-                </Table.Tbody>
-              </Table>
-            </Table.ScrollContainer>
-            <Text size="xs" c="dimmed" mt="xs">
-              "Lo vieron" cuenta a quienes tenían el dashboard abierto mientras estuvo en vivo. Las solicitudes incluyen
-              las enviadas después desde "Se presentaron hoy".
-            </Text>
-          </Paper>
-        )}
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {history.map((s) => {
+                        const m = metrics[s.id];
+                        const cell = (v?: number) => (m ? v : metricsLoading ? "…" : "—");
+                        return (
+                          <Table.Tr key={s.id}>
+                            <Table.Td>
+                              <Group gap="xs" wrap="nowrap">
+                                {avatarOf(s, 28)}
+                                <Text size="sm" fw={600} lineClamp={1}>
+                                  {s.displayName}
+                                </Text>
+                              </Group>
+                            </Table.Td>
+                            <Table.Td style={{ whiteSpace: "nowrap" }}>
+                              {fmtDateTime(spotlightStartedMs(s) || null)} – {fmtTime(spotlightEndedMs(s))}
+                            </Table.Td>
+                            <Table.Td ta="right">{cell(m?.seen)}</Table.Td>
+                            <Table.Td ta="right">{cell(m?.opened)}</Table.Td>
+                            <Table.Td ta="right">{cell(m?.requestClicked)}</Table.Td>
+                            <Table.Td ta="right">
+                              {m?.interested ? (
+                                <Button size="compact-xs" variant="light" color="pink" onClick={() => openInterests(s)}>
+                                  {m.interested}
+                                </Button>
+                              ) : (
+                                cell(m?.interested)
+                              )}
+                            </Table.Td>
+                            <Table.Td ta="right">{cell(m?.requests)}</Table.Td>
+                            <Table.Td ta="right">{cell(m?.accepted)}</Table.Td>
+                            <Table.Td>
+                              <Tooltip label="Destacar de nuevo">
+                                <ActionIcon variant="subtle" color="red" onClick={() => featureAgain(s)} disabled={busy} aria-label="Destacar de nuevo">
+                                  <IconPlayerPlay size={16} />
+                                </ActionIcon>
+                              </Tooltip>
+                            </Table.Td>
+                          </Table.Tr>
+                        );
+                      })}
+                    </Table.Tbody>
+                  </Table>
+                </Table.ScrollContainer>
+                <Text size="xs" c="dimmed" mt="xs">
+                  "Lo vieron" cuenta a quienes tenían el dashboard abierto mientras estuvo en vivo. Las solicitudes incluyen
+                  las enviadas después desde "Se presentaron hoy".
+                </Text>
+              </Paper>
+            )}
+          </Tabs.Panel>
+        </Tabs>
       </Stack>
 
       <Modal
         opened={!!interestsModal}
         onClose={() => setInterestsModal(null)}
-        title={`Interesados en ${interestsModal?.spotlight.displayName || ""}`}
+        title={`Solicitaron el contacto de ${interestsModal?.spotlight.displayName || ""}`}
         size="lg"
       >
         {interestsModal && (

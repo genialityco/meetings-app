@@ -1,9 +1,11 @@
 /**
  * Destacado en vivo en el dashboard del asistente (ver src/utils/spotlight.ts):
- * - Tarjeta "EN VIVO" arriba de todas las vistas con Solicitar reunión / Me interesa / Ver más
+ * - Tarjeta "EN VIVO" arriba de todas las vistas con Solicitar reunión / Solicitar contacto / Ver más
+ *   ("Solicitar reunión" queda bloqueado con aviso si el destacado ya tiene la agenda llena)
  * - Aviso emergente una sola vez por destacado (no al propio presentador)
  * - "Se presentaron hoy": quienes ya pasaron, para quien llegó tarde o estaba distraído
- * - Para el presentador: la lista de personas que marcaron "Me interesa"
+ * - Para el presentador: la lista de personas que solicitaron su contacto
+ *   (en datos sigue llamándose "interests", ver src/utils/spotlight.ts)
  */
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -25,21 +27,22 @@ import {
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import {
+  IconAddressBook,
   IconBrandWhatsapp,
   IconBuilding,
+  IconCalendarOff,
   IconCalendarPlus,
+  IconCheck,
   IconChevronDown,
   IconChevronUp,
-  IconHeart,
-  IconHeartFilled,
   IconMail,
   IconMicrophone2,
   IconUsers,
 } from "@tabler/icons-react";
 import { doc, onSnapshot } from "firebase/firestore";
 import MeetingRequestModal from "./MeetingRequestModal";
-import { normCompanyKey } from "./meetingSlotEngine";
-import { canDiscoverAttendee } from "../../utils/attendeeRole";
+import { type AgendaFullTarget, isAgendaFull, normCompanyKey } from "./meetingSlotEngine";
+import { canDiscoverAttendee, isVendedor } from "../../utils/attendeeRole";
 import { toWhatsAppNumber } from "../../utils/phoneUtils";
 import {
   type Spotlight,
@@ -144,10 +147,14 @@ export default function SpotlightBar({ dashboard }: { dashboard: any }) {
     };
   };
 
-  // Aviso emergente: el primer destacado en vivo que este asistente no haya visto
+  // Aviso emergente: el primer destacado en vivo que este asistente no haya visto.
+  // Si el que estaba abierto dejó de estar en vivo (el admin tocó "Siguiente" o activó otro
+  // de la lista sin que el asistente cerrara el aviso), se suelta para mostrar el nuevo:
+  // antes popupId quedaba apuntando al terminado y ningún aviso volvía a abrirse.
   const live = spotlights?.live || [];
   useEffect(() => {
-    if (!eventId || !uid || popupId) return;
+    if (!eventId || !uid) return;
+    if (popupId && live.some((s) => s.id === popupId)) return;
     const next = live.find((s) => {
       if (isPresenter(s)) return false;
       try {
@@ -156,9 +163,75 @@ export default function SpotlightBar({ dashboard }: { dashboard: any }) {
         return false;
       }
     });
-    if (next) setPopupId(next.id);
+    const nextId = next?.id ?? null;
+    if (nextId !== popupId) setPopupId(nextId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, eventId, uid, popupId]);
+
+  // ---------------------------------------------------------------- agenda llena
+  // Se revisa para los destacados que el asistente puede ver con "Solicitar reunión"
+  // (en vivo y el detalle abierto de "Se presentaron hoy"), y se refresca cada 2 min.
+
+  const agendaTargetsOf = (s: Spotlight): AgendaFullTarget[] => {
+    const myTipo = me?.tipoAsistente;
+    if (s.type === "attendee") {
+      const a = assistantsById.get(s.targetId);
+      const company = a?.companyId ? companiesById.get(a.companyId) : null;
+      const groupIds =
+        company?.sharedAgenda && isVendedor(a?.tipoAsistente)
+          ? (dashboard.assistants || [])
+              .filter((x: any) => x.companyId === a.companyId && isVendedor(x.tipoAsistente))
+              .map((x: any) => x.id)
+          : undefined;
+      return [{ uid: s.targetId, fixedTable: company?.fixedTable || null, groupIds }];
+    }
+    const company = companiesById.get(s.targetId);
+    const advisors = (dashboard.assistants || []).filter(
+      (a: any) =>
+        a.id !== uid &&
+        normCompanyKey(a.companyId) === normCompanyKey(s.targetId) &&
+        canDiscoverAttendee(policies.discoveryMode, myTipo, a.tipoAsistente),
+    );
+    const groupIds = company?.sharedAgenda
+      ? advisors.filter((a: any) => isVendedor(a.tipoAsistente)).map((a: any) => a.id)
+      : undefined;
+    return advisors.map((a: any) => ({
+      uid: a.id,
+      fixedTable: a.fixedTable || company?.fixedTable || null,
+      groupIds,
+    }));
+  };
+
+  const [agendaFull, setAgendaFull] = useState<Record<string, boolean>>({});
+  const targetKey = (s: Spotlight) => `${s.type}:${s.targetId}`;
+  const toCheck = [...live, ...(detail ? [detail] : [])].filter((s) => !isPresenter(s) && canRequest(s));
+  const checkKeys = Array.from(new Set(toCheck.map(targetKey))).sort().join(",");
+
+  useEffect(() => {
+    if (!eventId || !uid || !dashboard.eventConfig || !checkKeys) return;
+    let cancelled = false;
+    const byKey = new Map(toCheck.map((s) => [targetKey(s), s]));
+    const check = async () => {
+      const entries = await Promise.all(
+        [...byKey.entries()].map(async ([key, s]) => {
+          const targets = agendaTargetsOf(s);
+          const full = await isAgendaFull({ eventId, eventConfig: dashboard.eventConfig, policies, targets });
+          return [key, full] as const;
+        }),
+      );
+      if (!cancelled) setAgendaFull((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+    };
+    check();
+    const t = setInterval(check, 120_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+    // Se recalcula cuando cambian los destacados a revisar o terminan de cargar asistentes/empresas
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkKeys, eventId, uid, !!dashboard.eventConfig, dashboard.assistants?.length, dashboard.companies?.length]);
+
+  const isFull = (s: Spotlight) => !!agendaFull[targetKey(s)];
 
   // Métrica "lo vio": la tarjeta en vivo quedó en pantalla
   useEffect(() => {
@@ -276,6 +349,7 @@ export default function SpotlightBar({ dashboard }: { dashboard: any }) {
           live
           presenter={isPresenter(s)}
           canRequest={canRequest(s)}
+          agendaFull={isFull(s)}
           onRequest={() => requestSpotlight(s)}
           onOpenMore={() => openMore(s)}
           onOpenCompany={(nit) => navigate(`/dashboard/${eventId}/company/${nit}`)}
@@ -358,6 +432,7 @@ export default function SpotlightBar({ dashboard }: { dashboard: any }) {
               flat
               presenter={false}
               canRequest={canRequest(popup)}
+              agendaFull={isFull(popup)}
               onRequest={() => {
                 closePopup();
                 requestSpotlight(popup);
@@ -389,6 +464,7 @@ export default function SpotlightBar({ dashboard }: { dashboard: any }) {
             flat
             presenter={isPresenter(detail)}
             canRequest={canRequest(detail)}
+            agendaFull={isFull(detail)}
             onRequest={() => requestSpotlight(detail)}
             onOpenMore={() => openMore(detail)}
             onOpenCompany={(nit) => {
@@ -434,6 +510,7 @@ function SpotlightCard({
   live,
   presenter,
   canRequest,
+  agendaFull = false,
   expanded: startExpanded = false,
   flat = false,
   onRequest,
@@ -448,6 +525,8 @@ function SpotlightCard({
   live: boolean;
   presenter: boolean;
   canRequest: boolean;
+  /** Ya no tiene horarios libres: "Solicitar reunión" queda bloqueado con aviso */
+  agendaFull?: boolean;
   expanded?: boolean;
   flat?: boolean;
   onRequest: () => void;
@@ -476,12 +555,12 @@ function SpotlightCard({
         await addSpotlightInterest(eventId, s.id, { uid, data: me?.data });
         showNotification({
           title: "¡Listo!",
-          message: `${view.name} verá que te interesa y podrá contactarte.`,
+          message: `${view.name} verá que solicitaste su contacto y podrá escribirte.`,
           color: "pink",
         });
       }
     } catch (err) {
-      console.error("Error guardando 'Me interesa':", err);
+      console.error("Error guardando 'Solicitar contacto':", err);
       showNotification({ title: "Error", message: "No se pudo guardar. Intenta de nuevo.", color: "red" });
     } finally {
       setInterestLoading(false);
@@ -579,48 +658,59 @@ function SpotlightCard({
         {presenter ? (
           <Text size="sm" fw={600} c="red.8">
             {s.type === "company" ? "¡Tu empresa" : "¡Tú"} estás en pantalla para todos los asistentes!
-            Aquí abajo verás a quienes marquen "Me interesa".
+            Aquí abajo verás a quienes soliciten tu contacto.
           </Text>
         ) : (
-          <Group gap="xs" wrap="wrap">
-            {canRequest && (
+          <Stack gap={6}>
+            {canRequest && agendaFull && (
+              <Group gap={6} wrap="nowrap">
+                <IconCalendarOff size={16} color="var(--mantine-color-orange-7)" style={{ flexShrink: 0 }} />
+                <Text size="sm" c="orange.8" fw={600}>
+                  Agenda llena: ya no tiene horarios libres para reuniones. Puedes solicitar su contacto.
+                </Text>
+              </Group>
+            )}
+            <Group gap="xs" wrap="wrap">
+              {canRequest && (
+                <Button
+                  leftSection={agendaFull ? <IconCalendarOff size={18} /> : <IconCalendarPlus size={18} />}
+                  color="red"
+                  radius="xl"
+                  onClick={onRequest}
+                  disabled={agendaFull}
+                  style={{ flex: "1 1 auto" }}
+                >
+                  {agendaFull ? "Agenda llena" : "Solicitar reunión"}
+                </Button>
+              )}
               <Button
-                leftSection={<IconCalendarPlus size={18} />}
-                color="red"
+                variant={interested ? "filled" : "light"}
+                color="pink"
                 radius="xl"
-                onClick={onRequest}
+                leftSection={interested ? <IconCheck size={18} /> : <IconAddressBook size={18} />}
+                loading={interestLoading}
+                onClick={toggleInterest}
                 style={{ flex: "1 1 auto" }}
               >
-                Solicitar reunión
+                {interested ? "Contacto solicitado" : "Solicitar contacto"}
               </Button>
-            )}
-            <Button
-              variant={interested ? "filled" : "light"}
-              color="pink"
-              radius="xl"
-              leftSection={interested ? <IconHeartFilled size={18} /> : <IconHeart size={18} />}
-              loading={interestLoading}
-              onClick={toggleInterest}
-              style={{ flex: "1 1 auto" }}
-            >
-              {interested ? "Te interesa" : "Me interesa"}
-            </Button>
-            {hasMore && !startExpanded && (
-              <ActionIcon
-                variant="subtle"
-                color="gray"
-                size="lg"
-                radius="xl"
-                aria-label={expanded ? "Ver menos" : "Ver más"}
-                onClick={() => {
-                  if (!expanded) onOpenMore();
-                  setExpanded((e) => !e);
-                }}
-              >
-                {expanded ? <IconChevronUp size={18} /> : <IconChevronDown size={18} />}
-              </ActionIcon>
-            )}
-          </Group>
+              {hasMore && !startExpanded && (
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  size="lg"
+                  radius="xl"
+                  aria-label={expanded ? "Ver menos" : "Ver más"}
+                  onClick={() => {
+                    if (!expanded) onOpenMore();
+                    setExpanded((e) => !e);
+                  }}
+                >
+                  {expanded ? <IconChevronUp size={18} /> : <IconChevronDown size={18} />}
+                </ActionIcon>
+              )}
+            </Group>
+          </Stack>
         )}
       </Stack>
     </Paper>
@@ -628,7 +718,7 @@ function SpotlightCard({
 }
 
 // ---------------------------------------------------------------------------
-// Interesados (solo los ve el presentador / su empresa)
+// Quienes solicitaron contacto (solo los ve el presentador / su empresa)
 // ---------------------------------------------------------------------------
 
 function PresenterInterests({
@@ -682,7 +772,7 @@ function PresenterInterests({
           <Group gap={8} wrap="nowrap">
             <IconUsers size={18} color="var(--mantine-color-pink-6)" />
             <Text size="sm" fw={700}>
-              {rows.length} {rows.length === 1 ? "persona marcó" : "personas marcaron"} "Me interesa" en tu presentación
+              {rows.length} {rows.length === 1 ? "persona solicitó" : "personas solicitaron"} tu contacto en tu presentación
             </Text>
           </Group>
           {open ? <IconChevronUp size={18} /> : <IconChevronDown size={18} />}

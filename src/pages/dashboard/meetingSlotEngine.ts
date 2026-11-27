@@ -1490,6 +1490,149 @@ export async function pickAvailableCompanyAdvisor(
 }
 
 // ---------------------------------------------------------------------------
+// ¿Agenda llena? (aviso previo, p. ej. en el destacado en vivo)
+// ---------------------------------------------------------------------------
+
+export interface AgendaFullTarget {
+  /** Uid de quien recibiría la reunión */
+  uid: string;
+  /** Mesa fija (de él o de su empresa), o null si va por pool */
+  fixedTable?: string | null;
+  /** Agenda compartida: uids cuyas reuniones también le ocupan el horario */
+  groupIds?: string[];
+}
+
+const timeToMin = (t?: string) => {
+  const [h, m] = String(t || "").split(":").map(Number);
+  return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
+};
+
+/**
+ * true si NINGUNO de los `targets` (asesores alternativos: basta uno libre) tiene un horario
+ * futuro libre. Es un aviso previo y barato: no lee toda la agenda (pueden ser miles de slots
+ * por día) sino la grilla de una sola mesa (la fija, o la 1 como molde de horarios en pool),
+ * las reuniones aceptadas y los bloqueos de los targets. No considera que el pool de mesas se
+ * agote ni la agenda de quien solicita: el flujo real (computeAvailableSlots) vuelve a validar.
+ * Ante la duda (error, sin horarios futuros, sin duración) devuelve false para no bloquear.
+ */
+export async function isAgendaFull(params: {
+  eventId: string;
+  eventConfig: any;
+  policies?: Partial<EventPolicies> | null;
+  targets: AgendaFullTarget[];
+}): Promise<boolean> {
+  const { eventId, eventConfig, policies, targets } = params;
+  const duration = Number(eventConfig?.meetingDuration) || 0;
+  if (!eventId || !duration || !targets.length) return false;
+
+  try {
+    const allIds = Array.from(new Set(targets.flatMap((t) => [t.uid, ...(t.groupIds || [])])));
+    const idSet = new Set(allIds);
+
+    // Reuniones aceptadas de todos los involucrados (array-contains-any admite 30 valores)
+    const chunks: string[][] = [];
+    for (let i = 0; i < allIds.length; i += 30) chunks.push(allIds.slice(i, i + 30));
+    const meetingSnaps = await Promise.all(
+      chunks.map((ids) =>
+        getDocs(
+          query(
+            collection(db, "events", eventId, "meetings"),
+            where("status", "==", "accepted"),
+            where("participants", "array-contains-any", ids),
+          ),
+        ),
+      ),
+    );
+    // Con standby, los horarios en standby se ofrecen como respaldo: no cuentan como ocupados
+    const ignoreStandby = !!(policies?.standbyCheckInRequired ?? eventConfig?.policies?.standbyCheckInRequired);
+    const busy = new Map<string, { date: string | null; start: number; end: number }[]>();
+    meetingSnaps.forEach((snap) =>
+      snap.docs.forEach((d) => {
+        const m = d.data();
+        if (m.isExternal || (ignoreStandby && m.checkInStatus === "standby")) return;
+        const [s, e] = String(m.timeSlot || "").split(" - ");
+        const start = timeToMin(s);
+        const end = timeToMin(e);
+        if (start == null || end == null) return;
+        (m.participants || []).forEach((p: string) => {
+          if (!idSet.has(p)) return;
+          if (!busy.has(p)) busy.set(p, []);
+          busy.get(p)!.push({ date: m.meetingDate || null, start, end });
+        });
+      }),
+    );
+
+    // Horarios bloqueados por cada target
+    const blocked = new Map<string, Set<string>>();
+    await Promise.all(
+      targets.map(async (t) => {
+        const snap = await getDocs(
+          query(collection(db, "users", t.uid, "blockedSlots"), where("eventId", "==", eventId)),
+        );
+        blocked.set(t.uid, new Set(snap.docs.map((d) => `${d.data().date}|${d.data().startTime}`)));
+      }),
+    );
+
+    // Grilla de horarios por mesa (todas las fechas), cacheada por mesa
+    const grids = new Map<string, Promise<AgendaSlot[]>>();
+    const gridFor = (table: string | null) => {
+      const key = table || "1";
+      if (!grids.has(key)) {
+        const n = Number(key);
+        const values: (string | number)[] = Number.isFinite(n) ? [n, key] : [key];
+        grids.set(
+          key,
+          getDocs(query(collection(db, "events", eventId, "agenda"), where("tableNumber", "in", values))).then(
+            (snap) => snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }) as AgendaSlot),
+          ),
+        );
+      }
+      return grids.get(key)!;
+    };
+
+    const fallbackDate = eventConfig?.eventDates?.[0] || eventConfig?.eventDate || "";
+    const nowMs = Date.now();
+
+    const targetIsFull = async (t: AgendaFullTarget) => {
+      const fixed = t.fixedTable ? String(t.fixedTable) : null;
+      const grid = await gridFor(fixed);
+      const occupied = [t.uid, ...(t.groupIds || [])].flatMap((id) => busy.get(id) || []);
+      const blockedSet = blocked.get(t.uid) || new Set<string>();
+
+      const future = grid.filter((slot) => {
+        if (slot.isBreak) return false;
+        const date = slot.date || fallbackDate;
+        const start = timeToMin(slot.startTime);
+        if (!date || start == null) return false;
+        const at = parseISODate(date);
+        at.setHours(Math.floor(start / 60), start % 60, 0, 0);
+        if (at.getTime() <= nowMs) return false;
+        const dayBreaks = eventConfig?.dailyConfig?.[date]?.breakBlocks ?? eventConfig?.breakBlocks ?? [];
+        return !slotOverlapsBreakBlock(slot.startTime, duration, dayBreaks);
+      });
+      // Sin horarios futuros (evento terminado o agenda sin generar): no se avisa nada
+      if (!future.length) return false;
+
+      return !future.some((slot) => {
+        const date = slot.date || fallbackDate;
+        // Con mesa fija, la mesa también debe estar libre (la puede ocupar un compañero)
+        if (fixed && !slot.available) return false;
+        if (blockedSet.has(`${date}|${slot.startTime}`)) return false;
+        const start = timeToMin(slot.startTime)!;
+        const end = start + duration;
+        return !occupied.some((r) => (r.date == null || r.date === date) && start < r.end && end > r.start);
+      });
+    };
+
+    const results = await Promise.all(targets.map(targetIsFull));
+    return results.every(Boolean);
+  } catch (err) {
+    console.warn("No se pudo verificar si la agenda está llena:", err);
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Tomar una solicitud dirigida a un compañero (policy colleagueTakeoverEnabled)
 // ---------------------------------------------------------------------------
 
