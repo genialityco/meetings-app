@@ -23,6 +23,7 @@ import { serverTimestamp } from "firebase/firestore";
 import { sendWhatsAppMessage as sendWhatsAppAPI } from "../../utils/whatsappService";
 import type { WaTrackingContext } from "../../utils/waTracking";
 import { meetingAnalytics, profileAnalytics, trackError, trackEvent } from "../../utils/analytics";
+import { useSpotlights } from "./useSpotlights";
 import {
   parseISODate,
   slotOverlapsBreakBlock,
@@ -302,6 +303,8 @@ export function useDashboardData(eventId?: string) {
   const [globalDateFilter, setGlobalDateFilter] = useState<string | null>(null);
   const [affinityScores, setAffinityScores] = useState<Record<string, number>>({});
   const [myStandVisits, setMyStandVisits] = useState<Set<string>>(new Set());
+  // Destacado en vivo (persona/empresa en el escenario), ver src/utils/spotlight.ts
+  const spotlights = useSpotlights(eventId);
 
   // Primera carga de cada fuente: mientras sea false las vistas muestran skeletons
   // en vez de su estado vacío ("No se encontraron…"), que confundía al entrar.
@@ -2584,6 +2587,7 @@ export function useDashboardData(eventId?: string) {
     deleteProduct,
     companies,
     myStandVisits,
+    spotlights,
     policies,
     selectedDate,
     setSelectedDate,

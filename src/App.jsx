@@ -38,6 +38,7 @@ const BadgePage = lazy(() => import("./pages/dashboard/BadgePage.tsx"));
 const QuickCheckInPage = lazy(() => import("./pages/admin/QuickCheckInPage.tsx"));
 const RaffleScanPage = lazy(() => import("./pages/RaffleScanPage.tsx"));
 const RafflePage = lazy(() => import("./pages/admin/RafflePage.tsx"));
+const SpotlightAdminPage = lazy(() => import("./pages/admin/SpotlightAdminPage.tsx"));
 const WaTrackingPage = lazy(() => import("./pages/admin/WaTrackingPage.tsx"));
 const CompanyMeetingCountPage = lazy(() => import("./pages/admin/CompanyMeetingCountPage.tsx"));
 const AttendeeSurveyFillPage = lazy(() => import("./pages/admin/AttendeeSurveyFillPage.tsx"));
@@ -108,6 +109,10 @@ const App = () => {
         <Route path="/stand-visit/:eventId/:companyNit" element={<StandVisitScanPage />} />
         <Route path="/acceso/:eventId/:userId" element={<AutoLoginPage />} />
         <Route path="/encuesta-empresa/:eventId/:userId" element={<CompanySurveyPage />} />
+        <Route
+          path="/admin/event/:eventId/spotlight"
+          element={<ProtectedAdminRoute><SpotlightAdminPage /></ProtectedAdminRoute>}
+        />
         <Route
           path="/admin/event/:eventId/raffle"
           element={<ProtectedAdminRoute><RafflePage /></ProtectedAdminRoute>}

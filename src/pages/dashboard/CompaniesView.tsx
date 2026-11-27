@@ -51,6 +51,7 @@ import {
   IconClockHour4,
   IconEdit,
   IconEye,
+  IconMicrophone2,
 } from "@tabler/icons-react";
 import type { Assistant, Company, EventPolicies, MeetingContext } from "./types";
 import MeetingRequestModal from "./MeetingRequestModal";
@@ -206,6 +207,8 @@ interface CompaniesViewProps {
   sentPendingRequests?: any[];
   participantsInfo?: Record<string, any>;
   myStandVisits?: Set<string>;
+  /** Empresas que ya se presentaron en el escenario (destacado en vivo) */
+  presentedIds?: Set<string>;
 }
 
 export default function CompaniesView({
@@ -228,6 +231,7 @@ export default function CompaniesView({
   sentPendingRequests,
   participantsInfo,
   myStandVisits,
+  presentedIds,
 }: CompaniesViewProps) {
   const theme = useMantineTheme();
   const navigate = useNavigate();
@@ -1275,6 +1279,12 @@ export default function CompaniesView({
                       {pais && (
                         <Badge variant="light" color="gray" radius="xl">
                           {pais}
+                        </Badge>
+                      )}
+
+                      {(presentedIds?.has(nit) || (!!nitLookup && presentedIds?.has(nitLookup))) && (
+                        <Badge variant="light" color="red" radius="xl" leftSection={<IconMicrophone2 size={12} />}>
+                          Se presentó
                         </Badge>
                       )}
 

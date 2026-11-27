@@ -24,6 +24,7 @@ import MatchesTab from "./MatchesTab";
 import EventSurveyTab from "./EventSurveyTab";
 import MyCompanyTab from "./MyCompanyTab";
 import QrOnlyView from "./QrOnlyView";
+import SpotlightBar from "./SpotlightBar";
 import { DashboardSkeleton } from "./DashboardSkeletons";
 import { DEFAULT_POLICIES } from "./types";
 import { isVendedor } from "../../utils/attendeeRole";
@@ -214,6 +215,7 @@ export default function TabsPanel({
 
   return (
     <Stack mt="md">
+    <SpotlightBar dashboard={dashboard} />
     {isMobile ? (
       <Tabs value={topView} onChange={(v) => v && handleTopViewChange(v)} variant="pills">
         <Tabs.List style={{ flexWrap: "nowrap", overflowX: "auto", gap: 4, paddingBottom: 4 }}>
@@ -280,6 +282,7 @@ export default function TabsPanel({
           cardFields={cardFieldsConfig!.attendeeCard}
           affinityScores={dashboard.affinityScores}
           highlightEntityId={topView === "attendees" && persistentHighlight.entityType === "assistant" ? persistentHighlight.entityId : undefined}
+          presentedIds={dashboard.spotlights?.presentedTargetIds}
         />
       )}
 
@@ -296,6 +299,7 @@ export default function TabsPanel({
           sentPendingRequests={dashboard.allSentRequests}
           participantsInfo={dashboard.participantsInfo}
           myStandVisits={dashboard.myStandVisits}
+          presentedIds={dashboard.spotlights?.presentedTargetIds}
           eventConfig={dashboard.eventConfig}
           solicitarReunionHabilitado={dashboard.solicitarReunionHabilitado}
           sendMeetingRequestToCompany={dashboard.sendMeetingRequestToCompany}

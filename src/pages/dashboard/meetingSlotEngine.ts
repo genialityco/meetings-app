@@ -731,6 +731,7 @@ export async function createConfirmedMeeting(
     if (context?.productId) meetingData.productId = context.productId;
     if (context?.companyId) meetingData.companyId = context.companyId;
     if (context?.contextNote) meetingData.contextNote = context.contextNote;
+    if (context?.spotlightId) meetingData.spotlightId = context.spotlightId;
 
     tx.set(meetingRef, meetingData);
     tx.update(slotRef, { available: false, meetingId: meetingRef.id });
@@ -1234,6 +1235,7 @@ export async function createMeetingRequestDoc(
   if (effectiveCompanyNit) data.companyId = effectiveCompanyNit;
   if (context?.productId) data.productId = context.productId;
   if (context?.contextNote) data.contextNote = context.contextNote;
+  if (context?.spotlightId) data.spotlightId = context.spotlightId;
 
   const meetingDoc = await addDoc(collection(db, "events", eventId, "meetings"), data);
   const meetingId = meetingDoc.id;

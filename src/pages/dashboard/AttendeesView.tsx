@@ -39,6 +39,7 @@ import {
   IconFileTypePdf,
   IconSparkles,
   IconEye,
+  IconMicrophone2,
 } from "@tabler/icons-react";
 import type { Assistant, EventPolicies } from "./types";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -121,6 +122,8 @@ interface AttendeesViewProps {
   cardFields: string[];
   affinityScores: Record<string, number>;
   highlightEntityId?: string;
+  /** Ya se presentaron en el escenario (destacado en vivo): etiqueta "Se presentó" */
+  presentedIds?: Set<string>;
 }
 
 function InfoRow({
@@ -181,6 +184,7 @@ export default function AttendeesView({
   cardFields,
   affinityScores,
   highlightEntityId,
+  presentedIds,
 }: AttendeesViewProps) {
   const theme = useMantineTheme();
   const [searchTerm, setSearchTerm] = useState("");
@@ -777,6 +781,11 @@ export default function AttendeesView({
                             {assistant.nombre || "Sin nombre"}
                           </Highlight>
                         </Title>
+                        {presentedIds?.has(assistant.id) && (
+                          <Badge size="xs" variant="light" color="red" radius="sm" leftSection={<IconMicrophone2 size={10} />} style={{ flexShrink: 0 }}>
+                            Se presentó
+                          </Badge>
+                        )}
                       </Group>
                       <Text size="sm" c="dimmed" lineClamp={1} component="div">
                         <Highlight highlight={highlightTerm} component="span" size="sm">

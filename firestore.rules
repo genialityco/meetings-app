@@ -89,6 +89,17 @@ service cloud.firestore {
         allow list, update, delete: if request.auth != null && canManageEvent(request.auth.uid, eventId);
       }
 
+      // Destacado en vivo (src/utils/spotlight.ts): el doc spotlights/{id} lo escriben solo
+      // los admins (regla general de abajo); cualquier asistente autenticado registra sus
+      // métricas (engagement: vio / abrió / pidió reunión) y su "Me interesa" (lo puede quitar).
+      match /spotlights/{spotlightId}/engagement/{attendeeId} {
+        allow create, update: if request.auth != null && request.resource.data.uid == attendeeId;
+      }
+      match /spotlights/{spotlightId}/interests/{attendeeId} {
+        allow create, update: if request.auth != null && request.resource.data.uid == attendeeId;
+        allow delete: if request.auth != null;
+      }
+
       // Resto de subcolecciones del evento: solo owners o super-admin.
       // waCampaigns y waMessages (WhatsApp, con teléfonos de destinatarios) no
       // son públicas: solo las leen quienes administran el evento. loginAttempts

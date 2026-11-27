@@ -1398,6 +1398,9 @@ const EventAdmin = () => {
           <Button component={Link} to={`/admin/event/${event.id}/encuestas-asistente`} variant="default">
             Encuestas por asistente
           </Button>
+          <Button component={Link} to={`/admin/event/${event.id}/spotlight`} variant="filled" color="red">
+            Destacado en vivo
+          </Button>
           <Button component={Link} to={`/admin/event/${event.id}/optimize-agenda`} variant="filled" color="orange">
             Optimizar Agenda
           </Button>

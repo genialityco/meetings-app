@@ -53,6 +53,8 @@ export interface MeetingContext {
   productId?: string | null;
   companyId?: string | null;
   contextNote?: string;
+  /** Solicitud nacida del destacado en vivo (events/{eventId}/spotlights/{id}): métricas */
+  spotlightId?: string;
 }
 
 export interface ParticipantInfo extends Assistant {}
